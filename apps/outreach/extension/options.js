@@ -3,9 +3,11 @@ const tokenInput = document.getElementById("api-token");
 const saveBtn = document.getElementById("save-btn");
 const statusEl = document.getElementById("status");
 
+const DEFAULT_APP_URL = "https://builder-li.netlify.app/outreach";
+
 // Load saved values on open
 chrome.storage.local.get(["appUrl", "apiToken"], (result) => {
-  if (result.appUrl) urlInput.value = result.appUrl;
+  urlInput.value = result.appUrl || DEFAULT_APP_URL;
   if (result.apiToken) tokenInput.value = result.apiToken;
 });
 
