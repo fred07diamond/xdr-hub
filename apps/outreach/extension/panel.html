@@ -19,7 +19,7 @@
     .header {
       display: flex;
       align-items: center;
-      gap: 6px;
+      justify-content: space-between;
       margin-bottom: 14px;
     }
 
@@ -30,7 +30,103 @@
       letter-spacing: -0.2px;
     }
 
-    /* Profile card */
+    #settings-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 3px;
+      border-radius: 5px;
+      color: #888;
+      font-size: 16px;
+      line-height: 1;
+      transition: color 0.1s, background 0.1s;
+    }
+    #settings-btn:hover { color: #0a66c2; background: #f0f4ff; }
+    #settings-btn.active { color: #0a66c2; }
+
+    /* ── Settings view ─────────────────────────────────── */
+    #settings-view { display: none; }
+
+    .settings-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .token-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      margin-bottom: 12px;
+      padding: 8px 10px;
+      border-radius: 7px;
+    }
+    .token-status.configured { background: #e6f4ea; color: #1e7e34; }
+    .token-status.missing { background: #fff3e0; color: #b45309; }
+
+    #token-input {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 7px;
+      font-size: 12px;
+      font-family: monospace;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+    #token-input:focus { outline: none; border-color: #0a66c2; }
+
+    .settings-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    #save-token-btn {
+      flex: 1;
+      padding: 9px;
+      background: #0a66c2;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #save-token-btn:hover { background: #004182; }
+
+    #clear-token-btn {
+      padding: 9px 12px;
+      background: #fff;
+      color: #c0392b;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 7px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #clear-token-btn:hover { border-color: #c0392b; }
+
+    .settings-hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 10px;
+      line-height: 1.6;
+    }
+    .settings-hint a { color: #0a66c2; text-decoration: none; }
+
+    #token-save-status {
+      font-size: 12px;
+      min-height: 16px;
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    /* ── Profile card ──────────────────────────────────── */
     #profile-card {
       background: #f8fafc;
       border: 1px solid #e5e7eb;
@@ -86,14 +182,8 @@
       font-size: 11px;
       font-weight: 500;
     }
-    .role-chip {
-      background: #e9f0fb;
-      color: #0a66c2;
-    }
-    .company-chip {
-      background: #e6f4ea;
-      color: #1e7e34;
-    }
+    .role-chip { background: #e9f0fb; color: #0a66c2; }
+    .company-chip { background: #e6f4ea; color: #1e7e34; }
 
     #already-contacted {
       background: #fff8e1;
@@ -129,10 +219,7 @@
       text-align: center;
     }
 
-    #verdict-section {
-      margin-top: 16px;
-      display: none;
-    }
+    #verdict-section { margin-top: 16px; display: none; }
 
     .verdict-row {
       display: flex;
@@ -171,9 +258,7 @@
       margin-bottom: 4px;
     }
 
-    #note-section, #followup-section {
-      margin-bottom: 12px;
-    }
+    #note-section, #followup-section { margin-bottom: 12px; }
 
     textarea {
       width: 100%;
@@ -240,43 +325,28 @@
       font-size: 12px;
       line-height: 1.6;
     }
-
-    #setup-prompt {
-      padding: 28px 8px 0;
-      text-align: center;
-    }
-    #setup-prompt .setup-icon { font-size: 30px; margin-bottom: 12px; }
-    #setup-prompt .setup-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px; }
-    #setup-prompt .setup-body { font-size: 12px; color: #555; line-height: 1.7; margin-bottom: 20px; }
-    #setup-prompt .setup-body a { color: #0a66c2; text-decoration: none; }
-    #open-options-btn {
-      width: 100%;
-      padding: 10px;
-      background: #0a66c2;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    #open-options-btn:hover { background: #004182; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Builder.LI</h1>
+    <button id="settings-btn" title="Settings">⚙</button>
   </div>
 
-  <div id="setup-prompt" style="display:none">
-    <div class="setup-icon">🔑</div>
-    <div class="setup-title">Setup required</div>
-    <div class="setup-body">
-      Sign in to your <a href="https://builder-li.netlify.app/outreach/settings" target="_blank">Builder.LI app</a>
-      and copy your <strong>Personal API Token</strong> from Settings.
+  <!-- Settings view — shown on gear click or when no token -->
+  <div id="settings-view">
+    <div class="settings-section-title">Settings</div>
+    <div id="token-status-badge" class="token-status missing">⚠ No API token — paste yours below</div>
+    <input id="token-input" type="password" placeholder="Paste your Personal API Token" />
+    <div class="settings-row">
+      <button id="save-token-btn">Save</button>
+      <button id="clear-token-btn">Clear</button>
     </div>
-    <button id="open-options-btn">Open Extension Settings</button>
+    <div id="token-save-status"></div>
+    <div class="settings-hint">
+      Get your token from
+      <a href="https://builder-li.netlify.app/outreach/settings" target="_blank">Builder.LI → Settings</a>.
+    </div>
   </div>
 
   <div id="not-linkedin" style="display:none">
@@ -284,7 +354,6 @@
   </div>
 
   <div id="main-content">
-    <!-- Profile card: auto-populated on open -->
     <div id="profile-card">
       <div id="profile-loading">Reading profile…</div>
       <div id="profile-data">

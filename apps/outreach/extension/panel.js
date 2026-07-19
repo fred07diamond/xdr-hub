@@ -21,6 +21,13 @@ const profileFullName = document.getElementById("profile-full-name");
 const profileHeadlineText = document.getElementById("profile-headline-text");
 const profileMeta = document.getElementById("profile-meta");
 const profileLocation = document.getElementById("profile-location");
+const settingsBtn = document.getElementById("settings-btn");
+const settingsView = document.getElementById("settings-view");
+const tokenInput = document.getElementById("token-input");
+const saveTokenBtn = document.getElementById("save-token-btn");
+const clearTokenBtn = document.getElementById("clear-token-btn");
+const tokenSaveStatus = document.getElementById("token-save-status");
+const tokenStatusBadge = document.getElementById("token-status-badge");
 
 let currentProfileUrl = null;
 let cachedScrape = null; // reuse in draftBtn click
@@ -237,17 +244,92 @@ async function init({ navTriggered = false } = {}) {
   }).catch(() => {});
 }
 
-// Show setup screen if no API token configured yet
-chrome.storage.local.get(["apiToken"], (result) => {
-  if (!result.apiToken) {
-    document.getElementById("setup-prompt").style.display = "block";
-    mainContent.style.display = "none";
-    document.getElementById("open-options-btn").addEventListener("click", () => {
-      chrome.runtime.openOptionsPage();
+// ── Settings view ────────────────────────────────────────────────────────────
+
+function updateTokenStatusBadge(hasToken) {
+  if (hasToken) {
+    tokenStatusBadge.className = "token-status configured";
+    tokenStatusBadge.textContent = "✓ API token saved";
+  } else {
+    tokenStatusBadge.className = "token-status missing";
+    tokenStatusBadge.textContent = "⚠ No API token — paste yours below";
+  }
+}
+
+function showSettings() {
+  settingsView.style.display = "block";
+  mainContent.style.display = "none";
+  notLinkedin.style.display = "none";
+  settingsBtn.classList.add("active");
+  chrome.storage.local.get(["apiToken"], (r) => {
+    updateTokenStatusBadge(!!r.apiToken);
+    tokenInput.value = "";
+    tokenInput.placeholder = r.apiToken ? "Enter new token to replace" : "Paste your Personal API Token";
+  });
+}
+
+function hideSettings() {
+  settingsView.style.display = "none";
+  settingsBtn.classList.remove("active");
+}
+
+settingsBtn.addEventListener("click", () => {
+  if (settingsView.style.display === "block") {
+    hideSettings();
+    // Restore the right view
+    chrome.storage.local.get(["apiToken"], (r) => {
+      if (r.apiToken) {
+        mainContent.style.display = "block";
+      }
+      // If no token, stay on settings
+      if (!r.apiToken) showSettings();
     });
+  } else {
+    showSettings();
+  }
+});
+
+saveTokenBtn.addEventListener("click", () => {
+  const token = tokenInput.value.trim();
+  if (!token) {
+    tokenSaveStatus.style.color = "#c0392b";
+    tokenSaveStatus.textContent = "Please paste your token first.";
     return;
   }
-  init().finally(() => startUrlPolling());
+  chrome.storage.local.set({ apiToken: token }, () => {
+    tokenSaveStatus.style.color = "#1e7e34";
+    tokenSaveStatus.textContent = "Saved!";
+    updateTokenStatusBadge(true);
+    tokenInput.value = "";
+    tokenInput.placeholder = "Enter new token to replace";
+    setTimeout(() => {
+      tokenSaveStatus.textContent = "";
+      hideSettings();
+      mainContent.style.display = "block";
+      init().finally(() => startUrlPolling());
+    }, 800);
+  });
+});
+
+clearTokenBtn.addEventListener("click", () => {
+  chrome.storage.local.remove("apiToken", () => {
+    tokenInput.value = "";
+    updateTokenStatusBadge(false);
+    tokenInput.placeholder = "Paste your Personal API Token";
+    tokenSaveStatus.style.color = "#888";
+    tokenSaveStatus.textContent = "Token cleared.";
+    setTimeout(() => { tokenSaveStatus.textContent = ""; }, 1500);
+  });
+});
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
+chrome.storage.local.get(["apiToken"], (result) => {
+  if (!result.apiToken) {
+    showSettings();
+  } else {
+    init().finally(() => startUrlPolling());
+  }
 });
 
 // ── Draft button ─────────────────────────────────────────────────────────────
