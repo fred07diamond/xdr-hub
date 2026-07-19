@@ -114,6 +114,10 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 14,
+      sql: `ALTER TABLE icp_sources ADD COLUMN icp_text TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );
