@@ -1,13 +1,14 @@
 // Service worker — all cross-origin fetch calls live here to avoid CORS.
 // The panel sends messages here; we call the outreach app and reply.
 
+const APP_URL = "https://builder-li.netlify.app/outreach";
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120000; // 2 minutes max
 
 async function getSettings() {
-  const result = await chrome.storage.local.get(["appUrl", "apiToken"]);
+  const result = await chrome.storage.local.get(["apiToken"]);
   return {
-    appUrl: (result.appUrl || "").replace(/\/$/, ""),
+    appUrl: APP_URL,
     apiToken: result.apiToken || "",
   };
 }
