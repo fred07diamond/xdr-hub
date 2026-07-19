@@ -116,7 +116,7 @@ export default runMigrations(
     },
     {
       version: 14,
-      sql: `ALTER TABLE icp_sources ADD COLUMN icp_text TEXT`,
+      sql: `ALTER TABLE icp_sources ADD COLUMN IF NOT EXISTS icp_text TEXT`,
     },
   ],
   { table: "outreach_migrations" },
