@@ -1,0 +1,31 @@
+[build]
+  command = "npx @agent-native/core@latest deploy --preset netlify --build-only"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+  NPM_CONFIG_PRODUCTION = "false"
+
+[functions."*"]
+  timeout = 75
+
+# Root → Dispatch (workspace control plane)
+[[redirects]]
+  from = "/"
+  to = "/dispatch/overview"
+  status = 302
+
+[[redirects]]
+  from = "/overview"
+  to = "/dispatch/overview"
+  status = 302
+
+[[redirects]]
+  from = "/login"
+  to = "/dispatch/login"
+  status = 302
+
+[[redirects]]
+  from = "/vault"
+  to = "/dispatch/vault"
+  status = 302

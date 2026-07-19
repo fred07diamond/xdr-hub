@@ -1,0 +1,54 @@
+# Builder.LI Outreach App
+
+Purpose: receive a captured LinkedIn profile from the Builder.LI
+Chrome extension, score the person against the user's ICP (read
+live from selected Notion docs), and draft a personalized
+connection note the user will send by hand. See docs/BUILD-GUIDE.md
+and docs/DECISIONS.md.
+
+## Core principle
+Builder.LI reads and drafts. It never sends anything to LinkedIn,
+never clicks Connect, never automates the browser. The extension
+captures the profile the user is already viewing and displays a
+draft; the user sends manually. Never propose, design, or add
+auto-send, auto-navigation, headless browsing, or any bot that
+acts on LinkedIn. These are settled decisions (see DECISIONS.md),
+not open questions.
+
+## What the agent does on each captured profile
+1. Read the captured fields (name, headline, role, company,
+   about, recent activity).
+2. Load the active ICP document: call get-icp-sources — the
+   `icpText` field holds the user's uploaded ICP document. If
+   icpText is null, draft from the profile alone and flag
+   "No ICP document uploaded" in the fit reason.
+3. Score fit against the ICP document. Return a short verdict
+   (strong / possible / weak) with one sentence of reasoning that
+   references specific criteria from the ICP.
+4. Draft one connection note that references something specific
+   and true from the profile, in the voice and targeting defined
+   in the ICP doc. Respect LinkedIn's note limit: 300 chars on
+   Premium/Sales Navigator, about 200 on free accounts.
+
+## When the user shares an ICP document
+If the user pastes text or attaches one or more files (.txt, .md,
+or PDF) containing their ICP criteria:
+1. Extract all the text content. If multiple files are attached,
+   concatenate them in order with a blank line between each.
+2. Call save-icp-document with the combined full text.
+3. Confirm what was saved: echo a short summary of the key
+   criteria you found (target role, company size, signals, etc.)
+   so the user can verify it was read correctly.
+
+## Hard rules
+- Never fabricate facts about a prospect. Personalize only from
+  what the capture actually contains. If a field is missing, work
+  with what is there.
+- One note plus at most one short follow-up. No bulk sequences.
+- Keep usage human-paced; the extension reads one page per click.
+- Do not call HubSpot, Apollo, or any sending service.
+
+## Key files
+- docs/BUILD-GUIDE.md: build steps
+- docs/DECISIONS.md: settled decisions and why-nots
+- server/db/schema.ts: prospects, send_history, icpSources (icpText column)

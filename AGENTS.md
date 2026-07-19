@@ -207,3 +207,65 @@ When asked to repair workspace org or A2A configuration:
 5. Never use `DROP`, `TRUNCATE`, destructive `ALTER`, or an unscoped
    `DELETE`. Do not rotate `A2A_SECRET` without updating every app that trusts
    it.
+
+---
+
+# Builder.LI
+
+A LinkedIn outreach cockpit built on this workspace. Two pieces:
+
+1. **Chrome extension (thin).** Reads the visible LinkedIn profile on a button click and sends fields to the platform. Displays the drafted note the platform returns. Holds no logic and no ICP data.
+2. **`outreach` app (the brain).** Receives the captured profile, scores against the user's ICP (read live from Notion), and drafts a personalized connection note.
+
+Loop: `open a LinkedIn profile → extension reads it → click "Draft note" → platform scores fit + drafts using ICP docs pulled live from Notion → draft returns to the extension panel → user clicks Connect, pastes, sends`
+
+See `docs/BUILD-GUIDE.md` for step-by-step build instructions and `docs/DECISIONS.md` for settled decisions.
+
+## Hard boundaries (never violate)
+
+LinkedIn's official API does not expose connection requests, DMs, or comments to third parties. Any auto-send is browser emulation that violates LinkedIn's User Agreement and risks account restriction.
+
+1. **Builder.LI never sends anything to LinkedIn.** It reads and drafts. The human performs every send.
+2. **The extension only reads the page the user is already viewing and displays a draft.** It never clicks Connect, never submits, never auto-navigates, never loops.
+3. **Never design, add, or suggest** auto-send, headless browsing, a bot that clicks, a proxy sender, or any third-party LinkedIn sending tool. If asked, explain the boundary and offer safe alternatives.
+4. **Usage stays human-paced.** One profile, one click, reads one page.
+5. **Never fabricate facts about a prospect.** Personalize only from what the capture actually contains.
+
+These are settled decisions — see `docs/DECISIONS.md`.
+
+## Constraints
+
+- No API keys. AI engine runs through Connect Builder (Agent-Native tokens). Notion connects via OAuth.
+- No raw model calls inside actions. All AI runs through the `outreach` agent.
+- No HubSpot API, no Apollo.
+
+## Architecture
+
+1. Extension content script scrapes the profile, hands fields to the service worker.
+2. Service worker POSTs to `capture-profile` (`publicAgent: { expose: true }`).
+3. `capture-profile` upserts a `prospects` row (status `captured`) and triggers agent drafting.
+4. Agent runs the `profile-draft` skill: reads selected Notion page IDs, fetches each via Notion MCP, combines into ICP context, scores fit, drafts note, writes results back (status `drafted`).
+5. Extension polls `get-draft` until status is `drafted`, shows fit verdict and note with copy button.
+6. User sends by hand → "Mark sent" → `mark-sent` → writes `send_history`.
+
+## Data model (`apps/outreach/server/db/schema.ts`)
+
+- **prospects**: id, profile_url (unique), name, headline, role, company, about, recent_activity, fit_verdict, fit_reason, draft_note, draft_follow_up, status (captured / drafted / sent), created_at, updated_at
+- **send_history**: id, profile_url, sent_at
+- **ICP source selection**: stored in app-state as an array of Notion page IDs + titles
+
+## Actions (`apps/outreach/actions/`)
+
+| Action | Purpose | Notes |
+|---|---|---|
+| `capture-profile` | Ingest captured profile, trigger drafting | `publicAgent: { expose: true }` |
+| `get-draft` | Return draft + status for polling | GET, readOnly, publicAgent |
+| `mark-sent` | Record a manual send | publicAgent; writes send_history |
+| `check-already-contacted` | Warn on already-contacted profiles | GET, readOnly, publicAgent |
+| `search-notion-docs` | Keyword search Notion to populate picker | calls Notion MCP search |
+| `set-icp-sources` | Save selected Notion page IDs | |
+| `get-icp-sources` | Read current selection | GET, readOnly |
+
+## Chrome extension (`apps/outreach/extension/`)
+
+Manifest V3. Files: `manifest.json`, `content.js` (scrapes profile; keep selectors in one labeled block), `panel.html` + `panel.js` (side panel: Draft button, fit verdict, note textarea with copy, follow-up, Mark sent), `background.js` (service worker: POSTs to `capture-profile`, polls `get-draft`, reads app URL from storage), `options.html` + `options.js` (save the app URL).

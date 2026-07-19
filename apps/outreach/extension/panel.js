@@ -1,0 +1,338 @@
+const draftBtn = document.getElementById("draft-btn");
+const statusEl = document.getElementById("status");
+const verdictSection = document.getElementById("verdict-section");
+const verdictBadge = document.getElementById("verdict-badge");
+const fitReason = document.getElementById("fit-reason");
+const noteText = document.getElementById("note-text");
+const charCount = document.getElementById("char-count");
+const followupSection = document.getElementById("followup-section");
+const followupText = document.getElementById("followup-text");
+const sentSection = document.getElementById("sent-section");
+const markSentBtn = document.getElementById("mark-sent-btn");
+const personaChip = document.getElementById("persona-chip");
+const personaIndicator = document.getElementById("persona-indicator");
+const personaNameLabel = document.getElementById("persona-name-label");
+const alreadyContacted = document.getElementById("already-contacted");
+const notLinkedin = document.getElementById("not-linkedin");
+const mainContent = document.getElementById("main-content");
+const profileLoading = document.getElementById("profile-loading");
+const profileData = document.getElementById("profile-data");
+const profileFullName = document.getElementById("profile-full-name");
+const profileHeadlineText = document.getElementById("profile-headline-text");
+const profileMeta = document.getElementById("profile-meta");
+const profileLocation = document.getElementById("profile-location");
+
+let currentProfileUrl = null;
+let cachedScrape = null; // reuse in draftBtn click
+let activeTabId = null;
+let lastRenderedName = null; // name last shown; used to detect stale DOM after SPA nav
+
+// Returns true for both regular LinkedIn profiles and Sales Navigator lead pages.
+function isProfileUrl(url) {
+  return (
+    url.includes("linkedin.com/in/") ||
+    url.includes("linkedin.com/sales/lead/") ||
+    url.includes("linkedin.com/sales/people/")
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+function updateCharCount() {
+  const len = noteText.value.length;
+  charCount.textContent = `${len} / 300 chars`;
+  charCount.classList.toggle("over", len > 300);
+}
+
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = btn.id === "copy-note-btn" ? "Copy note" : "Copy follow-up";
+      btn.classList.remove("copied");
+    }, 2000);
+  });
+}
+
+function showVerdict(draft) {
+  const v = draft.fitVerdict || "possible";
+  verdictBadge.textContent = v;
+  verdictBadge.className = `verdict-${v}`;
+  fitReason.textContent = draft.fitReason || "";
+  noteText.value = draft.draftNote || "";
+  updateCharCount();
+
+  if (draft.personaColor && draft.personaName) {
+    personaIndicator.style.background = draft.personaColor;
+    personaNameLabel.textContent = draft.personaName;
+    personaChip.style.display = "inline-flex";
+  } else {
+    personaChip.style.display = "none";
+  }
+
+  if (draft.draftFollowUp) {
+    followupText.value = draft.draftFollowUp;
+    followupSection.style.display = "block";
+  }
+
+  verdictSection.style.display = "block";
+  sentSection.style.display = "block";
+}
+
+function renderProfileCard(data) {
+  lastRenderedName = data.name || null;
+  profileLoading.style.display = "none";
+
+  profileFullName.textContent = data.name || "Unknown";
+  profileHeadlineText.textContent = data.headline || "";
+
+  profileMeta.innerHTML = "";
+  if (data.role && data.company && data.role !== data.company) {
+    profileMeta.innerHTML = `<span class="meta-chip role-chip">${data.role}</span><span class="meta-chip company-chip">${data.company}</span>`;
+  } else if (data.company) {
+    profileMeta.innerHTML = `<span class="meta-chip company-chip">${data.company}</span>`;
+  } else if (data.role) {
+    profileMeta.innerHTML = `<span class="meta-chip role-chip">${data.role}</span>`;
+  }
+
+  if (data.location) {
+    profileLocation.textContent = data.location;
+    profileLocation.style.display = "block";
+  } else {
+    profileLocation.style.display = "none";
+  }
+
+  profileData.style.display = "block";
+}
+
+// ── Scrape helper: injects content.js if not yet present, retries once ──────
+
+async function scrapeTab(tabId, { retryMs = 0, maxRetries = 1, prevName = null, initialDelayMs = 0 } = {}) {
+  const attempt = async () => {
+    try {
+      return await chrome.tabs.sendMessage(tabId, { type: "SCRAPE_PROFILE" });
+    } catch {
+      // Content script not running — inject then retry.
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+        return await chrome.tabs.sendMessage(tabId, { type: "SCRAPE_PROFILE" });
+      } catch {
+        return null;
+      }
+    }
+  };
+
+  // When called after a SPA navigation, LinkedIn briefly renders a cached copy of
+  // a previously-viewed profile before loading the real one. Both document.title
+  // and the DOM h1 update to the cached name simultaneously, so domStale=false
+  // and a prevName check only catches the immediately-prior profile. Waiting
+  // 800 ms gives LinkedIn time to finish rendering the actual new profile.
+  if (initialDelayMs > 0) await new Promise((r) => setTimeout(r, initialDelayMs));
+
+  let result = await attempt();
+  // Retry while: content script not ready, name missing, domStale (title≠h1),
+  // name matches previous profile, OR name is present but LinkedIn hasn't finished
+  // rendering the rest of the profile card (headline + company both null).
+  for (let i = 0; i < maxRetries; i++) {
+    const sameName = prevName && result?.data?.name &&
+      result.data.name.toLowerCase().trim() === prevName.toLowerCase().trim();
+    const cardEmpty = Boolean(result?.data?.name) && !result?.data?.headline && !result?.data?.company;
+    const needsRetry = !result?.ok || !result?.data?.name || result?.data?.domStale || sameName || cardEmpty;
+    if (!needsRetry) break;
+    await new Promise((r) => setTimeout(r, retryMs));
+    result = await attempt() ?? result;
+  }
+  return result;
+}
+
+// ── Background enrichment ────────────────────────────────────────────────────
+// LinkedIn lazy-loads the Experience section. We poll after the initial scrape
+// and silently update the card as soon as the section appears in the DOM.
+async function startEnrichment() {
+  const profileUrl = currentProfileUrl;
+  for (let i = 0; i < 8; i++) {
+    await new Promise((r) => setTimeout(r, 400));
+    if (currentProfileUrl !== profileUrl || !activeTabId) return;
+    const result = await scrapeTab(activeTabId);
+    if (!result?.ok || !result.data) continue;
+    if (result.data.role && !cachedScrape?.role) {
+      cachedScrape = result.data;
+      renderProfileCard(result.data);
+      return;
+    }
+  }
+}
+
+// ── Reset panel state for a new profile ─────────────────────────────────────
+
+function resetPanel() {
+  currentProfileUrl = null;
+  cachedScrape = null;
+
+  // Restore the on-LinkedIn view (may have been hidden when navigating away).
+  notLinkedin.style.display = "none";
+  mainContent.style.display = "block";
+
+  profileLoading.textContent = "Reading profile…";
+  profileLoading.style.display = "block";
+  profileData.style.display = "none";
+  profileFullName.textContent = "";
+  profileHeadlineText.textContent = "";
+  profileMeta.innerHTML = "";
+  profileLocation.style.display = "none";
+
+  alreadyContacted.style.display = "none";
+  draftBtn.disabled = true;
+  setStatus("");
+  verdictSection.style.display = "none";
+  personaChip.style.display = "none";
+}
+
+// ── Init: scrape immediately on open ────────────────────────────────────────
+
+async function init({ navTriggered = false } = {}) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const url = tab?.url || "";
+
+  if (!isProfileUrl(url)) {
+    notLinkedin.style.display = "block";
+    mainContent.style.display = "none";
+    return;
+  }
+
+  currentProfileUrl = url.split("?")[0];
+  activeTabId = tab.id;
+
+  // navTriggered: wait 800 ms before the first scrape so LinkedIn finishes loading
+  // the real profile (it briefly renders a cached copy after pushState).
+  const scrapeResult = await scrapeTab(tab.id, {
+    retryMs: 600,
+    maxRetries: 3,
+    prevName: lastRenderedName,
+    initialDelayMs: navTriggered ? 800 : 0,
+  });
+  if (scrapeResult?.ok && scrapeResult.data) {
+    cachedScrape = scrapeResult.data;
+    renderProfileCard(scrapeResult.data);
+    if (!scrapeResult.data.role) startEnrichment();
+  } else {
+    profileLoading.textContent = "Could not read profile data.";
+  }
+
+  draftBtn.disabled = false;
+
+  // Non-critical cosmetic check — fire-and-forget so isInitializing drops now,
+  // not after the 3 s timeout. Guard against showing a banner for the wrong profile.
+  const urlForCheck = currentProfileUrl;
+  Promise.race([
+    chrome.runtime.sendMessage({ type: "CHECK_CONTACTED", profileUrl: urlForCheck }),
+    new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+  ]).then((contactedRes) => {
+    if (currentProfileUrl === urlForCheck && contactedRes?.contacted) {
+      alreadyContacted.style.display = "block";
+    }
+  }).catch(() => {});
+}
+
+init().finally(() => startUrlPolling());
+
+// ── Draft button ─────────────────────────────────────────────────────────────
+
+draftBtn.addEventListener("click", async () => {
+  draftBtn.disabled = true;
+  verdictSection.style.display = "none";
+  setStatus("Reading profile…");
+
+  try {
+    let scrapeData = cachedScrape;
+
+    // Re-scrape only if initial scrape failed on open
+    if (!scrapeData) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const scrapeResult = await scrapeTab(tab.id, { retryMs: 600, maxRetries: 4 });
+      if (!scrapeResult?.ok) throw new Error("Could not read the profile. Make sure you're on a LinkedIn profile page.");
+      scrapeData = scrapeResult.data;
+      renderProfileCard(scrapeData);
+    }
+
+    setStatus("Sending to Builder.LI… (the agent is drafting, this takes ~30s)");
+
+    const result = await chrome.runtime.sendMessage({
+      type: "DRAFT_REQUEST",
+      data: scrapeData,
+    });
+
+    if (!result?.ok) throw new Error(result?.error || "Unknown error");
+
+    setStatus("");
+    showVerdict(result.draft);
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+    draftBtn.disabled = false;
+  }
+});
+
+// ── Copy buttons ─────────────────────────────────────────────────────────────
+
+noteText.addEventListener("input", updateCharCount);
+
+document.getElementById("copy-note-btn").addEventListener("click", (e) => {
+  copyText(noteText.value, e.currentTarget);
+});
+
+document.getElementById("copy-followup-btn").addEventListener("click", (e) => {
+  copyText(followupText.value, e.currentTarget);
+});
+
+// ── Poll for URL changes (LinkedIn SPA navigations don't reliably fire onUpdated)
+let urlPollTimer = null;
+let isInitializing = false; // guards against re-entrant init during SPA nav
+
+function startUrlPolling() {
+  if (urlPollTimer) clearInterval(urlPollTimer);
+  urlPollTimer = setInterval(async () => {
+    if (isInitializing) return;
+    let tab;
+    try {
+      [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    } catch {
+      return; // Tab query failed transiently — try again next tick
+    }
+    if (!tab) return;
+    const url = tab.url || "";
+    const newProfileUrl = url.split("?")[0];
+    if (isProfileUrl(url) && newProfileUrl !== currentProfileUrl) {
+      isInitializing = true;
+      resetPanel();
+      init({ navTriggered: true }).finally(() => { isInitializing = false; });
+    } else if (!isProfileUrl(url) && currentProfileUrl) {
+      currentProfileUrl = null;
+      notLinkedin.style.display = "block";
+      mainContent.style.display = "none";
+    }
+  }, 750);
+}
+
+// ── Mark sent ────────────────────────────────────────────────────────────────
+
+markSentBtn.addEventListener("click", async () => {
+  if (!currentProfileUrl || markSentBtn.classList.contains("sent")) return;
+
+  markSentBtn.disabled = true;
+  const result = await chrome.runtime.sendMessage({
+    type: "MARK_SENT",
+    profileUrl: currentProfileUrl,
+  });
+
+  if (result?.ok) {
+    markSentBtn.textContent = "✓ Sent";
+    markSentBtn.classList.add("sent");
+    alreadyContacted.style.display = "block";
+  } else {
+    markSentBtn.disabled = false;
+    setStatus("Failed to mark as sent. Try again.");
+  }
+});

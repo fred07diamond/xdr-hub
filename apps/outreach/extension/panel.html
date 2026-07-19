@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Builder.LI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+      background: #fff;
+      padding: 16px;
+      min-height: 100vh;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .header h1 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0a66c2;
+      letter-spacing: -0.2px;
+    }
+
+    /* Profile card */
+    #profile-card {
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+
+    #profile-loading {
+      font-size: 12px;
+      color: #888;
+      text-align: center;
+      padding: 8px 0;
+    }
+
+    #profile-data { display: none; }
+
+    #profile-full-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 3px;
+    }
+
+    #profile-headline-text {
+      font-size: 12px;
+      color: #444;
+      line-height: 1.4;
+      margin-bottom: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    #profile-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    #profile-location {
+      font-size: 11px;
+      color: #666;
+      margin-top: 5px;
+      display: none;
+    }
+
+    .meta-chip {
+      display: inline-block;
+      border-radius: 12px;
+      padding: 2px 9px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .role-chip {
+      background: #e9f0fb;
+      color: #0a66c2;
+    }
+    .company-chip {
+      background: #e6f4ea;
+      color: #1e7e34;
+    }
+
+    #already-contacted {
+      background: #fff8e1;
+      border: 1px solid #f9c02d;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #7a5800;
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    #draft-btn {
+      width: 100%;
+      padding: 10px;
+      background: #0a66c2;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #draft-btn:hover:not(:disabled) { background: #004182; }
+    #draft-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+    #status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #555;
+      min-height: 16px;
+      text-align: center;
+    }
+
+    #verdict-section {
+      margin-top: 16px;
+      display: none;
+    }
+
+    .verdict-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    #verdict-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .verdict-strong { background: #e6f4ea; color: #1e7e34; }
+    .verdict-possible { background: #fff3e0; color: #b45309; }
+    .verdict-weak { background: #fce8e8; color: #c0392b; }
+
+    #fit-reason {
+      font-size: 12px;
+      color: #444;
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    #note-section, #followup-section {
+      margin-bottom: 12px;
+    }
+
+    textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+      resize: vertical;
+      font-family: inherit;
+      color: #1a1a1a;
+    }
+    textarea:focus { outline: none; border-color: #0a66c2; }
+
+    #char-count {
+      font-size: 11px;
+      color: #888;
+      text-align: right;
+      margin-top: 2px;
+    }
+    #char-count.over { color: #c0392b; font-weight: 700; }
+
+    .copy-btn {
+      margin-top: 6px;
+      padding: 6px 12px;
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.1s;
+    }
+    .copy-btn:hover { background: #e5e7eb; }
+    .copy-btn.copied { background: #e6f4ea; border-color: #1e7e34; color: #1e7e34; }
+
+    #sent-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      display: none;
+    }
+
+    #mark-sent-btn {
+      width: 100%;
+      padding: 9px;
+      background: #fff;
+      color: #1a1a1a;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      font-family: inherit;
+    }
+    #mark-sent-btn:hover { border-color: #0a66c2; color: #0a66c2; }
+    #mark-sent-btn.sent { background: #e6f4ea; border-color: #1e7e34; color: #1e7e34; cursor: default; }
+
+    #not-linkedin {
+      padding: 24px 0;
+      text-align: center;
+      color: #888;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Builder.LI</h1>
+  </div>
+
+  <div id="not-linkedin" style="display:none">
+    Open a LinkedIn profile<br />(<code>linkedin.com/in/…</code>)<br />to get started.
+  </div>
+
+  <div id="main-content">
+    <!-- Profile card: auto-populated on open -->
+    <div id="profile-card">
+      <div id="profile-loading">Reading profile…</div>
+      <div id="profile-data">
+        <div id="profile-full-name"></div>
+        <div id="profile-headline-text"></div>
+        <div id="profile-meta"></div>
+        <div id="profile-location"></div>
+      </div>
+    </div>
+
+    <div id="already-contacted">⚠️ Already contacted — you sent a request to this person.</div>
+
+    <button id="draft-btn" disabled>Draft note</button>
+    <div id="status"></div>
+
+    <div id="verdict-section">
+      <div class="verdict-row">
+        <div id="verdict-badge"></div>
+        <span id="persona-chip" style="display:none; align-items:center; gap:5px; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:500; background:#f3f4f6; color:#555;">
+          <span id="persona-indicator" style="width:8px; height:8px; border-radius:50%; flex-shrink:0; display:inline-block;"></span>
+          <span id="persona-name-label"></span>
+        </span>
+      </div>
+      <div id="fit-reason"></div>
+
+      <div id="note-section">
+        <label>Connection note</label>
+        <textarea id="note-text" rows="5"></textarea>
+        <div id="char-count"></div>
+        <button class="copy-btn" id="copy-note-btn">Copy note</button>
+      </div>
+
+      <div id="followup-section" style="display:none">
+        <label>Follow-up (after they accept)</label>
+        <textarea id="followup-text" rows="3"></textarea>
+        <button class="copy-btn" id="copy-followup-btn">Copy follow-up</button>
+      </div>
+
+      <div id="sent-section">
+        <button id="mark-sent-btn">Mark as sent</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="panel.js"></script>
+</body>
+</html>
