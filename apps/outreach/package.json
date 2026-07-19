@@ -1,8 +1,8 @@
 {
-  "name": "chat",
-  "displayName": "Chat",
+  "name": "outreach",
+  "displayName": "Builder.LI",
   "private": true,
-  "description": "Minimal chat-first agent-native app template.",
+  "description": "LinkedIn outreach cockpit — score prospects against your ICP and draft personalized connection notes.",
   "type": "module",
   "scripts": {
     "dev": "agent-native dev --open",
