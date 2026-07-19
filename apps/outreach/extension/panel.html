@@ -240,11 +240,43 @@
       font-size: 12px;
       line-height: 1.6;
     }
+
+    #setup-prompt {
+      padding: 28px 8px 0;
+      text-align: center;
+    }
+    #setup-prompt .setup-icon { font-size: 30px; margin-bottom: 12px; }
+    #setup-prompt .setup-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px; }
+    #setup-prompt .setup-body { font-size: 12px; color: #555; line-height: 1.7; margin-bottom: 20px; }
+    #setup-prompt .setup-body a { color: #0a66c2; text-decoration: none; }
+    #open-options-btn {
+      width: 100%;
+      padding: 10px;
+      background: #0a66c2;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #open-options-btn:hover { background: #004182; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Builder.LI</h1>
+  </div>
+
+  <div id="setup-prompt" style="display:none">
+    <div class="setup-icon">🔑</div>
+    <div class="setup-title">Setup required</div>
+    <div class="setup-body">
+      Sign in to your <a href="https://builder-li.netlify.app/outreach/settings" target="_blank">Builder.LI app</a>
+      and copy your <strong>Personal API Token</strong> from Settings.
+    </div>
+    <button id="open-options-btn">Open Extension Settings</button>
   </div>
 
   <div id="not-linkedin" style="display:none">

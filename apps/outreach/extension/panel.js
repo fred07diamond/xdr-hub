@@ -237,7 +237,18 @@ async function init({ navTriggered = false } = {}) {
   }).catch(() => {});
 }
 
-init().finally(() => startUrlPolling());
+// Show setup screen if no API token configured yet
+chrome.storage.local.get(["apiToken"], (result) => {
+  if (!result.apiToken) {
+    document.getElementById("setup-prompt").style.display = "block";
+    mainContent.style.display = "none";
+    document.getElementById("open-options-btn").addEventListener("click", () => {
+      chrome.runtime.openOptionsPage();
+    });
+    return;
+  }
+  init().finally(() => startUrlPolling());
+});
 
 // ── Draft button ─────────────────────────────────────────────────────────────
 
