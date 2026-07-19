@@ -79,11 +79,12 @@ export default runMigrations(
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
         )`,
-        `INSERT OR IGNORE INTO prospects_v2
+        `INSERT INTO prospects_v2
           SELECT id, NULL as owner_email, profile_url, name, headline, role, company, about,
                  recent_activity, fit_verdict, fit_reason, draft_note, draft_follow_up,
                  persona_id, persona_name, persona_color, status, created_at, updated_at
-          FROM prospects`,
+          FROM prospects
+          ON CONFLICT DO NOTHING`,
         `DROP TABLE IF EXISTS prospects`,
         `ALTER TABLE prospects_v2 RENAME TO prospects`,
         `CREATE UNIQUE INDEX IF NOT EXISTS prospects_url_owner ON prospects(profile_url, COALESCE(owner_email, ''))`,
