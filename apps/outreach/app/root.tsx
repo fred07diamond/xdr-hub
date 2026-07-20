@@ -158,10 +158,16 @@ function InviteOnlyGate({ children }: { children: React.ReactNode }) {
           </span>
           <h1 className="text-lg font-semibold">{APP_TITLE}</h1>
         </div>
-        <p className="mb-6 text-sm text-muted-foreground">
-          This workspace is invite-only. Ask your admin to invite you from
-          Settings → Team.
-        </p>
+        {pendingInvitations.length === 0 ? (
+          <p className="mb-6 text-sm text-muted-foreground">
+            This workspace is invite-only. Ask your admin to invite you from
+            Settings → Team.
+          </p>
+        ) : (
+          <p className="mb-4 text-sm text-muted-foreground">
+            Accept your invitation below to get started.
+          </p>
+        )}
 
         {pendingInvitations.length > 0 && (
           <div className="space-y-2">
