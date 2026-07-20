@@ -2,10 +2,12 @@ import {
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client";
+import { useOrgRole } from "@agent-native/core/client/org";
 import {
   IconCheck,
   IconFileText,
   IconLoader2,
+  IconLock,
   IconPlus,
   IconTarget,
   IconTrash,
@@ -92,9 +94,11 @@ function ColorPicker({
 
 function PersonaCard({
   persona,
+  isAdmin,
   onRefetch,
 }: {
   persona: Persona;
+  isAdmin: boolean;
   onRefetch: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -185,7 +189,7 @@ function PersonaCard({
         {/* Name + active badge */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            {editingName ? (
+            {isAdmin && editingName ? (
               <input
                 autoFocus
                 value={nameDraft}
@@ -197,7 +201,7 @@ function PersonaCard({
                 }}
                 className="w-full rounded border border-ring bg-background px-1.5 py-0.5 text-sm font-semibold text-foreground focus:outline-none"
               />
-            ) : (
+            ) : isAdmin ? (
               <button
                 type="button"
                 onClick={() => setEditingName(true)}
@@ -206,6 +210,8 @@ function PersonaCard({
               >
                 {persona.name}
               </button>
+            ) : (
+              <p className="text-sm font-semibold text-foreground truncate">{persona.name}</p>
             )}
           </div>
           {isActive && (
@@ -237,11 +243,11 @@ function PersonaCard({
           </p>
         )}
 
-        {/* Color picker */}
-        <ColorPicker value={persona.color} onChange={handleColorChange} />
+        {/* Color picker — admin only */}
+        {isAdmin && <ColorPicker value={persona.color} onChange={handleColorChange} />}
 
         {/* Drop zone hint when no doc */}
-        {!persona.summary && (
+        {!persona.summary && isAdmin && (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
@@ -261,68 +267,80 @@ function PersonaCard({
             {uploading ? "Uploading…" : "Drop or click to upload doc"}
           </div>
         )}
+        {!persona.summary && !isAdmin && (
+          <p className="text-xs text-muted-foreground/50 italic">No document uploaded yet</p>
+        )}
       </div>
 
       {/* Footer actions */}
       <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          {!isActive && (
-            <button
-              type="button"
-              onClick={handleSetActive}
-              disabled={setActive.isPending}
-              style={setActive.isPending ? {} : { borderColor: persona.color, color: persona.color }}
-              className="rounded-full border px-3 py-1 text-xs font-semibold transition-colors hover:opacity-80 disabled:opacity-40"
-            >
-              {setActive.isPending ? "Setting…" : "Set active"}
-            </button>
-          )}
-          {persona.wordCount > 0 && (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              Replace doc
-            </button>
-          )}
-        </div>
-
-        {/* Delete */}
-        <div>
-          {confirmDelete ? (
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deletePersona.isPending}
-                className="rounded px-2 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
-              >
-                {deletePersona.isPending ? "Deleting…" : "Confirm"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted"
-              >
-                <IconX size={12} />
-              </button>
+        {isAdmin ? (
+          <>
+            <div className="flex items-center gap-2">
+              {!isActive && (
+                <button
+                  type="button"
+                  onClick={handleSetActive}
+                  disabled={setActive.isPending}
+                  style={setActive.isPending ? {} : { borderColor: persona.color, color: persona.color }}
+                  className="rounded-full border px-3 py-1 text-xs font-semibold transition-colors hover:opacity-80 disabled:opacity-40"
+                >
+                  {setActive.isPending ? "Setting…" : "Set active"}
+                </button>
+              )}
+              {persona.wordCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Replace doc
+                </button>
+              )}
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-destructive"
-              aria-label="Delete persona"
-            >
-              <IconTrash size={14} />
-            </button>
-          )}
-        </div>
+
+            {/* Delete */}
+            <div>
+              {confirmDelete ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deletePersona.isPending}
+                    className="rounded px-2 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+                  >
+                    {deletePersona.isPending ? "Deleting…" : "Confirm"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted"
+                  >
+                    <IconX size={12} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-destructive"
+                  aria-label="Delete persona"
+                >
+                  <IconTrash size={14} />
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
+            <IconLock size={11} />
+            Managed by admin
+          </div>
+        )}
       </div>
 
-      {/* Drag overlay when doc exists */}
-      {persona.wordCount > 0 && (
+      {/* Drag overlay when doc exists — admin only */}
+      {isAdmin && persona.wordCount > 0 && (
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
@@ -467,13 +485,15 @@ function NewPersonaPanel({
 // ── Route ────────────────────────────────────────────────────────────────────
 
 export default function IcpRoute() {
+  const { canManageOrg } = useOrgRole();
+  const isAdmin = canManageOrg;
+
   const { data, isLoading, refetch } = useActionQuery("list-icp-personas", {}, {
     refetchInterval: 5000,
   });
   const [creating, setCreating] = useState(false);
 
   const personas: Persona[] = (data as any)?.personas ?? [];
-  const activePersona = personas.find((p) => p.isActive === 1);
 
   return (
     <div className="flex h-full flex-col">
@@ -485,18 +505,22 @@ export default function IcpRoute() {
             {isLoading
               ? "Loading…"
               : personas.length === 0
-                ? "No personas yet — create one to start scoring prospects"
+                ? isAdmin
+                  ? "No personas yet — create one to start scoring prospects"
+                  : "No personas yet — ask an admin to create one"
                 : `${personas.length} persona${personas.length === 1 ? "" : "s"} · auto-detected per prospect`}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <IconPlus size={13} />
-          New persona
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <IconPlus size={13} />
+            New persona
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -507,35 +531,39 @@ export default function IcpRoute() {
           </div>
         ) : personas.length === 0 ? (
           <div
-            className="flex h-48 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border text-center transition-colors hover:border-border/60 hover:bg-muted/20"
-            onClick={() => setCreating(true)}
+            className={`flex h-48 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border text-center transition-colors ${isAdmin ? "cursor-pointer hover:border-border/60 hover:bg-muted/20" : ""}`}
+            onClick={isAdmin ? () => setCreating(true) : undefined}
           >
             <IconTarget size={32} className="text-muted-foreground/30" />
             <div>
               <p className="text-sm font-medium text-muted-foreground">No personas yet</p>
               <p className="mt-1 text-xs text-muted-foreground/60">
-                Create a persona for each type of prospect you target
+                {isAdmin
+                  ? "Create a persona for each type of prospect you target"
+                  : "Ask an admin to set up personas"}
               </p>
             </div>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {personas.map((p) => (
-              <PersonaCard key={p.id} persona={p} onRefetch={refetch} />
+              <PersonaCard key={p.id} persona={p} isAdmin={isAdmin} onRefetch={refetch} />
             ))}
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border text-muted-foreground/50 transition-colors hover:border-border hover:text-muted-foreground"
-            >
-              <IconPlus size={22} />
-              <span className="text-xs font-medium">New persona</span>
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border text-muted-foreground/50 transition-colors hover:border-border hover:text-muted-foreground"
+              >
+                <IconPlus size={22} />
+                <span className="text-xs font-medium">New persona</span>
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {creating && (
+      {isAdmin && creating && (
         <NewPersonaPanel
           onClose={() => setCreating(false)}
           onCreated={refetch}
