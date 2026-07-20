@@ -5,15 +5,17 @@ import { getDb } from "../server/db/index.js";
 import { feedback } from "../server/db/schema.js";
 
 export default defineAction({
-  description: "Submit a free-text feedback message about the app.",
+  description: "Submit feedback about the app with optional sentiment and written details.",
   schema: z.object({
+    sentiment: z.enum(["positive", "negative"]).nullish(),
     message: z.string().min(1).max(2000),
   }),
-  run: async ({ message }, ctx) => {
+  run: async ({ sentiment, message }, ctx) => {
     const db = getDb();
     await db.insert(feedback).values({
       id: nanoid(),
       userEmail: ctx?.userEmail ?? null,
+      sentiment: sentiment ?? null,
       message,
       createdAt: new Date().toISOString(),
     });

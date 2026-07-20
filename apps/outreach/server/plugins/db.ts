@@ -126,6 +126,10 @@ export default runMigrations(
         updated_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 16,
+      sql: `ALTER TABLE feedback ADD COLUMN IF NOT EXISTS sentiment TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

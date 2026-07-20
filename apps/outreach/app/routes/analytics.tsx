@@ -1,9 +1,18 @@
 import { useActionQuery } from "@agent-native/core/client";
-import { IconChartBar, IconLoader2 } from "@tabler/icons-react";
+import { IconChartBar, IconLoader2, IconMessageReport, IconThumbDown, IconThumbUp } from "@tabler/icons-react";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_TITLE } from "@/lib/app-config";
+
+function formatDate(iso: string | null) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return iso;
+  }
+}
 
 export function meta() {
   return [{ title: `Analytics — ${APP_TITLE}` }];
@@ -17,6 +26,7 @@ function pct(n: number, total: number) {
 export default function AnalyticsRoute() {
   useSetPageTitle("Analytics");
   const { data, isLoading, error } = useActionQuery("get-analytics", {});
+  const { data: feedbackData } = useActionQuery("list-feedback", {});
 
   if (isLoading) {
     return (
@@ -113,6 +123,70 @@ export default function AnalyticsRoute() {
           <FunnelRow label="Sent" count={d.statusCounts.sent} total={d.totalProspects} />
         </CardContent>
       </Card>
+
+      {/* User Feedback */}
+      <FeedbackSection feedbackData={feedbackData} />
+    </div>
+  );
+}
+
+type FeedbackItem = { id: string; userEmail: string | null; sentiment: string | null; message: string; createdAt: string | null };
+
+function FeedbackSection({ feedbackData }: { feedbackData: unknown }) {
+  const items = (feedbackData as { feedback?: FeedbackItem[] } | undefined)?.feedback;
+  if (!items) return null;
+
+  const positiveCount = items.filter((i) => i.sentiment === "positive").length;
+  const negativeCount = items.filter((i) => i.sentiment === "negative").length;
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-medium text-muted-foreground">User Feedback</h2>
+        {items.length > 0 && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 text-emerald-600">
+              <IconThumbUp size={12} /> {positiveCount}
+            </span>
+            <span className="flex items-center gap-1 text-rose-500">
+              <IconThumbDown size={12} /> {negativeCount}
+            </span>
+          </div>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+          <IconMessageReport className="size-7 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">No feedback submitted yet.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border rounded-lg border border-border">
+          {items.map((item) => (
+            <div key={item.id} className="flex gap-3 px-4 py-3">
+              <div className="mt-0.5 shrink-0">
+                {item.sentiment === "positive" ? (
+                  <IconThumbUp size={14} className="text-emerald-500" />
+                ) : item.sentiment === "negative" ? (
+                  <IconThumbDown size={14} className="text-rose-500" />
+                ) : (
+                  <div className="h-3.5 w-3.5" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="truncate text-xs font-medium text-muted-foreground">
+                    {item.userEmail ?? "Anonymous"}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground/60">
+                    {formatDate(item.createdAt)}
+                  </span>
+                </div>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.message}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

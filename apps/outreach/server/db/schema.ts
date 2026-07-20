@@ -60,6 +60,7 @@ export const sendHistory = table("send_history", {
 export const feedback = table("feedback", {
   id: text("id").primaryKey(),
   userEmail: text("user_email"),
+  sentiment: text("sentiment"),   // "positive" | "negative" | null
   message: text("message").notNull(),
   createdAt: text("created_at").default(now()),
 });

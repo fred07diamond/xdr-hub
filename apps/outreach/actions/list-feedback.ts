@@ -17,6 +17,7 @@ export default defineAction({
       .select({
         id: feedback.id,
         userEmail: feedback.userEmail,
+        sentiment: feedback.sentiment,
         message: feedback.message,
         createdAt: feedback.createdAt,
       })
