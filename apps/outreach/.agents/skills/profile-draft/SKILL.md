@@ -14,16 +14,23 @@ Fields available: name, headline, current role, company, about
 text, recent activity/posts, and the profile URL. Some may be
 empty depending on what the page exposed.
 
-## Step 2: Load the active ICP context (live from Notion)
-Call get-icp-sources to get the currently selected Notion page
-IDs. For each, call mcp__notion__fetch to read the page, then
-combine them into one ICP context (ideal titles, company
-attributes, disqualifiers, voice/tone).
+## Step 2: Load the active ICP context
+Call get-icp-sources. Check the `icpText` field first — it holds
+a directly uploaded ICP document and takes priority.
 
-If get-icp-sources returns nothing, or a Notion fetch fails,
-proceed using the profile alone and clearly mark the result
-"no ICP loaded" so the user knows the draft was not scored
-against their ICP. Do not invent an ICP.
+If icpText is null or empty AND sources is empty:
+- Set verdict = "possible"
+- Set fit_reason = "No ICP document uploaded — upload your ICP
+  on the ICP tab before scoring profiles."
+- STOP. Do not guess or invent ICP criteria. Do not return
+  "strong" or "weak" without a real ICP. Skip to Step 4
+  (draft a generic note from the profile).
+
+If icpText has content, use it as the ICP.
+If icpText is null but sources has Notion page IDs, call
+mcp__notion__fetch for each and combine into ICP context.
+If a Notion fetch fails, fall back to icpText if available,
+otherwise use the no-ICP path above.
 
 ## Step 3: Score fit
 Compare the profile against the combined ICP context. Return a

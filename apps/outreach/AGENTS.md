@@ -18,10 +18,13 @@ not open questions.
 ## What the agent does on each captured profile
 1. Read the captured fields (name, headline, role, company,
    about, recent activity).
-2. Load the active ICP document: call get-icp-sources — the
-   `icpText` field holds the user's uploaded ICP document. If
-   icpText is null, draft from the profile alone and flag
-   "No ICP document uploaded" in the fit reason.
+2. Call get-icp-sources. Check the returned `icpText` field.
+   - If icpText is null or empty: STOP scoring. Set verdict to
+     "possible", set fit_reason to "No ICP document uploaded —
+     upload your ICP on the ICP tab before scoring profiles."
+     Do NOT guess, infer, or invent ICP criteria. Do not return
+     "strong" or "weak" without a real ICP document.
+   - If icpText has content: score fit against it (step 3).
 3. Score fit against the ICP document. Return a short verdict
    (strong / possible / weak) with one sentence of reasoning that
    references specific criteria from the ICP.
