@@ -635,6 +635,7 @@ function MessagingCanvas() {
   const [importOpen, setImportOpen] = useState(false);
 
   const personasRef = useRef<Persona[]>([]);
+  const hasAutoInitializedRef = useRef(false);
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { screenToFlowPosition } = useReactFlow();
 
@@ -668,16 +669,21 @@ function MessagingCanvas() {
     setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor, handlePersonaChange)));
     setEdges(graph.edges.map(toFlowEdge));
 
-    // Auto-initialize newly created persona canvas nodes from their ICP docs
-    const toInit = (graph.newPersonaNodeIds ?? [])
-      .map((id) => {
-        const node = graph.nodes.find((n) => n.id === id);
-        const persona = node ? graph.personas.find((p) => p.id === node.personaId) : undefined;
-        return node && persona?.icpText ? { node, persona } : null;
+    // Auto-fill persona nodes that have an ICP doc but no tone/notes yet
+    // Guard prevents re-firing within the same session (e.g. after agent updates)
+    if (hasAutoInitializedRef.current) return;
+
+    const toInit = graph.nodes
+      .filter((n) => n.type === "persona" && !n.tone && !n.notes)
+      .map((node) => {
+        const persona = graph.personas.find((p) => p.id === node.personaId);
+        return persona?.icpText ? { node, persona } : null;
       })
       .filter(Boolean) as { node: MessagingNode; persona: Persona & { icpText: string } }[];
 
     if (toInit.length === 0) return;
+
+    hasAutoInitializedRef.current = true;
 
     const blocks = toInit.map(({ node, persona }) =>
       `### ${persona.name} (canvas node id: ${node.id})\n${persona.icpText}`,
