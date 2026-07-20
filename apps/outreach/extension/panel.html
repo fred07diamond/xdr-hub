@@ -319,6 +319,106 @@
     #mark-sent-btn:hover { border-color: #0a66c2; color: #0a66c2; }
     #mark-sent-btn.sent { background: #e6f4ea; border-color: #1e7e34; color: #1e7e34; cursor: default; }
 
+    #feedback-section {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid #e5e7eb;
+      display: none;
+    }
+
+    #feedback-prompt {
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    #feedback-thumbs {
+      display: flex;
+      gap: 8px;
+    }
+
+    .thumb-btn {
+      flex: 1;
+      padding: 7px 0;
+      background: #fff;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      color: #555;
+      transition: border-color 0.12s, background 0.12s, color 0.12s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .thumb-btn:hover { border-color: #0a66c2; color: #0a66c2; }
+    .thumb-btn.selected-up { border-color: #1e7e34; background: #e6f4ea; color: #1e7e34; }
+    .thumb-btn.selected-down { border-color: #c0392b; background: #fce8e8; color: #c0392b; }
+
+    #feedback-form {
+      margin-top: 10px;
+      display: none;
+    }
+
+    #feedback-message {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+      resize: none;
+      font-family: inherit;
+      color: #1a1a1a;
+    }
+    #feedback-message:focus { outline: none; border-color: #0a66c2; }
+
+    #feedback-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 6px;
+    }
+
+    #feedback-skip-btn {
+      padding: 6px 12px;
+      background: #fff;
+      border: 1.5px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      color: #555;
+    }
+    #feedback-skip-btn:hover { border-color: #888; }
+
+    #feedback-submit-btn {
+      padding: 6px 14px;
+      background: #0a66c2;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      color: #fff;
+    }
+    #feedback-submit-btn:hover { background: #004182; }
+    #feedback-submit-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+    #feedback-thanks {
+      display: none;
+      font-size: 12px;
+      color: #1e7e34;
+      margin-top: 8px;
+    }
+
     #not-linkedin {
       padding: 24px 0;
       text-align: center;
@@ -405,6 +505,22 @@
 
       <div id="sent-section">
         <button id="mark-sent-btn">Mark as sent</button>
+      </div>
+
+      <div id="feedback-section">
+        <div id="feedback-prompt">How was this draft?</div>
+        <div id="feedback-thumbs">
+          <button class="thumb-btn" id="thumb-up-btn">👍 Good</button>
+          <button class="thumb-btn" id="thumb-down-btn">👎 Needs work</button>
+        </div>
+        <div id="feedback-form">
+          <textarea id="feedback-message" rows="3" placeholder="Tell us more…"></textarea>
+          <div id="feedback-actions">
+            <button id="feedback-skip-btn">Skip</button>
+            <button id="feedback-submit-btn">Send feedback</button>
+          </div>
+        </div>
+        <div id="feedback-thanks">✓ Thanks for your feedback!</div>
       </div>
     </div>
   </div>

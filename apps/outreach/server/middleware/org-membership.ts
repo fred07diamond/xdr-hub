@@ -9,6 +9,7 @@ const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/mark-sent",
   "/_agent-native/actions/check-already-contacted",
   "/_agent-native/actions/get-daily-stats",
+  "/_agent-native/actions/submit-feedback",
 ]);
 
 // Runs after auth.ts (alphabetical order). Rejects authenticated users who

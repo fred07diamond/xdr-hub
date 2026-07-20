@@ -101,6 +101,28 @@ async function getExistingDraft(profileUrl) {
   }
 }
 
+async function submitFeedback({ sentiment, message, draftNote }) {
+  const { appUrl, apiToken } = await getSettings();
+  if (!appUrl) return null;
+  try {
+    const body = {
+      ...(apiToken ? { apiToken } : {}),
+      ...(sentiment ? { sentiment } : {}),
+      message: message || "",
+      ...(draftNote ? { draftNote } : {}),
+    };
+    const res = await fetch(`${appUrl}/_agent-native/actions/submit-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 async function getDailyStats() {
   const { appUrl, apiToken } = await getSettings();
   if (!appUrl) return null;
@@ -149,6 +171,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getDailyStats()
       .then((result) => sendResponse(result))
       .catch(() => sendResponse(null));
+    return true;
+  }
+
+  if (msg.type === "SUBMIT_FEEDBACK") {
+    submitFeedback(msg)
+      .then((result) => sendResponse(result ?? { ok: false }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
 });

@@ -130,6 +130,10 @@ export default runMigrations(
       version: 16,
       sql: `ALTER TABLE feedback ADD COLUMN IF NOT EXISTS sentiment TEXT`,
     },
+    {
+      version: 17,
+      sql: `ALTER TABLE feedback ADD COLUMN IF NOT EXISTS draft_note TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

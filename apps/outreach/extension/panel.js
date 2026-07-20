@@ -31,8 +31,17 @@ const saveTokenBtn = document.getElementById("save-token-btn");
 const clearTokenBtn = document.getElementById("clear-token-btn");
 const tokenSaveStatus = document.getElementById("token-save-status");
 const tokenStatusBadge = document.getElementById("token-status-badge");
+const feedbackSection = document.getElementById("feedback-section");
+const thumbUpBtn = document.getElementById("thumb-up-btn");
+const thumbDownBtn = document.getElementById("thumb-down-btn");
+const feedbackForm = document.getElementById("feedback-form");
+const feedbackMessage = document.getElementById("feedback-message");
+const feedbackSkipBtn = document.getElementById("feedback-skip-btn");
+const feedbackSubmitBtn = document.getElementById("feedback-submit-btn");
+const feedbackThanks = document.getElementById("feedback-thanks");
 
 let currentProfileUrl = null;
+let feedbackSentiment = null;
 let cachedScrape = null; // reuse in draftBtn click
 let activeTabId = null;
 let lastRenderedName = null; // name last shown; used to detect stale DOM after SPA nav
@@ -90,6 +99,7 @@ function showVerdict(draft) {
 
   verdictSection.style.display = "block";
   sentSection.style.display = "block";
+  feedbackSection.style.display = "block";
 }
 
 function renderProfileCard(data) {
@@ -225,6 +235,16 @@ function resetPanel() {
   setStatus("");
   verdictSection.style.display = "none";
   personaChip.style.display = "none";
+
+  feedbackSentiment = null;
+  feedbackSection.style.display = "none";
+  feedbackForm.style.display = "none";
+  feedbackMessage.value = "";
+  feedbackThanks.style.display = "none";
+  thumbUpBtn.className = "thumb-btn";
+  thumbDownBtn.className = "thumb-btn";
+  thumbUpBtn.style.display = "";
+  thumbDownBtn.style.display = "";
 }
 
 // ── Init: scrape immediately on open ────────────────────────────────────────
@@ -453,6 +473,42 @@ function startUrlPolling() {
     }
   }, 750);
 }
+
+// ── Feedback ─────────────────────────────────────────────────────────────────
+
+function selectThumb(sentiment) {
+  feedbackSentiment = sentiment;
+  thumbUpBtn.className = sentiment === "positive" ? "thumb-btn selected-up" : "thumb-btn";
+  thumbDownBtn.className = sentiment === "negative" ? "thumb-btn selected-down" : "thumb-btn";
+  feedbackMessage.placeholder = sentiment === "positive"
+    ? "What worked well? (optional)"
+    : "What went wrong? How could it be better?";
+  feedbackForm.style.display = "block";
+}
+
+function hideFeedbackAfterSubmit() {
+  feedbackForm.style.display = "none";
+  thumbUpBtn.style.display = "none";
+  thumbDownBtn.style.display = "none";
+  feedbackThanks.style.display = "block";
+}
+
+async function doSubmitFeedback(skipMessage) {
+  feedbackSubmitBtn.disabled = true;
+  const message = skipMessage ? "" : feedbackMessage.value;
+  await chrome.runtime.sendMessage({
+    type: "SUBMIT_FEEDBACK",
+    sentiment: feedbackSentiment,
+    message,
+    draftNote: noteText.value,
+  }).catch(() => {});
+  hideFeedbackAfterSubmit();
+}
+
+thumbUpBtn.addEventListener("click", () => selectThumb("positive"));
+thumbDownBtn.addEventListener("click", () => selectThumb("negative"));
+feedbackSkipBtn.addEventListener("click", () => doSubmitFeedback(true));
+feedbackSubmitBtn.addEventListener("click", () => doSubmitFeedback(false));
 
 // ── Mark sent ────────────────────────────────────────────────────────────────
 

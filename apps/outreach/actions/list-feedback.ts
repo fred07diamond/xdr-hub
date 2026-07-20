@@ -19,6 +19,7 @@ export default defineAction({
         userEmail: feedback.userEmail,
         sentiment: feedback.sentiment,
         message: feedback.message,
+        draftNote: feedback.draftNote,
         createdAt: feedback.createdAt,
       })
       .from(feedback)

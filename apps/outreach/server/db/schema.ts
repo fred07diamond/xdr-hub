@@ -62,6 +62,7 @@ export const feedback = table("feedback", {
   userEmail: text("user_email"),
   sentiment: text("sentiment"),   // "positive" | "negative" | null
   message: text("message").notNull(),
+  draftNote: text("draft_note"),  // the connection note the user rated
   createdAt: text("created_at").default(now()),
 });
 

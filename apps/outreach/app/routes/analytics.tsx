@@ -134,7 +134,7 @@ export default function AnalyticsRoute() {
   );
 }
 
-type FeedbackItem = { id: string; userEmail: string | null; sentiment: string | null; message: string; createdAt: string | null };
+type FeedbackItem = { id: string; userEmail: string | null; sentiment: string | null; message: string; draftNote: string | null; createdAt: string | null };
 
 function FeedbackSection({ feedbackData }: { feedbackData: unknown }) {
   const items = (feedbackData as { feedback?: FeedbackItem[] } | undefined)?.feedback;
@@ -185,7 +185,15 @@ function FeedbackSection({ feedbackData }: { feedbackData: unknown }) {
                     {formatDate(item.createdAt)}
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.message}</p>
+                {item.message && (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.message}</p>
+                )}
+                {item.draftNote && (
+                  <div className="mt-1.5 rounded bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground/70">Draft: </span>
+                    {item.draftNote}
+                  </div>
+                )}
               </div>
             </div>
           ))}
