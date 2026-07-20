@@ -8,7 +8,7 @@ import {
   useT,
   type SettingsSearchEntry,
 } from "@agent-native/core/client";
-import { TeamPage, useOrgInvitations, useOrgRole } from "@agent-native/core/client/org";
+import { TeamPage, useOrgRole } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
@@ -149,21 +149,21 @@ function DailyLimitCard() {
   );
 }
 
-function PendingInvitesCard() {
-  const { canManageOrg } = useOrgRole();
-  const { data, refetch } = useOrgInvitations();
+function ResendInviteCard() {
+  const { canManageOrg, isLoading } = useOrgRole();
   const resend = useActionMutation("resend-invite");
-  const [sentMap, setSentMap] = useState<Record<string, boolean>>({});
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
 
-  if (!canManageOrg) return null;
-  const invitations = data?.invitations ?? [];
-  if (invitations.length === 0) return null;
+  if (isLoading || !canManageOrg) return null;
 
-  async function handleResend(email: string) {
-    await resend.mutateAsync({ email });
-    setSentMap((m) => ({ ...m, [email]: true }));
-    setTimeout(() => setSentMap((m) => ({ ...m, [email]: false })), 3000);
-    refetch();
+  async function handleResend(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    await resend.mutateAsync({ email: email.trim() });
+    setSent(true);
+    setEmail("");
+    setTimeout(() => setSent(false), 3000);
   }
 
   return (
@@ -171,33 +171,33 @@ function PendingInvitesCard() {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <IconMail size={15} />
-          Pending Invitations
+          Resend Invitation
         </CardTitle>
         <CardDescription className="text-xs">
-          These users have been invited but haven't accepted yet. Resend if the email didn't arrive.
+          Didn't receive an invite email? Enter the email address to resend it.
         </CardDescription>
       </CardHeader>
-      <CardContent className="divide-y divide-border p-0">
-        {invitations.map((inv) => (
-          <div key={inv.id} className="flex items-center justify-between px-6 py-3 gap-3">
-            <span className="text-sm truncate">{inv.email}</span>
-            <button
-              type="button"
-              onClick={() => handleResend(inv.email)}
-              disabled={resend.isPending}
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
-            >
-              {resend.isPending ? (
-                <IconLoader2 size={12} className="animate-spin" />
-              ) : sentMap[inv.email] ? (
-                <IconCheck size={12} className="text-emerald-600" />
-              ) : (
-                <IconMail size={12} />
-              )}
-              {sentMap[inv.email] ? "Sent!" : "Resend"}
-            </button>
-          </div>
-        ))}
+      <CardContent>
+        <form onSubmit={handleResend} className="flex items-center gap-2">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="teammate@example.com"
+            className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <button
+            type="submit"
+            disabled={resend.isPending || !email.trim()}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {resend.isPending ? <IconLoader2 size={12} className="animate-spin" /> : sent ? <IconCheck size={12} /> : <IconMail size={12} />}
+            {sent ? "Sent!" : "Resend"}
+          </button>
+        </form>
+        {resend.isError && (
+          <p className="mt-2 text-xs text-destructive">{(resend.error as Error)?.message ?? "Failed to send"}</p>
+        )}
       </CardContent>
     </Card>
   );
@@ -261,7 +261,7 @@ export default function SettingsRoute() {
             showTitle={false}
             createOrgDescription={t("pages.teamCreateOrgDescription")}
           />
-          <PendingInvitesCard />
+          <ResendInviteCard />
         </div>
       }
       whatsNew={
