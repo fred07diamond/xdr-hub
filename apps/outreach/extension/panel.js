@@ -98,6 +98,7 @@ function showVerdict(draft) {
   resetFeedbackSection();
   const v = draft.fitVerdict || "possible";
   verdictBadge.className = `verdict-${v}`;
+  verdictBadge.textContent = { strong: "Strong", possible: "Possible", weak: "Weak", inconclusive: "Inconclusive" }[v] ?? v;
   fitReason.textContent = draft.fitReason || "";
   noteText.value = draft.draftNote || "";
   updateCharCount();
