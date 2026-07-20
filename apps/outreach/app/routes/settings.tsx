@@ -8,9 +8,9 @@ import {
   useT,
   type SettingsSearchEntry,
 } from "@agent-native/core/client";
-import { TeamPage } from "@agent-native/core/client/org";
+import { TeamPage, useOrgInvitations, useOrgRole } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2 } from "@tabler/icons-react";
+import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -149,6 +149,60 @@ function DailyLimitCard() {
   );
 }
 
+function PendingInvitesCard() {
+  const { canManageOrg } = useOrgRole();
+  const { data, refetch } = useOrgInvitations();
+  const resend = useActionMutation("resend-invite");
+  const [sentMap, setSentMap] = useState<Record<string, boolean>>({});
+
+  if (!canManageOrg) return null;
+  const invitations = data?.invitations ?? [];
+  if (invitations.length === 0) return null;
+
+  async function handleResend(email: string) {
+    await resend.mutateAsync({ email });
+    setSentMap((m) => ({ ...m, [email]: true }));
+    setTimeout(() => setSentMap((m) => ({ ...m, [email]: false })), 3000);
+    refetch();
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
+          <IconMail size={15} />
+          Pending Invitations
+        </CardTitle>
+        <CardDescription className="text-xs">
+          These users have been invited but haven't accepted yet. Resend if the email didn't arrive.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="divide-y divide-border p-0">
+        {invitations.map((inv) => (
+          <div key={inv.id} className="flex items-center justify-between px-6 py-3 gap-3">
+            <span className="text-sm truncate">{inv.email}</span>
+            <button
+              type="button"
+              onClick={() => handleResend(inv.email)}
+              disabled={resend.isPending}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+            >
+              {resend.isPending ? (
+                <IconLoader2 size={12} className="animate-spin" />
+              ) : sentMap[inv.email] ? (
+                <IconCheck size={12} className="text-emerald-600" />
+              ) : (
+                <IconMail size={12} />
+              )}
+              {sentMap[inv.email] ? "Sent!" : "Resend"}
+            </button>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function meta() {
   return [{ title: `Settings - ${APP_TITLE}` }];
 }
@@ -207,6 +261,7 @@ export default function SettingsRoute() {
             showTitle={false}
             createOrgDescription={t("pages.teamCreateOrgDescription")}
           />
+          <PendingInvitesCard />
         </div>
       }
       whatsNew={
