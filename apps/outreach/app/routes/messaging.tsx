@@ -7,18 +7,21 @@ import { useOrgRole } from "@agent-native/core/client/org";
 import "@xyflow/react/dist/style.css";
 import {
   Background,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
   Handle,
   MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
   addEdge,
+  getSmoothStepPath,
   useEdgesState,
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import type { Connection, Edge, Node, NodeProps } from "@xyflow/react";
+import type { Connection, Edge, EdgeProps, Node, NodeProps } from "@xyflow/react";
 import {
   IconBriefcase,
   IconFileUpload,
@@ -146,6 +149,7 @@ const FIELD_LABELS: Partial<Record<keyof MessagingNode, string>> = {
 interface NodeData extends Record<string, unknown> {
   dbNode: MessagingNode;
   persona: Persona | undefined;
+  ancestorPersona: Persona | undefined; // for child nodes: the persona this tree traces back to
   isAdmin: boolean;
   onClick: (node: MessagingNode) => void;
 }
@@ -157,8 +161,8 @@ function CanvasNode({ data }: NodeProps) {
   const cfg = NODE_CONFIG[d.dbNode.type as NodeKind] ?? NODE_CONFIG.tone;
   const isPersona = d.dbNode.type === "persona";
   const isGlobal = (d.dbNode.type as string) === "global";
-  // Persona nodes use the actual ICP persona color; other nodes use the static config color
   const headerColor = isPersona ? (d.persona?.color ?? cfg.color) : cfg.color;
+  const accentColor = !isPersona && !isGlobal ? d.ancestorPersona?.color : undefined;
 
   const filled = cfg.previewFields
     .map((k) => ({ key: k, label: FIELD_LABELS[k] ?? String(k), val: d.dbNode[k] }))
@@ -167,6 +171,7 @@ function CanvasNode({ data }: NodeProps) {
   return (
     <div
       className="rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden"
+      style={accentColor ? { borderLeft: `3px solid ${accentColor}` } : undefined}
       onClick={() => d.onClick(d.dbNode)}
     >
       {/* Header */}
@@ -205,6 +210,14 @@ function CanvasNode({ data }: NodeProps) {
         )}
       </div>
 
+      {/* Persona ancestry badge */}
+      {accentColor && d.ancestorPersona && (
+        <div className="flex items-center gap-1.5 border-t border-zinc-100 dark:border-zinc-800 px-3 py-1">
+          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: accentColor }} />
+          <span className="text-[9px] text-zinc-400 truncate">{d.ancestorPersona.name}</span>
+        </div>
+      )}
+
       {/* Persona nodes are source-only anchors — no incoming connections allowed */}
       {!isGlobal && !isPersona && <Handle type="target" position={Position.Left} />}
       <Handle type="source" position={Position.Right} />
@@ -213,6 +226,93 @@ function CanvasNode({ data }: NodeProps) {
 }
 
 const nodeTypes = { persona: CanvasNode, tone: CanvasNode, phrase_rule: CanvasNode, example: CanvasNode, role: CanvasNode };
+
+// Walks edges upward from each node to find its persona root.
+function computeAncestorPersonas(
+  nodes: MessagingNode[],
+  edges: MessagingEdge[],
+  personas: Persona[],
+): Map<string, Persona> {
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const parentOf = new Map(edges.map((e) => [e.targetId, e.sourceId]));
+  const result = new Map<string, Persona>();
+  for (const node of nodes) {
+    if (node.type === "persona") continue;
+    let cur = node.id;
+    const seen = new Set<string>();
+    while (true) {
+      if (seen.has(cur)) break;
+      seen.add(cur);
+      const parentId = parentOf.get(cur);
+      if (!parentId) break;
+      const parent = nodeById.get(parentId);
+      if (!parent) break;
+      if (parent.type === "persona") {
+        const p = personas.find((p) => p.id === parent.personaId);
+        if (p) result.set(node.id, p);
+        break;
+      }
+      cur = parentId;
+    }
+  }
+  return result;
+}
+
+// ── Custom deletable edge ──────────────────────────────────────────────────────
+
+function DeletableEdge({
+  id, sourceX, sourceY, targetX, targetY,
+  sourcePosition, targetPosition,
+  style, markerEnd, selected,
+}: EdgeProps) {
+  const { deleteElements } = useReactFlow();
+  const [hovered, setHovered] = useState(false);
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+  });
+
+  return (
+    <>
+      {/* Invisible wide path for hover detection */}
+      <path
+        d={edgePath}
+        stroke="transparent"
+        strokeWidth={20}
+        fill="none"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
+      <BaseEdge path={edgePath} style={style} markerEnd={markerEnd} />
+      {(selected || hovered) && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              pointerEvents: "all",
+            }}
+            className="nodrag nopan"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteElements({ edges: [{ id }] });
+              }}
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-white border border-zinc-300 text-zinc-400 shadow-sm hover:bg-red-50 hover:border-red-400 hover:text-red-500 transition-colors"
+              title="Remove connection"
+            >
+              <IconX size={10} />
+            </button>
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+const edgeTypes = { deletable: DeletableEdge };
 
 // ── Node type palette ──────────────────────────────────────────────────────────
 
@@ -536,32 +636,45 @@ function EditorField({ label, readOnly, children }: { label: string; readOnly: b
 function toFlowNode(
   dbNode: MessagingNode,
   personas: Persona[],
+  ancestorPersonaMap: Map<string, Persona>,
   isAdmin: boolean,
   onClick: (n: MessagingNode) => void,
 ): Node {
-  const type = dbNode.type as string;
   return {
     id: dbNode.id,
-    type,
+    type: dbNode.type as string,
     position: { x: dbNode.positionX, y: dbNode.positionY },
     data: {
       dbNode,
       persona: personas.find((p) => p.id === dbNode.personaId),
+      ancestorPersona: ancestorPersonaMap.get(dbNode.id),
       isAdmin,
       onClick,
     } as NodeData,
   };
 }
 
-function toFlowEdge(e: MessagingEdge): Edge {
+function toFlowEdge(
+  e: MessagingEdge,
+  nodeById: Map<string, MessagingNode>,
+  ancestorPersonaMap: Map<string, Persona>,
+  personas: Persona[],
+): Edge {
+  const sourceNode = nodeById.get(e.sourceId);
+  let edgeColor = "#94a3b8";
+  if (sourceNode?.type === "persona") {
+    edgeColor = personas.find((p) => p.id === sourceNode.personaId)?.color ?? edgeColor;
+  } else if (sourceNode) {
+    edgeColor = ancestorPersonaMap.get(e.sourceId)?.color ?? edgeColor;
+  }
   return {
     id: e.id,
     source: e.sourceId,
     target: e.targetId,
-    type: "smoothstep",
+    type: "deletable",
     animated: false,
-    style: { stroke: "#94a3b8", strokeWidth: 1.5 },
-    markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" },
+    style: { stroke: edgeColor, strokeWidth: 1.5 },
+    markerEnd: { type: "arrowclosed" as any, color: edgeColor },
   };
 }
 
@@ -601,8 +714,10 @@ function MessagingCanvas() {
     if (!graph) return;
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor)));
-    setEdges(graph.edges.map(toFlowEdge));
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+    const ancestorPersonaMap = computeAncestorPersonas(graph.nodes, graph.edges, graph.personas);
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor)));
+    setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
     if (!isAdmin) return;
@@ -646,7 +761,7 @@ function MessagingCanvas() {
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
     }) as MessagingNode;
-    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, isAdmin, openEditor)]);
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor)]);
     setEditingNode(result);
   }
 
@@ -659,7 +774,7 @@ function MessagingCanvas() {
 
   const handleConnect = useCallback(
     async (conn: Connection) => {
-      const optimistic = addEdge({ ...conn, type: "smoothstep", animated: false, style: { stroke: "#94a3b8", strokeWidth: 1.5 }, markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" } }, edges);
+      const optimistic = addEdge({ ...conn, type: "deletable", animated: false, style: { stroke: "#94a3b8", strokeWidth: 1.5 }, markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" } }, edges);
       setEdges(optimistic);
       const res = await createEdge.mutateAsync({ sourceId: conn.source!, targetId: conn.target! }) as any;
       if (res?.ok === false) {
@@ -771,6 +886,7 @@ function MessagingCanvas() {
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={handleConnect}
