@@ -167,6 +167,7 @@ function OrgMembersSection() {
   const resend = useActionMutation("resend-invite");
 
   const [sentMap, setSentMap] = useState<Record<string, boolean>>({});
+  const [errorMap, setErrorMap] = useState<Record<string, string>>({});
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
   const [invited, setInvited] = useState(false);
@@ -179,7 +180,12 @@ function OrgMembersSection() {
   const invitations = invitesData?.invitations ?? [];
 
   async function handleResend(email: string) {
-    await resend.mutateAsync({ email });
+    setErrorMap((m) => ({ ...m, [email]: "" }));
+    const result = await resend.mutateAsync({ email }) as any;
+    if (result?.ok === false) {
+      setErrorMap((m) => ({ ...m, [email]: result.error ?? "Failed to send" }));
+      return;
+    }
     setSentMap((m) => ({ ...m, [email]: true }));
     setTimeout(() => setSentMap((m) => ({ ...m, [email]: false })), 3000);
   }
@@ -256,19 +262,26 @@ function OrgMembersSection() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => handleResend(inv.email)}
-                        disabled={resend.isPending}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                      >
-                        {sentMap[inv.email] ? (
-                          <IconCheck size={11} className="text-emerald-600" />
-                        ) : (
-                          <IconMail size={11} />
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleResend(inv.email)}
+                          disabled={resend.isPending}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                        >
+                          {sentMap[inv.email] ? (
+                            <IconCheck size={11} className="text-emerald-600" />
+                          ) : (
+                            <IconMail size={11} />
+                          )}
+                          {sentMap[inv.email] ? "Sent!" : "Resend"}
+                        </button>
+                        {errorMap[inv.email] && (
+                          <p className="text-xs text-destructive max-w-[200px] break-words">
+                            {errorMap[inv.email]}
+                          </p>
                         )}
-                        {sentMap[inv.email] ? "Sent!" : "Resend"}
-                      </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

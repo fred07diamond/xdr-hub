@@ -19,7 +19,7 @@ export default defineAction({
   schema: z.object({ email: z.string().email() }),
   run: async ({ email }, ctx) => {
     await requireAdmin(ctx);
-    if (!ctx?.orgId) throw new Error("No active organization");
+    if (!ctx?.orgId) return { ok: false, error: "No active organization" };
 
     const db = getDb();
     const rows = await db
@@ -34,13 +34,16 @@ export default defineAction({
       )
       .limit(1);
 
-    if (!rows[0]) throw new Error(`No pending invitation found for ${email}`);
+    if (!rows[0]) return { ok: false, error: `No pending invitation found for ${email}` };
 
     const appUrl = getAppProductionUrl();
     const inviter = ctx.userEmail ?? "your team";
 
     const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) throw new Error("RESEND_API_KEY is not configured — add it in Netlify environment variables");
+    if (!apiKey) {
+      console.error("[resend-invite] RESEND_API_KEY not set in environment");
+      return { ok: false, error: "RESEND_API_KEY is not configured — add it in Netlify environment variables" };
+    }
 
     const from = process.env.EMAIL_FROM ?? "Builder.LI <onboarding@resend.dev>";
 
@@ -61,7 +64,8 @@ export default defineAction({
 
     if (!emailRes.ok) {
       const errorBody = await emailRes.text().catch(() => "");
-      throw new Error(`Failed to send invitation email (${emailRes.status}): ${errorBody}`);
+      console.error(`[resend-invite] Resend API error ${emailRes.status}: ${errorBody}`);
+      return { ok: false, error: `Resend API error (${emailRes.status}): ${errorBody}` };
     }
 
     return { ok: true };
