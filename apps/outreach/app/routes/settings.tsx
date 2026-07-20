@@ -221,10 +221,20 @@ export default function SettingsRoute() {
     [t],
   );
 
+  const enhancedTabs = useMemo(
+    () =>
+      agentSettingsTabs.map((tab) =>
+        tab.id === "organization"
+          ? { ...tab, content: <>{tab.content}<div className="mx-auto w-full max-w-3xl px-4 pb-6"><ResendInviteCard /></div></> }
+          : tab,
+      ),
+    [agentSettingsTabs],
+  );
+
   return (
     <SettingsTabsPage
       teamLabel={t("navigation.team")}
-      extraTabs={agentSettingsTabs}
+      extraTabs={enhancedTabs}
       generalSearchEntries={generalSearchEntries}
       general={
         <div className="mx-auto w-full max-w-2xl space-y-6">

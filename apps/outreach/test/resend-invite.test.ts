@@ -43,10 +43,17 @@ describe("settings.tsx — ResendInviteCard", () => {
     expect(src).toContain("ResendInviteCard");
   });
 
+  it("is injected into the organization extraTab, not the team prop", () => {
+    const src = readFile("app/routes/settings.tsx");
+    // SettingsTabsPage ignores the team prop when an organization tab already
+    // exists in extraTabs — must inject into enhancedTabs instead
+    expect(src).toContain("enhancedTabs");
+    expect(src).toContain('tab.id === "organization"');
+    expect(src).toContain("extraTabs={enhancedTabs}");
+  });
+
   it("does NOT gate the card on canManageOrg (server enforces auth)", () => {
     const src = readFile("app/routes/settings.tsx");
-    // The card should render unconditionally — no client-side role gate
-    // We check that the canManageOrg guard is NOT the sole return-null path
     const cardFn = src.slice(src.indexOf("function ResendInviteCard"), src.indexOf("export function meta"));
     expect(cardFn).not.toContain("if (isLoading || !canManageOrg) return null");
     expect(cardFn).not.toContain("if (!canManageOrg) return null");
