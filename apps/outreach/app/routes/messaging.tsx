@@ -2,6 +2,7 @@ import {
   sendToAgentChat,
   useActionMutation,
   useActionQuery,
+  useAgentChatGenerating,
 } from "@agent-native/core/client";
 import { useOrgRole } from "@agent-native/core/client/org";
 import "@xyflow/react/dist/style.css";
@@ -30,6 +31,7 @@ import {
   IconNote,
   IconPlus,
   IconRefresh,
+  IconSparkles,
   IconTextPlus,
   IconTrash,
   IconUsers,
@@ -631,6 +633,120 @@ function EditorField({ label, readOnly, children }: { label: string; readOnly: b
   );
 }
 
+// ── Build with AI dialog ───────────────────────────────────────────────────────
+
+function BuildWithAIDialog({ graph, onClose, onSubmitted }: { graph: GraphData; onClose: () => void; onSubmitted: () => void }) {
+  const [prompt, setPrompt] = useState("");
+
+  function buildContext(): string {
+    const parts: string[] = [];
+
+    parts.push("## ICP Personas & Documents");
+    for (const p of graph.personas) {
+      const anchorNode = graph.nodes.find((n) => n.type === "persona" && n.personaId === p.id);
+      parts.push(`\n### ${p.name} (canvas node id: ${anchorNode?.id ?? "none"})`);
+      parts.push(p.icpText ? p.icpText : "No ICP document uploaded.");
+    }
+
+    parts.push("\n\n## Current Canvas Nodes");
+    parts.push("\nPersona anchor nodes (already exist — connect to these, do NOT recreate them):");
+    for (const n of graph.nodes.filter((n) => n.type === "persona")) {
+      parts.push(`- "${n.title}" id=${n.id}`);
+    }
+    const fineNodes = graph.nodes.filter((n) => n.type !== "persona");
+    if (fineNodes.length > 0) {
+      parts.push("\nExisting fine-tuning nodes (update if relevant, skip if already good):");
+      for (const n of fineNodes) {
+        parts.push(`- [${n.type}] "${n.title}" id=${n.id}`);
+      }
+    }
+    if (graph.edges.length > 0) {
+      parts.push("\nExisting edges:");
+      for (const e of graph.edges) {
+        const src = graph.nodes.find((n) => n.id === e.sourceId);
+        const tgt = graph.nodes.find((n) => n.id === e.targetId);
+        parts.push(`- "${src?.title}" → "${tgt?.title}" id=${e.id}`);
+      }
+    }
+
+    return parts.join("\n");
+  }
+
+  function handleBuild() {
+    sendToAgentChat({
+      message:
+        `Build my messaging canvas.\n\n## My Request\n${prompt.trim()}\n\n` +
+        buildContext() +
+        `\n\n## How to Build\n` +
+        `1. For each persona, create fine-tuning nodes (tone, phrase_rule, example, role) based on its ICP document and the user's request.\n` +
+        `2. Connect each new node to its persona anchor: create-messaging-edge { sourceId: personaNodeId, targetId: newNodeId }.\n` +
+        `3. Fill in content fields from the ICP doc — tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes.\n` +
+        `4. Space nodes visually: place new nodes at positionX 600–1000, spread positionY in 200px increments per persona.\n` +
+        `5. If fine-tuning nodes already exist for a persona, update them rather than duplicating.\n` +
+        `6. Node types: tone (voice/style/value props), phrase_rule (words to use/avoid), example (sample connection notes), role (role-specific targeting).`,
+      submit: true,
+    });
+    onSubmitted();
+    onClose();
+  }
+
+  const personasWithDocs = graph.personas.filter((p) => p.icpText).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-card border border-border shadow-2xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div className="flex items-center gap-2">
+            <IconSparkles size={15} className="text-primary" />
+            <h2 className="text-sm font-semibold">Build with AI</h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted">
+            <IconX size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 p-5">
+          <p className="text-xs text-muted-foreground">
+            Describe how you want to message your personas. The AI will read your ICP documents and build out the nodes and connections for you.
+          </p>
+          <textarea
+            autoFocus
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && prompt.trim()) handleBuild(); }}
+            rows={5}
+            placeholder={
+              `e.g. Build out messaging for all my personas. For design leaders focus on empathy and craft. ` +
+              `For engineering lead with ROI and reliability. Keep the tone peer-to-peer, not salesy.`
+            }
+            className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <p className="text-[11px] text-muted-foreground/60">
+            {graph.personas.length} persona{graph.personas.length !== 1 ? "s" : ""}
+            {personasWithDocs > 0 ? ` · ${personasWithDocs} with ICP docs` : " — upload ICP docs on the ICP tab for best results"}
+            {" · "}⌘↵ to submit
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleBuild}
+            disabled={!prompt.trim()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          >
+            <IconSparkles size={12} />
+            Build
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Canvas ─────────────────────────────────────────────────────────────────────
 
 function toFlowNode(
@@ -702,10 +818,23 @@ function MessagingCanvas() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [buildOpen, setBuildOpen] = useState(false);
 
   const personasRef = useRef<Persona[]>([]);
   const hasAutoInitializedRef = useRef(false);
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingBuildRef = useRef(false);
+
+  // Auto-refetch canvas after agent finishes a Build with AI run
+  const [isGenerating] = useAgentChatGenerating();
+  const wasGeneratingRef = useRef(false);
+  useEffect(() => {
+    if (wasGeneratingRef.current && !isGenerating && pendingBuildRef.current) {
+      pendingBuildRef.current = false;
+      refetch();
+    }
+    wasGeneratingRef.current = isGenerating;
+  }, [isGenerating, refetch]);
   const { screenToFlowPosition } = useReactFlow();
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
@@ -834,6 +963,14 @@ function MessagingCanvas() {
         <p className="text-xs text-zinc-500 flex-1 hidden sm:block">
           Personas are root anchors. Branch off Tone, Phrase Rule, Example, and Role nodes. Click a persona to build from its ICP doc.
         </p>
+        <Button
+          size="sm"
+          onClick={() => setBuildOpen(true)}
+          className="gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-700 hover:to-indigo-700 border-0"
+        >
+          <IconSparkles size={14} />
+          Build with AI
+        </Button>
         <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="gap-1.5">
           <IconFileUpload size={14} />
           Import doc
@@ -910,6 +1047,14 @@ function MessagingCanvas() {
       </div>
 
       <ImportDocDialog open={importOpen} onClose={() => setImportOpen(false)} personas={personas} />
+
+      {buildOpen && graph && (
+        <BuildWithAIDialog
+          graph={graph}
+          onClose={() => setBuildOpen(false)}
+          onSubmitted={() => { pendingBuildRef.current = true; }}
+        />
+      )}
 
       <NodeEditorSheet
         node={editingNode}
