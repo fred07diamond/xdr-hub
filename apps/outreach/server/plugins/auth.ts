@@ -9,5 +9,7 @@ export default createAuthPlugin({
     "/_agent-native/actions/get-draft",
     "/_agent-native/actions/mark-sent",
     "/_agent-native/actions/check-already-contacted",
+    "/_agent-native/actions/get-daily-stats",
+    "/_agent-native/actions/submit-feedback",
   ],
 });
