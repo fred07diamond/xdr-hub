@@ -18,8 +18,9 @@ import {
   useRemoveMember,
 } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
+import { IconBrain, IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 
 import {
   Card,
@@ -348,6 +349,33 @@ function OrgMembersSection() {
   );
 }
 
+function AgentWorkspaceCard() {
+  const navigate = useNavigate();
+  return (
+    <Card id="agent-workspace" className="scroll-mt-16">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <IconBrain size={16} />
+          Agent Workspace
+        </CardTitle>
+        <CardDescription>
+          Configure agent context, files, connections, and access settings.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <button
+          type="button"
+          onClick={() => navigate("/agent")}
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          <IconBrain size={14} />
+          Open Agent Workspace
+        </button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function meta() {
   return [{ title: `Settings - ${APP_TITLE}` }];
 }
@@ -355,6 +383,7 @@ export function meta() {
 export default function SettingsRoute() {
   const t = useT();
   const agentSettingsTabs = useAgentSettingsTabs();
+  const { canManageOrg } = useOrgRole();
   useSetPageTitle(t("settings.title"));
 
   const generalSearchEntries = useMemo<SettingsSearchEntry[]>(
@@ -401,6 +430,8 @@ export default function SettingsRoute() {
           <ApiTokenCard />
 
           <DailyLimitCard />
+
+          {canManageOrg && <AgentWorkspaceCard />}
 
           <Card id="language" className="scroll-mt-16">
             <CardHeader>

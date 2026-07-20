@@ -9,7 +9,6 @@ import { ExtensionsSidebarSection } from "@agent-native/core/client/extensions";
 import { OrgSwitcher, useOrgRole } from "@agent-native/core/client/org";
 import {
   IconArchive,
-  IconBrain,
   IconChartBar,
   IconDots,
   IconEdit,
@@ -65,12 +64,6 @@ const navItems = [
     labelKey: "navigation.analytics",
     href: "/analytics",
     view: "analytics",
-  },
-  {
-    icon: IconBrain,
-    labelKey: "settings.agentTitle",
-    href: "/agent",
-    view: "agent",
   },
   {
     icon: IconSettings,
