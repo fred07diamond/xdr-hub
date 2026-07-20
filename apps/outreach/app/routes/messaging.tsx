@@ -91,21 +91,51 @@ interface NodeData extends Record<string, unknown> {
   onClick: (node: MessagingNode) => void;
 }
 
+// ── Field preview shown on each node ──────────────────────────────────────────
+
+const PREVIEW_FIELDS: { key: keyof MessagingNode; label: string }[] = [
+  { key: "tone", label: "Tone" },
+  { key: "valueProps", label: "Value props" },
+  { key: "phrasesToUse", label: "Use" },
+  { key: "phrasesToAvoid", label: "Avoid" },
+  { key: "exampleNotes", label: "Examples" },
+  { key: "notes", label: "Notes" },
+];
+
+function NodePreview({ node }: { node: MessagingNode }) {
+  const filled = PREVIEW_FIELDS.filter((f) => node[f.key]);
+  if (filled.length === 0) return <p className="italic text-zinc-400 text-[10px]">No content yet</p>;
+  return (
+    <div className="flex flex-col gap-1">
+      {filled.map(({ key, label }) => {
+        const val = String(node[key] ?? "");
+        const preview = val.length > 55 ? val.slice(0, 52) + "…" : val;
+        return (
+          <div key={key} className="flex gap-1.5 leading-tight">
+            <span className="shrink-0 font-medium text-zinc-400 dark:text-zinc-500">{label}:</span>
+            <span className="text-zinc-600 dark:text-zinc-300 break-words">{preview}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Global node ────────────────────────────────────────────────────────────────
 
 function GlobalNode({ data }: NodeProps) {
   const d = data as NodeData;
   return (
     <div
-      className="rounded-lg border-2 border-[#0a66c2] bg-white shadow-md dark:bg-zinc-900 cursor-pointer min-w-[180px]"
+      className="rounded-lg border-2 border-[#0a66c2] bg-white shadow-md dark:bg-zinc-900 cursor-pointer w-[240px]"
       onClick={() => d.onClick(d.dbNode)}
     >
       <div className="flex items-center gap-1.5 rounded-t-md bg-[#0a66c2] px-3 py-1.5 text-white">
         <span className="text-xs font-semibold truncate flex-1">{d.dbNode.title}</span>
         {!d.isAdmin && <IconLock size={11} />}
       </div>
-      <div className="px-3 py-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-        Global baseline
+      <div className="px-3 py-2 text-[11px]">
+        <NodePreview node={d.dbNode} />
       </div>
       <Handle type="source" position={Position.Right} />
     </div>
@@ -118,29 +148,27 @@ function StandardNode({ data }: NodeProps) {
   const d = data as NodeData;
   return (
     <div
-      className="rounded-lg border border-zinc-200 bg-white shadow-md dark:border-zinc-700 dark:bg-zinc-900 cursor-pointer min-w-[180px]"
+      className="rounded-lg border border-zinc-200 bg-white shadow-md dark:border-zinc-700 dark:bg-zinc-900 cursor-pointer w-[240px]"
       onClick={() => d.onClick(d.dbNode)}
     >
       <div className="flex items-center gap-1.5 rounded-t-md bg-slate-600 px-3 py-1.5 text-white">
         <span className="text-xs font-semibold truncate flex-1">{d.dbNode.title}</span>
-      </div>
-      <div className="px-3 py-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-        {d.persona ? (
+        {d.persona && (
           <span
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-white text-[10px] font-medium"
+            className="shrink-0 rounded px-1 py-0.5 text-white text-[10px] font-medium"
             style={{ background: d.persona.color }}
-          >
-            {d.persona.name}
-          </span>
-        ) : (
-          "No persona linked"
+          >{d.persona.name}</span>
         )}
+      </div>
+      <div className="px-3 py-2 text-[11px]">
+        <NodePreview node={d.dbNode} />
       </div>
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
     </div>
   );
 }
+
 
 const nodeTypes = { global: GlobalNode, standard: StandardNode };
 
