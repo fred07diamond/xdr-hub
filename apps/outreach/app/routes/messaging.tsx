@@ -11,6 +11,7 @@ import {
   MiniMap,
   Position,
   ReactFlow,
+  ReactFlowProvider,
   addEdge,
   useEdgesState,
   useNodesState,
@@ -389,6 +390,14 @@ function toFlowEdge(e: MessagingEdge): Edge {
 }
 
 export default function MessagingPage() {
+  return (
+    <ReactFlowProvider>
+      <MessagingCanvas />
+    </ReactFlowProvider>
+  );
+}
+
+function MessagingCanvas() {
   const { canManageOrg } = useOrgRole();
   const isAdmin = canManageOrg;
 
