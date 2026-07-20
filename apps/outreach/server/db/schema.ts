@@ -32,7 +32,7 @@ export const prospects = table("prospects", {
   company: text("company"),
   about: text("about"),
   recentActivity: text("recent_activity"),
-  fitVerdict: text("fit_verdict", { enum: ["strong", "possible", "weak"] }),
+  fitVerdict: text("fit_verdict", { enum: ["strong", "possible", "weak", "inconclusive"] }),
   fitReason: text("fit_reason"),
   draftNote: text("draft_note"),
   draftFollowUp: text("draft_follow_up"),
