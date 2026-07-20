@@ -6,10 +6,14 @@
   "permissions": ["activeTab", "storage", "sidePanel", "scripting"],
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "http://localhost:*/*",
-    "http://127.0.0.1:*/*",
-    "https://*/*"
+    "https://builder-li.netlify.app/*"
   ],
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
   "content_scripts": [
     {
       "matches": [
