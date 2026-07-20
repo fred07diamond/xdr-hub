@@ -578,6 +578,8 @@ function MessagingCanvas() {
   const [importOpen, setImportOpen] = useState(false);
 
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable ref so handlePersonaChange never changes identity even when personas update
+  const personasRef = useRef<Persona[]>([]);
   const { screenToFlowPosition } = useReactFlow();
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
@@ -595,18 +597,19 @@ function MessagingCanvas() {
             data: {
               ...d,
               dbNode: updatedDb,
-              persona: personas.find((p) => p.id === newPersonaId),
+              persona: personasRef.current.find((p) => p.id === newPersonaId),
             } as NodeData,
           };
         }),
       );
     },
-    [updateNode, personas],
+    [updateNode], // stable — reads personas via ref, not state
   );
 
   // Sync graph data → flow state
   useEffect(() => {
     if (!graph) return;
+    personasRef.current = graph.personas;
     setPersonas(graph.personas);
     setNodes(
       graph.nodes.map((n) =>
@@ -615,21 +618,6 @@ function MessagingCanvas() {
     );
     setEdges(graph.edges.map(toFlowEdge));
   }, [graph, isAdmin]);
-
-  // Re-bind callbacks when personas or handlers change (keeps dropdowns in sync)
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) => ({
-        ...n,
-        data: {
-          ...n.data,
-          personas,
-          onClick: openEditor,
-          onPersonaChange: handlePersonaChange,
-        } as NodeData,
-      })),
-    );
-  }, [personas, openEditor, handlePersonaChange]);
 
   async function handleAddNode() {
     const pos = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
