@@ -5,8 +5,63 @@ import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { icpPersonas, icpSources, prospects } from "../server/db/schema.js";
+import { icpPersonas, icpSources, messagingEdges, messagingNodes, prospects } from "../server/db/schema.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
+
+type DbType = ReturnType<typeof getDb>;
+type DbNode = typeof messagingNodes.$inferSelect;
+
+// Walk the messaging inheritance chain for a given personaId (or global only).
+// Returns a text block root→leaf, or null if nothing is configured.
+async function buildMessagingContext(personaId: string | null, db: DbType): Promise<string | null> {
+  const [nodes, edges] = await Promise.all([
+    db.select().from(messagingNodes),
+    db.select().from(messagingEdges),
+  ]);
+
+  if (nodes.length === 0) return null;
+
+  const globalNode = nodes.find((n) => n.type === "global") ?? null;
+
+  // Find the leaf node matching this persona
+  const leafNode = personaId ? (nodes.find((n) => n.personaId === personaId) ?? null) : null;
+
+  // Build the chain: walk from leaf up to root via edges (target→source)
+  const chain: DbNode[] = [];
+  let current: DbNode | null = leafNode ?? globalNode;
+  const visited = new Set<string>();
+
+  while (current && !visited.has(current.id)) {
+    chain.unshift(current); // prepend so chain is root→leaf
+    visited.add(current.id);
+    const parentEdge = edges.find((e) => e.targetId === current!.id);
+    if (!parentEdge) break;
+    current = nodes.find((n) => n.id === parentEdge.sourceId) ?? null;
+  }
+
+  // If we only have the global node and it has no content, skip
+  const hasContent = (n: DbNode) =>
+    n.tone || n.valueProps || n.phrasesToUse || n.phrasesToAvoid || n.exampleNotes || n.notes;
+
+  const contentNodes = chain.filter(hasContent);
+  if (contentNodes.length === 0) return null;
+
+  const lines: string[] = ["MESSAGING GUIDELINES — apply when drafting the connection note:\n"];
+  for (let i = 0; i < chain.length; i++) {
+    const n = chain[i];
+    if (!hasContent(n)) continue;
+    lines.push(i === 0 ? `[${n.title}]` : `[${n.title} — extends above]`);
+    if (n.tone) lines.push(`Tone: ${n.tone}`);
+    if (n.valueProps) lines.push(`Value props: ${n.valueProps}`);
+    if (n.phrasesToUse) lines.push(`Use: ${n.phrasesToUse}`);
+    if (n.phrasesToAvoid) lines.push(`Avoid: ${n.phrasesToAvoid}`);
+    if (n.exampleNotes) lines.push(`Examples:\n${n.exampleNotes}`);
+    if (n.notes) lines.push(n.notes);
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
 
 // Resolved once on first use — avoids a per-request DB round-trip for LLM attribution.
 let _ownerCtx: { userEmail: string; orgId?: string } | null | undefined = undefined;
@@ -182,9 +237,13 @@ export default defineAction({
     try {
       const ownerCtx = await getOwnerCtx();
 
+      const messagingContext = await buildMessagingContext(personaId, db);
+      const messagingBlock = messagingContext ? `\n${messagingContext}\n\n` : "";
+
       const systemPrompt = icpText
         ? "You are a LinkedIn outreach assistant. Score fit and draft a personalized connection note.\n\n" +
           `ICP document:\n${icpText.slice(0, 3000)}\n\n` +
+          messagingBlock +
           "Scoring rubric — be decisive, don't hedge:\n" +
           "- strong: title + seniority match the ICP, OR clear behavioral signals. If evidence points to strong, score it strong.\n" +
           "- possible: genuine uncertainty only — title is adjacent OR seniority is one level off, AND no behavioral signals.\n" +
@@ -194,6 +253,7 @@ export default defineAction({
           '"draftNote": "<connection note, max 200 chars, genuine and specific>", ' +
           '"draftFollowUp": "<follow-up to send after they accept, max 100 chars>" }'
         : "You are a LinkedIn outreach assistant. No ICP document has been uploaded, so you cannot score fit.\n\n" +
+          messagingBlock +
           'Reply with valid JSON only: { "fitVerdict": "inconclusive", "fitReason": "No ICP document uploaded — add ICP criteria on the ICP tab to enable fit scoring.", ' +
           '"draftNote": "<a brief, generic, professional connection note based only on the profile, max 200 chars — do not reference any ICP or scoring criteria>", ' +
           '"draftFollowUp": "<a short generic follow-up, max 100 chars>" }';

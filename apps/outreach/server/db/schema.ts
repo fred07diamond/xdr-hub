@@ -73,6 +73,33 @@ export const workspaceSettings = table("workspace_settings", {
   updatedAt: text("updated_at").default(now()),
 });
 
+// Canvas nodes for the Messaging tab (tone, value props, phrases, example notes).
+// type: 'global' (one admin-managed baseline) or 'user' (persona-specific).
+export const messagingNodes = table("messaging_nodes", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull().default("user"),
+  title: text("title").notNull().default("New Node"),
+  personaId: text("persona_id"),
+  tone: text("tone"),
+  valueProps: text("value_props"),
+  phrasesToUse: text("phrases_to_use"),
+  phrasesToAvoid: text("phrases_to_avoid"),
+  exampleNotes: text("example_notes"),
+  notes: text("notes"),
+  positionX: integer("position_x").notNull().default(100),
+  positionY: integer("position_y").notNull().default(100),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
+
+// Directed edges between messaging nodes (source → target = parent → child).
+export const messagingEdges = table("messaging_edges", {
+  id: text("id").primaryKey(),
+  sourceId: text("source_id").notNull(),
+  targetId: text("target_id").notNull(),
+  createdAt: text("created_at").default(now()),
+});
+
 // Singleton row that holds ICP configuration.
 // icpText: the full text of the user's uploaded ICP document — used by
 //   capture-profile to score and draft every captured LinkedIn profile.

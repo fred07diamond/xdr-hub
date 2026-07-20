@@ -15,6 +15,7 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconMessageCircle,
+  IconMessages,
   IconPin,
   IconPlus,
   IconSettings,
@@ -52,6 +53,12 @@ const navItems = [
     labelKey: "navigation.icp",
     href: "/icp",
     view: "icp",
+  },
+  {
+    icon: IconMessages,
+    labelKey: "navigation.messaging",
+    href: "/messaging",
+    view: "messaging",
   },
   {
     icon: IconMessageCircle,

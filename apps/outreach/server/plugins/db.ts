@@ -134,6 +134,34 @@ export default runMigrations(
       version: 17,
       sql: `ALTER TABLE feedback ADD COLUMN IF NOT EXISTS draft_note TEXT`,
     },
+    {
+      version: 18,
+      sql: `CREATE TABLE IF NOT EXISTS messaging_nodes (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL DEFAULT 'user',
+        title TEXT NOT NULL DEFAULT 'New Node',
+        persona_id TEXT,
+        tone TEXT,
+        value_props TEXT,
+        phrases_to_use TEXT,
+        phrases_to_avoid TEXT,
+        example_notes TEXT,
+        notes TEXT,
+        position_x INTEGER NOT NULL DEFAULT 100,
+        position_y INTEGER NOT NULL DEFAULT 100,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 19,
+      sql: `CREATE TABLE IF NOT EXISTS messaging_edges (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "outreach_migrations" },
 );

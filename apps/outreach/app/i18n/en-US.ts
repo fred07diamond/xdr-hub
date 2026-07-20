@@ -46,6 +46,7 @@ const messages = {
     expandSidebar: "Expand Sidebar",
     extensions: "Extensions",
     icp: "ICP",
+    messaging: "Messaging",
     navigation: "Navigation",
     navigationDescription: "Main navigation",
     observability: "Observability",
