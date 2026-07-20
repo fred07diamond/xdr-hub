@@ -1,7 +1,6 @@
 import { agentNative } from "@agent-native/core/vite";
 import { reactRouter } from "@react-router/dev/vite";
-import { defineConfig } from "vite";
-import type { UserConfig } from "vitest/config";
+import { defineConfig } from "vitest/config";
 
 const reactRouterPlugins = reactRouter as unknown as () => any[];
 const agentNativePlugins = agentNative as unknown as (
@@ -21,4 +20,4 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
   },
-} as UserConfig);
+});
