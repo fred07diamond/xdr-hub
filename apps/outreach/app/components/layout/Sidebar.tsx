@@ -57,28 +57,28 @@ const navItems = [
     view: "icp",
   },
   {
-    icon: IconChartBar,
-    labelKey: "navigation.analytics",
-    href: "/analytics",
-    view: "analytics",
-  },
-  {
-    icon: IconMessageReport,
-    labelKey: "navigation.feedback",
-    href: "/feedback",
-    view: "feedback",
-  },
-  {
     icon: IconMessageCircle,
     labelKey: "navigation.chat",
     href: "/chat",
     view: "chat",
   },
   {
+    icon: IconChartBar,
+    labelKey: "navigation.analytics",
+    href: "/analytics",
+    view: "analytics",
+  },
+  {
     icon: IconBrain,
     labelKey: "settings.agentTitle",
     href: "/agent",
     view: "agent",
+  },
+  {
+    icon: IconMessageReport,
+    labelKey: "navigation.feedback",
+    href: "/feedback",
+    view: "feedback",
   },
   {
     icon: IconSettings,
