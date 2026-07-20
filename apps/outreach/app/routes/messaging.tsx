@@ -146,10 +146,8 @@ const FIELD_LABELS: Partial<Record<keyof MessagingNode, string>> = {
 interface NodeData extends Record<string, unknown> {
   dbNode: MessagingNode;
   persona: Persona | undefined;
-  personas: Persona[];
   isAdmin: boolean;
   onClick: (node: MessagingNode) => void;
-  onPersonaChange: (nodeId: string, personaId: string | null) => void;
 }
 
 // ── Unified canvas node component ──────────────────────────────────────────────
@@ -185,28 +183,6 @@ function CanvasNode({ data }: NodeProps) {
         </div>
         {(isGlobal || isPersona) && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
       </div>
-
-      {/* Persona picker — only for fine-tuning nodes (not global or persona) */}
-      {!isGlobal && !isPersona && (
-        <div
-          className="border-b border-zinc-100 dark:border-zinc-800 px-2.5 py-1.5"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <select
-            className="w-full rounded border border-zinc-200 bg-transparent px-1.5 py-0.5 text-[10px] text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
-            value={d.dbNode.personaId ?? ""}
-            onChange={(e) => d.onPersonaChange(d.dbNode.id, e.target.value || null)}
-          >
-            <option value="">All personas</option>
-            {d.personas.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          {d.persona && (
-            <div className="mt-1 h-0.5 rounded-full" style={{ background: d.persona.color }} />
-          )}
-        </div>
-      )}
 
       {/* Field preview */}
       <div className="px-3 py-2 text-[10px] space-y-0.5">
@@ -356,14 +332,13 @@ function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: 
 
 interface EditorProps {
   node: MessagingNode | null;
-  personas: Persona[];
   isAdmin: boolean;
   onClose: () => void;
   onSaved: (updated: Partial<MessagingNode>) => void;
   onDeleted: (id: string) => void;
 }
 
-function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted }: EditorProps) {
+function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorProps) {
   const updateNode = useActionMutation("update-messaging-node");
   const deleteNode = useActionMutation("delete-messaging-node");
 
@@ -373,7 +348,6 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
   const cfg = node ? (NODE_CONFIG[node.type as NodeKind] ?? NODE_CONFIG.tone) : NODE_CONFIG.tone;
 
   const [title, setTitle] = useState("");
-  const [personaId, setPersonaId] = useState("");
   const [tone, setTone] = useState("");
   const [valueProps, setValueProps] = useState("");
   const [phrasesToUse, setPhrasesToUse] = useState("");
@@ -384,7 +358,6 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
   useEffect(() => {
     if (!node) return;
     setTitle(node.title ?? "");
-    setPersonaId(node.personaId ?? "");
     setTone(node.tone ?? "");
     setValueProps(node.valueProps ?? "");
     setPhrasesToUse(node.phrasesToUse ?? "");
@@ -397,7 +370,6 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
     if (!node) return;
     const patch: Partial<MessagingNode> = {
       title: title || undefined,
-      personaId: isGlobal ? undefined : (personaId || null),
       tone: tone || null,
       valueProps: valueProps || null,
       phrasesToUse: phrasesToUse || null,
@@ -437,7 +409,7 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
               </div>
             )}
             <SheetTitle>
-            {isPersona ? (personas.find((p) => p.id === node?.personaId)?.name ?? cfg.label) : cfg.label}
+            {isPersona ? (node?.title ?? cfg.label) : cfg.label}
           </SheetTitle>
           </div>
         </SheetHeader>
@@ -446,20 +418,6 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
           <EditorField label="Title" readOnly={readOnly}>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={readOnly} placeholder="Node title" />
           </EditorField>
-
-          {!isGlobal && !isPersona && (
-            <EditorField label="Link to Persona" readOnly={readOnly}>
-              <select
-                className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                value={personaId}
-                onChange={(e) => setPersonaId(e.target.value)}
-                disabled={readOnly}
-              >
-                <option value="">— All personas —</option>
-                {personas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </EditorField>
-          )}
 
           {showNotes && (
             <EditorField label={node?.type === "role" ? "Role description" : "Notes"} readOnly={readOnly}>
@@ -580,7 +538,6 @@ function toFlowNode(
   personas: Persona[],
   isAdmin: boolean,
   onClick: (n: MessagingNode) => void,
-  onPersonaChange: (id: string, pid: string | null) => void,
 ): Node {
   const type = dbNode.type as string;
   return {
@@ -590,10 +547,8 @@ function toFlowNode(
     data: {
       dbNode,
       persona: personas.find((p) => p.id === dbNode.personaId),
-      personas,
       isAdmin,
       onClick,
-      onPersonaChange,
     } as NodeData,
   };
 }
@@ -642,32 +597,11 @@ function MessagingCanvas() {
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
 
-  const handlePersonaChange = useCallback(
-    (nodeId: string, newPersonaId: string | null) => {
-      updateNode.mutate({ id: nodeId, personaId: newPersonaId });
-      setNodes((nds) =>
-        nds.map((n) => {
-          if (n.id !== nodeId) return n;
-          const d = n.data as NodeData;
-          return {
-            ...n,
-            data: {
-              ...d,
-              dbNode: { ...d.dbNode, personaId: newPersonaId },
-              persona: personasRef.current.find((p) => p.id === newPersonaId),
-            } as NodeData,
-          };
-        }),
-      );
-    },
-    [updateNode],
-  );
-
   useEffect(() => {
     if (!graph) return;
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor, handlePersonaChange)));
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor)));
     setEdges(graph.edges.map(toFlowEdge));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
@@ -712,7 +646,7 @@ function MessagingCanvas() {
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
     }) as MessagingNode;
-    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, isAdmin, openEditor, handlePersonaChange)]);
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, isAdmin, openEditor)]);
     setEditingNode(result);
   }
 
@@ -863,7 +797,6 @@ function MessagingCanvas() {
 
       <NodeEditorSheet
         node={editingNode}
-        personas={personas}
         isAdmin={isAdmin}
         onClose={() => setEditingNode(null)}
         onSaved={handleNodeSaved}
