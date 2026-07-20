@@ -36,6 +36,7 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "Builder.LI"
+    "default_title": "Builder.LI",
+    "default_popup": "panel.html"
   }
 }

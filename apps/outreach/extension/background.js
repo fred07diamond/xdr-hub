@@ -153,7 +153,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// Open the side panel when the extension icon is clicked
-chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ tabId: tab.id });
-});
+// Use side panel in Chrome; fall back to popup in Arc and other browsers
+// that don't implement the sidePanel API.
+if (chrome.sidePanel) {
+  chrome.action.setPopup({ popup: "" }); // clear popup so onClicked fires
+  chrome.action.onClicked.addListener((tab) => {
+    chrome.sidePanel.open({ tabId: tab.id });
+  });
+}
