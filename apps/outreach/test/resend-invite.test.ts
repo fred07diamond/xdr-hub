@@ -62,7 +62,7 @@ describe("settings.tsx — OrgMembersSection", () => {
 
   it("has inline Copy for Slack button and Invited badge for pending invitations", () => {
     const src = readFile("app/routes/settings.tsx");
-    expect(src).toContain("Copy for Slack");
+    expect(src).toContain("Copy invite");
     expect(src).toContain("Invited");
     expect(src).toContain("buildSlackMessage");
   });

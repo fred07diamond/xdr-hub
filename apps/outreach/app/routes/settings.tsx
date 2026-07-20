@@ -164,6 +164,21 @@ function buildSlackMessage(email: string) {
   return `Hey! I've added you to our Builder.LI workspace. Sign in at ${url} with your Google account (${email}) to accept your invitation.`;
 }
 
+const AVATAR_COLORS = [
+  "bg-blue-500", "bg-violet-500", "bg-emerald-500",
+  "bg-amber-500", "bg-rose-500", "bg-cyan-500", "bg-indigo-500",
+];
+
+function avatarColor(email: string) {
+  let h = 0;
+  for (const c of email) h = (h * 31 + c.charCodeAt(0)) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[h];
+}
+
+function initials(email: string) {
+  return email.split("@")[0].slice(0, 2).toUpperCase();
+}
+
 function OrgMembersSection() {
   const { data: orgInfo } = useOrg();
   const { data: membersData, isLoading: membersLoading } = useOrgMembers();
@@ -211,111 +226,17 @@ function OrgMembersSection() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Members</CardTitle>
-          {orgInfo.orgName && <CardDescription>{orgInfo.orgName}</CardDescription>}
-        </CardHeader>
-        <CardContent className="p-0">
-          {membersLoading ? (
-            <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
-              <IconLoader2 size={14} className="animate-spin" />
-              Loading…
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Email</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Role</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Joined</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((m) => (
-                  <tr key={m.email} className="border-b border-border last:border-b-0 hover:bg-muted/30">
-                    <td className="px-4 py-3">{m.email}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-block capitalize text-xs px-2 py-0.5 rounded border border-border">
-                        {m.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {new Date(m.joinedAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      {canManageOrg && m.role !== "owner" && m.email !== orgInfo.email && (
-                        <button
-                          type="button"
-                          onClick={() => removeMember.mutate(m.email)}
-                          disabled={removeMember.isPending}
-                          className="text-xs text-destructive hover:underline disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {invitations.map((inv) => (
-                  <tr key={inv.id} className="border-b border-border last:border-b-0 hover:bg-muted/30">
-                    <td className="px-4 py-3">{inv.email}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-block capitalize text-xs px-2 py-0.5 rounded border border-border">
-                        {inv.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-block text-xs px-2 py-0.5 rounded border border-amber-300/50 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800/50">
-                        Invited
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => handleCopySlack(inv.email)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted"
-                      >
-                        {copiedMap[inv.email] ? (
-                          <IconCheck size={11} className="text-emerald-600" />
-                        ) : (
-                          <IconBrandSlack size={11} />
-                        )}
-                        {copiedMap[inv.email] ? "Copied!" : "Copy for Slack"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {members.length === 0 && invitations.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted-foreground">
-                      No members yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
-
-      {canInviteMembers && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Invite a teammate</CardTitle>
-            <CardDescription>
-              Add their email, then copy the Slack message to send them the link.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+    <Card>
+      <CardContent className="p-0">
+        {/* Invite form */}
+        {canInviteMembers && (
+          <div className="px-5 py-4 border-b border-border">
             <form onSubmit={handleInvite} className="flex items-center gap-2">
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="teammate@example.com"
+                placeholder="Invite by email address…"
                 className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <select
@@ -329,44 +250,97 @@ function OrgMembersSection() {
               <button
                 type="submit"
                 disabled={inviteMember.isPending || !inviteEmail.trim()}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {inviteMember.isPending ? (
-                  <IconLoader2 size={12} className="animate-spin" />
-                ) : (
-                  <IconMail size={12} />
-                )}
-                Invite
+                {inviteMember.isPending ? <IconLoader2 size={14} className="animate-spin" /> : null}
+                Send invite
               </button>
             </form>
             {inviteMember.isError && (
-              <p className="text-xs text-destructive">
+              <p className="mt-2 text-xs text-destructive">
                 {(inviteMember.error as Error)?.message ?? "Failed to invite"}
               </p>
             )}
             {lastInvitedEmail && (
-              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
-                <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                  <IconBrandSlack size={13} />
-                  Copy this message and paste it into Slack:
-                </p>
-                <p className="text-xs text-muted-foreground font-mono leading-relaxed break-all">
-                  {buildSlackMessage(lastInvitedEmail)}
+              <div className="mt-3 flex items-center gap-3 rounded-lg bg-muted/50 border border-border px-3 py-2.5">
+                <IconBrandSlack size={15} className="shrink-0 text-muted-foreground" />
+                <p className="flex-1 text-xs text-muted-foreground truncate">
+                  Paste this in Slack → <span className="text-foreground">"{buildSlackMessage(lastInvitedEmail)}"</span>
                 </p>
                 <button
                   type="button"
                   onClick={handleCopyInviteMessage}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
+                  className="shrink-0 inline-flex items-center gap-1 rounded border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted"
                 >
                   {slackCopied ? <IconCheck size={12} className="text-emerald-600" /> : <IconClipboard size={12} />}
-                  {slackCopied ? "Copied!" : "Copy message"}
+                  {slackCopied ? "Copied!" : "Copy"}
                 </button>
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          </div>
+        )}
+
+        {/* Member list */}
+        {membersLoading ? (
+          <div className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
+            <IconLoader2 size={14} className="animate-spin" />
+            Loading…
+          </div>
+        ) : (
+          <ul>
+            {members.map((m) => (
+              <li key={m.email} className="flex items-center gap-3 px-5 py-3.5 border-b border-border last:border-b-0 group">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0 ${avatarColor(m.email)}`}>
+                  {initials(m.email)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate">{m.email}</p>
+                </div>
+                <span className="text-xs text-muted-foreground capitalize">{m.role}</span>
+                {canManageOrg && m.role !== "owner" && m.email !== orgInfo.email && (
+                  <button
+                    type="button"
+                    onClick={() => removeMember.mutate(m.email)}
+                    disabled={removeMember.isPending}
+                    className="text-xs text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                )}
+              </li>
+            ))}
+            {invitations.map((inv) => (
+              <li key={inv.id} className="flex items-center gap-3 px-5 py-3.5 border-b border-border last:border-b-0 group">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center bg-muted shrink-0">
+                  <IconMail size={14} className="text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate">{inv.email}</p>
+                  <p className="text-xs text-muted-foreground">Pending invitation · <span className="capitalize">{inv.role}</span></p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopySlack(inv.email)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  {copiedMap[inv.email] ? (
+                    <IconCheck size={11} className="text-emerald-600" />
+                  ) : (
+                    <IconBrandSlack size={11} />
+                  )}
+                  {copiedMap[inv.email] ? "Copied!" : "Copy invite"}
+                </button>
+              </li>
+            ))}
+            {members.length === 0 && invitations.length === 0 && (
+              <li className="px-5 py-8 text-center text-sm text-muted-foreground">
+                No members yet.
+              </li>
+            )}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
