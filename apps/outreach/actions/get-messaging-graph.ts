@@ -6,14 +6,15 @@ import { getDb } from "../server/db/index.js";
 import { icpPersonas, messagingEdges, messagingNodes } from "../server/db/schema.js";
 
 export default defineAction({
-  description: "Return the full messaging graph (nodes + edges) and the list of ICP personas. Auto-syncs persona canvas nodes from ICP personas.",
+  description: "Return the messaging graph for the current user. Persona anchors are shared; all other nodes and edges are per-user.",
   schema: z.object({}),
   http: { method: "GET" },
   requiresAuth: true,
-  run: async () => {
+  run: async (_args, ctx) => {
     const db = getDb();
+    const userEmail = ctx!.userEmail!;
 
-    const [nodes, edges, personas] = await Promise.all([
+    const [allNodes, allEdges, personas] = await Promise.all([
       db.select().from(messagingNodes).orderBy(asc(messagingNodes.createdAt)),
       db.select().from(messagingEdges).orderBy(asc(messagingEdges.createdAt)),
       db
@@ -23,13 +24,20 @@ export default defineAction({
     ]);
 
     const personaIds = new Set(personas.map((p) => p.id));
-    const existingPersonaNodes = nodes.filter((n) => n.type === "persona");
+
+    // Persona nodes are shared; fine-tuning nodes are scoped to this user
+    const existingPersonaNodes = allNodes.filter((n) => n.type === "persona");
     const coveredPersonaIds = new Set(
       existingPersonaNodes.map((n) => n.personaId).filter(Boolean) as string[],
     );
 
-    // Filter out legacy global nodes — personas are now the canvas roots
-    let finalNodes = nodes.filter((n) => n.type !== "global");
+    // Start with persona nodes + this user's own nodes; drop legacy global nodes
+    let finalNodes = allNodes.filter(
+      (n) => n.type === "persona" || (n.type !== "global" && n.ownerEmail === userEmail),
+    );
+
+    // User's own edges only
+    const finalEdges = allEdges.filter((e) => e.ownerEmail === userEmail);
 
     const now = new Date().toISOString();
 
@@ -82,6 +90,7 @@ export default defineAction({
           id,
           type: "persona",
           title: persona.name,
+          ownerEmail: null,
           personaId: persona.id,
           tone: null,
           valueProps: null,
@@ -94,12 +103,11 @@ export default defineAction({
           createdAt: now,
           updatedAt: now,
         });
-        // Track newly created nodes so the UI can auto-initialize from the ICP doc
         if (persona.icpText) newPersonaNodeIds.push(id);
         positionOffset++;
       }
     }
 
-    return { nodes: finalNodes, edges, personas, newPersonaNodeIds };
+    return { nodes: finalNodes, edges: finalEdges, personas, newPersonaNodeIds };
   },
 });

@@ -25,7 +25,7 @@ export default defineAction({
     const db = getDb();
 
     const row = await db
-      .select({ type: messagingNodes.type })
+      .select({ type: messagingNodes.type, ownerEmail: messagingNodes.ownerEmail })
       .from(messagingNodes)
       .where(eq(messagingNodes.id, id))
       .limit(1);
@@ -37,6 +37,11 @@ export default defineAction({
     const updatingContent = contentFields.some((k) => fields[k as keyof typeof fields] !== undefined);
     if ((row[0].type === "global" || row[0].type === "persona") && updatingContent) {
       await requireAdmin(ctx);
+    } else if (row[0].type !== "global" && row[0].type !== "persona") {
+      // Fine-tuning nodes are owned — only the owner may edit them
+      if (row[0].ownerEmail !== ctx!.userEmail) {
+        return { ok: false, error: "Not authorized to edit this node." };
+      }
     }
 
     await db

@@ -13,12 +13,14 @@ type DbNode = typeof messagingNodes.$inferSelect;
 
 // BFS down from the matched persona's canvas node, collecting all fine-tuning nodes.
 // Returns a text block persona→leaves, or null if nothing is configured.
-async function buildMessagingContext(personaId: string | null, db: DbType): Promise<string | null> {
+// edges are scoped to ownerEmail so each user's chain is independent.
+async function buildMessagingContext(personaId: string | null, ownerEmail: string | null, db: DbType): Promise<string | null> {
   if (!personaId) return null;
 
+  const edgeFilter = ownerEmail ? eq(messagingEdges.ownerEmail, ownerEmail) : isNull(messagingEdges.ownerEmail);
   const [nodes, edges] = await Promise.all([
     db.select().from(messagingNodes),
-    db.select().from(messagingEdges),
+    db.select().from(messagingEdges).where(edgeFilter),
   ]);
 
   if (nodes.length === 0) return null;
@@ -257,7 +259,7 @@ export default defineAction({
     try {
       const ownerCtx = await getOwnerCtx();
 
-      const messagingContext = await buildMessagingContext(personaId, db);
+      const messagingContext = await buildMessagingContext(personaId, ownerEmail, db);
       const messagingBlock = messagingContext ? `\n${messagingContext}\n\n` : "";
 
       const systemPrompt = icpText

@@ -12,14 +12,14 @@ const DEFAULT_TITLES: Record<string, string> = {
 };
 
 export default defineAction({
-  description: "Create a new typed messaging node on the canvas.",
+  description: "Create a new typed messaging node on the canvas, owned by the current user.",
   schema: z.object({
     nodeType: z.enum(["tone", "phrase_rule", "example", "role"]).default("tone"),
     positionX: z.number().int().default(300),
     positionY: z.number().int().default(300),
   }),
   requiresAuth: true,
-  run: async ({ nodeType, positionX, positionY }) => {
+  run: async ({ nodeType, positionX, positionY }, ctx) => {
     const db = getDb();
     const id = nanoid();
     const now = new Date().toISOString();
@@ -29,6 +29,7 @@ export default defineAction({
       id,
       type: nodeType,
       title,
+      ownerEmail: ctx!.userEmail,
       positionX,
       positionY,
       createdAt: now,
@@ -39,6 +40,7 @@ export default defineAction({
       id,
       type: nodeType,
       title,
+      ownerEmail: ctx!.userEmail,
       personaId: null,
       tone: null,
       valueProps: null,

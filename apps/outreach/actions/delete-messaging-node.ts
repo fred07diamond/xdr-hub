@@ -8,11 +8,11 @@ export default defineAction({
   description: "Delete a messaging node and all its connected edges. Cannot delete the global node.",
   schema: z.object({ id: z.string() }),
   requiresAuth: true,
-  run: async ({ id }) => {
+  run: async ({ id }, ctx) => {
     const db = getDb();
 
     const row = await db
-      .select({ type: messagingNodes.type })
+      .select({ type: messagingNodes.type, ownerEmail: messagingNodes.ownerEmail })
       .from(messagingNodes)
       .where(eq(messagingNodes.id, id))
       .limit(1);
@@ -20,6 +20,9 @@ export default defineAction({
     if (!row[0]) return { ok: false, error: "Node not found" };
     if (row[0].type === "global" || row[0].type === "persona") {
       return { ok: false, error: "Cannot delete persona anchor nodes." };
+    }
+    if (row[0].ownerEmail !== ctx!.userEmail) {
+      return { ok: false, error: "Not authorized to delete this node." };
     }
 
     await db.delete(messagingEdges).where(

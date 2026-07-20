@@ -670,8 +670,8 @@ function MessagingCanvas() {
     setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor, handlePersonaChange)));
     setEdges(graph.edges.map(toFlowEdge));
 
-    // Auto-fill persona nodes that have an ICP doc but no tone/notes yet
-    // Guard prevents re-firing within the same session (e.g. after agent updates)
+    // Auto-fill persona nodes — only admins may write to shared persona nodes
+    if (!isAdmin) return;
     if (hasAutoInitializedRef.current) return;
 
     const toInit = graph.nodes

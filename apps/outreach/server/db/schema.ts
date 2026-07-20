@@ -73,12 +73,13 @@ export const workspaceSettings = table("workspace_settings", {
   updatedAt: text("updated_at").default(now()),
 });
 
-// Canvas nodes for the Messaging tab (tone, value props, phrases, example notes).
-// type: 'global' (one admin-managed baseline) or 'user' (persona-specific).
+// Canvas nodes for the Messaging tab.
+// type='persona' nodes are shared (owner_email=null); all other types are per-user.
 export const messagingNodes = table("messaging_nodes", {
   id: text("id").primaryKey(),
   type: text("type").notNull().default("user"),
   title: text("title").notNull().default("New Node"),
+  ownerEmail: text("owner_email"),
   personaId: text("persona_id"),
   tone: text("tone"),
   valueProps: text("value_props"),
@@ -93,10 +94,12 @@ export const messagingNodes = table("messaging_nodes", {
 });
 
 // Directed edges between messaging nodes (source → target = parent → child).
+// owner_email scopes each edge to the user who created it.
 export const messagingEdges = table("messaging_edges", {
   id: text("id").primaryKey(),
   sourceId: text("source_id").notNull(),
   targetId: text("target_id").notNull(),
+  ownerEmail: text("owner_email"),
   createdAt: text("created_at").default(now()),
 });
 

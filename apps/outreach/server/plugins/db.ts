@@ -167,6 +167,8 @@ export default runMigrations(
       // Repurpose type='user' → specific node types. 'global' stays as-is.
       sql: `UPDATE messaging_nodes SET type = 'tone' WHERE type = 'user'`,
     },
+    { version: 21, sql: `ALTER TABLE messaging_nodes ADD COLUMN owner_email TEXT` },
+    { version: 22, sql: `ALTER TABLE messaging_edges ADD COLUMN owner_email TEXT` },
   ],
   { table: "outreach_migrations" },
 );
