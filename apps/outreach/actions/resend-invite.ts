@@ -1,6 +1,6 @@
 import { defineAction } from "@agent-native/core";
 import { table, text, eq, sql, and } from "@agent-native/core/db/schema";
-import { getAppProductionUrl, sendEmail } from "@agent-native/core/server";
+import { getAppProductionUrl } from "@agent-native/core/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { requireAdmin } from "../server/helpers/require-admin.js";
@@ -39,12 +39,30 @@ export default defineAction({
     const appUrl = getAppProductionUrl();
     const inviter = ctx.userEmail ?? "your team";
 
-    await sendEmail({
-      to: rows[0].email,
-      subject: "You're invited to Builder.LI",
-      html: buildInviteHtml({ invitee: rows[0].email, inviter, appUrl }),
-      text: `${inviter} has invited you to join Builder.LI. Sign in to accept: ${appUrl}`,
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) throw new Error("RESEND_API_KEY is not configured — add it in Netlify environment variables");
+
+    const from = process.env.EMAIL_FROM ?? "Builder.LI <onboarding@resend.dev>";
+
+    const emailRes = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: rows[0].email,
+        subject: "You're invited to Builder.LI",
+        html: buildInviteHtml({ invitee: rows[0].email, inviter, appUrl }),
+        text: `${inviter} has invited you to join Builder.LI. Sign in to accept: ${appUrl}`,
+      }),
     });
+
+    if (!emailRes.ok) {
+      const errorBody = await emailRes.text().catch(() => "");
+      throw new Error(`Failed to send invitation email (${emailRes.status}): ${errorBody}`);
+    }
 
     return { ok: true };
   },

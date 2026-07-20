@@ -90,9 +90,10 @@ describe("resend-invite action", () => {
     expect(src).toContain("requireAdmin");
   });
 
-  it("sends email using sendEmail", () => {
+  it("calls Resend API directly using RESEND_API_KEY from process.env", () => {
     const src = readFile("actions/resend-invite.ts");
-    expect(src).toContain("sendEmail");
+    expect(src).toContain("RESEND_API_KEY");
+    expect(src).toContain("api.resend.com/emails");
   });
 });
 
