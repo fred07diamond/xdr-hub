@@ -1,6 +1,6 @@
 /**
  * Resend invite tests
- * 1. Source — ResendInviteCard exists in settings.tsx and is not guarded by useOrgRole
+ * 1. Source — OrgMembersSection exists in settings.tsx with inline Resend button
  * 2. Source — resend-invite action exists with correct schema
  * 3. Source — resend-invite action calls requireAdmin (server enforces, UI should not gate)
  * 4. Live — action returns 4xx without auth
@@ -37,36 +37,39 @@ async function callAction(name: string, body: Record<string, unknown> = {}) {
 
 // ─── 1. Settings UI ──────────────────────────────────────────────────────────
 
-describe("settings.tsx — ResendInviteCard", () => {
-  it("renders ResendInviteCard in the team section", () => {
+describe("settings.tsx — OrgMembersSection", () => {
+  it("renders OrgMembersSection in the settings file", () => {
     const src = readFile("app/routes/settings.tsx");
-    expect(src).toContain("ResendInviteCard");
+    expect(src).toContain("OrgMembersSection");
   });
 
-  it("is injected via direct content reconstruction (not Fragment wrapping)", () => {
+  it("is injected via enhancedTabs on the organization tab (not team prop)", () => {
     const src = readFile("app/routes/settings.tsx");
     expect(src).toContain("enhancedTabs");
     expect(src).toContain('tab.id === "organization"');
     expect(src).toContain("extraTabs={enhancedTabs}");
     // Must reconstruct content directly, not wrap tab.content in Fragment
-    // (Fragment wrapping caused the patched content to not re-render)
     expect(src).not.toContain("{tab.content}");
-    expect(src).toContain("<TeamPage showTitle={false} />");
-    expect(src).toContain("<ResendInviteCard />");
+    expect(src).toContain("<OrgMembersSection />");
   });
 
-  it("does NOT gate the card on canManageOrg (server enforces auth)", () => {
+  it("does NOT gate resend on canManageOrg (server enforces auth)", () => {
     const src = readFile("app/routes/settings.tsx");
-    const cardFn = src.slice(src.indexOf("function ResendInviteCard"), src.indexOf("export function meta"));
-    expect(cardFn).not.toContain("if (isLoading || !canManageOrg) return null");
-    expect(cardFn).not.toContain("if (!canManageOrg) return null");
+    const sectionFn = src.slice(src.indexOf("function OrgMembersSection"), src.indexOf("export function meta"));
+    expect(sectionFn).not.toContain("if (isLoading || !canManageOrg) return null");
+    expect(sectionFn).not.toContain("if (!canManageOrg) return null");
   });
 
-  it("has an email input and Resend button", () => {
+  it("has inline Resend button and Invited badge for pending invitations", () => {
+    const src = readFile("app/routes/settings.tsx");
+    expect(src).toContain("Resend");
+    expect(src).toContain("Invited");
+    expect(src).toContain("resend-invite");
+  });
+
+  it("has an email input for inviting members", () => {
     const src = readFile("app/routes/settings.tsx");
     expect(src).toContain('type="email"');
-    expect(src).toContain("Resend");
-    expect(src).toContain("resend-invite");
   });
 });
 

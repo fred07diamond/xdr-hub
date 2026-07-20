@@ -8,7 +8,15 @@ import {
   useT,
   type SettingsSearchEntry,
 } from "@agent-native/core/client";
-import { TeamPage, useOrgInvitations } from "@agent-native/core/client/org";
+import {
+  TeamPage,
+  useOrg,
+  useOrgInvitations,
+  useOrgMembers,
+  useOrgRole,
+  useInviteMember,
+  useRemoveMember,
+} from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
@@ -149,14 +157,26 @@ function DailyLimitCard() {
   );
 }
 
-function ResendInviteCard() {
-  const { data } = useOrgInvitations();
+function OrgMembersSection() {
+  const { data: orgInfo } = useOrg();
+  const { data: membersData, isLoading: membersLoading } = useOrgMembers();
+  const { data: invitesData } = useOrgInvitations();
+  const { canManageOrg, canInviteMembers } = useOrgRole();
+  const removeMember = useRemoveMember();
+  const inviteMember = useInviteMember();
   const resend = useActionMutation("resend-invite");
-  const [sentMap, setSentMap] = useState<Record<string, boolean>>({});
-  const [manualEmail, setManualEmail] = useState("");
-  const [manualSent, setManualSent] = useState(false);
 
-  const invitations = data?.invitations ?? [];
+  const [sentMap, setSentMap] = useState<Record<string, boolean>>({});
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
+  const [invited, setInvited] = useState(false);
+
+  if (!orgInfo?.orgId) {
+    return <TeamPage showTitle={false} />;
+  }
+
+  const members = membersData?.members ?? [];
+  const invitations = invitesData?.invitations ?? [];
 
   async function handleResend(email: string) {
     await resend.mutateAsync({ email });
@@ -164,71 +184,153 @@ function ResendInviteCard() {
     setTimeout(() => setSentMap((m) => ({ ...m, [email]: false })), 3000);
   }
 
-  async function handleManualResend(e: React.FormEvent) {
+  async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
-    if (!manualEmail.trim()) return;
-    await resend.mutateAsync({ email: manualEmail.trim() });
-    setManualSent(true);
-    setManualEmail("");
-    setTimeout(() => setManualSent(false), 3000);
-  }
-
-  if (invitations.length > 0) {
-    return (
-      <div className="mt-2 border-t border-border">
-        {invitations.map((inv) => (
-          <div key={inv.id} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0">
-            <span className="flex-1 text-sm">{inv.email}</span>
-            <span className="text-xs text-muted-foreground px-2 py-0.5 rounded border border-border">Invited</span>
-            <button
-              type="button"
-              onClick={() => handleResend(inv.email)}
-              disabled={resend.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
-            >
-              {sentMap[inv.email] ? <IconCheck size={11} className="text-emerald-600" /> : <IconMail size={11} />}
-              {sentMap[inv.email] ? "Sent!" : "Resend"}
-            </button>
-          </div>
-        ))}
-      </div>
-    );
+    if (!inviteEmail.trim()) return;
+    await inviteMember.mutateAsync({ email: inviteEmail.trim(), role: inviteRole });
+    setInviteEmail("");
+    setInvited(true);
+    setTimeout(() => setInvited(false), 3000);
   }
 
   return (
-    <Card className="mt-4">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <IconMail size={15} />
-          Resend Invitation
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Enter the email address of a pending invite to resend it.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleManualResend} className="flex items-center gap-2">
-          <input
-            type="email"
-            value={manualEmail}
-            onChange={(e) => setManualEmail(e.target.value)}
-            placeholder="teammate@example.com"
-            className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <button
-            type="submit"
-            disabled={resend.isPending || !manualEmail.trim()}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {resend.isPending ? <IconLoader2 size={12} className="animate-spin" /> : manualSent ? <IconCheck size={12} /> : <IconMail size={12} />}
-            {manualSent ? "Sent!" : "Resend"}
-          </button>
-        </form>
-        {resend.isError && (
-          <p className="mt-2 text-xs text-destructive">{(resend.error as Error)?.message ?? "Failed to send"}</p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Members</CardTitle>
+          {orgInfo.orgName && <CardDescription>{orgInfo.orgName}</CardDescription>}
+        </CardHeader>
+        <CardContent className="p-0">
+          {membersLoading ? (
+            <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+              <IconLoader2 size={14} className="animate-spin" />
+              Loading…
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Email</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Role</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Joined</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.map((m) => (
+                  <tr key={m.email} className="border-b border-border last:border-b-0 hover:bg-muted/30">
+                    <td className="px-4 py-3">{m.email}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-block capitalize text-xs px-2 py-0.5 rounded border border-border">
+                        {m.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {new Date(m.joinedAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      {canManageOrg && m.role !== "owner" && m.email !== orgInfo.email && (
+                        <button
+                          type="button"
+                          onClick={() => removeMember.mutate(m.email)}
+                          disabled={removeMember.isPending}
+                          className="text-xs text-destructive hover:underline disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {invitations.map((inv) => (
+                  <tr key={inv.id} className="border-b border-border last:border-b-0 hover:bg-muted/30">
+                    <td className="px-4 py-3">{inv.email}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-block capitalize text-xs px-2 py-0.5 rounded border border-border">
+                        {inv.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-block text-xs px-2 py-0.5 rounded border border-amber-300/50 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800/50">
+                        Invited
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleResend(inv.email)}
+                        disabled={resend.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                      >
+                        {sentMap[inv.email] ? (
+                          <IconCheck size={11} className="text-emerald-600" />
+                        ) : (
+                          <IconMail size={11} />
+                        )}
+                        {sentMap[inv.email] ? "Sent!" : "Resend"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {members.length === 0 && invitations.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      No members yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      {canInviteMembers && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Invite a teammate</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleInvite} className="flex items-center gap-2">
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="teammate@example.com"
+                className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value as "admin" | "member")}
+                className="rounded-md border border-border bg-background px-2 py-2 text-sm focus:outline-none"
+              >
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button
+                type="submit"
+                disabled={inviteMember.isPending || !inviteEmail.trim()}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {inviteMember.isPending ? (
+                  <IconLoader2 size={12} className="animate-spin" />
+                ) : invited ? (
+                  <IconCheck size={12} />
+                ) : (
+                  <IconMail size={12} />
+                )}
+                {invited ? "Invited!" : "Invite"}
+              </button>
+            </form>
+            {inviteMember.isError && (
+              <p className="mt-2 text-xs text-destructive">
+                {(inviteMember.error as Error)?.message ?? "Failed to invite"}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 
@@ -261,8 +363,7 @@ export default function SettingsRoute() {
               ...tab,
               content: (
                 <div className="mx-auto w-full max-w-2xl">
-                  <TeamPage showTitle={false} />
-                  <ResendInviteCard />
+                  <OrgMembersSection />
                 </div>
               ),
             }
@@ -304,12 +405,8 @@ export default function SettingsRoute() {
         </div>
       }
       team={
-        <div className="mx-auto w-full max-w-3xl">
-          <TeamPage
-            showTitle={false}
-            createOrgDescription={t("pages.teamCreateOrgDescription")}
-          />
-          <ResendInviteCard />
+        <div className="mx-auto w-full max-w-2xl">
+          <OrgMembersSection />
         </div>
       }
       whatsNew={
