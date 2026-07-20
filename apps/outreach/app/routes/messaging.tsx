@@ -680,22 +680,18 @@ function MessagingCanvas() {
     if (toInit.length === 0) return;
 
     const blocks = toInit.map(({ node, persona }) =>
-      `### ${persona.name} (node id: ${node.id})\n${persona.icpText}`,
+      `### ${persona.name} (canvas node id: ${node.id})\n${persona.icpText}`,
     ).join("\n\n---\n\n");
 
     sendToAgentChat({
       message:
-        `Build out the Messaging Canvas for ${toInit.length === 1 ? `the "${toInit[0].persona.name}" persona` : `${toInit.length} personas`} from their ICP documents.\n\n` +
-        `## Canvas model\n` +
-        `Each persona has a canvas anchor node. Fine-tuning nodes (tone, phrase_rule, example, role) branch off via edges (source=parent, target=child).\n\n` +
+        `Auto-fill the persona canvas nodes from their ICP documents.\n\n` +
         `## Instructions\n` +
-        `For each persona below:\n` +
-        `1. Update the persona canvas node's tone field with a concise voice/style line if the doc describes one.\n` +
-        `2. Phrases to use or avoid → create one "phrase_rule" node, connect it to the persona node.\n` +
-        `3. Outreach example notes or templates → create one "example" node, connect it.\n` +
-        `4. Role-specific guidance (e.g. "when messaging VPs…") → create a "role" node per role, connect it.\n` +
-        `5. Keep each node focused on one thing. Don't duplicate content across nodes.\n` +
-        `6. Only create nodes for guidance actually present in the doc.\n\n` +
+        `For each persona below, call update-messaging-node once with:\n` +
+        `- id: the canvas node id shown in the header\n` +
+        `- tone: a concise 1–2 sentence summary of the outreach tone/voice for this persona\n` +
+        `- notes: a brief description of who this persona is and how to approach them in outreach\n\n` +
+        `Only populate fields with information actually present in the doc. Do NOT create any child nodes.\n\n` +
         `## ICP Documents\n\n${blocks}`,
       submit: true,
     });
