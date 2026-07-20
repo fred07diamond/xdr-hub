@@ -88,7 +88,10 @@ function resetFeedbackSection() {
   if (feedbackSubmitBtn) {
     feedbackSubmitBtn.disabled = false;
     feedbackSubmitBtn.textContent = "Send feedback";
+    feedbackSubmitBtn.style.background = "";
   }
+  const errEl = document.getElementById("feedback-error");
+  if (errEl) errEl.textContent = "";
 }
 
 function showVerdict(draft) {
@@ -517,6 +520,8 @@ async function doSubmitFeedback(skipMessage) {
     feedbackSubmitBtn.disabled = false;
     feedbackSubmitBtn.textContent = "Retry";
     feedbackSubmitBtn.style.background = "#c0392b";
+    const errEl = document.getElementById("feedback-error");
+    if (errEl) errEl.textContent = result?.error || "Failed — check service worker console";
   }
 }
 

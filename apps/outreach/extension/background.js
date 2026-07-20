@@ -103,7 +103,7 @@ async function getExistingDraft(profileUrl) {
 
 async function submitFeedback({ sentiment, message, draftNote }) {
   const { appUrl, apiToken } = await getSettings();
-  if (!appUrl) return null;
+  if (!appUrl) return { ok: false, error: "App URL not configured" };
   try {
     const body = {
       ...(apiToken ? { apiToken } : {}),
@@ -116,10 +116,15 @@ async function submitFeedback({ sentiment, message, draftNote }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.error("[BLI] submit-feedback error", res.status, text.slice(0, 300));
+      return { ok: false, error: `${res.status}: ${text.slice(0, 100)}` };
+    }
     return await res.json();
-  } catch {
-    return null;
+  } catch (err) {
+    console.error("[BLI] submit-feedback fetch error", err);
+    return { ok: false, error: String(err) };
   }
 }
 
