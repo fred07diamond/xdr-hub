@@ -1,4 +1,5 @@
 import {
+  sendToAgentChat,
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client";
@@ -17,15 +18,9 @@ import {
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import type {
-  Connection,
-  Edge,
-  EdgeChange,
-  Node,
-  NodeChange,
-  NodeProps,
-} from "@xyflow/react";
+import type { Connection, Edge, Node, NodeProps } from "@xyflow/react";
 import {
+  IconFileUpload,
   IconLock,
   IconPlus,
   IconRefresh,
@@ -87,8 +82,10 @@ interface GraphData {
 interface NodeData extends Record<string, unknown> {
   dbNode: MessagingNode;
   persona: Persona | undefined;
+  personas: Persona[];
   isAdmin: boolean;
   onClick: (node: MessagingNode) => void;
+  onPersonaChange: (nodeId: string, personaId: string | null) => void;
 }
 
 // ── Field preview shown on each node ──────────────────────────────────────────
@@ -104,7 +101,8 @@ const PREVIEW_FIELDS: { key: keyof MessagingNode; label: string }[] = [
 
 function NodePreview({ node }: { node: MessagingNode }) {
   const filled = PREVIEW_FIELDS.filter((f) => node[f.key]);
-  if (filled.length === 0) return <p className="italic text-zinc-400 text-[10px]">No content yet</p>;
+  if (filled.length === 0)
+    return <p className="italic text-zinc-400 text-[10px]">No content yet — click to edit</p>;
   return (
     <div className="flex flex-col gap-1">
       {filled.map(({ key, label }) => {
@@ -153,13 +151,33 @@ function StandardNode({ data }: NodeProps) {
     >
       <div className="flex items-center gap-1.5 rounded-t-md bg-slate-600 px-3 py-1.5 text-white">
         <span className="text-xs font-semibold truncate flex-1">{d.dbNode.title}</span>
+      </div>
+
+      {/* Inline persona picker */}
+      <div
+        className="border-b border-zinc-100 dark:border-zinc-800 px-3 py-1.5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <select
+          className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+          value={d.dbNode.personaId ?? ""}
+          onChange={(e) => d.onPersonaChange(d.dbNode.id, e.target.value || null)}
+        >
+          <option value="">— No persona —</option>
+          {d.personas.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
         {d.persona && (
-          <span
-            className="shrink-0 rounded px-1 py-0.5 text-white text-[10px] font-medium"
+          <div
+            className="mt-1 h-1 rounded-full"
             style={{ background: d.persona.color }}
-          >{d.persona.name}</span>
+          />
         )}
       </div>
+
       <div className="px-3 py-2 text-[11px]">
         <NodePreview node={d.dbNode} />
       </div>
@@ -169,8 +187,118 @@ function StandardNode({ data }: NodeProps) {
   );
 }
 
-
 const nodeTypes = { global: GlobalNode, standard: StandardNode };
+
+// ── Import from doc dialog ─────────────────────────────────────────────────────
+
+function ImportDocDialog({
+  open,
+  onClose,
+  personas,
+}: {
+  open: boolean;
+  onClose: () => void;
+  personas: Persona[];
+}) {
+  const [text, setText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => setText(reader.result as string);
+    reader.readAsText(file);
+  }
+
+  function handleImport() {
+    if (!text.trim()) return;
+
+    const personaList =
+      personas.length > 0
+        ? `\nExisting ICP personas in the workspace:\n${personas.map((p) => `- ${p.name} (id: ${p.id})`).join("\n")}`
+        : "";
+
+    sendToAgentChat({
+      message:
+        `Parse this messaging document and build out the Messaging Canvas for me.\n\n` +
+        `## Instructions\n` +
+        `1. Identify any global/baseline messaging guidelines (tone, value props, phrases, examples) and update the Global Baseline node using update-messaging-node.\n` +
+        `2. Identify any persona-specific or audience-specific messaging sections. For each one, create a new node using create-messaging-node, fill in its fields with update-messaging-node, and link its personaId if the persona name matches one of the existing personas.\n` +
+        `3. Wire persona nodes back to the Global Baseline using create-messaging-edge (source = global node id, target = persona node id).\n` +
+        `4. Start by calling get-messaging-graph to get the current node ids before making changes.\n` +
+        `5. Be faithful to the doc — don't invent content that isn't there.` +
+        personaList +
+        `\n\n## Document\n\n${text.trim()}`,
+      submit: true,
+    });
+
+    setText("");
+    setFileName("");
+    onClose();
+    toast.success("Sent to agent — check the Chat tab for progress");
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-[520px] rounded-xl bg-white shadow-2xl dark:bg-zinc-900">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+          <h2 className="text-sm font-semibold">Import messaging doc</h2>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700">
+            <IconX size={16} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-4 p-5">
+          <p className="text-xs text-zinc-500">
+            Paste your messaging guidelines or upload a .txt / .md file. The agent will parse it
+            and create nodes on the canvas automatically.
+          </p>
+
+          {/* File upload */}
+          <div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".txt,.md,.markdown"
+              className="hidden"
+              onChange={handleFile}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileRef.current?.click()}
+              className="gap-1.5"
+            >
+              <IconFileUpload size={14} />
+              {fileName ? fileName : "Upload file"}
+            </Button>
+          </div>
+
+          {/* Paste area */}
+          <textarea
+            className="h-48 w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            placeholder="Or paste your messaging doc here…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleImport} disabled={!text.trim()}>
+              Import
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Node Editor Sheet ──────────────────────────────────────────────────────────
 
@@ -224,7 +352,16 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
       exampleNotes: exampleNotes || null,
       notes: notes || null,
     });
-    onSaved({ title, personaId: personaId || null, tone: tone || null, valueProps: valueProps || null, phrasesToUse: phrasesToUse || null, phrasesToAvoid: phrasesToAvoid || null, exampleNotes: exampleNotes || null, notes: notes || null });
+    onSaved({
+      title,
+      personaId: personaId || null,
+      tone: tone || null,
+      valueProps: valueProps || null,
+      phrasesToUse: phrasesToUse || null,
+      phrasesToAvoid: phrasesToAvoid || null,
+      exampleNotes: exampleNotes || null,
+      notes: notes || null,
+    });
     toast.success("Saved");
   }
 
@@ -342,20 +479,12 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
 
           {!readOnly && (
             <div className="flex items-center gap-2 pt-2">
-              <Button
-                onClick={handleSave}
-                disabled={updateNode.isPending}
-                className="flex-1"
-              >
+              <Button onClick={handleSave} disabled={updateNode.isPending} className="flex-1">
                 {updateNode.isPending ? <IconRefresh className="animate-spin" size={14} /> : null}
                 Save
               </Button>
               {!isGlobal && (
-                <Button
-                  variant="destructive"
-                  onClick={handleDelete}
-                  disabled={deleteNode.isPending}
-                >
+                <Button variant="destructive" onClick={handleDelete} disabled={deleteNode.isPending}>
                   <IconTrash size={14} />
                 </Button>
               )}
@@ -393,15 +522,21 @@ function Field({
   );
 }
 
-// ── Canvas page ────────────────────────────────────────────────────────────────
+// ── Canvas ─────────────────────────────────────────────────────────────────────
 
-function toFlowNode(dbNode: MessagingNode, personas: Persona[], isAdmin: boolean, onClick: (n: MessagingNode) => void): Node {
+function toFlowNode(
+  dbNode: MessagingNode,
+  personas: Persona[],
+  isAdmin: boolean,
+  onClick: (n: MessagingNode) => void,
+  onPersonaChange: (nodeId: string, personaId: string | null) => void,
+): Node {
   const persona = personas.find((p) => p.id === dbNode.personaId);
   return {
     id: dbNode.id,
     type: dbNode.type === "global" ? "global" : "standard",
     position: { x: dbNode.positionX, y: dbNode.positionY },
-    data: { dbNode, persona, isAdmin, onClick } as NodeData,
+    data: { dbNode, persona, personas, isAdmin, onClick, onPersonaChange } as NodeData,
   };
 }
 
@@ -440,48 +575,105 @@ function MessagingCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [editingNode, setEditingNode] = useState<MessagingNode | null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
 
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { screenToFlowPosition } = useReactFlow();
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
 
+  const handlePersonaChange = useCallback(
+    (nodeId: string, newPersonaId: string | null) => {
+      updateNode.mutate({ id: nodeId, personaId: newPersonaId });
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n;
+          const d = n.data as NodeData;
+          const updatedDb = { ...d.dbNode, personaId: newPersonaId };
+          return {
+            ...n,
+            data: {
+              ...d,
+              dbNode: updatedDb,
+              persona: personas.find((p) => p.id === newPersonaId),
+            } as NodeData,
+          };
+        }),
+      );
+    },
+    [updateNode, personas],
+  );
+
   // Sync graph data → flow state
   useEffect(() => {
     if (!graph) return;
     setPersonas(graph.personas);
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor)));
+    setNodes(
+      graph.nodes.map((n) =>
+        toFlowNode(n, graph.personas, isAdmin, openEditor, handlePersonaChange),
+      ),
+    );
     setEdges(graph.edges.map(toFlowEdge));
   }, [graph, isAdmin]);
 
-  // Add a new node at viewport center
+  // Re-bind callbacks when personas or handlers change (keeps dropdowns in sync)
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          personas,
+          onClick: openEditor,
+          onPersonaChange: handlePersonaChange,
+        } as NodeData,
+      })),
+    );
+  }, [personas, openEditor, handlePersonaChange]);
+
   async function handleAddNode() {
     const pos = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    const result = await createNode.mutateAsync({ positionX: Math.round(pos.x), positionY: Math.round(pos.y) }) as MessagingNode;
-    const newNode = toFlowNode(result, personas, isAdmin, openEditor);
+    const result = (await createNode.mutateAsync({
+      positionX: Math.round(pos.x),
+      positionY: Math.round(pos.y),
+    })) as MessagingNode;
+    const newNode = toFlowNode(result, personas, isAdmin, openEditor, handlePersonaChange);
     setNodes((nds) => [...nds, newNode]);
     setEditingNode(result);
   }
 
-  // Debounced position save after drag
   function handleNodeDragStop(_: unknown, node: Node) {
     if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
     dragTimerRef.current = setTimeout(() => {
-      updateNode.mutate({ id: node.id, positionX: Math.round(node.position.x), positionY: Math.round(node.position.y) });
+      updateNode.mutate({
+        id: node.id,
+        positionX: Math.round(node.position.x),
+        positionY: Math.round(node.position.y),
+      });
     }, 300);
   }
 
-  // Connect two nodes
   const handleConnect = useCallback(
     async (conn: Connection) => {
-      const optimistic = addEdge({ ...conn, type: "smoothstep", animated: false, style: { stroke: "#94a3b8", strokeWidth: 1.5 }, markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" } }, edges);
+      const optimistic = addEdge(
+        {
+          ...conn,
+          type: "smoothstep",
+          animated: false,
+          style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+          markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" },
+        },
+        edges,
+      );
       setEdges(optimistic);
-      const res = await createEdge.mutateAsync({ sourceId: conn.source!, targetId: conn.target! }) as any;
+      const res = (await createEdge.mutateAsync({
+        sourceId: conn.source!,
+        targetId: conn.target!,
+      })) as any;
       if (res?.ok === false) {
         toast.error(res.error ?? "Could not create connection.");
-        setEdges(edges); // rollback
+        setEdges(edges);
       } else {
-        // Update the edge id to the server-assigned one
         setEdges((eds) =>
           eds.map((e) =>
             e.source === conn.source && e.target === conn.target && e.id !== res.id
@@ -494,17 +686,13 @@ function MessagingCanvas() {
     [edges, createEdge],
   );
 
-  // Delete edges
   const handleEdgesDelete = useCallback(
     (deleted: Edge[]) => {
-      for (const e of deleted) {
-        deleteEdge.mutate({ id: e.id });
-      }
+      for (const e of deleted) deleteEdge.mutate({ id: e.id });
     },
     [deleteEdge],
   );
 
-  // Sheet callbacks
   function handleNodeSaved(updated: Partial<MessagingNode>) {
     if (!editingNode) return;
     const merged = { ...editingNode, ...updated };
@@ -512,7 +700,14 @@ function MessagingCanvas() {
     setNodes((nds) =>
       nds.map((n) =>
         n.id === merged.id
-          ? { ...n, data: { ...n.data, dbNode: merged, persona: personas.find((p) => p.id === merged.personaId) } as NodeData }
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                dbNode: merged,
+                persona: personas.find((p) => p.id === merged.personaId),
+              } as NodeData,
+            }
           : n,
       ),
     );
@@ -534,13 +729,22 @@ function MessagingCanvas() {
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h1 className="text-sm font-semibold">Messaging Canvas</h1>
         <p className="text-xs text-zinc-500 flex-1">
           Connect nodes to build an inheritance chain. Each persona node extends its parent.
         </p>
-        <Button size="sm" onClick={handleAddNode} disabled={createNode.isPending}>
-          <IconPlus size={14} className="mr-1" />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setImportOpen(true)}
+          className="gap-1.5"
+        >
+          <IconFileUpload size={14} />
+          Import doc
+        </Button>
+        <Button size="sm" onClick={handleAddNode} disabled={createNode.isPending} className="gap-1">
+          <IconPlus size={14} />
           Add Node
         </Button>
         <Button size="sm" variant="outline" onClick={() => refetch()}>
@@ -572,6 +776,13 @@ function MessagingCanvas() {
           />
         </ReactFlow>
       </div>
+
+      {/* Import dialog */}
+      <ImportDocDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        personas={personas}
+      />
 
       {/* Node editor */}
       <NodeEditorSheet
