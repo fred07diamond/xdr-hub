@@ -62,27 +62,36 @@ describe("Layer 1 — AUTO_CREATE_DEFAULT_ORG prevents open sign-in", () => {
 
 // ─── Layer 2 — RequireActiveOrg in root.tsx ───────────────────────────────────
 
-describe("Layer 2 — RequireActiveOrg blocks uninvited users in UI", () => {
-  it("root.tsx imports RequireActiveOrg from @agent-native/core/client/org-team", () => {
+describe("Layer 2 — InviteOnlyGate blocks uninvited users in UI", () => {
+  it("root.tsx defines InviteOnlyGate (invite-only blocking component)", () => {
     const src = readFile("app/root.tsx");
     expect(
       src,
-      "RequireActiveOrg import missing from root.tsx.\n" +
-        "Without it, signed-in users with no org membership reach the full app shell."
-    ).toContain("RequireActiveOrg");
-    expect(src).toContain("@agent-native/core/client/org-team");
+      "InviteOnlyGate missing from root.tsx.\n" +
+        "Without it, signed-in users with no org membership reach the full app shell " +
+        "or see the 'Create organization' form which lets them bypass the invite requirement."
+    ).toContain("InviteOnlyGate");
   });
 
-  it("root.tsx wraps AppLayout with <RequireActiveOrg>", () => {
+  it("root.tsx wraps AppLayout with <InviteOnlyGate> (never shows create-org form)", () => {
     const src = readFile("app/root.tsx");
     expect(
       src,
-      "<RequireActiveOrg> wrapper missing in AppContent.\n" +
-        "RequireActiveOrg must wrap <AppLayout> so uninvited users see the " +
-        "blocking screen before any app data is rendered."
-    ).toContain("<RequireActiveOrg>");
-    // Also verify the closing tag exists — prevents someone from just importing it
-    expect(src).toContain("</RequireActiveOrg>");
+      "<InviteOnlyGate> wrapper missing in AppContent.\n" +
+        "InviteOnlyGate must wrap <AppLayout> so uninvited users see a blocking screen " +
+        "with pending invitations only — no 'Create organization' form that would let " +
+        "anyone bypass the invite requirement."
+    ).toContain("<InviteOnlyGate>");
+    expect(src).toContain("</InviteOnlyGate>");
+  });
+
+  it("root.tsx does NOT use RequireActiveOrg (which always shows create-org form)", () => {
+    const src = readFile("app/root.tsx");
+    expect(
+      src,
+      "root.tsx still uses RequireActiveOrg which always shows 'Create organization'.\n" +
+        "Replace it with InviteOnlyGate to prevent unauthorized users from creating an org."
+    ).not.toContain("<RequireActiveOrg>");
   });
 });
 

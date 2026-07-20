@@ -10,7 +10,8 @@ import {
   useCommandMenuShortcut,
   useT,
 } from "@agent-native/core/client";
-import { IconBrain, IconSun, IconMoon } from "@tabler/icons-react";
+import { useOrg, useAcceptInvitation } from "@agent-native/core/client/org";
+import { IconBrain, IconSun, IconMoon, IconLoader2, IconUserPlus } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import { useCallback, useState } from "react";
@@ -23,8 +24,6 @@ import {
   useNavigate,
 } from "react-router";
 import type { LinksFunction } from "react-router";
-
-import { RequireActiveOrg } from "@agent-native/core/client/org-team";
 
 import { Layout as AppLayout } from "@/components/layout/Layout";
 import { AppToolkitProvider } from "@/components/ui/toolkit-provider";
@@ -116,6 +115,96 @@ function ThemeToggleItem() {
   );
 }
 
+/**
+ * Blocks the app shell for users who have no workspace membership.
+ * Unlike RequireActiveOrg, never shows the "Create organization" form —
+ * only shows pending invitations and a contact-your-admin message.
+ */
+function InviteOnlyGate({ children }: { children: React.ReactNode }) {
+  const { data: org, isLoading, isError, refetch } = useOrg();
+  const acceptInvitation = useAcceptInvitation();
+
+  if (isLoading) return null;
+
+  if (isError) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-background p-8">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <p className="mb-4 text-sm text-muted-foreground">
+            Failed to load workspace info. Please try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (org?.orgId) return <>{children}</>;
+
+  const pendingInvitations = org?.pendingInvitations ?? [];
+
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background p-8">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-lg">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="shrink-0 rounded bg-[#0a66c2] px-1.5 py-0.5 text-[11px] font-black tracking-tight text-white">
+            BLI
+          </span>
+          <h1 className="text-lg font-semibold">{APP_TITLE}</h1>
+        </div>
+        <p className="mb-6 text-sm text-muted-foreground">
+          This workspace is invite-only. Ask your admin to invite you from
+          Settings → Team.
+        </p>
+
+        {pendingInvitations.length > 0 && (
+          <div className="space-y-2">
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+              Pending invitations
+            </div>
+            <ul className="space-y-2">
+              {pendingInvitations.map((inv) => (
+                <li
+                  key={inv.id}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2"
+                >
+                  <IconUserPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {inv.orgName}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      Invited by {inv.invitedBy}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={acceptInvitation.isPending}
+                    onClick={() => acceptInvitation.mutate(inv.id)}
+                    className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {acceptInvitation.isPending ? (
+                      <IconLoader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      "Accept"
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AppContent() {
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const navigate = useNavigate();
@@ -152,11 +241,11 @@ function AppContent() {
           <ThemeToggleItem />
         </CommandMenu.Group>
       </CommandMenu>
-      <RequireActiveOrg>
+      <InviteOnlyGate>
         <AppLayout>
           <Outlet />
         </AppLayout>
-      </RequireActiveOrg>
+      </InviteOnlyGate>
     </>
   );
 }
