@@ -8,7 +8,7 @@ import {
   useT,
   type SettingsSearchEntry,
 } from "@agent-native/core/client";
-import { TeamPage } from "@agent-native/core/client/org";
+import { TeamPage, useOrgInvitations } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
@@ -150,46 +150,78 @@ function DailyLimitCard() {
 }
 
 function ResendInviteCard() {
+  const { data } = useOrgInvitations();
   const resend = useActionMutation("resend-invite");
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [sentMap, setSentMap] = useState<Record<string, boolean>>({});
+  const [manualEmail, setManualEmail] = useState("");
+  const [manualSent, setManualSent] = useState(false);
 
-  async function handleResend(e: React.FormEvent) {
+  const invitations = data?.invitations ?? [];
+
+  async function handleResend(email: string) {
+    await resend.mutateAsync({ email });
+    setSentMap((m) => ({ ...m, [email]: true }));
+    setTimeout(() => setSentMap((m) => ({ ...m, [email]: false })), 3000);
+  }
+
+  async function handleManualResend(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim()) return;
-    await resend.mutateAsync({ email: email.trim() });
-    setSent(true);
-    setEmail("");
-    setTimeout(() => setSent(false), 3000);
+    if (!manualEmail.trim()) return;
+    await resend.mutateAsync({ email: manualEmail.trim() });
+    setManualSent(true);
+    setManualEmail("");
+    setTimeout(() => setManualSent(false), 3000);
+  }
+
+  if (invitations.length > 0) {
+    return (
+      <div className="mt-2 border-t border-border">
+        {invitations.map((inv) => (
+          <div key={inv.id} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0">
+            <span className="flex-1 text-sm">{inv.email}</span>
+            <span className="text-xs text-muted-foreground px-2 py-0.5 rounded border border-border">Invited</span>
+            <button
+              type="button"
+              onClick={() => handleResend(inv.email)}
+              disabled={resend.isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
+            >
+              {sentMap[inv.email] ? <IconCheck size={11} className="text-emerald-600" /> : <IconMail size={11} />}
+              {sentMap[inv.email] ? "Sent!" : "Resend"}
+            </button>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
-    <Card className="mt-6">
+    <Card className="mt-4">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <IconMail size={15} />
           Resend Invitation
         </CardTitle>
         <CardDescription className="text-xs">
-          Didn't receive an invite email? Enter the email address to resend it.
+          Enter the email address of a pending invite to resend it.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleResend} className="flex items-center gap-2">
+        <form onSubmit={handleManualResend} className="flex items-center gap-2">
           <input
             type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={manualEmail}
+            onChange={(e) => setManualEmail(e.target.value)}
             placeholder="teammate@example.com"
             className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <button
             type="submit"
-            disabled={resend.isPending || !email.trim()}
+            disabled={resend.isPending || !manualEmail.trim()}
             className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {resend.isPending ? <IconLoader2 size={12} className="animate-spin" /> : sent ? <IconCheck size={12} /> : <IconMail size={12} />}
-            {sent ? "Sent!" : "Resend"}
+            {resend.isPending ? <IconLoader2 size={12} className="animate-spin" /> : manualSent ? <IconCheck size={12} /> : <IconMail size={12} />}
+            {manualSent ? "Sent!" : "Resend"}
           </button>
         </form>
         {resend.isError && (
