@@ -296,17 +296,21 @@ function OrgMembersSection() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate">{m.email}</p>
                 </div>
-                <span className="text-xs text-muted-foreground capitalize">{m.role}</span>
-                {canManageOrg && m.role !== "owner" && m.email !== orgInfo.email && (
-                  <button
-                    type="button"
-                    onClick={() => removeMember.mutate(m.email)}
-                    disabled={removeMember.isPending}
-                    className="text-xs text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
-                )}
+                <div className="relative shrink-0">
+                  <span className="text-xs text-muted-foreground capitalize group-hover:opacity-0 transition-opacity">
+                    {m.role}
+                  </span>
+                  {canManageOrg && m.role !== "owner" && m.email !== orgInfo.email && (
+                    <button
+                      type="button"
+                      onClick={() => removeMember.mutate(m.email)}
+                      disabled={removeMember.isPending}
+                      className="absolute inset-0 text-xs text-destructive opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
             {invitations.map((inv) => (
