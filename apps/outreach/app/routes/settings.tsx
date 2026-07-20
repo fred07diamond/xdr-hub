@@ -225,9 +225,18 @@ export default function SettingsRoute() {
     () =>
       agentSettingsTabs.map((tab) =>
         tab.id === "organization"
-          ? { ...tab, content: <>{tab.content}<div className="mx-auto w-full max-w-3xl px-4 pb-6"><ResendInviteCard /></div></> }
+          ? {
+              ...tab,
+              content: (
+                <div className="mx-auto w-full max-w-2xl">
+                  <TeamPage showTitle={false} />
+                  <ResendInviteCard />
+                </div>
+              ),
+            }
           : tab,
       ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [agentSettingsTabs],
   );
 

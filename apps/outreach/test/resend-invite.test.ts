@@ -43,13 +43,16 @@ describe("settings.tsx — ResendInviteCard", () => {
     expect(src).toContain("ResendInviteCard");
   });
 
-  it("is injected into the organization extraTab, not the team prop", () => {
+  it("is injected via direct content reconstruction (not Fragment wrapping)", () => {
     const src = readFile("app/routes/settings.tsx");
-    // SettingsTabsPage ignores the team prop when an organization tab already
-    // exists in extraTabs — must inject into enhancedTabs instead
     expect(src).toContain("enhancedTabs");
     expect(src).toContain('tab.id === "organization"');
     expect(src).toContain("extraTabs={enhancedTabs}");
+    // Must reconstruct content directly, not wrap tab.content in Fragment
+    // (Fragment wrapping caused the patched content to not re-render)
+    expect(src).not.toContain("{tab.content}");
+    expect(src).toContain("<TeamPage showTitle={false} />");
+    expect(src).toContain("<ResendInviteCard />");
   });
 
   it("does NOT gate the card on canManageOrg (server enforces auth)", () => {
