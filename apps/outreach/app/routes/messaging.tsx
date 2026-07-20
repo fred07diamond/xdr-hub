@@ -20,11 +20,16 @@ import {
 } from "@xyflow/react";
 import type { Connection, Edge, Node, NodeProps } from "@xyflow/react";
 import {
+  IconBriefcase,
   IconFileUpload,
   IconLock,
+  IconMicrophone2,
+  IconNote,
   IconPlus,
   IconRefresh,
+  IconTextPlus,
   IconTrash,
+  IconWorld,
   IconX,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -41,9 +46,11 @@ export function meta() {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+type NodeKind = "global" | "tone" | "phrase_rule" | "example" | "role";
+
 interface MessagingNode {
   id: string;
-  type: string;
+  type: NodeKind;
   title: string;
   personaId: string | null;
   tone: string | null;
@@ -77,6 +84,61 @@ interface GraphData {
   personas: Persona[];
 }
 
+// ── Node type config ───────────────────────────────────────────────────────────
+
+const NODE_CONFIG: Record<NodeKind, {
+  label: string;
+  color: string;
+  Icon: React.ComponentType<{ size?: number; className?: string }>;
+  description: string;
+  previewFields: (keyof MessagingNode)[];
+}> = {
+  global: {
+    label: "Global Baseline",
+    color: "#0a66c2",
+    Icon: IconWorld,
+    description: "Root node — applies to every draft",
+    previewFields: ["tone", "valueProps", "phrasesToUse", "phrasesToAvoid", "exampleNotes", "notes"],
+  },
+  tone: {
+    label: "Tone & Voice",
+    color: "#7c3aed",
+    Icon: IconMicrophone2,
+    description: "Sets voice, style, and key value props",
+    previewFields: ["tone", "valueProps"],
+  },
+  phrase_rule: {
+    label: "Phrase Rule",
+    color: "#16a34a",
+    Icon: IconTextPlus,
+    description: "Words to always use or never say",
+    previewFields: ["phrasesToUse", "phrasesToAvoid"],
+  },
+  example: {
+    label: "Example Note",
+    color: "#d97706",
+    Icon: IconNote,
+    description: "Concrete example notes to guide the AI's output",
+    previewFields: ["exampleNotes"],
+  },
+  role: {
+    label: "Role Targeting",
+    color: "#0891b2",
+    Icon: IconBriefcase,
+    description: "Adjustments when messaging a specific role/title",
+    previewFields: ["notes", "tone", "phrasesToUse", "phrasesToAvoid"],
+  },
+};
+
+const FIELD_LABELS: Partial<Record<keyof MessagingNode, string>> = {
+  tone: "Tone",
+  valueProps: "Value props",
+  phrasesToUse: "Use",
+  phrasesToAvoid: "Avoid",
+  exampleNotes: "Example",
+  notes: "Notes",
+};
+
 // ── Custom node data shape ─────────────────────────────────────────────────────
 
 interface NodeData extends Record<string, unknown> {
@@ -88,118 +150,117 @@ interface NodeData extends Record<string, unknown> {
   onPersonaChange: (nodeId: string, personaId: string | null) => void;
 }
 
-// ── Field preview shown on each node ──────────────────────────────────────────
+// ── Unified canvas node component ──────────────────────────────────────────────
 
-const PREVIEW_FIELDS: { key: keyof MessagingNode; label: string }[] = [
-  { key: "tone", label: "Tone" },
-  { key: "valueProps", label: "Value props" },
-  { key: "phrasesToUse", label: "Use" },
-  { key: "phrasesToAvoid", label: "Avoid" },
-  { key: "exampleNotes", label: "Examples" },
-  { key: "notes", label: "Notes" },
-];
+function CanvasNode({ data }: NodeProps) {
+  const d = data as NodeData;
+  const cfg = NODE_CONFIG[d.dbNode.type] ?? NODE_CONFIG.tone;
+  const isGlobal = d.dbNode.type === "global";
 
-function NodePreview({ node }: { node: MessagingNode }) {
-  const filled = PREVIEW_FIELDS.filter((f) => node[f.key]);
-  if (filled.length === 0)
-    return <p className="italic text-zinc-400 text-[10px]">No content yet — click to edit</p>;
+  const filled = cfg.previewFields
+    .map((k) => ({ key: k, label: FIELD_LABELS[k] ?? String(k), val: d.dbNode[k] }))
+    .filter((f) => f.val);
+
   return (
-    <div className="flex flex-col gap-1">
-      {filled.map(({ key, label }) => {
-        const val = String(node[key] ?? "");
-        const preview = val.length > 55 ? val.slice(0, 52) + "…" : val;
+    <div
+      className="rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden"
+      onClick={() => d.onClick(d.dbNode)}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center gap-1.5 px-3 py-2 text-white"
+        style={{ background: cfg.color }}
+      >
+        <cfg.Icon size={12} className="shrink-0 opacity-90" />
+        <span className="text-[11px] font-semibold truncate flex-1">{d.dbNode.title}</span>
+        {isGlobal && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
+      </div>
+
+      {/* Persona picker for non-global nodes */}
+      {!isGlobal && (
+        <div
+          className="border-b border-zinc-100 dark:border-zinc-800 px-2.5 py-1.5"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <select
+            className="w-full rounded border border-zinc-200 bg-transparent px-1.5 py-0.5 text-[10px] text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
+            value={d.dbNode.personaId ?? ""}
+            onChange={(e) => d.onPersonaChange(d.dbNode.id, e.target.value || null)}
+          >
+            <option value="">All personas</option>
+            {d.personas.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          {d.persona && (
+            <div className="mt-1 h-0.5 rounded-full" style={{ background: d.persona.color }} />
+          )}
+        </div>
+      )}
+
+      {/* Field preview */}
+      <div className="px-3 py-2 text-[10px] space-y-0.5">
+        {filled.length === 0 ? (
+          <p className="italic text-zinc-400">Empty — click to edit</p>
+        ) : (
+          filled.map(({ key, label, val }) => {
+            const text = String(val ?? "");
+            return (
+              <div key={String(key)} className="flex gap-1 leading-snug">
+                <span className="shrink-0 font-semibold text-zinc-400">{label}:</span>
+                <span className="text-zinc-600 dark:text-zinc-300 break-words line-clamp-2">
+                  {text.length > 60 ? text.slice(0, 57) + "…" : text}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {!isGlobal && <Handle type="target" position={Position.Left} />}
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+
+const nodeTypes = { global: CanvasNode, tone: CanvasNode, phrase_rule: CanvasNode, example: CanvasNode, role: CanvasNode };
+
+// ── Node type palette ──────────────────────────────────────────────────────────
+
+type PaletteKind = "tone" | "phrase_rule" | "example" | "role";
+const PALETTE_TYPES: PaletteKind[] = ["tone", "phrase_rule", "example", "role"];
+
+function NodePalette({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
+  return (
+    <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900 overflow-hidden">
+      {PALETTE_TYPES.map((kind) => {
+        const cfg = NODE_CONFIG[kind];
         return (
-          <div key={key} className="flex gap-1.5 leading-tight">
-            <span className="shrink-0 font-medium text-zinc-400 dark:text-zinc-500">{label}:</span>
-            <span className="text-zinc-600 dark:text-zinc-300 break-words">{preview}</span>
-          </div>
+          <button
+            key={kind}
+            className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            onClick={() => onSelect(kind)}
+          >
+            <div
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded"
+              style={{ background: cfg.color }}
+            >
+              <cfg.Icon size={12} className="text-white" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-100">{cfg.label}</p>
+              <p className="text-[10px] text-zinc-500 leading-snug">{cfg.description}</p>
+            </div>
+          </button>
         );
       })}
     </div>
   );
 }
 
-// ── Global node ────────────────────────────────────────────────────────────────
-
-function GlobalNode({ data }: NodeProps) {
-  const d = data as NodeData;
-  return (
-    <div
-      className="rounded-lg border-2 border-[#0a66c2] bg-white shadow-md dark:bg-zinc-900 cursor-pointer w-[240px]"
-      onClick={() => d.onClick(d.dbNode)}
-    >
-      <div className="flex items-center gap-1.5 rounded-t-md bg-[#0a66c2] px-3 py-1.5 text-white">
-        <span className="text-xs font-semibold truncate flex-1">{d.dbNode.title}</span>
-        {!d.isAdmin && <IconLock size={11} />}
-      </div>
-      <div className="px-3 py-2 text-[11px]">
-        <NodePreview node={d.dbNode} />
-      </div>
-      <Handle type="source" position={Position.Right} />
-    </div>
-  );
-}
-
-// ── Standard node ──────────────────────────────────────────────────────────────
-
-function StandardNode({ data }: NodeProps) {
-  const d = data as NodeData;
-  return (
-    <div
-      className="rounded-lg border border-zinc-200 bg-white shadow-md dark:border-zinc-700 dark:bg-zinc-900 cursor-pointer w-[240px]"
-      onClick={() => d.onClick(d.dbNode)}
-    >
-      <div className="flex items-center gap-1.5 rounded-t-md bg-slate-600 px-3 py-1.5 text-white">
-        <span className="text-xs font-semibold truncate flex-1">{d.dbNode.title}</span>
-      </div>
-
-      {/* Inline persona picker */}
-      <div
-        className="border-b border-zinc-100 dark:border-zinc-800 px-3 py-1.5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <select
-          className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-          value={d.dbNode.personaId ?? ""}
-          onChange={(e) => d.onPersonaChange(d.dbNode.id, e.target.value || null)}
-        >
-          <option value="">— No persona —</option>
-          {d.personas.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        {d.persona && (
-          <div
-            className="mt-1 h-1 rounded-full"
-            style={{ background: d.persona.color }}
-          />
-        )}
-      </div>
-
-      <div className="px-3 py-2 text-[11px]">
-        <NodePreview node={d.dbNode} />
-      </div>
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
-    </div>
-  );
-}
-
-const nodeTypes = { global: GlobalNode, standard: StandardNode };
-
 // ── Import from doc dialog ─────────────────────────────────────────────────────
 
-function ImportDocDialog({
-  open,
-  onClose,
-  personas,
-}: {
-  open: boolean;
-  onClose: () => void;
-  personas: Persona[];
-}) {
+function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: () => void; personas: Persona[] }) {
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -215,29 +276,29 @@ function ImportDocDialog({
 
   function handleImport() {
     if (!text.trim()) return;
-
-    const personaList =
-      personas.length > 0
-        ? `\nExisting ICP personas in the workspace:\n${personas.map((p) => `- ${p.name} (id: ${p.id})`).join("\n")}`
-        : "";
+    const personaList = personas.length > 0
+      ? `\nExisting ICP personas:\n${personas.map((p) => `- ${p.name} (id: ${p.id})`).join("\n")}`
+      : "";
 
     sendToAgentChat({
       message:
-        `Parse this messaging document and build out the Messaging Canvas for me.\n\n` +
+        `Parse this messaging document and build out the Messaging Canvas.\n\n` +
         `## Instructions\n` +
-        `1. Identify any global/baseline messaging guidelines (tone, value props, phrases, examples) and update the Global Baseline node using update-messaging-node.\n` +
-        `2. Identify any persona-specific or audience-specific messaging sections. For each one, create a new node using create-messaging-node, fill in its fields with update-messaging-node, and link its personaId if the persona name matches one of the existing personas.\n` +
-        `3. Wire persona nodes back to the Global Baseline using create-messaging-edge (source = global node id, target = persona node id).\n` +
-        `4. Start by calling get-messaging-graph to get the current node ids before making changes.\n` +
-        `5. Be faithful to the doc — don't invent content that isn't there.` +
+        `1. Call get-messaging-graph first to get current node IDs.\n` +
+        `2. Identify global/baseline messaging and update the Global Baseline node with update-messaging-node.\n` +
+        `3. For each distinct tone/voice section, create a "tone" node.\n` +
+        `4. For each set of use/avoid phrases, create a "phrase_rule" node.\n` +
+        `5. For each example note or template, create an "example" node.\n` +
+        `6. For each role-specific section, create a "role" node with the role name as the title.\n` +
+        `7. Wire each new node back to its parent with create-messaging-edge (source = parent id, target = child id).\n` +
+        `8. Link personaId if a node's content maps to one of the existing personas by name.\n` +
+        `9. Be faithful to the doc — don't invent content that isn't there.` +
         personaList +
         `\n\n## Document\n\n${text.trim()}`,
       submit: true,
     });
 
-    setText("");
-    setFileName("");
-    onClose();
+    setText(""); setFileName(""); onClose();
     toast.success("Sent to agent — check the Chat tab for progress");
   }
 
@@ -248,51 +309,28 @@ function ImportDocDialog({
       <div className="w-[520px] rounded-xl bg-white shadow-2xl dark:bg-zinc-900">
         <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <h2 className="text-sm font-semibold">Import messaging doc</h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700">
-            <IconX size={16} />
-          </button>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700"><IconX size={16} /></button>
         </div>
         <div className="flex flex-col gap-4 p-5">
           <p className="text-xs text-zinc-500">
-            Paste your messaging guidelines or upload a .txt / .md file. The agent will parse it
-            and create nodes on the canvas automatically.
+            Paste your messaging guidelines or upload a .txt / .md file. The agent will parse it and create typed nodes automatically.
           </p>
-
-          {/* File upload */}
           <div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".txt,.md,.markdown"
-              className="hidden"
-              onChange={handleFile}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileRef.current?.click()}
-              className="gap-1.5"
-            >
+            <input ref={fileRef} type="file" accept=".txt,.md,.markdown" className="hidden" onChange={handleFile} />
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-1.5">
               <IconFileUpload size={14} />
-              {fileName ? fileName : "Upload file"}
+              {fileName || "Upload file"}
             </Button>
           </div>
-
-          {/* Paste area */}
           <textarea
             className="h-48 w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
             placeholder="Or paste your messaging doc here…"
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
-
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button size="sm" onClick={handleImport} disabled={!text.trim()}>
-              Import
-            </Button>
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" onClick={handleImport} disabled={!text.trim()}>Import</Button>
           </div>
         </div>
       </div>
@@ -300,9 +338,9 @@ function ImportDocDialog({
   );
 }
 
-// ── Node Editor Sheet ──────────────────────────────────────────────────────────
+// ── Node editor sheet ──────────────────────────────────────────────────────────
 
-interface EditorSheetProps {
+interface EditorProps {
   node: MessagingNode | null;
   personas: Persona[];
   isAdmin: boolean;
@@ -311,15 +349,16 @@ interface EditorSheetProps {
   onDeleted: (id: string) => void;
 }
 
-function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted }: EditorSheetProps) {
+function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted }: EditorProps) {
   const updateNode = useActionMutation("update-messaging-node");
   const deleteNode = useActionMutation("delete-messaging-node");
 
   const isGlobal = node?.type === "global";
   const readOnly = isGlobal && !isAdmin;
+  const cfg = node ? (NODE_CONFIG[node.type] ?? NODE_CONFIG.tone) : NODE_CONFIG.tone;
 
   const [title, setTitle] = useState("");
-  const [personaId, setPersonaId] = useState<string>("");
+  const [personaId, setPersonaId] = useState("");
   const [tone, setTone] = useState("");
   const [valueProps, setValueProps] = useState("");
   const [phrasesToUse, setPhrasesToUse] = useState("");
@@ -341,8 +380,7 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
 
   async function handleSave() {
     if (!node) return;
-    await updateNode.mutateAsync({
-      id: node.id,
+    const patch: Partial<MessagingNode> = {
       title: title || undefined,
       personaId: isGlobal ? undefined : (personaId || null),
       tone: tone || null,
@@ -351,136 +389,143 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
       phrasesToAvoid: phrasesToAvoid || null,
       exampleNotes: exampleNotes || null,
       notes: notes || null,
-    });
-    onSaved({
-      title,
-      personaId: personaId || null,
-      tone: tone || null,
-      valueProps: valueProps || null,
-      phrasesToUse: phrasesToUse || null,
-      phrasesToAvoid: phrasesToAvoid || null,
-      exampleNotes: exampleNotes || null,
-      notes: notes || null,
-    });
+    };
+    await updateNode.mutateAsync({ id: node.id, ...patch });
+    onSaved(patch);
     toast.success("Saved");
   }
 
   async function handleDelete() {
     if (!node) return;
-    const res = await deleteNode.mutateAsync({ id: node.id });
-    if ((res as any)?.ok === false) {
-      toast.error((res as any).error ?? "Cannot delete this node.");
-      return;
-    }
+    const res = await deleteNode.mutateAsync({ id: node.id }) as any;
+    if (res?.ok === false) { toast.error(res.error ?? "Cannot delete this node."); return; }
     onDeleted(node.id);
     onClose();
   }
+
+  // Which fields to show based on node type
+  const showTone = isGlobal || node?.type === "tone" || node?.type === "role";
+  const showValueProps = isGlobal || node?.type === "tone";
+  const showUse = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
+  const showAvoid = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
+  const showExample = isGlobal || node?.type === "example";
+  const showNotes = isGlobal || node?.type === "role";
 
   return (
     <Sheet open={!!node} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-[420px] overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{isGlobal ? "Global Baseline" : "Node Settings"}</SheetTitle>
+          <div className="flex items-center gap-2">
+            {node && (
+              <div className="flex h-7 w-7 items-center justify-center rounded" style={{ background: cfg.color }}>
+                <cfg.Icon size={14} className="text-white" />
+              </div>
+            )}
+            <SheetTitle>{cfg.label}</SheetTitle>
+          </div>
         </SheetHeader>
 
         <div className="mt-4 flex flex-col gap-4">
-          <Field label="Title" readOnly={readOnly}>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={readOnly}
-              placeholder="Node title"
-            />
-          </Field>
+          <EditorField label="Title" readOnly={readOnly}>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={readOnly} placeholder="Node title" />
+          </EditorField>
 
           {!isGlobal && (
-            <Field label="Link to Persona" readOnly={readOnly}>
+            <EditorField label="Link to Persona" readOnly={readOnly}>
               <select
                 className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                 value={personaId}
                 onChange={(e) => setPersonaId(e.target.value)}
                 disabled={readOnly}
               >
-                <option value="">— No persona —</option>
-                {personas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
+                <option value="">— All personas —</option>
+                {personas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
-            </Field>
+            </EditorField>
           )}
 
-          <Field label="Tone / Voice" readOnly={readOnly}>
-            <textarea
-              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 resize-none"
-              rows={3}
-              value={tone}
-              onChange={(e) => setTone(e.target.value)}
-              disabled={readOnly}
-              placeholder="e.g. Warm and direct. No corporate jargon."
-            />
-          </Field>
+          {showNotes && (
+            <EditorField label={node?.type === "role" ? "Role description" : "Notes"} readOnly={readOnly}>
+              <textarea
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                rows={3}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                disabled={readOnly}
+                placeholder={node?.type === "role" ? "e.g. When messaging VPs of Engineering, lead with reliability and team impact..." : "Any other instructions for the AI..."}
+              />
+            </EditorField>
+          )}
 
-          <Field label="Key Value Props" readOnly={readOnly}>
-            <textarea
-              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 resize-none"
-              rows={3}
-              value={valueProps}
-              onChange={(e) => setValueProps(e.target.value)}
-              disabled={readOnly}
-              placeholder="Core benefits or differentiators to highlight..."
-            />
-          </Field>
+          {showTone && (
+            <EditorField label="Tone / Voice" readOnly={readOnly}>
+              <textarea
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                rows={3}
+                value={tone}
+                onChange={(e) => setTone(e.target.value)}
+                disabled={readOnly}
+                placeholder="e.g. Warm and direct. No corporate jargon. Lead with curiosity."
+              />
+            </EditorField>
+          )}
 
-          <Field label="Phrases to Use" readOnly={readOnly}>
-            <textarea
-              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 resize-none"
-              rows={3}
-              value={phrasesToUse}
-              onChange={(e) => setPhrasesToUse(e.target.value)}
-              disabled={readOnly}
-              placeholder="Phrases, words, or approaches to include..."
-            />
-          </Field>
+          {showValueProps && (
+            <EditorField label="Key Value Props" readOnly={readOnly}>
+              <textarea
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                rows={3}
+                value={valueProps}
+                onChange={(e) => setValueProps(e.target.value)}
+                disabled={readOnly}
+                placeholder="Core differentiators to highlight in every note..."
+              />
+            </EditorField>
+          )}
 
-          <Field label="Phrases to Avoid" readOnly={readOnly}>
-            <textarea
-              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 resize-none"
-              rows={3}
-              value={phrasesToAvoid}
-              onChange={(e) => setPhrasesToAvoid(e.target.value)}
-              disabled={readOnly}
-              placeholder="Phrases or approaches to never use..."
-            />
-          </Field>
+          {showUse && (
+            <EditorField label="Phrases to Always Use" readOnly={readOnly}>
+              <textarea
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                rows={3}
+                value={phrasesToUse}
+                onChange={(e) => setPhrasesToUse(e.target.value)}
+                disabled={readOnly}
+                placeholder={"e.g. \"I noticed you...\", \"quick question\""}
+              />
+            </EditorField>
+          )}
 
-          <Field label="Example Notes" readOnly={readOnly}>
-            <textarea
-              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 resize-none"
-              rows={4}
-              value={exampleNotes}
-              onChange={(e) => setExampleNotes(e.target.value)}
-              disabled={readOnly}
-              placeholder="Show 2-3 example connection notes in your voice..."
-            />
-          </Field>
+          {showAvoid && (
+            <EditorField label="Phrases to Never Say" readOnly={readOnly}>
+              <textarea
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                rows={3}
+                value={phrasesToAvoid}
+                onChange={(e) => setPhrasesToAvoid(e.target.value)}
+                disabled={readOnly}
+                placeholder={"e.g. \"hope this finds you well\", \"I wanted to reach out\""}
+              />
+            </EditorField>
+          )}
 
-          <Field label="Free-form Notes" readOnly={readOnly}>
-            <textarea
-              className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 resize-none"
-              rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              disabled={readOnly}
-              placeholder="Any other instructions for the AI..."
-            />
-          </Field>
+          {showExample && (
+            <EditorField label="Example Notes" readOnly={readOnly}>
+              <textarea
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                rows={5}
+                value={exampleNotes}
+                onChange={(e) => setExampleNotes(e.target.value)}
+                disabled={readOnly}
+                placeholder={"Write 2-3 example notes in your voice:\n\"Hi Sarah, love what you're doing with design systems at IKEA...\"\n\"Hi John, saw you just launched — quick question about...\""}
+              />
+            </EditorField>
+          )}
 
           {!readOnly && (
             <div className="flex items-center gap-2 pt-2">
               <Button onClick={handleSave} disabled={updateNode.isPending} className="flex-1">
-                {updateNode.isPending ? <IconRefresh className="animate-spin" size={14} /> : null}
+                {updateNode.isPending && <IconRefresh className="animate-spin mr-1" size={13} />}
                 Save
               </Button>
               {!isGlobal && (
@@ -491,31 +536,18 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
             </div>
           )}
 
-          {readOnly && (
-            <p className="text-xs text-zinc-500 italic">
-              Global baseline is managed by an admin.
-            </p>
-          )}
+          {readOnly && <p className="text-xs text-zinc-500 italic">Global baseline is admin-managed.</p>}
         </div>
       </SheetContent>
     </Sheet>
   );
 }
 
-function Field({
-  label,
-  readOnly,
-  children,
-}: {
-  label: string;
-  readOnly: boolean;
-  children: React.ReactNode;
-}) {
+function EditorField({ label, readOnly, children }: { label: string; readOnly: boolean; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-        {label}
-        {readOnly && " (read-only)"}
+        {label}{readOnly && " (read-only)"}
       </Label>
       {children}
     </div>
@@ -529,14 +561,21 @@ function toFlowNode(
   personas: Persona[],
   isAdmin: boolean,
   onClick: (n: MessagingNode) => void,
-  onPersonaChange: (nodeId: string, personaId: string | null) => void,
+  onPersonaChange: (id: string, pid: string | null) => void,
 ): Node {
-  const persona = personas.find((p) => p.id === dbNode.personaId);
+  const type = dbNode.type as string;
   return {
     id: dbNode.id,
-    type: dbNode.type === "global" ? "global" : "standard",
+    type,
     position: { x: dbNode.positionX, y: dbNode.positionY },
-    data: { dbNode, persona, personas, isAdmin, onClick, onPersonaChange } as NodeData,
+    data: {
+      dbNode,
+      persona: personas.find((p) => p.id === dbNode.personaId),
+      personas,
+      isAdmin,
+      onClick,
+      onPersonaChange,
+    } as NodeData,
   };
 }
 
@@ -565,7 +604,6 @@ function MessagingCanvas() {
   const isAdmin = canManageOrg;
 
   const { data: graph, isLoading, refetch } = useActionQuery<GraphData>("get-messaging-graph", {});
-
   const createNode = useActionMutation("create-messaging-node");
   const createEdge = useActionMutation("create-messaging-edge");
   const deleteEdge = useActionMutation("delete-messaging-edge");
@@ -575,11 +613,11 @@ function MessagingCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [editingNode, setEditingNode] = useState<MessagingNode | null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Stable ref so handlePersonaChange never changes identity even when personas update
   const personasRef = useRef<Persona[]>([]);
+  const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { screenToFlowPosition } = useReactFlow();
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
@@ -591,93 +629,66 @@ function MessagingCanvas() {
         nds.map((n) => {
           if (n.id !== nodeId) return n;
           const d = n.data as NodeData;
-          const updatedDb = { ...d.dbNode, personaId: newPersonaId };
           return {
             ...n,
             data: {
               ...d,
-              dbNode: updatedDb,
+              dbNode: { ...d.dbNode, personaId: newPersonaId },
               persona: personasRef.current.find((p) => p.id === newPersonaId),
             } as NodeData,
           };
         }),
       );
     },
-    [updateNode], // stable — reads personas via ref, not state
+    [updateNode],
   );
 
-  // Sync graph data → flow state
   useEffect(() => {
     if (!graph) return;
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
-    setNodes(
-      graph.nodes.map((n) =>
-        toFlowNode(n, graph.personas, isAdmin, openEditor, handlePersonaChange),
-      ),
-    );
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor, handlePersonaChange)));
     setEdges(graph.edges.map(toFlowEdge));
   }, [graph, isAdmin]);
 
-  async function handleAddNode() {
+  async function handleAddNode(nodeType: PaletteKind) {
+    setPaletteOpen(false);
     const pos = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    const result = (await createNode.mutateAsync({
+    const result = await createNode.mutateAsync({
+      nodeType,
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
-    })) as MessagingNode;
-    const newNode = toFlowNode(result, personas, isAdmin, openEditor, handlePersonaChange);
-    setNodes((nds) => [...nds, newNode]);
+    }) as MessagingNode;
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, isAdmin, openEditor, handlePersonaChange)]);
     setEditingNode(result);
   }
 
   function handleNodeDragStop(_: unknown, node: Node) {
     if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
     dragTimerRef.current = setTimeout(() => {
-      updateNode.mutate({
-        id: node.id,
-        positionX: Math.round(node.position.x),
-        positionY: Math.round(node.position.y),
-      });
+      updateNode.mutate({ id: node.id, positionX: Math.round(node.position.x), positionY: Math.round(node.position.y) });
     }, 300);
   }
 
   const handleConnect = useCallback(
     async (conn: Connection) => {
-      const optimistic = addEdge(
-        {
-          ...conn,
-          type: "smoothstep",
-          animated: false,
-          style: { stroke: "#94a3b8", strokeWidth: 1.5 },
-          markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" },
-        },
-        edges,
-      );
+      const optimistic = addEdge({ ...conn, type: "smoothstep", animated: false, style: { stroke: "#94a3b8", strokeWidth: 1.5 }, markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" } }, edges);
       setEdges(optimistic);
-      const res = (await createEdge.mutateAsync({
-        sourceId: conn.source!,
-        targetId: conn.target!,
-      })) as any;
+      const res = await createEdge.mutateAsync({ sourceId: conn.source!, targetId: conn.target! }) as any;
       if (res?.ok === false) {
-        toast.error(res.error ?? "Could not create connection.");
+        toast.error(res.error ?? "Could not connect nodes.");
         setEdges(edges);
       } else {
-        setEdges((eds) =>
-          eds.map((e) =>
-            e.source === conn.source && e.target === conn.target && e.id !== res.id
-              ? { ...e, id: res.id }
-              : e,
-          ),
-        );
+        setEdges((eds) => eds.map((e) =>
+          e.source === conn.source && e.target === conn.target && e.id !== res.id ? { ...e, id: res.id } : e,
+        ));
       }
     },
     [edges, createEdge],
   );
 
   const handleEdgesDelete = useCallback(
-    (deleted: Edge[]) => {
-      for (const e of deleted) deleteEdge.mutate({ id: e.id });
-    },
+    (deleted: Edge[]) => { for (const e of deleted) deleteEdge.mutate({ id: e.id }); },
     [deleteEdge],
   );
 
@@ -685,20 +696,11 @@ function MessagingCanvas() {
     if (!editingNode) return;
     const merged = { ...editingNode, ...updated };
     setEditingNode(merged);
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === merged.id
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                dbNode: merged,
-                persona: personas.find((p) => p.id === merged.personaId),
-              } as NodeData,
-            }
-          : n,
-      ),
-    );
+    setNodes((nds) => nds.map((n) =>
+      n.id === merged.id
+        ? { ...n, data: { ...n.data, dbNode: merged, persona: personasRef.current.find((p) => p.id === merged.personaId) } as NodeData }
+        : n,
+    ));
   }
 
   function handleNodeDeleted(id: string) {
@@ -707,11 +709,7 @@ function MessagingCanvas() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-        Loading canvas…
-      </div>
-    );
+    return <div className="flex h-full items-center justify-center text-sm text-zinc-500">Loading canvas…</div>;
   }
 
   return (
@@ -719,25 +717,44 @@ function MessagingCanvas() {
       {/* Toolbar */}
       <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h1 className="text-sm font-semibold">Messaging Canvas</h1>
-        <p className="text-xs text-zinc-500 flex-1">
-          Connect nodes to build an inheritance chain. Each persona node extends its parent.
+        <p className="text-xs text-zinc-500 flex-1 hidden sm:block">
+          Drag to connect. Each node's action stacks additively onto its parent.
         </p>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setImportOpen(true)}
-          className="gap-1.5"
-        >
+        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="gap-1.5">
           <IconFileUpload size={14} />
           Import doc
         </Button>
-        <Button size="sm" onClick={handleAddNode} disabled={createNode.isPending} className="gap-1">
-          <IconPlus size={14} />
-          Add Node
-        </Button>
+        {/* Add node button with palette */}
+        <div className="relative">
+          <Button size="sm" onClick={() => setPaletteOpen((o) => !o)} className="gap-1">
+            <IconPlus size={14} />
+            Add Node
+          </Button>
+          {paletteOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setPaletteOpen(false)} />
+              <div className="z-50 relative">
+                <NodePalette onSelect={handleAddNode} />
+              </div>
+            </>
+          )}
+        </div>
         <Button size="sm" variant="outline" onClick={() => refetch()}>
           <IconRefresh size={14} />
         </Button>
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-1.5 dark:border-zinc-800/50">
+        {(["global", "tone", "phrase_rule", "example", "role"] as NodeKind[]).map((kind) => {
+          const cfg = NODE_CONFIG[kind];
+          return (
+            <div key={kind} className="flex items-center gap-1">
+              <div className="h-2 w-2 rounded-full" style={{ background: cfg.color }} />
+              <span className="text-[10px] text-zinc-500">{cfg.label}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Canvas */}
@@ -759,20 +776,14 @@ function MessagingCanvas() {
           <Background color="#e4e4e7" gap={20} />
           <Controls />
           <MiniMap
-            nodeColor={(n) => (n.type === "global" ? "#0a66c2" : "#64748b")}
+            nodeColor={(n) => (NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8")}
             maskColor="rgba(0,0,0,0.05)"
           />
         </ReactFlow>
       </div>
 
-      {/* Import dialog */}
-      <ImportDocDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        personas={personas}
-      />
+      <ImportDocDialog open={importOpen} onClose={() => setImportOpen(false)} personas={personas} />
 
-      {/* Node editor */}
       <NodeEditorSheet
         node={editingNode}
         personas={personas}

@@ -162,6 +162,11 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 20,
+      // Repurpose type='user' → specific node types. 'global' stays as-is.
+      sql: `UPDATE messaging_nodes SET type = 'tone' WHERE type = 'user'`,
+    },
   ],
   { table: "outreach_migrations" },
 );

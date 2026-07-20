@@ -46,18 +46,36 @@ async function buildMessagingContext(personaId: string | null, db: DbType): Prom
   const contentNodes = chain.filter(hasContent);
   if (contentNodes.length === 0) return null;
 
-  const lines: string[] = ["MESSAGING GUIDELINES — apply when drafting the connection note:\n"];
-  for (let i = 0; i < chain.length; i++) {
-    const n = chain[i];
+  const lines: string[] = ["MESSAGING GUIDELINES — apply when drafting the connection note:"];
+  for (const n of chain) {
     if (!hasContent(n)) continue;
-    lines.push(i === 0 ? `[${n.title}]` : `[${n.title} — extends above]`);
-    if (n.tone) lines.push(`Tone: ${n.tone}`);
-    if (n.valueProps) lines.push(`Value props: ${n.valueProps}`);
-    if (n.phrasesToUse) lines.push(`Use: ${n.phrasesToUse}`);
-    if (n.phrasesToAvoid) lines.push(`Avoid: ${n.phrasesToAvoid}`);
-    if (n.exampleNotes) lines.push(`Examples:\n${n.exampleNotes}`);
-    if (n.notes) lines.push(n.notes);
-    lines.push("");
+    const t = n.type;
+    if (t === "global") {
+      lines.push("\n[Global Baseline]");
+      if (n.tone) lines.push(`Tone/Voice: ${n.tone}`);
+      if (n.valueProps) lines.push(`Key value props: ${n.valueProps}`);
+      if (n.phrasesToUse) lines.push(`Always use: ${n.phrasesToUse}`);
+      if (n.phrasesToAvoid) lines.push(`Never say: ${n.phrasesToAvoid}`);
+      if (n.exampleNotes) lines.push(`Examples:\n${n.exampleNotes}`);
+      if (n.notes) lines.push(n.notes);
+    } else if (t === "tone") {
+      lines.push(`\n[Tone & Voice${n.title !== "Tone & Voice" ? ` — ${n.title}` : ""}]`);
+      if (n.tone) lines.push(n.tone);
+      if (n.valueProps) lines.push(`Key value props: ${n.valueProps}`);
+    } else if (t === "phrase_rule") {
+      lines.push(`\n[Phrase Rule${n.title !== "Phrase Rule" ? ` — ${n.title}` : ""}]`);
+      if (n.phrasesToUse) lines.push(`✓ Always use: ${n.phrasesToUse}`);
+      if (n.phrasesToAvoid) lines.push(`✗ Never say: ${n.phrasesToAvoid}`);
+    } else if (t === "example") {
+      lines.push(`\n[Example Note${n.title !== "Example Note" ? ` — ${n.title}` : ""}]`);
+      if (n.exampleNotes) lines.push(`Write notes like this:\n${n.exampleNotes}`);
+    } else if (t === "role") {
+      lines.push(`\n[Role: ${n.title}]`);
+      if (n.notes) lines.push(`When messaging someone in this role:\n${n.notes}`);
+      if (n.tone) lines.push(`Tone adjustment: ${n.tone}`);
+      if (n.phrasesToUse) lines.push(`✓ Prefer: ${n.phrasesToUse}`);
+      if (n.phrasesToAvoid) lines.push(`✗ Avoid: ${n.phrasesToAvoid}`);
+    }
   }
 
   return lines.join("\n").trim();
