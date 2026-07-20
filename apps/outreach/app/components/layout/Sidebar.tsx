@@ -1,6 +1,5 @@
 import {
   appPath,
-  FeedbackButton,
   navigateWithAgentChatViewTransition,
   useChatThreads,
   useT,
@@ -17,7 +16,6 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconMessageCircle,
-  IconMessageReport,
   IconPin,
   IconPlus,
   IconSettings,
@@ -73,12 +71,6 @@ const navItems = [
     labelKey: "settings.agentTitle",
     href: "/agent",
     view: "agent",
-  },
-  {
-    icon: IconMessageReport,
-    labelKey: "navigation.feedback",
-    href: "/feedback",
-    view: "feedback",
   },
   {
     icon: IconSettings,

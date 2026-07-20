@@ -22,6 +22,8 @@ import {
 import { APP_TITLE } from "@/lib/app-config";
 import { TAB_ID } from "@/lib/tab-id";
 
+import { FeedbackWidget } from "@/components/ui/FeedbackWidget";
+
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 
@@ -183,6 +185,7 @@ export function Layout({ children }: LayoutProps) {
           </AgentSidebar>
         )}
       </div>
+      <FeedbackWidget />
     </HeaderActionsProvider>
   );
 }
