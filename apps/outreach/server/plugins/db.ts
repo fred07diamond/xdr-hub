@@ -118,6 +118,14 @@ export default runMigrations(
       version: 14,
       sql: `ALTER TABLE icp_sources ADD COLUMN IF NOT EXISTS icp_text TEXT`,
     },
+    {
+      version: 15,
+      sql: `CREATE TABLE IF NOT EXISTS workspace_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "outreach_migrations" },
 );

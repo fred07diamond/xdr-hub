@@ -64,6 +64,13 @@ export const feedback = table("feedback", {
   createdAt: text("created_at").default(now()),
 });
 
+// Admin-controlled workspace settings (key-value store).
+export const workspaceSettings = table("workspace_settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: text("updated_at").default(now()),
+});
+
 // Singleton row that holds ICP configuration.
 // icpText: the full text of the user's uploaded ICP document — used by
 //   capture-profile to score and draft every captured LinkedIn profile.

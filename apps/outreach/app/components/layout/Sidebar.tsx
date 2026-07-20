@@ -481,18 +481,9 @@ export function Sidebar({
           )}
           aria-label={collapsed ? APP_TITLE : undefined}
         >
-          <img
-            src={appPath("/agent-native-icon-light.svg")}
-            alt=""
-            aria-hidden="true"
-            className="block h-4 w-auto shrink-0 dark:hidden"
-          />
-          <img
-            src={appPath("/agent-native-icon-dark.svg")}
-            alt=""
-            aria-hidden="true"
-            className="hidden h-4 w-auto shrink-0 dark:block"
-          />
+          <span className="shrink-0 rounded bg-[#0a66c2] px-1.5 py-0.5 text-[11px] font-black tracking-tight text-white">
+            BLI
+          </span>
           <div className={cn("min-w-0", collapsed && "sr-only")}>
             <p className="truncate text-sm font-semibold text-sidebar-accent-foreground">
               {APP_TITLE}

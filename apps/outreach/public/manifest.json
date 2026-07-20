@@ -1,7 +1,7 @@
 {
-  "name": "Chat",
-  "short_name": "Chat",
-  "description": "Chat-first agent-native app ready to customize",
+  "name": "Builder.LI",
+  "short_name": "Builder.LI",
+  "description": "LinkedIn outreach cockpit — capture profiles, score fit, draft connection notes",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#111111",

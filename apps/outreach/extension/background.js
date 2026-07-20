@@ -85,6 +85,37 @@ async function markSent(profileUrl) {
   return await res.json();
 }
 
+async function getExistingDraft(profileUrl) {
+  const { appUrl, apiToken } = await getSettings();
+  if (!appUrl) return null;
+  try {
+    const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+    const res = await fetch(
+      `${appUrl}/_agent-native/actions/get-draft?profileUrl=${encodeURIComponent(profileUrl)}${tokenParam}`,
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.ok && json.status === "drafted" ? json : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getDailyStats() {
+  const { appUrl, apiToken } = await getSettings();
+  if (!appUrl) return null;
+  try {
+    const tokenParam = apiToken ? `?apiToken=${encodeURIComponent(apiToken)}` : "";
+    const res = await fetch(
+      `${appUrl}/_agent-native/actions/get-daily-stats${tokenParam}`,
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "DRAFT_REQUEST") {
     captureThenPoll(msg.data)
@@ -104,6 +135,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     markSent(msg.profileUrl)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "GET_EXISTING_DRAFT") {
+    getExistingDraft(msg.profileUrl)
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse(null));
+    return true;
+  }
+
+  if (msg.type === "GET_DAILY_STATS") {
+    getDailyStats()
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse(null));
     return true;
   }
 });

@@ -13,6 +13,9 @@ const personaChip = document.getElementById("persona-chip");
 const personaIndicator = document.getElementById("persona-indicator");
 const personaNameLabel = document.getElementById("persona-name-label");
 const alreadyContacted = document.getElementById("already-contacted");
+const dailyMeter = document.getElementById("daily-meter");
+const dailyMeterText = document.getElementById("daily-meter-text");
+const dailyMeterBar = document.getElementById("daily-meter-bar");
 const notLinkedin = document.getElementById("not-linkedin");
 const mainContent = document.getElementById("main-content");
 const profileLoading = document.getElementById("profile-loading");
@@ -155,6 +158,30 @@ async function scrapeTab(tabId, { retryMs = 0, maxRetries = 1, prevName = null, 
   return result;
 }
 
+// ── Daily meter ──────────────────────────────────────────────────────────────
+
+function renderDailyMeter(stats) {
+  if (!stats || stats.limit == null) {
+    dailyMeter.style.display = "none";
+    return;
+  }
+  const { capturedToday = 0, limit } = stats;
+  const pct = Math.min(100, Math.round((capturedToday / limit) * 100));
+  dailyMeterText.textContent = `${capturedToday} / ${limit}`;
+  dailyMeterBar.style.width = `${pct}%`;
+  if (pct >= 100) {
+    dailyMeterBar.style.background = "#c0392b";
+    dailyMeterText.style.color = "#c0392b";
+  } else if (pct >= 80) {
+    dailyMeterBar.style.background = "#f59e0b";
+    dailyMeterText.style.color = "#b45309";
+  } else {
+    dailyMeterBar.style.background = "#0a66c2";
+    dailyMeterText.style.color = "#666";
+  }
+  dailyMeter.style.display = "block";
+}
+
 // ── Background enrichment ────────────────────────────────────────────────────
 // LinkedIn lazy-loads the Experience section. We poll after the initial scrape
 // and silently update the card as soon as the section appears in the DOM.
@@ -192,7 +219,9 @@ function resetPanel() {
   profileLocation.style.display = "none";
 
   alreadyContacted.style.display = "none";
+  dailyMeter.style.display = "none";
   draftBtn.disabled = true;
+  draftBtn.textContent = "Draft note";
   setStatus("");
   verdictSection.style.display = "none";
   personaChip.style.display = "none";
@@ -230,6 +259,22 @@ async function init({ navTriggered = false } = {}) {
   }
 
   draftBtn.disabled = false;
+
+  // Check for an existing draft on this profile (fire-and-forget).
+  const urlForDraftCheck = currentProfileUrl;
+  chrome.runtime.sendMessage({ type: "GET_EXISTING_DRAFT", profileUrl: urlForDraftCheck })
+    .then((existing) => {
+      if (currentProfileUrl === urlForDraftCheck && existing?.draft) {
+        showVerdict(existing.draft);
+        draftBtn.textContent = "Re-draft";
+      }
+    })
+    .catch(() => {});
+
+  // Load daily meter (fire-and-forget).
+  chrome.runtime.sendMessage({ type: "GET_DAILY_STATS" })
+    .then((stats) => { if (currentProfileUrl) renderDailyMeter(stats); })
+    .catch(() => {});
 
   // Non-critical cosmetic check — fire-and-forget so isInitializing drops now,
   // not after the 3 s timeout. Guard against showing a banner for the wrong profile.

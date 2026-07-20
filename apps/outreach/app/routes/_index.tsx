@@ -4,6 +4,7 @@ import {
   IconCheck,
   IconClipboard,
   IconLoader2,
+  IconRefresh,
   IconSearch,
   IconThumbDown,
   IconThumbUp,
@@ -146,6 +147,7 @@ function ProspectSheet({
   const updateNote = useActionMutation("update-prospect-note");
   const deleteProspect = useActionMutation("delete-prospect");
   const rateProspect = useActionMutation("rate-prospect");
+  const redraft = useActionMutation("redraft-prospect");
 
   const [note, setNote] = useState(prospect.draftNote ?? "");
   const [followUp, setFollowUp] = useState(prospect.draftFollowUp ?? "");
@@ -170,6 +172,16 @@ function ProspectSheet({
 
   async function handleMarkSent() {
     await markSent.mutateAsync({ profileUrl: prospect.profileUrl });
+    onUpdated();
+  }
+
+  async function handleRedraft() {
+    const result = await redraft.mutateAsync({ id: prospect.id });
+    if (result?.draft) {
+      setNote(result.draft.draftNote ?? "");
+      setFollowUp(result.draft.draftFollowUp ?? "");
+      setNoteDirty(false);
+    }
     onUpdated();
   }
 
@@ -299,6 +311,12 @@ function ProspectSheet({
                 Mark sent
               </button>
             ) : null}
+            <button type="button" onClick={handleRedraft} disabled={redraft.isPending}
+              title="Regenerate note"
+              className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
+              {redraft.isPending ? <IconLoader2 size={12} className="animate-spin" /> : <IconRefresh size={13} />}
+              Re-draft
+            </button>
           </div>
           <div>
             {confirmDelete ? (

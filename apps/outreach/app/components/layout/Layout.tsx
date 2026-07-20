@@ -6,6 +6,7 @@ import {
   useAgentChatHomeHandoffLinks,
   useT,
 } from "@agent-native/core/client";
+import { InvitationBanner } from "@agent-native/core/client/org";
 import { HeaderActionsProvider } from "@agent-native/toolkit/app-shell";
 import { IconMenu2 } from "@tabler/icons-react";
 import { useState, useEffect } from "react";
@@ -132,6 +133,7 @@ export function Layout({ children }: LayoutProps) {
         <Header onOpenMobileSidebar={() => setMobileSidebarOpen(true)} />
       )}
       <main className="agent-native-app-main min-w-0 flex-1 overflow-y-auto overscroll-contain">
+        <InvitationBanner />
         {children}
       </main>
     </div>

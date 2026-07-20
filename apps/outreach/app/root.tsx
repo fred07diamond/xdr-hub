@@ -38,7 +38,7 @@ import stylesheet from "./global.css?url";
 configureTracking({
   getDefaultProps: (_name, properties) => ({
     ...properties,
-    app: "chat",
+    app: "builder-li",
   }),
 });
 
@@ -125,7 +125,7 @@ function AppContent() {
         open={cmdkOpen}
         onOpenChange={setCmdkOpen}
         changelog={changelog}
-        changelogKey="chat"
+        changelogKey="builder-li"
       >
         <CommandMenu.Group heading={t("root.commandActions")}>
           <CommandMenu.Item onSelect={() => {}}>

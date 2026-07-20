@@ -2,6 +2,7 @@ import {
   ChangelogSettingsCard,
   LanguagePicker,
   SettingsTabsPage,
+  useActionMutation,
   useActionQuery,
   useAgentSettingsTabs,
   useT,
@@ -9,7 +10,7 @@ import {
 } from "@agent-native/core/client";
 import { TeamPage } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconCheck, IconClipboard, IconKey, IconLoader2 } from "@tabler/icons-react";
+import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -84,6 +85,70 @@ function ApiTokenCard() {
   );
 }
 
+function DailyLimitCard() {
+  const { data } = useActionQuery("get-daily-stats", {});
+  const stats = data as { capturedToday?: number; limit?: number | null } | undefined;
+  const setLimit = useActionMutation("set-daily-limit");
+  const [input, setInput] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave() {
+    const val = parseInt(input, 10);
+    if (!val || val < 1 || val > 500) return;
+    await setLimit.mutateAsync({ limit: val });
+    setInput("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <Card id="daily-limit" className="scroll-mt-16">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <IconGauge size={16} />
+          Daily Outreach Limit
+        </CardTitle>
+        <CardDescription>
+          Set a workspace-wide soft cap on daily connection requests. Users see a warning meter in the extension. Admin only.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {stats?.limit != null && (
+          <p className="text-sm text-muted-foreground">
+            Current limit: <span className="font-semibold text-foreground">{stats.limit}</span> per day
+            {stats.capturedToday != null && (
+              <> · <span className={stats.capturedToday >= stats.limit ? "text-destructive font-semibold" : ""}>{stats.capturedToday} captured today</span></>
+            )}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={stats?.limit != null ? `Current: ${stats.limit}` : "e.g. 20"}
+            className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={setLimit.isPending || !input}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {setLimit.isPending ? <IconLoader2 size={13} className="animate-spin" /> : saved ? <IconCheck size={13} /> : null}
+            {saved ? "Saved!" : "Save"}
+          </button>
+        </div>
+        {setLimit.isError && (
+          <p className="text-xs text-destructive">{(setLimit.error as Error)?.message ?? "Failed to save"}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function meta() {
   return [{ title: `Settings - ${APP_TITLE}` }];
 }
@@ -117,6 +182,8 @@ export default function SettingsRoute() {
           </p>
 
           <ApiTokenCard />
+
+          <DailyLimitCard />
 
           <Card id="language" className="scroll-mt-16">
             <CardHeader>

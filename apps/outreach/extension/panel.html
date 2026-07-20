@@ -366,6 +366,16 @@
 
     <div id="already-contacted">⚠️ Already contacted — you sent a request to this person.</div>
 
+    <div id="daily-meter" style="display:none; margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:#666; margin-bottom:3px;">
+        <span>Today's outreach</span>
+        <span id="daily-meter-text"></span>
+      </div>
+      <div style="height:4px; background:#e5e7eb; border-radius:2px; overflow:hidden;">
+        <div id="daily-meter-bar" style="height:100%; width:0%; background:#0a66c2; border-radius:2px; transition:width 0.3s;"></div>
+      </div>
+    </div>
+
     <button id="draft-btn" disabled>Draft note</button>
     <div id="status"></div>
 
