@@ -6,7 +6,7 @@ import {
   type ChatThreadSummary,
 } from "@agent-native/core/client";
 import { ExtensionsSidebarSection } from "@agent-native/core/client/extensions";
-import { OrgSwitcher } from "@agent-native/core/client/org";
+import { OrgSwitcher, useOrgRole } from "@agent-native/core/client/org";
 import {
   IconArchive,
   IconBrain,
@@ -405,6 +405,10 @@ export function Sidebar({
   const location = useLocation();
   const navigate = useNavigate();
   const t = useT();
+  const { canManageOrg } = useOrgRole();
+  const visibleNavItems = navItems.filter(
+    (item) => item.view !== "analytics" || canManageOrg,
+  );
   const isChatRoute =
     location.pathname === "/chat" || location.pathname.startsWith("/chat/");
   const ToggleIcon = collapsed
@@ -491,7 +495,7 @@ export function Sidebar({
         )}
       >
         <div className={cn("grid", collapsed ? "gap-0" : "gap-1")}>
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               item.href === "/"
