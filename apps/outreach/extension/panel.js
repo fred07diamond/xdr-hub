@@ -76,9 +76,24 @@ function copyText(text, btn) {
   });
 }
 
+function resetFeedbackSection() {
+  feedbackSentiment = null;
+  feedbackForm.style.display = "none";
+  feedbackMessage.value = "";
+  feedbackThanks.style.display = "none";
+  thumbUpBtn.className = "thumb-btn";
+  thumbDownBtn.className = "thumb-btn";
+  thumbUpBtn.style.display = "";
+  thumbDownBtn.style.display = "";
+  if (feedbackSubmitBtn) {
+    feedbackSubmitBtn.disabled = false;
+    feedbackSubmitBtn.textContent = "Send feedback";
+  }
+}
+
 function showVerdict(draft) {
+  resetFeedbackSection();
   const v = draft.fitVerdict || "possible";
-  verdictBadge.textContent = v;
   verdictBadge.className = `verdict-${v}`;
   fitReason.textContent = draft.fitReason || "";
   noteText.value = draft.draftNote || "";
@@ -236,15 +251,8 @@ function resetPanel() {
   verdictSection.style.display = "none";
   personaChip.style.display = "none";
 
-  feedbackSentiment = null;
+  resetFeedbackSection();
   feedbackSection.style.display = "none";
-  feedbackForm.style.display = "none";
-  feedbackMessage.value = "";
-  feedbackThanks.style.display = "none";
-  thumbUpBtn.className = "thumb-btn";
-  thumbDownBtn.className = "thumb-btn";
-  thumbUpBtn.style.display = "";
-  thumbDownBtn.style.display = "";
 }
 
 // ── Init: scrape immediately on open ────────────────────────────────────────
@@ -496,13 +504,20 @@ function hideFeedbackAfterSubmit() {
 async function doSubmitFeedback(skipMessage) {
   feedbackSubmitBtn.disabled = true;
   const message = skipMessage ? "" : feedbackMessage.value;
-  await chrome.runtime.sendMessage({
+  const result = await chrome.runtime.sendMessage({
     type: "SUBMIT_FEEDBACK",
     sentiment: feedbackSentiment,
     message,
     draftNote: noteText.value,
-  }).catch(() => {});
-  hideFeedbackAfterSubmit();
+  }).catch(() => null);
+
+  if (result?.ok) {
+    hideFeedbackAfterSubmit();
+  } else {
+    feedbackSubmitBtn.disabled = false;
+    feedbackSubmitBtn.textContent = "Retry";
+    feedbackSubmitBtn.style.background = "#c0392b";
+  }
 }
 
 thumbUpBtn.addEventListener("click", () => selectThumb("positive"));
