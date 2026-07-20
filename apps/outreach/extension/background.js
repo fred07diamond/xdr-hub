@@ -153,11 +153,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// Use side panel in Chrome; fall back to popup in Arc and other browsers
-// that don't implement the sidePanel API.
-if (chrome.sidePanel) {
-  chrome.action.setPopup({ popup: "" }); // clear popup so onClicked fires
-  chrome.action.onClicked.addListener((tab) => {
+// Open side panel in Chrome; open panel in a new tab in Arc and other
+// browsers that don't implement the sidePanel API.
+chrome.action.onClicked.addListener((tab) => {
+  if (chrome.sidePanel) {
     chrome.sidePanel.open({ tabId: tab.id });
-  });
-}
+  } else {
+    chrome.tabs.create({ url: chrome.runtime.getURL("panel.html") });
+  }
+});
