@@ -672,18 +672,50 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted }: { graph: GraphData; 
     return parts.join("\n");
   }
 
+  function buildLayoutExample(): string {
+    const n = graph.personas.length;
+    if (n === 0) return "";
+    const childCount = 3;
+    const bandH = childCount * 230;
+    const lines = ["\n\nWorked example with your " + n + " persona(s), 3 children each:"];
+    let yc = 0;
+    graph.personas.slice(0, Math.min(n, 3)).forEach((p, i) => {
+      const anchor = graph.nodes.find((nd) => nd.type === "persona" && nd.personaId === p.id);
+      lines.push(`  Persona ${i} (${p.name}, id=${anchor?.id ?? "?"}): x=80, y=${yc + Math.round(bandH / 2)}`);
+      for (let j = 0; j < childCount; j++) {
+        lines.push(`    Child ${j}: x=500, y=${yc + j * 230 + 115}`);
+      }
+      yc += bandH + 180;
+    });
+    return lines.join("\n");
+  }
+
   function handleBuild() {
     sendToAgentChat({
       message:
         `Build my messaging canvas.\n\n## My Request\n${prompt.trim()}\n\n` +
         buildContext() +
-        `\n\n## How to Build\n` +
-        `1. For each persona, create fine-tuning nodes (tone, phrase_rule, example, role) based on its ICP document and the user's request.\n` +
-        `2. Connect each new node to its persona anchor: create-messaging-edge { sourceId: personaNodeId, targetId: newNodeId }.\n` +
-        `3. Fill in content fields from the ICP doc — tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes.\n` +
-        `4. Space nodes visually: place new nodes at positionX 600–1000, spread positionY in 200px increments per persona.\n` +
-        `5. If fine-tuning nodes already exist for a persona, update them rather than duplicating.\n` +
-        `6. Node types: tone (voice/style/value props), phrase_rule (words to use/avoid), example (sample connection notes), role (role-specific targeting).`,
+        `\n\n## Build Instructions\n\n` +
+        `Node types available: tone (voice/style/valueProps), phrase_rule (phrasesToUse/phrasesToAvoid), example (exampleNotes), role (notes + tone + phrases).\n` +
+        `Fill content fields from the ICP doc text. Only populate fields that have relevant content.\n\n` +
+        `## Layout Algorithm — MUST FOLLOW EXACTLY\n\n` +
+        `STEP 1 — Plan before calling any action:\n` +
+        `  For each persona, decide which 2–4 child nodes to create (tone, phrase_rule, example, role).\n\n` +
+        `STEP 2 — Calculate every position using this formula:\n` +
+        `  y_cursor = 0\n` +
+        `  For each persona (i = 0, 1, 2...):\n` +
+        `    N = number of child nodes for this persona\n` +
+        `    band_h = N × 230\n` +
+        `    Persona anchor → positionX=80, positionY = y_cursor + (band_h / 2)\n` +
+        `    Child node j (j=0..N-1) → positionX=500, positionY = y_cursor + (j × 230) + 115\n` +
+        `    y_cursor += band_h + 180\n\n` +
+        `STEP 3 — Execute in this order:\n` +
+        `  a. update-messaging-node for each persona anchor (reposition to calculated x/y)\n` +
+        `  b. create-messaging-node for each child (pass calculated positionX/positionY)\n` +
+        `  c. create-messaging-edge for each child (sourceId=personaAnchorId, targetId=newChildId)\n` +
+        `  d. update-messaging-node for each child to fill in content fields\n\n` +
+        `CRITICAL: no two nodes may share the same positionY. Use exactly the formula above.` +
+        buildLayoutExample(),
       submit: true,
     });
     onSubmitted();
