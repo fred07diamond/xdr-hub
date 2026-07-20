@@ -62,6 +62,7 @@ export default defineAction({
       (n) => n.personaId && personaIds.has(n.personaId),
     ).length;
     let positionOffset = validPersonaNodeCount;
+    const newPersonaNodeIds: string[] = [];
 
     for (const persona of personas) {
       if (!coveredPersonaIds.has(persona.id)) {
@@ -93,10 +94,12 @@ export default defineAction({
           createdAt: now,
           updatedAt: now,
         });
+        // Track newly created nodes so the UI can auto-initialize from the ICP doc
+        if (persona.icpText) newPersonaNodeIds.push(id);
         positionOffset++;
       }
     }
 
-    return { nodes: finalNodes, edges, personas };
+    return { nodes: finalNodes, edges, personas, newPersonaNodeIds };
   },
 });

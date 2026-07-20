@@ -83,6 +83,7 @@ interface GraphData {
   nodes: MessagingNode[];
   edges: MessagingEdge[];
   personas: Persona[];
+  newPersonaNodeIds?: string[];
 }
 
 // ── Node type config ───────────────────────────────────────────────────────────
@@ -442,42 +443,6 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
         </SheetHeader>
 
         <div className="mt-4 flex flex-col gap-4">
-          {/* Build from ICP doc — persona nodes only */}
-          {isPersona && (() => {
-            const p = personas.find((x) => x.id === node?.personaId);
-            if (!p?.icpText) return null;
-            return (
-              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                <p className="text-xs text-zinc-500 mb-2">This persona has an ICP document. The agent can read it and build out tone, phrase rules, and example nodes automatically.</p>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={() => {
-                    sendToAgentChat({
-                      message:
-                        `Build out the Messaging Canvas for the "${p.name}" persona from its ICP document.\n\n` +
-                        `Persona canvas node ID: ${node!.id}\n\n` +
-                        `## Instructions\n` +
-                        `1. Read the ICP doc and extract any messaging guidance.\n` +
-                        `2. Update the persona canvas node (id: ${node!.id}) with a concise tone/voice line if the doc describes one.\n` +
-                        `3. If the doc has specific phrases to use or avoid → create a "phrase_rule" node, connect it (source=${node!.id}, target=new id).\n` +
-                        `4. If the doc has example outreach notes or templates → create an "example" node, connect it.\n` +
-                        `5. If the doc calls out specific roles/titles to target → create a "role" node per role, connect it.\n` +
-                        `6. Keep each node focused on one thing. Don't cram all content into a single node.\n` +
-                        `7. Only create nodes for guidance that's actually present in the doc — don't invent content.\n\n` +
-                        `## ICP Document\n\n${p.icpText}`,
-                      submit: true,
-                    });
-                    onClose();
-                    toast.success("Agent is building messaging nodes — check the Chat tab");
-                  }}
-                >
-                  Build from ICP doc
-                </Button>
-              </div>
-            );
-          })()}
-
           <EditorField label="Title" readOnly={readOnly}>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={readOnly} placeholder="Node title" />
           </EditorField>
@@ -702,6 +667,38 @@ function MessagingCanvas() {
     setPersonas(graph.personas);
     setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, isAdmin, openEditor, handlePersonaChange)));
     setEdges(graph.edges.map(toFlowEdge));
+
+    // Auto-initialize newly created persona canvas nodes from their ICP docs
+    const toInit = (graph.newPersonaNodeIds ?? [])
+      .map((id) => {
+        const node = graph.nodes.find((n) => n.id === id);
+        const persona = node ? graph.personas.find((p) => p.id === node.personaId) : undefined;
+        return node && persona?.icpText ? { node, persona } : null;
+      })
+      .filter(Boolean) as { node: MessagingNode; persona: Persona & { icpText: string } }[];
+
+    if (toInit.length === 0) return;
+
+    const blocks = toInit.map(({ node, persona }) =>
+      `### ${persona.name} (node id: ${node.id})\n${persona.icpText}`,
+    ).join("\n\n---\n\n");
+
+    sendToAgentChat({
+      message:
+        `Build out the Messaging Canvas for ${toInit.length === 1 ? `the "${toInit[0].persona.name}" persona` : `${toInit.length} personas`} from their ICP documents.\n\n` +
+        `## Canvas model\n` +
+        `Each persona has a canvas anchor node. Fine-tuning nodes (tone, phrase_rule, example, role) branch off via edges (source=parent, target=child).\n\n` +
+        `## Instructions\n` +
+        `For each persona below:\n` +
+        `1. Update the persona canvas node's tone field with a concise voice/style line if the doc describes one.\n` +
+        `2. Phrases to use or avoid → create one "phrase_rule" node, connect it to the persona node.\n` +
+        `3. Outreach example notes or templates → create one "example" node, connect it.\n` +
+        `4. Role-specific guidance (e.g. "when messaging VPs…") → create a "role" node per role, connect it.\n` +
+        `5. Keep each node focused on one thing. Don't duplicate content across nodes.\n` +
+        `6. Only create nodes for guidance actually present in the doc.\n\n` +
+        `## ICP Documents\n\n${blocks}`,
+      submit: true,
+    });
   }, [graph, isAdmin]);
 
   async function handleAddNode(nodeType: PaletteKind) {
