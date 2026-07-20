@@ -19,12 +19,14 @@ Call get-icp-sources. Check the `icpText` field first — it holds
 a directly uploaded ICP document and takes priority.
 
 If icpText is null or empty AND sources is empty:
-- Set verdict = "possible"
-- Set fit_reason = "No ICP document uploaded — upload your ICP
-  on the ICP tab before scoring profiles."
-- STOP. Do not guess or invent ICP criteria. Do not return
-  "strong" or "weak" without a real ICP. Skip to Step 4
-  (draft a generic note from the profile).
+- Set verdict = "inconclusive"
+- Set fit_reason = "No ICP document uploaded — go to the ICP
+  tab and upload your ICP criteria to enable fit scoring."
+- Do not guess or invent ICP criteria. Do not return "strong",
+  "possible", or "weak" without a real ICP.
+- Continue to Step 4 and draft a generic note from the profile
+  alone (no ICP voice or targeting — just a polite, professional
+  intro based on what the profile shows).
 
 If icpText has content, use it as the ICP.
 If icpText is null but sources has Notion page IDs, call

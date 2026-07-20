@@ -19,11 +19,12 @@ not open questions.
 1. Read the captured fields (name, headline, role, company,
    about, recent activity).
 2. Call get-icp-sources. Check the returned `icpText` field.
-   - If icpText is null or empty: STOP scoring. Set verdict to
-     "possible", set fit_reason to "No ICP document uploaded —
-     upload your ICP on the ICP tab before scoring profiles."
+   - If icpText is null or empty: set verdict to "inconclusive",
+     set fit_reason to "No ICP document uploaded — go to the ICP
+     tab and upload your ICP criteria to enable fit scoring."
      Do NOT guess, infer, or invent ICP criteria. Do not return
-     "strong" or "weak" without a real ICP document.
+     "strong", "possible", or "weak" without a real ICP document.
+     Still draft a generic connection note in step 4.
    - If icpText has content: score fit against it (step 3).
 3. Score fit against the ICP document. Return a short verdict
    (strong / possible / weak) with one sentence of reasoning that
