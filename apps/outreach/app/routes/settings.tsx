@@ -8,7 +8,7 @@ import {
   useT,
   type SettingsSearchEntry,
 } from "@agent-native/core/client";
-import { TeamPage, useOrgRole } from "@agent-native/core/client/org";
+import { TeamPage } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
@@ -150,12 +150,9 @@ function DailyLimitCard() {
 }
 
 function ResendInviteCard() {
-  const { canManageOrg, isLoading } = useOrgRole();
   const resend = useActionMutation("resend-invite");
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
-
-  if (isLoading || !canManageOrg) return null;
 
   async function handleResend(e: React.FormEvent) {
     e.preventDefault();
