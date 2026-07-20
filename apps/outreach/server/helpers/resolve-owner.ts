@@ -1,23 +1,7 @@
-import { text } from "@agent-native/core/db/schema";
-import { eq, sql } from "drizzle-orm";
-import { sqliteTable } from "drizzle-orm/sqlite-core";
+import { eq } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { apiTokens } from "../db/schema.js";
-
-const orgMembers = sqliteTable("org_members", {
-  email: text("email").notNull(),
-});
-
-async function isOrgMember(email: string): Promise<boolean> {
-  if (email === process.env.WORKSPACE_OWNER_EMAIL) return true;
-  const db = getDb();
-  const row = await db
-    .select({ email: orgMembers.email })
-    .from(orgMembers)
-    .where(sql`lower(${orgMembers.email}) = lower(${email})`)
-    .limit(1);
-  return row.length > 0;
-}
+import { isWorkspaceMember } from "./workspace-org.js";
 
 /**
  * Resolve the owner email for an action call.
@@ -27,7 +11,7 @@ async function isOrgMember(email: string): Promise<boolean> {
  *  2. Personal API token     (apiToken arg)  — extension calls
  *  3. Workspace owner email  (WORKSPACE_OWNER_EMAIL env) — backward compat
  *
- * Returns null if the API token user has been removed from the org.
+ * Returns null if the API token user is not a member of the workspace org.
  */
 export async function resolveOwner(
   apiToken: string | null | undefined,
@@ -44,7 +28,7 @@ export async function resolveOwner(
       .limit(1);
     if (row[0]) {
       const email = row[0].userEmail;
-      if (!(await isOrgMember(email))) return null;
+      if (!(await isWorkspaceMember(email))) return null;
       return email;
     }
   }

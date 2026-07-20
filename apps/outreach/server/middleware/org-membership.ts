@@ -1,8 +1,5 @@
-import { text } from "@agent-native/core/db/schema";
-import { sql } from "drizzle-orm";
-import { sqliteTable } from "drizzle-orm/sqlite-core";
 import { defineEventHandler, getRequestURL, setResponseStatus } from "h3";
-import { getDb } from "../db/index.js";
+import { getWorkspaceOrgId, isWorkspaceMember } from "../helpers/workspace-org.js";
 
 // Paths the extension calls without a session — auth is handled by API token
 // inside each action, not here.
@@ -14,13 +11,10 @@ const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/get-daily-stats",
 ]);
 
-const orgMembers = sqliteTable("org_members", {
-  email: text("email").notNull(),
-  role: text("role").notNull(),
-});
-
 // Runs after auth.ts (alphabetical order). Rejects authenticated users who
-// have been removed from the org so removal takes effect immediately.
+// are not members of the workspace org. Checks against the specific org_id
+// owned by WORKSPACE_OWNER_EMAIL — not just any org — so a user's personal
+// auto-created org does not grant access.
 export default defineEventHandler(async (event) => {
   const pathname = getRequestURL(event).pathname;
 
@@ -35,14 +29,12 @@ export default defineEventHandler(async (event) => {
   // Workspace owner always has access.
   if (userEmail === process.env.WORKSPACE_OWNER_EMAIL) return;
 
-  const db = getDb();
-  const row = await db
-    .select({ email: orgMembers.email })
-    .from(orgMembers)
-    .where(sql`lower(${orgMembers.email}) = lower(${userEmail})`)
-    .limit(1);
+  // Resolve workspace org_id and check membership in that specific org.
+  const workspaceOrgId = await getWorkspaceOrgId();
+  if (!workspaceOrgId) return; // Can't determine workspace org — owner check above covers it
 
-  if (row.length === 0) {
+  const isMember = await isWorkspaceMember(userEmail);
+  if (!isMember) {
     setResponseStatus(event, 403);
     return { error: "Your access has been removed. Contact your workspace admin." };
   }

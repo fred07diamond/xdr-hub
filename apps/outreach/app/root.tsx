@@ -24,6 +24,8 @@ import {
 } from "react-router";
 import type { LinksFunction } from "react-router";
 
+import { RequireActiveOrg } from "@agent-native/core/client/org-team";
+
 import { Layout as AppLayout } from "@/components/layout/Layout";
 import { AppToolkitProvider } from "@/components/ui/toolkit-provider";
 import { useNavigationState } from "@/hooks/use-navigation-state";
@@ -150,9 +152,11 @@ function AppContent() {
           <ThemeToggleItem />
         </CommandMenu.Group>
       </CommandMenu>
-      <AppLayout>
-        <Outlet />
-      </AppLayout>
+      <RequireActiveOrg>
+        <AppLayout>
+          <Outlet />
+        </AppLayout>
+      </RequireActiveOrg>
     </>
   );
 }
