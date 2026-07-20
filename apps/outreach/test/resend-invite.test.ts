@@ -60,11 +60,11 @@ describe("settings.tsx — OrgMembersSection", () => {
     expect(sectionFn).not.toContain("if (!canManageOrg) return null");
   });
 
-  it("has inline Resend button and Invited badge for pending invitations", () => {
+  it("has inline Copy for Slack button and Invited badge for pending invitations", () => {
     const src = readFile("app/routes/settings.tsx");
-    expect(src).toContain("Resend");
+    expect(src).toContain("Copy for Slack");
     expect(src).toContain("Invited");
-    expect(src).toContain("resend-invite");
+    expect(src).toContain("buildSlackMessage");
   });
 
   it("has an email input for inviting members", () => {

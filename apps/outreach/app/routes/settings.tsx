@@ -18,7 +18,7 @@ import {
   useRemoveMember,
 } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail } from "@tabler/icons-react";
+import { IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -157,6 +157,13 @@ function DailyLimitCard() {
   );
 }
 
+function buildSlackMessage(email: string) {
+  const url = typeof window !== "undefined"
+    ? `${window.location.origin}/outreach`
+    : "https://builder-li.netlify.app/outreach";
+  return `Hey! I've added you to our Builder.LI workspace. Sign in at ${url} with your Google account (${email}) to accept your invitation.`;
+}
+
 function OrgMembersSection() {
   const { data: orgInfo } = useOrg();
   const { data: membersData, isLoading: membersLoading } = useOrgMembers();
@@ -164,13 +171,12 @@ function OrgMembersSection() {
   const { canManageOrg, canInviteMembers } = useOrgRole();
   const removeMember = useRemoveMember();
   const inviteMember = useInviteMember();
-  const resend = useActionMutation("resend-invite");
 
-  const [sentMap, setSentMap] = useState<Record<string, boolean>>({});
-  const [errorMap, setErrorMap] = useState<Record<string, string>>({});
+  const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({});
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
-  const [invited, setInvited] = useState(false);
+  const [lastInvitedEmail, setLastInvitedEmail] = useState("");
+  const [slackCopied, setSlackCopied] = useState(false);
 
   if (!orgInfo?.orgId) {
     return <TeamPage showTitle={false} />;
@@ -179,24 +185,29 @@ function OrgMembersSection() {
   const members = membersData?.members ?? [];
   const invitations = invitesData?.invitations ?? [];
 
-  async function handleResend(email: string) {
-    setErrorMap((m) => ({ ...m, [email]: "" }));
-    const result = await resend.mutateAsync({ email }) as any;
-    if (result?.ok === false) {
-      setErrorMap((m) => ({ ...m, [email]: result.error ?? "Failed to send" }));
-      return;
-    }
-    setSentMap((m) => ({ ...m, [email]: true }));
-    setTimeout(() => setSentMap((m) => ({ ...m, [email]: false })), 3000);
+  function handleCopySlack(email: string, mapKey?: string) {
+    const key = mapKey ?? email;
+    navigator.clipboard.writeText(buildSlackMessage(email)).then(() => {
+      setCopiedMap((m) => ({ ...m, [key]: true }));
+      setTimeout(() => setCopiedMap((m) => ({ ...m, [key]: false })), 2500);
+    });
   }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    await inviteMember.mutateAsync({ email: inviteEmail.trim(), role: inviteRole });
+    const email = inviteEmail.trim();
+    if (!email) return;
+    await inviteMember.mutateAsync({ email, role: inviteRole });
     setInviteEmail("");
-    setInvited(true);
-    setTimeout(() => setInvited(false), 3000);
+    setLastInvitedEmail(email);
+    setSlackCopied(false);
+  }
+
+  function handleCopyInviteMessage() {
+    navigator.clipboard.writeText(buildSlackMessage(lastInvitedEmail)).then(() => {
+      setSlackCopied(true);
+      setTimeout(() => setSlackCopied(false), 2500);
+    });
   }
 
   return (
@@ -262,26 +273,18 @@ function OrgMembersSection() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleResend(inv.email)}
-                          disabled={resend.isPending}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                        >
-                          {sentMap[inv.email] ? (
-                            <IconCheck size={11} className="text-emerald-600" />
-                          ) : (
-                            <IconMail size={11} />
-                          )}
-                          {sentMap[inv.email] ? "Sent!" : "Resend"}
-                        </button>
-                        {errorMap[inv.email] && (
-                          <p className="text-xs text-destructive max-w-[200px] break-words">
-                            {errorMap[inv.email]}
-                          </p>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySlack(inv.email)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted"
+                      >
+                        {copiedMap[inv.email] ? (
+                          <IconCheck size={11} className="text-emerald-600" />
+                        ) : (
+                          <IconBrandSlack size={11} />
                         )}
-                      </div>
+                        {copiedMap[inv.email] ? "Copied!" : "Copy for Slack"}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -302,8 +305,11 @@ function OrgMembersSection() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Invite a teammate</CardTitle>
+            <CardDescription>
+              Add their email, then copy the Slack message to send them the link.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <form onSubmit={handleInvite} className="flex items-center gap-2">
               <input
                 type="email"
@@ -327,18 +333,35 @@ function OrgMembersSection() {
               >
                 {inviteMember.isPending ? (
                   <IconLoader2 size={12} className="animate-spin" />
-                ) : invited ? (
-                  <IconCheck size={12} />
                 ) : (
                   <IconMail size={12} />
                 )}
-                {invited ? "Invited!" : "Invite"}
+                Invite
               </button>
             </form>
             {inviteMember.isError && (
-              <p className="mt-2 text-xs text-destructive">
+              <p className="text-xs text-destructive">
                 {(inviteMember.error as Error)?.message ?? "Failed to invite"}
               </p>
+            )}
+            {lastInvitedEmail && (
+              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+                <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                  <IconBrandSlack size={13} />
+                  Copy this message and paste it into Slack:
+                </p>
+                <p className="text-xs text-muted-foreground font-mono leading-relaxed break-all">
+                  {buildSlackMessage(lastInvitedEmail)}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopyInviteMessage}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
+                >
+                  {slackCopied ? <IconCheck size={12} className="text-emerald-600" /> : <IconClipboard size={12} />}
+                  {slackCopied ? "Copied!" : "Copy message"}
+                </button>
+              </div>
             )}
           </CardContent>
         </Card>
