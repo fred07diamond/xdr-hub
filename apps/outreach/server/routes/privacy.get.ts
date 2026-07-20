@@ -1,0 +1,101 @@
+import { defineEventHandler, setHeader } from "h3";
+
+const PRIVACY_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Builder.LI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f8f9fa;
+      color: #111;
+      margin: 0;
+      padding: 40px 20px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      padding: 48px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .logo {
+      display: inline-block;
+      background: #0a66c2;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-bottom: 24px;
+    }
+    h1 { font-size: 24px; font-weight: 700; margin: 0 0 6px; }
+    .updated { color: #888; font-size: 14px; margin: 0 0 36px; }
+    h2 { font-size: 16px; font-weight: 600; margin: 32px 0 8px; color: #111; }
+    p, li { font-size: 15px; color: #444; margin: 0 0 12px; }
+    ul { padding-left: 20px; margin: 0 0 12px; }
+    a { color: #0a66c2; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">BLI</div>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: July 2026</p>
+
+    <p>Builder.LI ("we", "our") operates a Chrome extension and web application that helps teams score LinkedIn profiles against their Ideal Customer Profile (ICP) and draft personalized connection notes. This policy explains what data we collect, why, and how it is handled.</p>
+
+    <h2>What data the extension collects</h2>
+    <p>When you visit a LinkedIn profile page and click "Draft note", the extension reads the following fields from the page you are already viewing:</p>
+    <ul>
+      <li>Name, headline, current role, and company</li>
+      <li>About section text</li>
+      <li>Recent activity visible on the profile</li>
+      <li>Profile URL</li>
+    </ul>
+    <p>The extension reads <strong>only the profile you explicitly open</strong>, on a manual click, one profile at a time. It does not browse LinkedIn automatically, access your connections, messages, feed, or any other part of LinkedIn.</p>
+
+    <h2>How that data is used</h2>
+    <p>The profile fields are sent to your team's Builder.LI workspace (hosted on Netlify) where they are:</p>
+    <ul>
+      <li>Scored against your team's uploaded ICP document</li>
+      <li>Used to generate a personalized connection note draft</li>
+      <li>Stored in your workspace database so you can review past drafts</li>
+    </ul>
+    <p>Profile data is never sold, shared with third parties, or used for advertising.</p>
+
+    <h2>Authentication data</h2>
+    <p>The extension stores a personal API token in Chrome's local extension storage (<code>chrome.storage.local</code>). This token links extension requests to your Builder.LI account. It is never transmitted to any service other than your own Builder.LI workspace.</p>
+
+    <h2>Data storage and retention</h2>
+    <p>Profile drafts are stored in your workspace's Postgres database on Neon (neon.tech). Data is retained until you delete it or close your workspace. Builder.LI does not access your workspace data.</p>
+
+    <h2>Permissions used</h2>
+    <ul>
+      <li><strong>activeTab / scripting</strong> — reads the LinkedIn profile page you are currently viewing when you click the extension icon</li>
+      <li><strong>storage</strong> — stores your API token locally in Chrome</li>
+      <li><strong>sidePanel</strong> — displays the draft panel alongside the LinkedIn page</li>
+      <li><strong>https://www.linkedin.com/*</strong> — required to read the profile page content</li>
+      <li><strong>https://builder-li.netlify.app/*</strong> — sends profile data to your workspace and retrieves the generated draft</li>
+    </ul>
+
+    <h2>Changes to this policy</h2>
+    <p>We may update this policy as the product evolves. Material changes will be noted in the extension's changelog.</p>
+
+    <h2>Contact</h2>
+    <p>Questions? Email <a href="mailto:fred@builder.io">fred@builder.io</a>.</p>
+  </div>
+</body>
+</html>`;
+
+export default defineEventHandler((event) => {
+  setHeader(event, "content-type", "text/html; charset=utf-8");
+  setHeader(event, "cache-control", "public, max-age=86400");
+  return PRIVACY_HTML;
+});
