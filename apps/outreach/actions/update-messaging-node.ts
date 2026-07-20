@@ -32,10 +32,10 @@ export default defineAction({
 
     if (!row[0]) return { ok: false, error: "Node not found" };
 
-    // Global node content is admin-only; position updates are allowed for all.
+    // Persona and global node content is admin-only; position updates are allowed for all.
     const contentFields = ["title", "tone", "valueProps", "phrasesToUse", "phrasesToAvoid", "exampleNotes", "notes", "personaId"];
     const updatingContent = contentFields.some((k) => fields[k as keyof typeof fields] !== undefined);
-    if (row[0].type === "global" && updatingContent) {
+    if ((row[0].type === "global" || row[0].type === "persona") && updatingContent) {
       await requireAdmin(ctx);
     }
 

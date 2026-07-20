@@ -183,7 +183,7 @@ function CanvasNode({ data }: NodeProps) {
           </p>
           {isPersona && <p className="text-[9px] opacity-75">ICP Persona</p>}
         </div>
-        {isGlobal && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
+        {(isGlobal || isPersona) && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
       </div>
 
       {/* Persona picker — only for fine-tuning nodes (not global or persona) */}
@@ -369,7 +369,7 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
 
   const isPersona = node?.type === "persona";
   const isGlobal = (node?.type as string) === "global";
-  const readOnly = isGlobal && !isAdmin;
+  const readOnly = (isGlobal || isPersona) && !isAdmin;
   const cfg = node ? (NODE_CONFIG[node.type as NodeKind] ?? NODE_CONFIG.tone) : NODE_CONFIG.tone;
 
   const [title, setTitle] = useState("");
@@ -554,7 +554,8 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
           )}
 
           {readOnly && <p className="text-xs text-zinc-500 italic">Global baseline is admin-managed.</p>}
-          {isPersona && <p className="text-xs text-zinc-500 italic">Persona anchor. Add tone/voice here as a baseline, then branch off Phrase Rule, Example, and Role nodes for the details.</p>}
+          {isPersona && !readOnly && <p className="text-xs text-zinc-500 italic">Persona anchor. Add tone/voice here as a baseline, then branch off Phrase Rule, Example, and Role nodes for the details.</p>}
+          {isPersona && readOnly && <p className="text-xs text-zinc-500 italic">Persona nodes are admin-managed.</p>}
         </div>
       </SheetContent>
     </Sheet>
