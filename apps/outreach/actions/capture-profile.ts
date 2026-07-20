@@ -11,9 +11,11 @@ import { resolveOwner } from "../server/helpers/resolve-owner.js";
 type DbType = ReturnType<typeof getDb>;
 type DbNode = typeof messagingNodes.$inferSelect;
 
-// Walk the messaging inheritance chain for a given personaId (or global only).
-// Returns a text block root→leaf, or null if nothing is configured.
+// BFS down from the matched persona's canvas node, collecting all fine-tuning nodes.
+// Returns a text block persona→leaves, or null if nothing is configured.
 async function buildMessagingContext(personaId: string | null, db: DbType): Promise<string | null> {
+  if (!personaId) return null;
+
   const [nodes, edges] = await Promise.all([
     db.select().from(messagingNodes),
     db.select().from(messagingEdges),
@@ -21,37 +23,37 @@ async function buildMessagingContext(personaId: string | null, db: DbType): Prom
 
   if (nodes.length === 0) return null;
 
-  const globalNode = nodes.find((n) => n.type === "global") ?? null;
+  // Find the persona canvas node (root of this persona's messaging tree)
+  const personaNode = nodes.find((n) => n.type === "persona" && n.personaId === personaId) ?? null;
+  if (!personaNode) return null;
 
-  // Find the leaf node matching this persona
-  const leafNode = personaId ? (nodes.find((n) => n.personaId === personaId) ?? null) : null;
-
-  // Build the chain: walk from leaf up to root via edges (target→source)
+  // BFS down: follow edges where sourceId === current.id
   const chain: DbNode[] = [];
-  let current: DbNode | null = leafNode ?? globalNode;
+  const queue: DbNode[] = [personaNode];
   const visited = new Set<string>();
 
-  while (current && !visited.has(current.id)) {
-    chain.unshift(current); // prepend so chain is root→leaf
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current.id)) continue;
     visited.add(current.id);
-    const parentEdge = edges.find((e) => e.targetId === current!.id);
-    if (!parentEdge) break;
-    current = nodes.find((n) => n.id === parentEdge.sourceId) ?? null;
+    chain.push(current);
+    for (const edge of edges.filter((e) => e.sourceId === current.id)) {
+      const child = nodes.find((n) => n.id === edge.targetId);
+      if (child && !visited.has(child.id)) queue.push(child);
+    }
   }
 
-  // If we only have the global node and it has no content, skip
   const hasContent = (n: DbNode) =>
     n.tone || n.valueProps || n.phrasesToUse || n.phrasesToAvoid || n.exampleNotes || n.notes;
 
-  const contentNodes = chain.filter(hasContent);
-  if (contentNodes.length === 0) return null;
+  if (!chain.some(hasContent)) return null;
 
   const lines: string[] = ["MESSAGING GUIDELINES — apply when drafting the connection note:"];
   for (const n of chain) {
     if (!hasContent(n)) continue;
     const t = n.type;
-    if (t === "global") {
-      lines.push("\n[Global Baseline]");
+    if (t === "persona" || t === "global") {
+      lines.push(`\n[${t === "persona" ? `Persona: ${n.title}` : "Global Baseline"}]`);
       if (n.tone) lines.push(`Tone/Voice: ${n.tone}`);
       if (n.valueProps) lines.push(`Key value props: ${n.valueProps}`);
       if (n.phrasesToUse) lines.push(`Always use: ${n.phrasesToUse}`);

@@ -18,7 +18,9 @@ export default defineAction({
       .limit(1);
 
     if (!row[0]) return { ok: false, error: "Node not found" };
-    if (row[0].type === "global") return { ok: false, error: "Cannot delete the global baseline node." };
+    if (row[0].type === "global" || row[0].type === "persona") {
+      return { ok: false, error: "Cannot delete persona anchor nodes." };
+    }
 
     await db.delete(messagingEdges).where(
       or(eq(messagingEdges.sourceId, id), eq(messagingEdges.targetId, id)),

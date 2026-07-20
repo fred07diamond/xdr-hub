@@ -29,7 +29,7 @@ import {
   IconRefresh,
   IconTextPlus,
   IconTrash,
-  IconWorld,
+  IconUsers,
   IconX,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,7 +46,7 @@ export function meta() {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type NodeKind = "global" | "tone" | "phrase_rule" | "example" | "role";
+type NodeKind = "persona" | "tone" | "phrase_rule" | "example" | "role";
 
 interface MessagingNode {
   id: string;
@@ -93,11 +93,11 @@ const NODE_CONFIG: Record<NodeKind, {
   description: string;
   previewFields: (keyof MessagingNode)[];
 }> = {
-  global: {
-    label: "Global Baseline",
+  persona: {
+    label: "ICP Persona",
     color: "#0a66c2",
-    Icon: IconWorld,
-    description: "Root node — applies to every draft",
+    Icon: IconUsers,
+    description: "Persona anchor — fine-tuning nodes branch from here",
     previewFields: ["tone", "valueProps", "phrasesToUse", "phrasesToAvoid", "exampleNotes", "notes"],
   },
   tone: {
@@ -154,8 +154,11 @@ interface NodeData extends Record<string, unknown> {
 
 function CanvasNode({ data }: NodeProps) {
   const d = data as NodeData;
-  const cfg = NODE_CONFIG[d.dbNode.type] ?? NODE_CONFIG.tone;
-  const isGlobal = d.dbNode.type === "global";
+  const cfg = NODE_CONFIG[d.dbNode.type as NodeKind] ?? NODE_CONFIG.tone;
+  const isPersona = d.dbNode.type === "persona";
+  const isGlobal = (d.dbNode.type as string) === "global";
+  // Persona nodes use the actual ICP persona color; other nodes use the static config color
+  const headerColor = isPersona ? (d.persona?.color ?? cfg.color) : cfg.color;
 
   const filled = cfg.previewFields
     .map((k) => ({ key: k, label: FIELD_LABELS[k] ?? String(k), val: d.dbNode[k] }))
@@ -169,15 +172,20 @@ function CanvasNode({ data }: NodeProps) {
       {/* Header */}
       <div
         className="flex items-center gap-1.5 px-3 py-2 text-white"
-        style={{ background: cfg.color }}
+        style={{ background: headerColor }}
       >
         <cfg.Icon size={12} className="shrink-0 opacity-90" />
-        <span className="text-[11px] font-semibold truncate flex-1">{d.dbNode.title}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] font-semibold truncate">
+            {isPersona ? (d.persona?.name ?? d.dbNode.title) : d.dbNode.title}
+          </p>
+          {isPersona && <p className="text-[9px] opacity-75">ICP Persona</p>}
+        </div>
         {isGlobal && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
       </div>
 
-      {/* Persona picker for non-global nodes */}
-      {!isGlobal && (
+      {/* Persona picker — only for fine-tuning nodes (not global or persona) */}
+      {!isGlobal && !isPersona && (
         <div
           className="border-b border-zinc-100 dark:border-zinc-800 px-2.5 py-1.5"
           onClick={(e) => e.stopPropagation()}
@@ -201,7 +209,9 @@ function CanvasNode({ data }: NodeProps) {
       {/* Field preview */}
       <div className="px-3 py-2 text-[10px] space-y-0.5">
         {filled.length === 0 ? (
-          <p className="italic text-zinc-400">Empty — click to edit</p>
+          <p className="italic text-zinc-400">
+            {isPersona ? "No baseline messaging yet — click to add" : "Empty — click to edit"}
+          </p>
         ) : (
           filled.map(({ key, label, val }) => {
             const text = String(val ?? "");
@@ -217,13 +227,14 @@ function CanvasNode({ data }: NodeProps) {
         )}
       </div>
 
-      {!isGlobal && <Handle type="target" position={Position.Left} />}
+      {/* Persona nodes are source-only anchors — no incoming connections allowed */}
+      {!isGlobal && !isPersona && <Handle type="target" position={Position.Left} />}
       <Handle type="source" position={Position.Right} />
     </div>
   );
 }
 
-const nodeTypes = { global: CanvasNode, tone: CanvasNode, phrase_rule: CanvasNode, example: CanvasNode, role: CanvasNode };
+const nodeTypes = { persona: CanvasNode, tone: CanvasNode, phrase_rule: CanvasNode, example: CanvasNode, role: CanvasNode };
 
 // ── Node type palette ──────────────────────────────────────────────────────────
 
@@ -283,16 +294,17 @@ function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: 
     sendToAgentChat({
       message:
         `Parse this messaging document and build out the Messaging Canvas.\n\n` +
+        `## Canvas model\n` +
+        `Each ICP persona has a persona anchor node (type='persona'). Fine-tuning nodes (tone, phrase_rule, example, role) branch off personas via edges. Source = parent, target = child.\n\n` +
         `## Instructions\n` +
-        `1. Call get-messaging-graph first to get current node IDs.\n` +
-        `2. Identify global/baseline messaging and update the Global Baseline node with update-messaging-node.\n` +
-        `3. For each distinct tone/voice section, create a "tone" node.\n` +
+        `1. Call get-messaging-graph to get current node IDs — persona anchor nodes are already there.\n` +
+        `2. For each persona, if the doc has persona-level baseline messaging (tone, value props, phrases, examples), call update-messaging-node on that persona's canvas node (find it by type='persona' and matching personaId).\n` +
+        `3. For each distinct tone/voice section within a persona, create a "tone" node.\n` +
         `4. For each set of use/avoid phrases, create a "phrase_rule" node.\n` +
         `5. For each example note or template, create an "example" node.\n` +
         `6. For each role-specific section, create a "role" node with the role name as the title.\n` +
-        `7. Wire each new node back to its parent with create-messaging-edge (source = parent id, target = child id).\n` +
-        `8. Link personaId if a node's content maps to one of the existing personas by name.\n` +
-        `9. Be faithful to the doc — don't invent content that isn't there.` +
+        `7. Wire each new node to its parent with create-messaging-edge (source = parent id, target = child id).\n` +
+        `8. Be faithful to the doc — don't invent content that isn't there.` +
         personaList +
         `\n\n## Document\n\n${text.trim()}`,
       submit: true,
@@ -353,9 +365,10 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
   const updateNode = useActionMutation("update-messaging-node");
   const deleteNode = useActionMutation("delete-messaging-node");
 
-  const isGlobal = node?.type === "global";
+  const isPersona = node?.type === "persona";
+  const isGlobal = (node?.type as string) === "global";
   const readOnly = isGlobal && !isAdmin;
-  const cfg = node ? (NODE_CONFIG[node.type] ?? NODE_CONFIG.tone) : NODE_CONFIG.tone;
+  const cfg = node ? (NODE_CONFIG[node.type as NodeKind] ?? NODE_CONFIG.tone) : NODE_CONFIG.tone;
 
   const [title, setTitle] = useState("");
   const [personaId, setPersonaId] = useState("");
@@ -403,13 +416,13 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
     onClose();
   }
 
-  // Which fields to show based on node type
-  const showTone = isGlobal || node?.type === "tone" || node?.type === "role";
-  const showValueProps = isGlobal || node?.type === "tone";
-  const showUse = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
-  const showAvoid = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
-  const showExample = isGlobal || node?.type === "example";
-  const showNotes = isGlobal || node?.type === "role";
+  // Persona nodes get the full field set (they're the baseline for each ICP persona)
+  const showTone = isGlobal || isPersona || node?.type === "tone" || node?.type === "role";
+  const showValueProps = isGlobal || isPersona || node?.type === "tone";
+  const showUse = isGlobal || isPersona || node?.type === "phrase_rule" || node?.type === "role";
+  const showAvoid = isGlobal || isPersona || node?.type === "phrase_rule" || node?.type === "role";
+  const showExample = isGlobal || isPersona || node?.type === "example";
+  const showNotes = isGlobal || isPersona || node?.type === "role";
 
   return (
     <Sheet open={!!node} onOpenChange={(o) => !o && onClose()}>
@@ -421,7 +434,9 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
                 <cfg.Icon size={14} className="text-white" />
               </div>
             )}
-            <SheetTitle>{cfg.label}</SheetTitle>
+            <SheetTitle>
+            {isPersona ? (personas.find((p) => p.id === node?.personaId)?.name ?? cfg.label) : cfg.label}
+          </SheetTitle>
           </div>
         </SheetHeader>
 
@@ -430,7 +445,7 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
             <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={readOnly} placeholder="Node title" />
           </EditorField>
 
-          {!isGlobal && (
+          {!isGlobal && !isPersona && (
             <EditorField label="Link to Persona" readOnly={readOnly}>
               <select
                 className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
@@ -528,7 +543,7 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
                 {updateNode.isPending && <IconRefresh className="animate-spin mr-1" size={13} />}
                 Save
               </Button>
-              {!isGlobal && (
+              {!isGlobal && !isPersona && (
                 <Button variant="destructive" onClick={handleDelete} disabled={deleteNode.isPending}>
                   <IconTrash size={14} />
                 </Button>
@@ -537,6 +552,7 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
           )}
 
           {readOnly && <p className="text-xs text-zinc-500 italic">Global baseline is admin-managed.</p>}
+          {isPersona && <p className="text-xs text-zinc-500 italic">Persona anchor — managed from the ICP tab. Set baseline messaging here; branch off fine-tuning nodes for specific roles.</p>}
         </div>
       </SheetContent>
     </Sheet>
@@ -712,6 +728,18 @@ function MessagingCanvas() {
     return <div className="flex h-full items-center justify-center text-sm text-zinc-500">Loading canvas…</div>;
   }
 
+  if (graph && graph.personas.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <IconUsers size={32} className="mx-auto mb-3 text-zinc-300" />
+          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">No ICP personas yet</p>
+          <p className="mt-1 text-xs text-zinc-400">Create personas on the ICP tab, then come back here to add messaging guidelines.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
@@ -745,8 +773,17 @@ function MessagingCanvas() {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-1.5 dark:border-zinc-800/50">
-        {(["global", "tone", "phrase_rule", "example", "role"] as NodeKind[]).map((kind) => {
+      <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-1.5 dark:border-zinc-800/50 flex-wrap">
+        {personas.map((p) => (
+          <div key={p.id} className="flex items-center gap-1">
+            <div className="h-2 w-2 rounded-full" style={{ background: p.color }} />
+            <span className="text-[10px] text-zinc-500">{p.name}</span>
+          </div>
+        ))}
+        {personas.length > 0 && (
+          <span className="text-[10px] text-zinc-300 dark:text-zinc-600">·</span>
+        )}
+        {(["tone", "phrase_rule", "example", "role"] as NodeKind[]).map((kind) => {
           const cfg = NODE_CONFIG[kind];
           return (
             <div key={kind} className="flex items-center gap-1">
@@ -776,7 +813,10 @@ function MessagingCanvas() {
           <Background color="#e4e4e7" gap={20} />
           <Controls />
           <MiniMap
-            nodeColor={(n) => (NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8")}
+            nodeColor={(n) => {
+              if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
+              return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
+            }}
             maskColor="rgba(0,0,0,0.05)"
           />
         </ReactFlow>

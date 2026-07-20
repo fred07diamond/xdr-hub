@@ -1,18 +1,16 @@
 import { defineAction } from "@agent-native/core";
-import { asc } from "drizzle-orm";
+import { asc, eq, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { icpPersonas, messagingEdges, messagingNodes } from "../server/db/schema.js";
-import { requireAdmin } from "../server/helpers/require-admin.js";
 
 export default defineAction({
-  description: "Return the full messaging graph (nodes + edges) and the list of ICP personas.",
+  description: "Return the full messaging graph (nodes + edges) and the list of ICP personas. Auto-syncs persona canvas nodes from ICP personas.",
   schema: z.object({}),
   http: { method: "GET" },
-  readOnly: true,
   requiresAuth: true,
-  run: async (_args, ctx) => {
+  run: async () => {
     const db = getDb();
 
     const [nodes, edges, personas] = await Promise.all([
@@ -24,43 +22,78 @@ export default defineAction({
         .orderBy(asc(icpPersonas.createdAt)),
     ]);
 
-    // Auto-create the global node for admins if none exists yet.
-    let finalNodes = nodes;
-    const hasGlobal = nodes.some((n) => n.type === "global");
-    if (!hasGlobal) {
-      try {
-        await requireAdmin(ctx);
-        const now = new Date().toISOString();
+    const personaIds = new Set(personas.map((p) => p.id));
+    const existingPersonaNodes = nodes.filter((n) => n.type === "persona");
+    const coveredPersonaIds = new Set(
+      existingPersonaNodes.map((n) => n.personaId).filter(Boolean) as string[],
+    );
+
+    // Filter out legacy global nodes — personas are now the canvas roots
+    let finalNodes = nodes.filter((n) => n.type !== "global");
+
+    const now = new Date().toISOString();
+
+    // Remove orphaned persona canvas nodes whose ICP persona was deleted
+    for (const n of existingPersonaNodes) {
+      if (n.personaId && !personaIds.has(n.personaId)) {
+        await db.delete(messagingEdges).where(
+          or(eq(messagingEdges.sourceId, n.id), eq(messagingEdges.targetId, n.id)),
+        );
+        await db.delete(messagingNodes).where(eq(messagingNodes.id, n.id));
+        finalNodes = finalNodes.filter((node) => node.id !== n.id);
+      }
+    }
+
+    // Sync persona canvas node titles when ICP persona was renamed
+    for (const n of existingPersonaNodes) {
+      const persona = personas.find((p) => p.id === n.personaId);
+      if (persona && n.title !== persona.name) {
+        await db
+          .update(messagingNodes)
+          .set({ title: persona.name, updatedAt: now })
+          .where(eq(messagingNodes.id, n.id));
+        const idx = finalNodes.findIndex((fn) => fn.id === n.id);
+        if (idx !== -1) finalNodes[idx] = { ...finalNodes[idx], title: persona.name };
+      }
+    }
+
+    // Auto-create persona canvas nodes for ICP personas that don't have one yet
+    const validPersonaNodeCount = existingPersonaNodes.filter(
+      (n) => n.personaId && personaIds.has(n.personaId),
+    ).length;
+    let positionOffset = validPersonaNodeCount;
+
+    for (const persona of personas) {
+      if (!coveredPersonaIds.has(persona.id)) {
         const id = nanoid();
+        const posY = 100 + positionOffset * 350;
         await db.insert(messagingNodes).values({
           id,
-          type: "global",
-          title: "Global Baseline",
+          type: "persona",
+          title: persona.name,
+          personaId: persona.id,
           positionX: 100,
-          positionY: 300,
+          positionY: posY,
           createdAt: now,
           updatedAt: now,
         });
-        finalNodes = [
-          {
-            id,
-            type: "global",
-            title: "Global Baseline",
-            personaId: null,
-            tone: null,
-            valueProps: null,
-            phrasesToUse: null,
-            phrasesToAvoid: null,
-            exampleNotes: null,
-            notes: null,
-            positionX: 100,
-            positionY: 300,
-            createdAt: now,
-            updatedAt: now,
-          },
-        ];
-      } catch {
-        // Non-admin — just return empty graph
+        finalNodes.push({
+          id,
+          type: "persona",
+          title: persona.name,
+          personaId: persona.id,
+          tone: null,
+          valueProps: null,
+          phrasesToUse: null,
+          phrasesToAvoid: null,
+          exampleNotes: null,
+          notes: null,
+          positionX: 100,
+          positionY: posY,
+          createdAt: now,
+          updatedAt: now,
+        });
+        positionOffset++;
       }
     }
 
