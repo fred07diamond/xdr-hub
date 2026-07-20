@@ -572,18 +572,6 @@ export function Sidebar({
           />
         </div>
 
-        <div
-          className={cn(
-            collapsed ? "flex justify-center px-1 py-1" : "px-3 py-2",
-          )}
-        >
-          <FeedbackButton
-            variant={collapsed ? "icon" : "sidebar"}
-            side="right"
-            align={collapsed ? "center" : "end"}
-          />
-        </div>
-
         {collapseButton ? (
           <div
             className={cn(
