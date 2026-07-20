@@ -76,6 +76,7 @@ interface Persona {
   id: string;
   name: string;
   color: string;
+  icpText?: string | null;
 }
 
 interface GraphData {
@@ -98,7 +99,7 @@ const NODE_CONFIG: Record<NodeKind, {
     color: "#0a66c2",
     Icon: IconUsers,
     description: "Persona anchor — fine-tuning nodes branch from here",
-    previewFields: ["tone", "valueProps", "phrasesToUse", "phrasesToAvoid", "exampleNotes", "notes"],
+    previewFields: ["notes", "tone"],
   },
   tone: {
     label: "Tone & Voice",
@@ -416,13 +417,13 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
     onClose();
   }
 
-  // Persona nodes get the full field set (they're the baseline for each ICP persona)
-  const showTone = isGlobal || isPersona || node?.type === "tone" || node?.type === "role";
-  const showValueProps = isGlobal || isPersona || node?.type === "tone";
-  const showUse = isGlobal || isPersona || node?.type === "phrase_rule" || node?.type === "role";
-  const showAvoid = isGlobal || isPersona || node?.type === "phrase_rule" || node?.type === "role";
-  const showExample = isGlobal || isPersona || node?.type === "example";
+  // Persona nodes: Notes + Tone only — value props, phrases, examples belong in child nodes
   const showNotes = isGlobal || isPersona || node?.type === "role";
+  const showTone = isGlobal || isPersona || node?.type === "tone" || node?.type === "role";
+  const showValueProps = isGlobal || node?.type === "tone";
+  const showUse = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
+  const showAvoid = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
+  const showExample = isGlobal || node?.type === "example";
 
   return (
     <Sheet open={!!node} onOpenChange={(o) => !o && onClose()}>
@@ -441,6 +442,42 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
         </SheetHeader>
 
         <div className="mt-4 flex flex-col gap-4">
+          {/* Build from ICP doc — persona nodes only */}
+          {isPersona && (() => {
+            const p = personas.find((x) => x.id === node?.personaId);
+            if (!p?.icpText) return null;
+            return (
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                <p className="text-xs text-zinc-500 mb-2">This persona has an ICP document. The agent can read it and build out tone, phrase rules, and example nodes automatically.</p>
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    sendToAgentChat({
+                      message:
+                        `Build out the Messaging Canvas for the "${p.name}" persona from its ICP document.\n\n` +
+                        `Persona canvas node ID: ${node!.id}\n\n` +
+                        `## Instructions\n` +
+                        `1. Read the ICP doc and extract any messaging guidance.\n` +
+                        `2. Update the persona canvas node (id: ${node!.id}) with a concise tone/voice line if the doc describes one.\n` +
+                        `3. If the doc has specific phrases to use or avoid → create a "phrase_rule" node, connect it (source=${node!.id}, target=new id).\n` +
+                        `4. If the doc has example outreach notes or templates → create an "example" node, connect it.\n` +
+                        `5. If the doc calls out specific roles/titles to target → create a "role" node per role, connect it.\n` +
+                        `6. Keep each node focused on one thing. Don't cram all content into a single node.\n` +
+                        `7. Only create nodes for guidance that's actually present in the doc — don't invent content.\n\n` +
+                        `## ICP Document\n\n${p.icpText}`,
+                      submit: true,
+                    });
+                    onClose();
+                    toast.success("Agent is building messaging nodes — check the Chat tab");
+                  }}
+                >
+                  Build from ICP doc
+                </Button>
+              </div>
+            );
+          })()}
+
           <EditorField label="Title" readOnly={readOnly}>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={readOnly} placeholder="Node title" />
           </EditorField>
@@ -552,7 +589,7 @@ function NodeEditorSheet({ node, personas, isAdmin, onClose, onSaved, onDeleted 
           )}
 
           {readOnly && <p className="text-xs text-zinc-500 italic">Global baseline is admin-managed.</p>}
-          {isPersona && <p className="text-xs text-zinc-500 italic">Persona anchor — managed from the ICP tab. Set baseline messaging here; branch off fine-tuning nodes for specific roles.</p>}
+          {isPersona && <p className="text-xs text-zinc-500 italic">Persona anchor. Add tone/voice here as a baseline, then branch off Phrase Rule, Example, and Role nodes for the details.</p>}
         </div>
       </SheetContent>
     </Sheet>
@@ -746,7 +783,7 @@ function MessagingCanvas() {
       <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h1 className="text-sm font-semibold">Messaging Canvas</h1>
         <p className="text-xs text-zinc-500 flex-1 hidden sm:block">
-          Drag to connect. Each node's action stacks additively onto its parent.
+          Personas are root anchors. Branch off Tone, Phrase Rule, Example, and Role nodes. Click a persona to build from its ICP doc.
         </p>
         <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="gap-1.5">
           <IconFileUpload size={14} />

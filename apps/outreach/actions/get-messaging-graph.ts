@@ -17,7 +17,7 @@ export default defineAction({
       db.select().from(messagingNodes).orderBy(asc(messagingNodes.createdAt)),
       db.select().from(messagingEdges).orderBy(asc(messagingEdges.createdAt)),
       db
-        .select({ id: icpPersonas.id, name: icpPersonas.name, color: icpPersonas.color })
+        .select({ id: icpPersonas.id, name: icpPersonas.name, color: icpPersonas.color, icpText: icpPersonas.icpText })
         .from(icpPersonas)
         .orderBy(asc(icpPersonas.createdAt)),
     ]);
