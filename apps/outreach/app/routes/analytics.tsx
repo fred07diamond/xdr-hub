@@ -1,6 +1,8 @@
 import { useActionQuery } from "@agent-native/core/client";
+import { useOrgRole } from "@agent-native/core/client/org";
 import { IconChartBar, IconLoader2, IconMessageReport, IconThumbDown, IconThumbUp } from "@tabler/icons-react";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
+import { Navigate } from "react-router";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_TITLE } from "@/lib/app-config";
@@ -25,6 +27,8 @@ function pct(n: number, total: number) {
 
 export default function AnalyticsRoute() {
   useSetPageTitle("Analytics");
+  const { canManageOrg } = useOrgRole();
+  if (!canManageOrg) return <Navigate to="/" replace />;
   const { data, isLoading, error } = useActionQuery("get-analytics", {});
   const { data: feedbackData } = useActionQuery("list-feedback", {});
 
