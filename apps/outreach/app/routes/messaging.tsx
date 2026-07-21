@@ -809,6 +809,7 @@ function MessagingCanvas() {
   const createNode = useActionMutation("create-messaging-node");
   const createEdge = useActionMutation("create-messaging-edge");
   const deleteEdge = useActionMutation("delete-messaging-edge");
+  const deleteNode = useActionMutation("delete-messaging-node");
   const updateNode = useActionMutation("update-messaging-node");
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -922,6 +923,23 @@ function MessagingCanvas() {
     [deleteEdge],
   );
 
+  // Prevent persona/global nodes from being deleted via keyboard or selection
+  const handleBeforeDelete = useCallback(
+    async ({ nodes: toDelete, edges: toDeleteEdges }: { nodes: Node[]; edges: Edge[] }) => ({
+      nodes: toDelete.filter((n) => {
+        const t = n.type as string;
+        return t !== "persona" && t !== "global";
+      }),
+      edges: toDeleteEdges,
+    }),
+    [],
+  );
+
+  const handleNodesDelete = useCallback(
+    (deleted: Node[]) => { for (const n of deleted) deleteNode.mutate({ id: n.id }); },
+    [deleteNode],
+  );
+
   function handleNodeSaved(updated: Partial<MessagingNode>) {
     if (!editingNode) return;
     const merged = { ...editingNode, ...updated };
@@ -960,7 +978,7 @@ function MessagingCanvas() {
       <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h1 className="text-sm font-semibold">Messaging Canvas</h1>
         <p className="text-xs text-zinc-500 flex-1 hidden sm:block">
-          Personas are root anchors. Branch off Tone, Phrase Rule, Example, and Role nodes. Click a persona to build from its ICP doc.
+          Personas are root anchors. Branch off nodes to add messaging rules. Drag to multi-select · Delete to remove.
         </p>
         <Button
           size="sm"
@@ -1027,10 +1045,13 @@ function MessagingCanvas() {
           onEdgesChange={onEdgesChange}
           onConnect={handleConnect}
           onEdgesDelete={handleEdgesDelete}
+          onNodesDelete={handleNodesDelete}
+          onBeforeDelete={handleBeforeDelete}
           onNodeDragStop={handleNodeDragStop}
           fitView
           fitViewOptions={{ padding: 0.2 }}
-          deleteKeyCode="Delete"
+          deleteKeyCode={["Delete", "Backspace"]}
+          selectionOnDrag
           className="bg-zinc-50 dark:bg-zinc-950"
         >
           <Background color="#e4e4e7" gap={20} />
