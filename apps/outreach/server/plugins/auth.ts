@@ -11,5 +11,6 @@ export default createAuthPlugin({
     "/_agent-native/actions/check-already-contacted",
     "/_agent-native/actions/get-daily-stats",
     "/_agent-native/actions/submit-feedback",
+    "/_agent-native/actions/resolve-connect-button",
   ],
 });
