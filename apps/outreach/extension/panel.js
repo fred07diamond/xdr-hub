@@ -32,6 +32,7 @@ const saveTokenBtn = document.getElementById("save-token-btn");
 const clearTokenBtn = document.getElementById("clear-token-btn");
 const tokenSaveStatus = document.getElementById("token-save-status");
 const tokenStatusBadge = document.getElementById("token-status-badge");
+const autoModeToggle = document.getElementById("auto-mode-toggle");
 const feedbackSection = document.getElementById("feedback-section");
 const thumbUpBtn = document.getElementById("thumb-up-btn");
 const thumbDownBtn = document.getElementById("thumb-down-btn");
@@ -95,7 +96,7 @@ function resetFeedbackSection() {
   if (errEl) errEl.textContent = "";
 }
 
-function showVerdict(draft) {
+function showVerdict(draft, { triggerAuto = false } = {}) {
   resetFeedbackSection();
   const v = draft.fitVerdict || "possible";
   verdictBadge.className = `verdict-${v}`;
@@ -120,6 +121,14 @@ function showVerdict(draft) {
   verdictSection.style.display = "block";
   sentSection.style.display = "block";
   feedbackSection.style.display = "block";
+
+  if (triggerAuto && autoModeToggle.checked && !autoConnectBtn.classList.contains("success")) {
+    setTimeout(() => {
+      if (autoModeToggle.checked && !autoConnectBtn.classList.contains("success")) {
+        autoConnectBtn.click();
+      }
+    }, 600);
+  }
 }
 
 function renderProfileCard(data) {
@@ -405,12 +414,17 @@ clearTokenBtn.addEventListener("click", () => {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
-chrome.storage.local.get(["apiToken"], (result) => {
+chrome.storage.local.get(["apiToken", "autoMode"], (result) => {
+  autoModeToggle.checked = result.autoMode !== false; // default ON
   if (!result.apiToken) {
     showSettings();
   } else {
     init().finally(() => startUrlPolling());
   }
+});
+
+autoModeToggle.addEventListener("change", () => {
+  chrome.storage.local.set({ autoMode: autoModeToggle.checked });
 });
 
 // ── Draft button ─────────────────────────────────────────────────────────────
@@ -442,7 +456,7 @@ draftBtn.addEventListener("click", async () => {
     if (!result?.ok) throw new Error(result?.error || "Unknown error");
 
     setStatus("");
-    showVerdict(result.draft);
+    showVerdict(result.draft, { triggerAuto: true });
   } catch (err) {
     setStatus(`Error: ${err.message}`);
     draftBtn.disabled = false;
