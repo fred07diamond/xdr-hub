@@ -26,6 +26,7 @@ export default defineAction({
       [thisWeekRow],
       [lastWeekRow],
       [sentRow],
+      byUserRows,
     ] = await Promise.all([
       db.select({ total: count() }).from(prospects),
       db.select({ verdict: prospects.fitVerdict, n: count() }).from(prospects).groupBy(prospects.fitVerdict),
@@ -34,6 +35,19 @@ export default defineAction({
       db.select({ n: count() }).from(prospects).where(sql`created_at >= ${weekAgo}`),
       db.select({ n: count() }).from(prospects).where(sql`created_at >= ${twoWeeksAgo} AND created_at < ${weekAgo}`),
       db.select({ n: count() }).from(sendHistory),
+      db
+        .select({
+          ownerEmail: prospects.ownerEmail,
+          total: count(),
+          drafted: sql<number>`sum(case when ${prospects.status} = 'drafted' then 1 else 0 end)`,
+          sent: sql<number>`sum(case when ${prospects.status} = 'sent' then 1 else 0 end)`,
+          strong: sql<number>`sum(case when ${prospects.fitVerdict} = 'strong' then 1 else 0 end)`,
+          possible: sql<number>`sum(case when ${prospects.fitVerdict} = 'possible' then 1 else 0 end)`,
+          weak: sql<number>`sum(case when ${prospects.fitVerdict} = 'weak' then 1 else 0 end)`,
+          inconclusive: sql<number>`sum(case when ${prospects.fitVerdict} = 'inconclusive' then 1 else 0 end)`,
+        })
+        .from(prospects)
+        .groupBy(prospects.ownerEmail),
     ]);
 
     const verdictCounts = { strong: 0, possible: 0, weak: 0 };
@@ -50,6 +64,19 @@ export default defineAction({
       }
     }
 
+    const byUser = byUserRows
+      .map((r) => ({
+        ownerEmail: r.ownerEmail,
+        total: Number(r.total),
+        drafted: Number(r.drafted),
+        sent: Number(r.sent),
+        strong: Number(r.strong),
+        possible: Number(r.possible),
+        weak: Number(r.weak),
+        inconclusive: Number(r.inconclusive),
+      }))
+      .sort((a, b) => b.total - a.total);
+
     return {
       totalProspects: (totals?.total ?? 0) as number,
       verdictCounts,
@@ -58,6 +85,7 @@ export default defineAction({
       lastWeek: (lastWeekRow?.n ?? 0) as number,
       totalUsers: (usersRow?.n ?? 0) as number,
       totalSent: (sentRow?.n ?? 0) as number,
+      byUser,
     };
   },
 });
