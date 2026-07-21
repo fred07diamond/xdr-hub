@@ -9,6 +9,7 @@ const followupSection = document.getElementById("followup-section");
 const followupText = document.getElementById("followup-text");
 const sentSection = document.getElementById("sent-section");
 const markSentBtn = document.getElementById("mark-sent-btn");
+const autoConnectBtn = document.getElementById("auto-connect-btn");
 const personaChip = document.getElementById("persona-chip");
 const personaIndicator = document.getElementById("persona-indicator");
 const personaNameLabel = document.getElementById("persona-name-label");
@@ -254,6 +255,9 @@ function resetPanel() {
   setStatus("");
   verdictSection.style.display = "none";
   personaChip.style.display = "none";
+  autoConnectBtn.disabled = false;
+  autoConnectBtn.textContent = "Connect & send";
+  autoConnectBtn.classList.remove("success");
 
   resetFeedbackSection();
   feedbackSection.style.display = "none";
@@ -530,6 +534,49 @@ thumbUpBtn.addEventListener("click", () => selectThumb("positive"));
 thumbDownBtn.addEventListener("click", () => selectThumb("negative"));
 feedbackSkipBtn.addEventListener("click", () => doSubmitFeedback(true));
 feedbackSubmitBtn.addEventListener("click", () => doSubmitFeedback(false));
+
+// ── Auto-connect & send ───────────────────────────────────────────────────────
+
+autoConnectBtn.addEventListener("click", async () => {
+  if (!activeTabId || !currentProfileUrl || autoConnectBtn.classList.contains("success")) return;
+
+  autoConnectBtn.disabled = true;
+  markSentBtn.disabled = true;
+  setStatus("Connecting…");
+
+  try {
+    let result;
+    try {
+      result = await chrome.tabs.sendMessage(activeTabId, {
+        type: "SEND_CONNECTION_REQUEST",
+        note: noteText.value,
+      });
+    } catch {
+      // Content script not running — inject then retry
+      await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["content.js"] });
+      result = await chrome.tabs.sendMessage(activeTabId, {
+        type: "SEND_CONNECTION_REQUEST",
+        note: noteText.value,
+      });
+    }
+
+    if (!result?.ok) throw new Error(result?.error || "Auto-connect failed.");
+
+    await chrome.runtime.sendMessage({ type: "MARK_SENT", profileUrl: currentProfileUrl });
+
+    setStatus("");
+    autoConnectBtn.textContent = "✓ Connected & sent";
+    autoConnectBtn.classList.add("success");
+    markSentBtn.textContent = "✓ Sent";
+    markSentBtn.classList.add("sent");
+    markSentBtn.disabled = true;
+    alreadyContacted.style.display = "block";
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+    autoConnectBtn.disabled = false;
+    markSentBtn.disabled = false;
+  }
+});
 
 // ── Mark sent ────────────────────────────────────────────────────────────────
 

@@ -2,18 +2,9 @@
 
 Purpose: receive a captured LinkedIn profile from the Builder.LI
 Chrome extension, score the person against the user's ICP (read
-live from selected Notion docs), and draft a personalized
-connection note the user will send by hand. See docs/BUILD-GUIDE.md
+live from selected Notion docs), draft a personalized connection
+note, and send it via the extension. See docs/BUILD-GUIDE.md
 and docs/DECISIONS.md.
-
-## Core principle
-Builder.LI reads and drafts. It never sends anything to LinkedIn,
-never clicks Connect, never automates the browser. The extension
-captures the profile the user is already viewing and displays a
-draft; the user sends manually. Never propose, design, or add
-auto-send, auto-navigation, headless browsing, or any bot that
-acts on LinkedIn. These are settled decisions (see DECISIONS.md),
-not open questions.
 
 ## What the agent does on each captured profile
 1. Read the captured fields (name, headline, role, company,
@@ -49,7 +40,6 @@ or PDF) containing their ICP criteria:
   what the capture actually contains. If a field is missing, work
   with what is there.
 - One note plus at most one short follow-up. No bulk sequences.
-- Keep usage human-paced; the extension reads one page per click.
 - Do not call HubSpot, Apollo, or any sending service.
 
 ## Key files

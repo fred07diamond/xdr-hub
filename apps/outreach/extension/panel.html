@@ -303,15 +303,33 @@
       display: none;
     }
 
-    #mark-sent-btn {
+    #auto-connect-btn {
       width: 100%;
-      padding: 9px;
-      background: #fff;
-      color: #1a1a1a;
-      border: 1.5px solid #d1d5db;
+      padding: 10px;
+      background: #0a66c2;
+      color: #fff;
+      border: none;
       border-radius: 8px;
       font-size: 13px;
       font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-family: inherit;
+      margin-bottom: 6px;
+    }
+    #auto-connect-btn:hover:not(:disabled) { background: #004182; }
+    #auto-connect-btn:disabled { background: #aaa; cursor: not-allowed; }
+    #auto-connect-btn.success { background: #1e7e34; cursor: default; }
+
+    #mark-sent-btn {
+      width: 100%;
+      padding: 7px 9px;
+      background: #fff;
+      color: #666;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
       font-family: inherit;
@@ -504,7 +522,8 @@
       </div>
 
       <div id="sent-section">
-        <button id="mark-sent-btn">Mark as sent</button>
+        <button id="auto-connect-btn">Connect &amp; send</button>
+        <button id="mark-sent-btn">Mark as sent manually</button>
       </div>
 
       <div id="feedback-section">

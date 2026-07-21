@@ -399,8 +399,81 @@ function scrapeProfile() {
   };
 }
 
+// ── LinkedIn auto-connect ─────────────────────────────────────────────────────
+
+function waitForEl(fn, { timeout = 4000, interval = 150 } = {}) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      const el = fn();
+      if (el) return resolve(el);
+      if (Date.now() - start >= timeout) return resolve(null);
+      setTimeout(tick, interval);
+    };
+    tick();
+  });
+}
+
+// React holds internal state inside the textarea node. Setting .value directly
+// skips React's change tracking; calling the native setter + dispatching input
+// forces React to sync its vDOM state with the DOM value.
+function fillReactTextarea(el, text) {
+  const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+  desc.set.call(el, text);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+async function sendConnectionRequest(note) {
+  const allBtns = () => Array.from(document.querySelectorAll("button"));
+
+  // 1. Find the direct Connect button (not inside a dropdown)
+  const connectBtn = allBtns().find(
+    (b) => b.innerText.trim() === "Connect" && !b.disabled
+  );
+  if (!connectBtn) return { ok: false, error: "No Connect button found on this page." };
+
+  connectBtn.click();
+  await new Promise((r) => setTimeout(r, 800));
+
+  // 2. Modal appears — click "Add a note"
+  const addNoteBtn = await waitForEl(() =>
+    allBtns().find((b) => /add a note/i.test(b.innerText))
+  );
+  if (!addNoteBtn) return { ok: false, error: '"Add a note" button did not appear.' };
+
+  addNoteBtn.click();
+  await new Promise((r) => setTimeout(r, 400));
+
+  // 3. Fill the note textarea
+  const textarea = await waitForEl(() => document.querySelector('textarea[name="message"]'));
+  if (!textarea) return { ok: false, error: "Note textarea not found." };
+
+  textarea.focus();
+  fillReactTextarea(textarea, note.slice(0, 300));
+  await new Promise((r) => setTimeout(r, 200));
+
+  // 4. Click Send — scope to the dialog to avoid false positives elsewhere on page
+  const dialog = textarea.closest('[role="dialog"]') ?? document;
+  const sendBtn = await waitForEl(() =>
+    Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.innerText.trim() === "Send" && !b.disabled
+    )
+  );
+  if (!sendBtn) return { ok: false, error: "Send button not found in modal." };
+
+  sendBtn.click();
+  return { ok: true };
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "SCRAPE_PROFILE") {
     sendResponse({ ok: true, data: scrapeProfile() });
+  }
+
+  if (msg.type === "SEND_CONNECTION_REQUEST") {
+    sendConnectionRequest(msg.note)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
   }
 });

@@ -221,17 +221,9 @@ Loop: `open a LinkedIn profile → extension reads it → click "Draft note" →
 
 See `docs/BUILD-GUIDE.md` for step-by-step build instructions and `docs/DECISIONS.md` for settled decisions.
 
-## Hard boundaries (never violate)
+## Constraints for prospects
 
-LinkedIn's official API does not expose connection requests, DMs, or comments to third parties. Any auto-send is browser emulation that violates LinkedIn's User Agreement and risks account restriction.
-
-1. **Builder.LI never sends anything to LinkedIn.** It reads and drafts. The human performs every send.
-2. **The extension only reads the page the user is already viewing and displays a draft.** It never clicks Connect, never submits, never auto-navigates, never loops.
-3. **Never design, add, or suggest** auto-send, headless browsing, a bot that clicks, a proxy sender, or any third-party LinkedIn sending tool. If asked, explain the boundary and offer safe alternatives.
-4. **Usage stays human-paced.** One profile, one click, reads one page.
-5. **Never fabricate facts about a prospect.** Personalize only from what the capture actually contains.
-
-These are settled decisions — see `docs/DECISIONS.md`.
+- **Never fabricate facts about a prospect.** Personalize only from what the capture actually contains.
 
 ## Constraints
 
