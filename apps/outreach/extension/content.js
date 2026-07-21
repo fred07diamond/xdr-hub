@@ -401,6 +401,18 @@ function scrapeProfile() {
 
 // ── LinkedIn auto-connect ─────────────────────────────────────────────────────
 
+// LinkedIn's "Add a note" invite modal renders inside an open Shadow DOM
+// root (an Ember "interop" component mounted under #interop-outlet), which
+// document.querySelectorAll never traverses into. Walk shadow roots
+// recursively so modal elements are still found.
+function deepQueryAll(selector, root = document) {
+  let results = Array.from(root.querySelectorAll(selector));
+  for (const el of root.querySelectorAll("*")) {
+    if (el.shadowRoot) results = results.concat(deepQueryAll(selector, el.shadowRoot));
+  }
+  return results;
+}
+
 function waitForEl(fn, { timeout = 4000, interval = 150 } = {}) {
   return new Promise((resolve) => {
     const start = Date.now();
@@ -477,14 +489,15 @@ async function sendConnectionRequest(note) {
   // step LinkedIn may skip, and so a slow-to-render "Add a note" button
   // doesn't time us out when the textarea was reachable all along.
   const findAddNoteBtn = () => {
-    const btns = Array.from(document.querySelectorAll("button, [role='button']"));
+    const btns = deepQueryAll("button, [role='button']");
     return (
+      btns.find((b) => /^add a note$/i.test((b.getAttribute("aria-label") || "").trim())) ??
       btns.find((b) => /^add a note$/i.test(b.innerText.trim())) ??
       btns.find((b) => /personali[sz]e invite/i.test(b.innerText)) ??
       btns.find((b) => /add.*note|include.*note/i.test(b.innerText))
     );
   };
-  const findTextarea = () => document.querySelector('textarea[name="message"]');
+  const findTextarea = () => deepQueryAll('textarea[name="message"]')[0] ?? null;
 
   let textarea = null;
   const waitResult = await waitForEl(() => findAddNoteBtn() ?? findTextarea(), { timeout: 10000 });
@@ -511,7 +524,7 @@ async function sendConnectionRequest(note) {
   // 4. Send — scoped to the dialog
   const dialog = textarea.closest('[role="dialog"]') ?? document;
   const sendBtn = await waitForEl(() =>
-    Array.from(dialog.querySelectorAll("button")).find(
+    deepQueryAll("button", dialog).find(
       (b) => b.innerText.trim() === "Send" && !b.disabled
     )
   );
