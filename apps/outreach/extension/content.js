@@ -424,27 +424,48 @@ function fillReactTextarea(el, text) {
 }
 
 async function sendConnectionRequest(note) {
-  // Scope to the section containing the profile h1 — avoids picking up
-  // Connect buttons in "Explore profiles" / "More profiles for you" sidebar widgets.
   const mainEl = document.querySelector("main, [role='main']");
   const nameEl = mainEl?.querySelector("h1");
-  const topCard = nameEl?.closest("section");
-  const searchRoot = topCard ?? mainEl ?? document;
+  const profileName = nameEl?.innerText?.trim() ?? "";
+  const firstName = profileName.split(/\s+/)[0].toLowerCase();
 
-  // 1. Find the Connect button only within the profile top card
-  const connectBtn = Array.from(searchRoot.querySelectorAll("button")).find(
-    (b) => b.innerText.trim() === "Connect" && !b.disabled
-  );
-  if (!connectBtn) return { ok: false, error: "No Connect button found in the profile header." };
+  // 1. Find the Connect button specifically for this person using aria-label.
+  // LinkedIn generates "Invite [Name] to connect" or "Connect with [Name]" —
+  // this is unambiguous regardless of viewport, sidebar, or DOM layout.
+  let connectBtn = null;
+
+  if (firstName) {
+    connectBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+      const label = (b.getAttribute("aria-label") ?? "").toLowerCase();
+      return label.includes("connect") && label.includes(firstName);
+    });
+  }
+
+  // Fallback: first visible Connect button inside <main> (not sidebar)
+  if (!connectBtn) {
+    connectBtn = Array.from(mainEl?.querySelectorAll("button") ?? []).find(
+      (b) => b.innerText.trim() === "Connect" && !b.disabled && b.offsetParent !== null
+    );
+  }
+
+  if (!connectBtn) {
+    return { ok: false, error: `No Connect button found for "${profileName || "this profile"}". Make sure you are on a LinkedIn profile page.` };
+  }
 
   connectBtn.click();
-  await new Promise((r) => setTimeout(r, 800));
+  await new Promise((r) => setTimeout(r, 1000));
 
-  // 2. Modal appears — click "Add a note"
-  const addNoteBtn = await waitForEl(() =>
-    Array.from(document.querySelectorAll("button")).find((b) => /add a note/i.test(b.innerText))
-  );
-  if (!addNoteBtn) return { ok: false, error: '"Add a note" button did not appear.' };
+  // 2. Modal — "Add a note" (try all known label variants)
+  const addNoteBtn = await waitForEl(() => {
+    const btns = Array.from(document.querySelectorAll("button"));
+    return (
+      btns.find((b) => /^add a note$/i.test(b.innerText.trim())) ??
+      btns.find((b) => /personali[sz]e invite/i.test(b.innerText)) ??
+      btns.find((b) => /add.*note|include.*note/i.test(b.innerText))
+    );
+  }, { timeout: 6000 });
+
+  if (!addNoteBtn) return { ok: false, error: '"Add a note" button did not appear. LinkedIn may have sent the request directly without a note option.' };
 
   addNoteBtn.click();
   await new Promise((r) => setTimeout(r, 400));
@@ -457,7 +478,7 @@ async function sendConnectionRequest(note) {
   fillReactTextarea(textarea, note.slice(0, 300));
   await new Promise((r) => setTimeout(r, 200));
 
-  // 4. Click Send — scope to the dialog to avoid false positives elsewhere on page
+  // 4. Send — scoped to the dialog
   const dialog = textarea.closest('[role="dialog"]') ?? document;
   const sendBtn = await waitForEl(() =>
     Array.from(dialog.querySelectorAll("button")).find(
@@ -469,6 +490,24 @@ async function sendConnectionRequest(note) {
   sendBtn.click();
   return { ok: true };
 }
+
+// Diagnostic helper — call window.__bliDiagnose() in the LinkedIn tab console
+window.__bliDiagnose = function () {
+  const mainEl = document.querySelector("main, [role='main']");
+  const nameEl = mainEl?.querySelector("h1");
+  const profileName = nameEl?.innerText?.trim() ?? "";
+  const firstName = profileName.split(/\s+/)[0].toLowerCase();
+  console.log("[BLI] Profile name:", profileName, "| firstName:", firstName);
+
+  const byLabel = Array.from(document.querySelectorAll("button")).filter((b) => {
+    const label = (b.getAttribute("aria-label") ?? "").toLowerCase();
+    return label.includes("connect");
+  });
+  console.log("[BLI] Buttons with 'connect' in aria-label:", byLabel.map(b => `"${b.getAttribute("aria-label")}"`));
+
+  const byText = Array.from(document.querySelectorAll("button")).filter(b => /connect/i.test(b.innerText.trim()));
+  console.log("[BLI] Buttons with 'Connect' in text:", byText.map(b => `"${b.innerText.trim()}" (aria="${b.getAttribute("aria-label")}") visible=${b.offsetParent !== null}`));
+};
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "SCRAPE_PROFILE") {
