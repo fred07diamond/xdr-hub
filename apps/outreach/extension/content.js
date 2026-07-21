@@ -487,8 +487,18 @@ function gatherConnectCandidates() {
 // Scope to the profile's own top card, same anchor pattern scrapeProfile()
 // already uses (nameEl.closest("section")), so the nav's "More" is never
 // even considered.
+// The first h1/h2 inside <main> is always the profile name (same anchor
+// scrapeProfile() uses). An unscoped document.querySelector("h1, h2") can
+// instead match a nav-bar h2 (e.g. a notification-count badge) that
+// happens to render earlier in the DOM — confirmed live: this silently
+// broke the profile-name filter for a profile that had a perfectly normal,
+// directly-visible Connect button.
+function getProfileNameEl() {
+  return (document.querySelector("main, [role='main']") || document.body).querySelector("h1, h2");
+}
+
 function findMoreActionsButton() {
-  const nameEl = (document.querySelector("main, [role='main']") || document.body)?.querySelector("h1, h2");
+  const nameEl = getProfileNameEl();
   const cardEl = nameEl?.closest("section") ?? nameEl?.parentElement ?? document;
   return Array.from(cardEl.querySelectorAll("button, [role='button']")).find((el) => {
     const label = (el.getAttribute("aria-label") || "").trim();
@@ -503,7 +513,7 @@ async function sendConnectionRequest(note) {
   // Only trust a candidate whose accessible name actually references the
   // profile being viewed.
   const profileName =
-    document.querySelector("h1, h2")?.innerText?.trim() ||
+    getProfileNameEl()?.innerText?.trim() ||
     document.title.replace(/\s*[-–|].*$/, "").trim() ||
     "Unknown";
 
