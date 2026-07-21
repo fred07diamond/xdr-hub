@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { z } from "zod";
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
+import { resolveOwner } from "../server/helpers/resolve-owner.js";
 
 export default defineAction({
   description: "Given a list of interactive Connect-related elements found on a LinkedIn profile page, returns the index of the one that belongs to the profile being viewed (not a sidebar recommendation).",
@@ -20,7 +21,9 @@ export default defineAction({
   }),
   requiresAuth: false,
   publicAgent: { expose: true, readOnly: true, requiresAuth: false },
-  run: async (args) => {
+  run: async (args, ctx) => {
+    await resolveOwner(args.apiToken, ctx);
+
     if (args.candidates.length === 0) return { ok: false, error: "No candidates provided." };
     if (args.candidates.length === 1) return { ok: true, index: 0 };
 
