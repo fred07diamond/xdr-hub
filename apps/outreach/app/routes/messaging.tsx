@@ -638,84 +638,52 @@ function EditorField({ label, readOnly, children }: { label: string; readOnly: b
 function BuildWithAIDialog({ graph, onClose, onSubmitted }: { graph: GraphData; onClose: () => void; onSubmitted: () => void }) {
   const [prompt, setPrompt] = useState("");
 
-  function buildContext(): string {
-    const parts: string[] = [];
-
-    parts.push("## ICP Personas & Documents");
-    for (const p of graph.personas) {
-      const anchorNode = graph.nodes.find((n) => n.type === "persona" && n.personaId === p.id);
-      parts.push(`\n### ${p.name} (canvas node id: ${anchorNode?.id ?? "none"})`);
-      parts.push(p.icpText ? p.icpText : "No ICP document uploaded.");
-    }
-
-    parts.push("\n\n## Current Canvas Nodes");
-    parts.push("\nPersona anchor nodes (already exist — connect to these, do NOT recreate them):");
-    for (const n of graph.nodes.filter((n) => n.type === "persona")) {
-      parts.push(`- "${n.title}" id=${n.id}`);
-    }
-    const fineNodes = graph.nodes.filter((n) => n.type !== "persona");
-    if (fineNodes.length > 0) {
-      parts.push("\nExisting fine-tuning nodes (update if relevant, skip if already good):");
-      for (const n of fineNodes) {
-        parts.push(`- [${n.type}] "${n.title}" id=${n.id}`);
-      }
-    }
-    if (graph.edges.length > 0) {
-      parts.push("\nExisting edges:");
-      for (const e of graph.edges) {
-        const src = graph.nodes.find((n) => n.id === e.sourceId);
-        const tgt = graph.nodes.find((n) => n.id === e.targetId);
-        parts.push(`- "${src?.title}" → "${tgt?.title}" id=${e.id}`);
-      }
-    }
-
-    return parts.join("\n");
-  }
-
-  function buildLayoutExample(): string {
-    const n = graph.personas.length;
-    if (n === 0) return "";
-    const childCount = 3;
-    const bandH = childCount * 230;
-    const lines = ["\n\nWorked example with your " + n + " persona(s), 3 children each:"];
-    let yc = 0;
-    graph.personas.slice(0, Math.min(n, 3)).forEach((p, i) => {
-      const anchor = graph.nodes.find((nd) => nd.type === "persona" && nd.personaId === p.id);
-      lines.push(`  Persona ${i} (${p.name}, id=${anchor?.id ?? "?"}): x=80, y=${yc + Math.round(bandH / 2)}`);
-      for (let j = 0; j < childCount; j++) {
-        lines.push(`    Child ${j}: x=500, y=${yc + j * 230 + 115}`);
-      }
-      yc += bandH + 180;
-    });
-    return lines.join("\n");
-  }
-
   function handleBuild() {
+    // Pre-calculate exact positions for each persona band and its child slots.
+    // Each band reserves 4 child slots at 210px apart; bands are separated by 160px.
+    const PERSONA_X = 80;
+    const CHILD_X = 500;
+    const SLOT_H = 210;
+    const BAND_GAP = 160;
+    const MAX_CHILDREN = 4;
+    const BAND_H = MAX_CHILDREN * SLOT_H;
+
+    const layout: string[] = [];
+    let yCursor = 0;
+    for (const p of graph.personas) {
+      const anchor = graph.nodes.find((n) => n.type === "persona" && n.personaId === p.id);
+      if (!anchor) continue;
+      const anchorY = yCursor + Math.round(BAND_H / 2);
+      layout.push(`${p.name}`);
+      layout.push(`  anchor id=${anchor.id} → positionX=${PERSONA_X}, positionY=${anchorY}`);
+      for (let j = 0; j < MAX_CHILDREN; j++) {
+        layout.push(`  child slot ${j} → positionX=${CHILD_X}, positionY=${yCursor + j * SLOT_H + Math.round(SLOT_H / 2)}`);
+      }
+      yCursor += BAND_H + BAND_GAP;
+    }
+
+    const personaList = graph.personas
+      .map((p) => {
+        const anchor = graph.nodes.find((n) => n.type === "persona" && n.personaId === p.id);
+        return `- ${p.name} (anchor id=${anchor?.id ?? "missing"})`;
+      })
+      .join("\n");
+
     sendToAgentChat({
       message:
-        `Build my messaging canvas.\n\n## My Request\n${prompt.trim()}\n\n` +
-        buildContext() +
-        `\n\n## Build Instructions\n\n` +
-        `Node types available: tone (voice/style/valueProps), phrase_rule (phrasesToUse/phrasesToAvoid), example (exampleNotes), role (notes + tone + phrases).\n` +
-        `Fill content fields from the ICP doc text. Only populate fields that have relevant content.\n\n` +
-        `## Layout Algorithm — MUST FOLLOW EXACTLY\n\n` +
-        `STEP 1 — Plan before calling any action:\n` +
-        `  For each persona, decide which 2–4 child nodes to create (tone, phrase_rule, example, role).\n\n` +
-        `STEP 2 — Calculate every position using this formula:\n` +
-        `  y_cursor = 0\n` +
-        `  For each persona (i = 0, 1, 2...):\n` +
-        `    N = number of child nodes for this persona\n` +
-        `    band_h = N × 230\n` +
-        `    Persona anchor → positionX=80, positionY = y_cursor + (band_h / 2)\n` +
-        `    Child node j (j=0..N-1) → positionX=500, positionY = y_cursor + (j × 230) + 115\n` +
-        `    y_cursor += band_h + 180\n\n` +
-        `STEP 3 — Execute in this order:\n` +
-        `  a. update-messaging-node for each persona anchor (reposition to calculated x/y)\n` +
-        `  b. create-messaging-node for each child (pass calculated positionX/positionY)\n` +
-        `  c. create-messaging-edge for each child (sourceId=personaAnchorId, targetId=newChildId)\n` +
-        `  d. update-messaging-node for each child to fill in content fields\n\n` +
-        `CRITICAL: no two nodes may share the same positionY. Use exactly the formula above.` +
-        buildLayoutExample(),
+        `Build my messaging canvas.\n\n` +
+        `## Request\n${prompt.trim()}\n\n` +
+        `## Personas\n${personaList}\n\n` +
+        `## Pre-Calculated Layout — use these exact positions, no math required\n` +
+        layout.join("\n") +
+        `\n\n## Instructions — execute in order, no planning step needed\n` +
+        `1. Call get-messaging-graph to read the ICP documents for each persona.\n` +
+        `2. For each persona decide which child nodes to create (2–4 per persona). Node types: tone (Tone/Voice + valueProps), phrase_rule (phrasesToUse + phrasesToAvoid), example (exampleNotes), role (notes + tone + phrases for a specific job title).\n` +
+        `3. For each persona anchor, call update-messaging-node with id=<anchor id> and the exact positionX/positionY from the layout above.\n` +
+        `4. For each child you decided to create, call create-messaging-node with nodeType, a descriptive title, and positionX/positionY from slot 0, 1, 2… for that persona.\n` +
+        `5. For each created child, call create-messaging-edge with sourceId=<persona anchor id>, targetId=<new child id>.\n` +
+        `6. For each created child, call update-messaging-node to fill the content fields from the ICP doc (only fields relevant to that node type).\n` +
+        `Use the exact x/y values from the layout above. Fill content from the ICP doc — do not invent content that isn't there.`,
       submit: true,
     });
     onSubmitted();
