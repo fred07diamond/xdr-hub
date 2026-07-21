@@ -425,46 +425,34 @@ function fillReactTextarea(el, text) {
 
 async function sendConnectionRequest(note) {
   const mainEl = document.querySelector("main, [role='main']");
-  const nameEl = mainEl?.querySelector("h1");
-  const profileName = nameEl?.innerText?.trim() ?? "";
-  const firstName = profileName.split(/\s+/)[0].toLowerCase();
+  const h1 = mainEl?.querySelector("h1");
 
-  // Search button, [role="button"], and <a> — LinkedIn's profile Connect button
-  // is sometimes not a plain <button> element.
-  const allInteractive = Array.from(
-    document.querySelectorAll("button, [role='button'], a")
-  );
+  if (!h1) {
+    return { ok: false, error: "Could not find the profile name on this page." };
+  }
 
-  const isConnect = (el) => {
+  // Walk up the DOM from the h1 until we reach an ancestor that contains a
+  // Connect button. The profile top-card contains both the h1 and its own
+  // Connect button; sidebar cards are in completely separate subtrees and will
+  // never be reached by this traversal.
+  const isConnectEl = (el) => {
     const text = (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ");
     return /^(\+\s*)?Connect$/i.test(text) && el.offsetParent !== null && !el.disabled;
   };
 
-  // 1. Prefer the button whose aria-label names THIS person specifically
   let connectBtn = null;
-  if (firstName) {
-    connectBtn = allInteractive.find((el) => {
-      const label = (el.getAttribute("aria-label") ?? "").toLowerCase();
-      return label.includes("connect") && label.includes(firstName);
-    });
-  }
-
-  // 2. Fallback: pick the topmost visible Connect button on the page.
-  //    The profile top-card button is always near the top (~300-400 px);
-  //    sidebar recommendation buttons are much further down.
-  if (!connectBtn) {
-    const candidates = allInteractive.filter(isConnect);
-    if (candidates.length === 0) {
-      return { ok: false, error: `No Connect button found for "${profileName || "this profile"}". Make sure you are on a LinkedIn profile page.` };
+  let ancestor = h1.parentElement;
+  while (ancestor && ancestor !== document.body) {
+    const candidate = Array.from(ancestor.querySelectorAll("button, a")).find(isConnectEl);
+    if (candidate) {
+      connectBtn = candidate;
+      break;
     }
-    candidates.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-    connectBtn = candidates[0];
+    ancestor = ancestor.parentElement;
   }
 
-  // Safety check: if the button we found names someone OTHER than our profile, abort.
-  const chosenLabel = (connectBtn.getAttribute("aria-label") ?? "").toLowerCase();
-  if (firstName && chosenLabel.includes("invite") && !chosenLabel.includes(firstName)) {
-    return { ok: false, error: `Connect button found belongs to a different person (${connectBtn.getAttribute("aria-label")}). Could not safely identify the correct button.` };
+  if (!connectBtn) {
+    return { ok: false, error: "No Connect button found near the profile name. The person may already be connected or the button is not visible." };
   }
 
   connectBtn.click();
