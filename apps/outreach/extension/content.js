@@ -480,8 +480,17 @@ function gatherConnectCandidates() {
 // showing it directly on the top card. Confirmed via DevTools inspection
 // that LinkedIn's actual accessible name for this control is just "More"
 // (aria-expanded="false" when collapsed) — not "More actions".
+//
+// LinkedIn's global nav ALSO has its own "More" control (it collapses
+// Home/My Network/Jobs/etc. into one at narrow widths) that lives earlier
+// in the DOM — an unscoped whole-document search matches that one first.
+// Scope to the profile's own top card, same anchor pattern scrapeProfile()
+// already uses (nameEl.closest("section")), so the nav's "More" is never
+// even considered.
 function findMoreActionsButton() {
-  return Array.from(document.querySelectorAll("button, [role='button']")).find((el) => {
+  const nameEl = (document.querySelector("main, [role='main']") || document.body)?.querySelector("h1, h2");
+  const cardEl = nameEl?.closest("section") ?? nameEl?.parentElement ?? document;
+  return Array.from(cardEl.querySelectorAll("button, [role='button']")).find((el) => {
     const label = (el.getAttribute("aria-label") || "").trim();
     return /^more(\s+actions?)?$/i.test(label) && el.offsetParent !== null;
   });
