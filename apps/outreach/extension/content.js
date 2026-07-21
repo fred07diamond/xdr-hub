@@ -429,27 +429,42 @@ async function sendConnectionRequest(note) {
   const profileName = nameEl?.innerText?.trim() ?? "";
   const firstName = profileName.split(/\s+/)[0].toLowerCase();
 
-  // 1. Find the Connect button specifically for this person using aria-label.
-  // LinkedIn generates "Invite [Name] to connect" or "Connect with [Name]" —
-  // this is unambiguous regardless of viewport, sidebar, or DOM layout.
-  let connectBtn = null;
+  // Search button, [role="button"], and <a> — LinkedIn's profile Connect button
+  // is sometimes not a plain <button> element.
+  const allInteractive = Array.from(
+    document.querySelectorAll("button, [role='button'], a")
+  );
 
+  const isConnect = (el) => {
+    const text = (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ");
+    return /^(\+\s*)?Connect$/i.test(text) && el.offsetParent !== null && !el.disabled;
+  };
+
+  // 1. Prefer the button whose aria-label names THIS person specifically
+  let connectBtn = null;
   if (firstName) {
-    connectBtn = Array.from(document.querySelectorAll("button")).find((b) => {
-      const label = (b.getAttribute("aria-label") ?? "").toLowerCase();
+    connectBtn = allInteractive.find((el) => {
+      const label = (el.getAttribute("aria-label") ?? "").toLowerCase();
       return label.includes("connect") && label.includes(firstName);
     });
   }
 
-  // Fallback: first visible Connect button inside <main> (not sidebar)
+  // 2. Fallback: pick the topmost visible Connect button on the page.
+  //    The profile top-card button is always near the top (~300-400 px);
+  //    sidebar recommendation buttons are much further down.
   if (!connectBtn) {
-    connectBtn = Array.from(mainEl?.querySelectorAll("button") ?? []).find(
-      (b) => b.innerText.trim() === "Connect" && !b.disabled && b.offsetParent !== null
-    );
+    const candidates = allInteractive.filter(isConnect);
+    if (candidates.length === 0) {
+      return { ok: false, error: `No Connect button found for "${profileName || "this profile"}". Make sure you are on a LinkedIn profile page.` };
+    }
+    candidates.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    connectBtn = candidates[0];
   }
 
-  if (!connectBtn) {
-    return { ok: false, error: `No Connect button found for "${profileName || "this profile"}". Make sure you are on a LinkedIn profile page.` };
+  // Safety check: if the button we found names someone OTHER than our profile, abort.
+  const chosenLabel = (connectBtn.getAttribute("aria-label") ?? "").toLowerCase();
+  if (firstName && chosenLabel.includes("invite") && !chosenLabel.includes(firstName)) {
+    return { ok: false, error: `Connect button found belongs to a different person (${connectBtn.getAttribute("aria-label")}). Could not safely identify the correct button.` };
   }
 
   connectBtn.click();
