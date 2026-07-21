@@ -131,6 +131,21 @@ async function submitFeedback({ sentiment, message, draftNote }) {
   }
 }
 
+async function resolveConnectButton(profileName, candidates) {
+  const { appUrl, apiToken } = await getSettings();
+  if (!appUrl) throw new Error("App URL not configured.");
+  const res = await fetch(`${appUrl}/_agent-native/actions/resolve-connect-button`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profileName, candidates, ...(apiToken ? { apiToken } : {}) }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`resolve-connect-button failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json();
+}
+
 async function getDailyStats() {
   const { appUrl, apiToken } = await getSettings();
   if (!appUrl) return null;
@@ -179,6 +194,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getDailyStats()
       .then((result) => sendResponse(result))
       .catch(() => sendResponse(null));
+    return true;
+  }
+
+  if (msg.type === "RESOLVE_CONNECT_BUTTON") {
+    resolveConnectButton(msg.profileName, msg.candidates)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
 

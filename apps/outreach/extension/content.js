@@ -424,36 +424,50 @@ function fillReactTextarea(el, text) {
 }
 
 async function sendConnectionRequest(note) {
-  const mainEl = document.querySelector("main, [role='main']");
-  const h1 = mainEl?.querySelector("h1");
+  // Gather every Connect-related interactive element on the page with context.
+  // No guessing — just collect data and let the agent decide which one to click.
+  const allEls = Array.from(document.querySelectorAll("button, a, [role='button']"));
+  const candidates = allEls
+    .filter((el) => {
+      const text = (el.innerText || el.textContent || "").trim();
+      const label = el.getAttribute("aria-label") || "";
+      return (/connect/i.test(text) || /connect/i.test(label)) && el.offsetParent !== null;
+    })
+    .map((el, index) => ({
+      index,
+      tag: el.tagName,
+      text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+      ariaLabel: el.getAttribute("aria-label"),
+      // Surrounding text gives the agent context about which card this button lives in
+      contextText: (el.closest("div, section, li, article")?.innerText || "")
+        .replace(/\s+/g, " ").trim().slice(0, 200),
+      _el: el, // not serialized — used locally after agent returns
+    }));
 
-  if (!h1) {
-    return { ok: false, error: "Could not find the profile name on this page." };
+  if (candidates.length === 0) {
+    return { ok: false, error: "No Connect buttons found on this page." };
   }
 
-  // Walk up the DOM from the h1 until we reach an ancestor that contains a
-  // Connect button. The profile top-card contains both the h1 and its own
-  // Connect button; sidebar cards are in completely separate subtrees and will
-  // never be reached by this traversal.
-  const isConnectEl = (el) => {
-    const text = (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ");
-    return /^(\+\s*)?Connect$/i.test(text) && el.offsetParent !== null && !el.disabled;
-  };
+  // Get profile name from the page for the agent to reason about.
+  const profileName =
+    document.querySelector("h1, h2")?.innerText?.trim() ||
+    document.title.replace(/\s*[-–|].*$/, "").trim() ||
+    "Unknown";
 
-  let connectBtn = null;
-  let ancestor = h1.parentElement;
-  while (ancestor && ancestor !== document.body) {
-    const candidate = Array.from(ancestor.querySelectorAll("button, a")).find(isConnectEl);
-    if (candidate) {
-      connectBtn = candidate;
-      break;
-    }
-    ancestor = ancestor.parentElement;
+  // Ask the agent to identify which candidate is the main profile Connect button.
+  let targetIndex = 0;
+  if (candidates.length > 1) {
+    const resolution = await chrome.runtime.sendMessage({
+      type: "RESOLVE_CONNECT_BUTTON",
+      profileName,
+      candidates: candidates.map(({ _el, ...c }) => c),
+    });
+    if (!resolution?.ok) return { ok: false, error: resolution?.error || "Agent could not identify the Connect button." };
+    targetIndex = resolution.index;
   }
 
-  if (!connectBtn) {
-    return { ok: false, error: "No Connect button found near the profile name. The person may already be connected or the button is not visible." };
-  }
+  const connectBtn = candidates[targetIndex]?._el;
+  if (!connectBtn) return { ok: false, error: "Agent returned invalid element index." };
 
   connectBtn.click();
   await new Promise((r) => setTimeout(r, 1000));
