@@ -63,16 +63,7 @@ export default function AnalyticsRoute() {
     lastWeek: number;
     totalUsers: number;
     totalSent: number;
-    byUser: {
-      ownerEmail: string | null;
-      total: number;
-      drafted: number;
-      sent: number;
-      strong: number;
-      possible: number;
-      weak: number;
-      inconclusive: number;
-    }[];
+    byUser: UserActivity[];
   };
 
   const sentRate = pct(d.totalSent, d.totalProspects);
