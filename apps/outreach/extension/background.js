@@ -2,8 +2,9 @@
 // The panel sends messages here; we call the outreach app and reply.
 
 const APP_URL = "https://builder-li.netlify.app/outreach";
-const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 120000; // 2 minutes max
+const POLL_INITIAL_MS = 3000;  // first poll after 3s
+const POLL_MAX_MS = 15000;     // cap each interval at 15s
+const POLL_TIMEOUT_MS = 60000; // give up after 60s
 
 async function getSettings() {
   const result = await chrome.storage.local.get(["apiToken"]);
@@ -43,8 +44,10 @@ async function captureThenPoll(profileData) {
   const profileUrl = profileData.profileUrl;
   const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
 
+  let pollInterval = POLL_INITIAL_MS;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    await new Promise((r) => setTimeout(r, pollInterval));
+    pollInterval = Math.min(pollInterval * 2, POLL_MAX_MS);
 
     const draftRes = await fetch(
       `${appUrl}/_agent-native/actions/get-draft?profileUrl=${encodeURIComponent(profileUrl)}${tokenParam}`,

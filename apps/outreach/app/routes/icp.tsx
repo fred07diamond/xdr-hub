@@ -489,7 +489,8 @@ export default function IcpRoute() {
   const isAdmin = canManageOrg;
 
   const { data, isLoading, refetch } = useActionQuery("list-icp-personas", {}, {
-    refetchInterval: 5000,
+    refetchInterval: 30000,
+    staleTime: 25000,
   });
   const [creating, setCreating] = useState(false);
 

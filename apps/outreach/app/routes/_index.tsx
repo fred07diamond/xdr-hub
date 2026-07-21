@@ -361,8 +361,12 @@ export default function ProspectsRoute() {
   const markSent = useActionMutation("mark-sent");
 
   const { data, refetch, isLoading } = useActionQuery("list-prospects", {}, {
-    refetchInterval: 4000,
-    refetchIntervalInBackground: true,
+    refetchInterval: (query) => {
+      const rows = (query.state.data as any)?.prospects as any[] | undefined;
+      return rows?.some((p) => p.status === "captured") ? 5000 : 30000;
+    },
+    refetchIntervalInBackground: false,
+    staleTime: 4000,
   });
 
   const allProspects: Prospect[] = (data as any)?.prospects ?? [];
