@@ -476,12 +476,14 @@ function gatherConnectCandidates() {
 }
 
 // Some profiles (e.g. public figures, or accounts with "Follow" as the
-// primary CTA) collapse "Connect" into the "More actions" ("...") overflow
-// menu instead of showing it directly on the top card.
+// primary CTA) collapse "Connect" into the "..." overflow menu instead of
+// showing it directly on the top card. Confirmed via DevTools inspection
+// that LinkedIn's actual accessible name for this control is just "More"
+// (aria-expanded="false" when collapsed) — not "More actions".
 function findMoreActionsButton() {
   return Array.from(document.querySelectorAll("button, [role='button']")).find((el) => {
     const label = (el.getAttribute("aria-label") || "").trim();
-    return /^more actions?$/i.test(label) && el.offsetParent !== null;
+    return /^more(\s+actions?)?$/i.test(label) && el.offsetParent !== null;
   });
 }
 
