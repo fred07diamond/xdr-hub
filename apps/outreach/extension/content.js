@@ -424,13 +424,18 @@ function fillReactTextarea(el, text) {
 }
 
 async function sendConnectionRequest(note) {
-  const allBtns = () => Array.from(document.querySelectorAll("button"));
+  // Scope to the section containing the profile h1 — avoids picking up
+  // Connect buttons in "Explore profiles" / "More profiles for you" sidebar widgets.
+  const mainEl = document.querySelector("main, [role='main']");
+  const nameEl = mainEl?.querySelector("h1");
+  const topCard = nameEl?.closest("section");
+  const searchRoot = topCard ?? mainEl ?? document;
 
-  // 1. Find the direct Connect button (not inside a dropdown)
-  const connectBtn = allBtns().find(
+  // 1. Find the Connect button only within the profile top card
+  const connectBtn = Array.from(searchRoot.querySelectorAll("button")).find(
     (b) => b.innerText.trim() === "Connect" && !b.disabled
   );
-  if (!connectBtn) return { ok: false, error: "No Connect button found on this page." };
+  if (!connectBtn) return { ok: false, error: "No Connect button found in the profile header." };
 
   connectBtn.click();
   await new Promise((r) => setTimeout(r, 800));
