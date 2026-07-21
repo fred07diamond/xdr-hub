@@ -442,7 +442,7 @@ async function sendConnectionRequest(note) {
 
   // 2. Modal appears — click "Add a note"
   const addNoteBtn = await waitForEl(() =>
-    allBtns().find((b) => /add a note/i.test(b.innerText))
+    Array.from(document.querySelectorAll("button")).find((b) => /add a note/i.test(b.innerText))
   );
   if (!addNoteBtn) return { ok: false, error: '"Add a note" button did not appear.' };
 
