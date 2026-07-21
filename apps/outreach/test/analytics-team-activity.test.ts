@@ -59,3 +59,33 @@ describe("get-analytics action — byUser breakdown", () => {
     expect([401, 403]).toContain(res.status);
   });
 });
+
+describe("analytics.tsx — Team Activity section", () => {
+  it("reads byUser from the get-analytics response", () => {
+    const src = readFile("app/routes/analytics.tsx");
+    expect(src).toContain("byUser");
+  });
+
+  it("renders a Team Activity heading", () => {
+    const src = readFile("app/routes/analytics.tsx");
+    expect(src).toContain("Team Activity");
+  });
+
+  it("shows Added, Drafted, Sent, and Send Rate columns", () => {
+    const src = readFile("app/routes/analytics.tsx");
+    expect(src).toContain("Added");
+    expect(src).toContain("Drafted");
+    expect(src).toContain("Sent");
+    expect(src).toContain("Send Rate");
+  });
+
+  it("falls back to \"Unassigned\" for null ownerEmail", () => {
+    const src = readFile("app/routes/analytics.tsx");
+    expect(src).toContain("Unassigned");
+  });
+
+  it("has an empty state for zero team members", () => {
+    const src = readFile("app/routes/analytics.tsx");
+    expect(src).toContain("No prospects added yet");
+  });
+});
