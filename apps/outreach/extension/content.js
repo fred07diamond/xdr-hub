@@ -488,31 +488,46 @@ function findMoreActionsButton() {
 }
 
 async function sendConnectionRequest(note) {
-  let candidates = gatherConnectCandidates();
-  console.error("[BLI DEBUG] initial candidates:", JSON.stringify(candidates.map((c) => ({ text: c.text, ariaLabel: c.ariaLabel }))));
-
-  if (candidates.length === 0) {
-    const moreBtn = findMoreActionsButton();
-    console.error("[BLI DEBUG] more-actions button found:", !!moreBtn, moreBtn ? moreBtn.getAttribute("aria-label") : null);
-    if (moreBtn) {
-      moreBtn.click();
-      await new Promise((r) => setTimeout(r, 400));
-      candidates = gatherConnectCandidates();
-      console.error("[BLI DEBUG] candidates after opening more-actions:", JSON.stringify(candidates.map((c) => ({ text: c.text, ariaLabel: c.ariaLabel }))));
-    }
-  }
-
-  if (candidates.length === 0) {
-    return { ok: false, error: "No Connect buttons found on this page." };
-  }
-
-  // Get profile name from the page for the agent to reason about.
+  // Get profile name from the page. Sidebar cards ("People also viewed",
+  // "More profiles for you") have their own Connect buttons for OTHER
+  // people — those are decoys, not something to let the agent guess among.
+  // Only trust a candidate whose accessible name actually references the
+  // profile being viewed.
   const profileName =
     document.querySelector("h1, h2")?.innerText?.trim() ||
     document.title.replace(/\s*[-–|].*$/, "").trim() ||
     "Unknown";
 
+  const forThisProfile = (list) =>
+    profileName === "Unknown"
+      ? list
+      : list.filter((c) => `${c.ariaLabel || ""} ${c.contextText || ""}`.toLowerCase().includes(profileName.toLowerCase()));
+
+  let candidates = forThisProfile(gatherConnectCandidates());
+
+  if (candidates.length === 0) {
+    // No Connect button directly references this profile — it may be
+    // collapsed into the "More actions" ("...") overflow menu instead.
+    // Diff against what existed before opening the menu so we only ever
+    // consider what's genuinely new (never re-guess among the same
+    // page-wide sidebar decoys).
+    const beforeEls = new Set(gatherConnectCandidates().map((c) => c._el));
+    const moreBtn = findMoreActionsButton();
+    if (moreBtn) {
+      moreBtn.click();
+      await new Promise((r) => setTimeout(r, 400));
+      candidates = gatherConnectCandidates().filter((c) => !beforeEls.has(c._el));
+    }
+  }
+
+  if (candidates.length === 0) {
+    return { ok: false, error: "No Connect button found for this profile." };
+  }
+
   // Ask the agent to identify which candidate is the main profile Connect button.
+  // Only reached now when multiple candidates both survived the name filter
+  // (or both newly appeared from the overflow menu) — a much narrower,
+  // lower-risk disambiguation than picking among unrelated people.
   let targetIndex = 0;
   if (candidates.length > 1) {
     const resolution = await chrome.runtime.sendMessage({
