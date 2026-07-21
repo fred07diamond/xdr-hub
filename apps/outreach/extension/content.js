@@ -69,6 +69,19 @@ function scrapeExperienceFromDOM() {
   };
 }
 
+// Reading order after the profile name is: degree marker ("1st"/"2nd"/"3rd")
+// → optional pronouns → headline. Anchoring on the known name (same technique
+// as scrapeBodyText) survives LinkedIn's class-name rotation.
+function getConnectionDegree(name) {
+  if (!name) return null;
+  const root = document.querySelector("main, [role='main']") || document.body;
+  const allLines = (root?.innerText || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const nameIdx = allLines.indexOf(name);
+  if (nameIdx < 0) return null;
+  const m = allLines[nameIdx + 1]?.match(/^(1st|2nd|3rd)\b/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
 function getFirst(selectors, exclude = null) {
   for (const sel of selectors) {
     const text = document.querySelector(sel)?.innerText?.trim();
@@ -396,6 +409,7 @@ function scrapeProfile() {
     about,
     recentActivity,
     domStale,
+    connectionDegree: getConnectionDegree(name),
   };
 }
 
@@ -435,15 +449,19 @@ function fillReactTextarea(el, text) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-async function sendConnectionRequest(note) {
-  // Gather every Connect-related interactive element on the page with context.
-  // No guessing — just collect data and let the agent decide which one to click.
+// Gather every Connect-related interactive element on the page with context.
+// No guessing — just collect data and let the agent decide which one to click.
+// Word-boundary match: "connect" alone (or as part of "Invite ... to connect"),
+// NOT "connections" — a plain substring match wrongly matched "482 connections"
+// / "2 mutual connections" links on already-connected profiles, causing the
+// automation to click those instead of an actual Connect button.
+function gatherConnectCandidates() {
   const allEls = Array.from(document.querySelectorAll("button, a, [role='button']"));
-  const candidates = allEls
+  return allEls
     .filter((el) => {
       const text = (el.innerText || el.textContent || "").trim();
       const label = el.getAttribute("aria-label") || "";
-      return (/connect/i.test(text) || /connect/i.test(label)) && el.offsetParent !== null;
+      return (/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label)) && el.offsetParent !== null;
     })
     .map((el, index) => ({
       index,
@@ -455,6 +473,29 @@ async function sendConnectionRequest(note) {
         .replace(/\s+/g, " ").trim().slice(0, 200),
       _el: el, // not serialized — used locally after agent returns
     }));
+}
+
+// Some profiles (e.g. public figures, or accounts with "Follow" as the
+// primary CTA) collapse "Connect" into the "More actions" ("...") overflow
+// menu instead of showing it directly on the top card.
+function findMoreActionsButton() {
+  return Array.from(document.querySelectorAll("button, [role='button']")).find((el) => {
+    const label = (el.getAttribute("aria-label") || "").trim();
+    return /^more actions?$/i.test(label) && el.offsetParent !== null;
+  });
+}
+
+async function sendConnectionRequest(note) {
+  let candidates = gatherConnectCandidates();
+
+  if (candidates.length === 0) {
+    const moreBtn = findMoreActionsButton();
+    if (moreBtn) {
+      moreBtn.click();
+      await new Promise((r) => setTimeout(r, 400));
+      candidates = gatherConnectCandidates();
+    }
+  }
 
   if (candidates.length === 0) {
     return { ok: false, error: "No Connect buttons found on this page." };

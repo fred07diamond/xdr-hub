@@ -446,6 +446,15 @@ draftBtn.addEventListener("click", async () => {
       renderProfileCard(scrapeData);
     }
 
+    // Already a 1st-degree connection — no invite to send, so skip the agent
+    // call entirely rather than drafting a note (and burning outreach quota)
+    // for someone who's already connected.
+    if (scrapeData.connectionDegree === "1st") {
+      setStatus("Already connected — no outreach needed.");
+      draftBtn.disabled = false;
+      return;
+    }
+
     setStatus("Sending to Builder.LI… (the agent is drafting, this takes ~30s)");
 
     const result = await chrome.runtime.sendMessage({
