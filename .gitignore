@@ -35,3 +35,6 @@ data/
 
 # Personal agent memory — per-developer, not shared
 learnings.md
+
+# Claude Code isolated worktrees — local scratch, never shared
+.claude/worktrees/
