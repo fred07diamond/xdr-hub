@@ -472,23 +472,36 @@ async function sendConnectionRequest(note) {
   connectBtn.click();
   await new Promise((r) => setTimeout(r, 1000));
 
-  // 2. Modal — "Add a note" (try all known label variants)
-  const addNoteBtn = await waitForEl(() => {
-    const btns = Array.from(document.querySelectorAll("button"));
+  // 2. Modal — either goes straight to the note textarea, or asks
+  // "Add a note?" first. Race both so we don't waste time waiting on a
+  // step LinkedIn may skip, and so a slow-to-render "Add a note" button
+  // doesn't time us out when the textarea was reachable all along.
+  const findAddNoteBtn = () => {
+    const btns = Array.from(document.querySelectorAll("button, [role='button']"));
     return (
       btns.find((b) => /^add a note$/i.test(b.innerText.trim())) ??
       btns.find((b) => /personali[sz]e invite/i.test(b.innerText)) ??
       btns.find((b) => /add.*note|include.*note/i.test(b.innerText))
     );
-  }, { timeout: 6000 });
+  };
+  const findTextarea = () => document.querySelector('textarea[name="message"]');
 
-  if (!addNoteBtn) return { ok: false, error: '"Add a note" button did not appear. LinkedIn may have sent the request directly without a note option.' };
+  let textarea = null;
+  const waitResult = await waitForEl(() => findAddNoteBtn() ?? findTextarea(), { timeout: 10000 });
 
-  addNoteBtn.click();
-  await new Promise((r) => setTimeout(r, 400));
+  if (!waitResult) {
+    return { ok: false, error: '"Add a note" button did not appear. LinkedIn may have sent the request directly without a note option.' };
+  }
+
+  if (waitResult.tagName === "TEXTAREA") {
+    textarea = waitResult;
+  } else {
+    waitResult.click();
+    await new Promise((r) => setTimeout(r, 400));
+    textarea = await waitForEl(findTextarea, { timeout: 6000 });
+  }
 
   // 3. Fill the note textarea
-  const textarea = await waitForEl(() => document.querySelector('textarea[name="message"]'));
   if (!textarea) return { ok: false, error: "Note textarea not found." };
 
   textarea.focus();
