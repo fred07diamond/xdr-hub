@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { and, eq, gte } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects, workspaceSettings } from "../server/db/schema.js";
@@ -22,16 +22,11 @@ export default defineAction({
 
     let capturedToday = 0;
     if (ownerEmail) {
-      const rows = await db
-        .select({ id: prospects.id })
+      const [row] = await db
+        .select({ n: count() })
         .from(prospects)
-        .where(
-          and(
-            eq(prospects.ownerEmail, ownerEmail),
-            gte(prospects.createdAt, todayIso),
-          ),
-        );
-      capturedToday = rows.length;
+        .where(and(eq(prospects.ownerEmail, ownerEmail), gte(prospects.createdAt, todayIso)));
+      capturedToday = (row?.n ?? 0) as number;
     }
 
     const limitRow = await db

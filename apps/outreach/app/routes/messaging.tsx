@@ -37,7 +37,7 @@ import {
   IconUsers,
   IconX,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -825,6 +825,9 @@ function MessagingCanvas() {
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingBuildRef = useRef(false);
 
+  // Clear any pending drag-save timer when the canvas unmounts
+  useEffect(() => () => { if (dragTimerRef.current) clearTimeout(dragTimerRef.current); }, []);
+
   // Auto-refetch canvas after agent finishes a Build with AI run
   const [isGenerating] = useAgentChatGenerating();
   const wasGeneratingRef = useRef(false);
@@ -839,12 +842,16 @@ function MessagingCanvas() {
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
 
+  const ancestorPersonaMap = useMemo(
+    () => graph ? computeAncestorPersonas(graph.nodes, graph.edges, graph.personas) : new Map<string, Persona>(),
+    [graph],
+  );
+
   useEffect(() => {
     if (!graph) return;
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    const ancestorPersonaMap = computeAncestorPersonas(graph.nodes, graph.edges, graph.personas);
     setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 

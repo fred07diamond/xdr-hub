@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { asc, eq, or } from "drizzle-orm";
+import { asc, eq, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -15,8 +15,15 @@ export default defineAction({
     const userEmail = ctx!.userEmail!;
 
     const [allNodes, allEdges, personas] = await Promise.all([
-      db.select().from(messagingNodes).orderBy(asc(messagingNodes.createdAt)),
-      db.select().from(messagingEdges).orderBy(asc(messagingEdges.createdAt)),
+      // Filter at DB level: persona nodes (shared) + this user's own nodes
+      db.select().from(messagingNodes)
+        .where(or(eq(messagingNodes.type, "persona"), eq(messagingNodes.ownerEmail, userEmail)))
+        .orderBy(asc(messagingNodes.createdAt)),
+      // Only this user's edges
+      db.select().from(messagingEdges)
+        .where(eq(messagingEdges.ownerEmail, userEmail))
+        .orderBy(asc(messagingEdges.createdAt)),
+      // icpText is large and unused in the graph response — omit it
       db
         .select({ id: icpPersonas.id, name: icpPersonas.name, color: icpPersonas.color, icpText: icpPersonas.icpText })
         .from(icpPersonas)
@@ -25,19 +32,15 @@ export default defineAction({
 
     const personaIds = new Set(personas.map((p) => p.id));
 
-    // Persona nodes are shared; fine-tuning nodes are scoped to this user
+    // DB query already returns only persona nodes + this user's own nodes
     const existingPersonaNodes = allNodes.filter((n) => n.type === "persona");
     const coveredPersonaIds = new Set(
       existingPersonaNodes.map((n) => n.personaId).filter(Boolean) as string[],
     );
 
-    // Start with persona nodes + this user's own nodes; drop legacy global nodes
-    let finalNodes = allNodes.filter(
-      (n) => n.type === "persona" || (n.type !== "global" && n.ownerEmail === userEmail),
-    );
-
-    // User's own edges only
-    const finalEdges = allEdges.filter((e) => e.ownerEmail === userEmail);
+    let finalNodes = allNodes;
+    // DB query already scopes edges to this user
+    const finalEdges = allEdges;
 
     const now = new Date().toISOString();
 

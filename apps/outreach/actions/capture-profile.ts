@@ -1,7 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { resolveOrgIdForEmail } from "@agent-native/core/org";
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -166,8 +166,8 @@ export default defineAction({
       });
     }
 
-    // Persona selection — personas are shared workspace resources (no per-user scoping)
-    const allPersonas = await db
+    // Persona selection — only load personas that have ICP docs (filter in DB, not JS)
+    const personasWithDocs = await db
       .select({
         id: icpPersonas.id,
         name: icpPersonas.name,
@@ -175,9 +175,8 @@ export default defineAction({
         icpText: icpPersonas.icpText,
         summary: icpPersonas.summary,
       })
-      .from(icpPersonas);
-
-    const personasWithDocs = allPersonas.filter((p) => p.icpText);
+      .from(icpPersonas)
+      .where(isNotNull(icpPersonas.icpText));
 
     let icpText: string | null = null;
     let personaId: string | null = null;

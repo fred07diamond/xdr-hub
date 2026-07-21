@@ -18,43 +18,23 @@ export default defineAction({
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [totals] = await db
-      .select({ total: count() })
-      .from(prospects);
-
-    const verdictRows = await db
-      .select({
-        verdict: prospects.fitVerdict,
-        n: count(),
-      })
-      .from(prospects)
-      .groupBy(prospects.fitVerdict);
-
-    const statusRows = await db
-      .select({
-        status: prospects.status,
-        n: count(),
-      })
-      .from(prospects)
-      .groupBy(prospects.status);
-
-    const [usersRow] = await db
-      .select({ n: countDistinct(prospects.ownerEmail) })
-      .from(prospects);
-
-    const [thisWeekRow] = await db
-      .select({ n: count() })
-      .from(prospects)
-      .where(sql`created_at >= ${weekAgo}`);
-
-    const [lastWeekRow] = await db
-      .select({ n: count() })
-      .from(prospects)
-      .where(sql`created_at >= ${twoWeeksAgo} AND created_at < ${weekAgo}`);
-
-    const [sentRow] = await db
-      .select({ n: count() })
-      .from(sendHistory);
+    const [
+      [totals],
+      verdictRows,
+      statusRows,
+      [usersRow],
+      [thisWeekRow],
+      [lastWeekRow],
+      [sentRow],
+    ] = await Promise.all([
+      db.select({ total: count() }).from(prospects),
+      db.select({ verdict: prospects.fitVerdict, n: count() }).from(prospects).groupBy(prospects.fitVerdict),
+      db.select({ status: prospects.status, n: count() }).from(prospects).groupBy(prospects.status),
+      db.select({ n: countDistinct(prospects.ownerEmail) }).from(prospects),
+      db.select({ n: count() }).from(prospects).where(sql`created_at >= ${weekAgo}`),
+      db.select({ n: count() }).from(prospects).where(sql`created_at >= ${twoWeeksAgo} AND created_at < ${weekAgo}`),
+      db.select({ n: count() }).from(sendHistory),
+    ]);
 
     const verdictCounts = { strong: 0, possible: 0, weak: 0 };
     for (const r of verdictRows) {

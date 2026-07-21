@@ -25,10 +25,10 @@ export default defineAction({
       return { ok: false, error: "Not authorized to delete this node." };
     }
 
-    await db.delete(messagingEdges).where(
-      or(eq(messagingEdges.sourceId, id), eq(messagingEdges.targetId, id)),
-    );
-    await db.delete(messagingNodes).where(eq(messagingNodes.id, id));
+    await Promise.all([
+      db.delete(messagingEdges).where(or(eq(messagingEdges.sourceId, id), eq(messagingEdges.targetId, id))),
+      db.delete(messagingNodes).where(eq(messagingNodes.id, id)),
+    ]);
 
     return { ok: true };
   },

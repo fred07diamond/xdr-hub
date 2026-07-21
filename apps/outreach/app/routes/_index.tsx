@@ -11,7 +11,7 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Sheet,
@@ -372,14 +372,14 @@ export default function ProspectsRoute() {
   const allProspects: Prospect[] = (data as any)?.prospects ?? [];
 
   // Derived persona list for filter chips
-  const personas = [...new Map(
+  const personas = useMemo(() => [...new Map(
     allProspects
       .filter((p) => p.personaName && p.personaColor)
       .map((p) => [p.personaName!, { name: p.personaName!, color: p.personaColor! }])
-  ).values()];
+  ).values()], [allProspects]);
 
   // Apply filters
-  const filtered = allProspects.filter((p) => {
+  const filtered = useMemo(() => allProspects.filter((p) => {
     if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) return false;
     if (statusFilter !== "all" && p.status !== statusFilter) return false;
     if (personaFilter !== "all" && p.personaName !== personaFilter) return false;
@@ -389,7 +389,7 @@ export default function ProspectsRoute() {
       if (!haystack.includes(q)) return false;
     }
     return true;
-  });
+  }), [allProspects, verdictFilter, statusFilter, personaFilter, search]);
 
   const selected = allProspects.find((p) => p.id === selectedId) ?? null;
   const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));

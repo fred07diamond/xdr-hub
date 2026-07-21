@@ -23,17 +23,10 @@ export default defineAction({
       ? eq(prospects.ownerEmail, ownerEmail)
       : isNull(prospects.ownerEmail);
 
-    await db
-      .update(prospects)
-      .set({ status: "sent", updatedAt: now })
-      .where(and(eq(prospects.profileUrl, profileUrl), ownerFilter));
-
-    await db.insert(sendHistory).values({
-      id: nanoid(),
-      ownerEmail,
-      profileUrl,
-      sentAt: now,
-    });
+    await Promise.all([
+      db.update(prospects).set({ status: "sent", updatedAt: now }).where(and(eq(prospects.profileUrl, profileUrl), ownerFilter)),
+      db.insert(sendHistory).values({ id: nanoid(), ownerEmail, profileUrl, sentAt: now }),
+    ]);
 
     return { ok: true };
   },
