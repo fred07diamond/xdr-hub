@@ -210,7 +210,7 @@ function ProspectSheet({
 
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-lg overflow-hidden">
+      <SheetContent showClose={false} className="flex w-full flex-col gap-0 p-0 sm:max-w-lg overflow-hidden">
         <SheetHeader className="border-b border-border px-5 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

@@ -551,7 +551,6 @@ async function sendConnectionRequest(note) {
   const connectBtn = candidates[targetIndex]?._el;
   if (!connectBtn) return { ok: false, error: "Agent returned invalid element index." };
 
-  console.error("[BLI DEBUG] clicking candidate:", JSON.stringify({ text: candidates[targetIndex].text, ariaLabel: candidates[targetIndex].ariaLabel, tag: candidates[targetIndex].tag }));
   connectBtn.click();
   await new Promise((r) => setTimeout(r, 1000));
 
