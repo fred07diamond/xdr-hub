@@ -489,13 +489,16 @@ function findMoreActionsButton() {
 
 async function sendConnectionRequest(note) {
   let candidates = gatherConnectCandidates();
+  console.error("[BLI DEBUG] initial candidates:", JSON.stringify(candidates.map((c) => ({ text: c.text, ariaLabel: c.ariaLabel }))));
 
   if (candidates.length === 0) {
     const moreBtn = findMoreActionsButton();
+    console.error("[BLI DEBUG] more-actions button found:", !!moreBtn, moreBtn ? moreBtn.getAttribute("aria-label") : null);
     if (moreBtn) {
       moreBtn.click();
       await new Promise((r) => setTimeout(r, 400));
       candidates = gatherConnectCandidates();
+      console.error("[BLI DEBUG] candidates after opening more-actions:", JSON.stringify(candidates.map((c) => ({ text: c.text, ariaLabel: c.ariaLabel }))));
     }
   }
 
@@ -524,6 +527,7 @@ async function sendConnectionRequest(note) {
   const connectBtn = candidates[targetIndex]?._el;
   if (!connectBtn) return { ok: false, error: "Agent returned invalid element index." };
 
+  console.error("[BLI DEBUG] clicking candidate:", JSON.stringify({ text: candidates[targetIndex].text, ariaLabel: candidates[targetIndex].ariaLabel, tag: candidates[targetIndex].tag }));
   connectBtn.click();
   await new Promise((r) => setTimeout(r, 1000));
 
