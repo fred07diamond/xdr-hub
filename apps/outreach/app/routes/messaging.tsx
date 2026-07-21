@@ -676,14 +676,13 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted }: { graph: GraphData; 
         `## Personas\n${personaList}\n\n` +
         `## Pre-Calculated Layout — use these exact positions, no math required\n` +
         layout.join("\n") +
-        `\n\n## Instructions — execute in order, no planning step needed\n` +
-        `1. Call get-messaging-graph to read the ICP documents for each persona.\n` +
-        `2. For each persona decide which child nodes to create (2–4 per persona). Node types: tone (Tone/Voice + valueProps), phrase_rule (phrasesToUse + phrasesToAvoid), example (exampleNotes), role (notes + tone + phrases for a specific job title).\n` +
-        `3. For each persona anchor, call update-messaging-node with id=<anchor id> and the exact positionX/positionY from the layout above.\n` +
-        `4. For each child you decided to create, call create-messaging-node with nodeType, a descriptive title, and positionX/positionY from slot 0, 1, 2… for that persona.\n` +
-        `5. For each created child, call create-messaging-edge with sourceId=<persona anchor id>, targetId=<new child id>.\n` +
-        `6. For each created child, call update-messaging-node to fill the content fields from the ICP doc (only fields relevant to that node type).\n` +
-        `Use the exact x/y values from the layout above. Fill content from the ICP doc — do not invent content that isn't there.`,
+        `\n\n## Instructions — execute in order\n` +
+        `1. Call get-messaging-graph to read ICP documents for each persona.\n` +
+        `2. For each persona anchor, call update-messaging-node with the anchor id and exact positionX/positionY from the layout above. Also fill tone and notes from the ICP doc.\n` +
+        `3. For each persona, create 2–4 child nodes. Node types: tone (tone + valueProps fields), phrase_rule (phrasesToUse + phrasesToAvoid), example (exampleNotes), role (notes + tone + phrases for a specific title).\n` +
+        `   For each child, call create-messaging-node with nodeType, a descriptive title, positionX/positionY from the slot, AND all content fields filled from the ICP doc in the same call. Do NOT leave content empty and update later.\n` +
+        `4. For each created child, call create-messaging-edge with sourceId=<persona anchor id>, targetId=<new child id>.\n\n` +
+        `Key rules: fill content at creation time (step 3) — do not do a separate update round. Use exact x/y from the layout. Content comes from the ICP doc only.`,
       submit: true,
     });
     onSubmitted();

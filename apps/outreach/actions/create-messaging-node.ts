@@ -12,18 +12,25 @@ const DEFAULT_TITLES: Record<string, string> = {
 };
 
 export default defineAction({
-  description: "Create a new typed messaging node on the canvas, owned by the current user.",
+  description: "Create a new typed messaging node on the canvas, owned by the current user. Pass content fields to populate the node in one call — avoids a follow-up update.",
   schema: z.object({
     nodeType: z.enum(["tone", "phrase_rule", "example", "role"]).default("tone"),
+    title: z.string().min(1).max(120).optional(),
     positionX: z.number().int().default(300),
     positionY: z.number().int().default(300),
+    tone: z.string().nullable().optional(),
+    valueProps: z.string().nullable().optional(),
+    phrasesToUse: z.string().nullable().optional(),
+    phrasesToAvoid: z.string().nullable().optional(),
+    exampleNotes: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
   }),
   requiresAuth: true,
-  run: async ({ nodeType, positionX, positionY }, ctx) => {
+  run: async ({ nodeType, title: titleArg, positionX, positionY, tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes }, ctx) => {
     const db = getDb();
     const id = nanoid();
     const now = new Date().toISOString();
-    const title = DEFAULT_TITLES[nodeType] ?? "New Node";
+    const title = titleArg ?? DEFAULT_TITLES[nodeType] ?? "New Node";
 
     await db.insert(messagingNodes).values({
       id,
@@ -32,6 +39,12 @@ export default defineAction({
       ownerEmail: ctx!.userEmail,
       positionX,
       positionY,
+      tone: tone ?? null,
+      valueProps: valueProps ?? null,
+      phrasesToUse: phrasesToUse ?? null,
+      phrasesToAvoid: phrasesToAvoid ?? null,
+      exampleNotes: exampleNotes ?? null,
+      notes: notes ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -42,12 +55,12 @@ export default defineAction({
       title,
       ownerEmail: ctx!.userEmail,
       personaId: null,
-      tone: null,
-      valueProps: null,
-      phrasesToUse: null,
-      phrasesToAvoid: null,
-      exampleNotes: null,
-      notes: null,
+      tone: tone ?? null,
+      valueProps: valueProps ?? null,
+      phrasesToUse: phrasesToUse ?? null,
+      phrasesToAvoid: phrasesToAvoid ?? null,
+      exampleNotes: exampleNotes ?? null,
+      notes: notes ?? null,
       positionX,
       positionY,
       createdAt: now,
