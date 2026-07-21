@@ -1,6 +1,6 @@
 import { useActionQuery } from "@agent-native/core/client";
 import { useOrgRole } from "@agent-native/core/client/org";
-import { IconChartBar, IconLoader2, IconMessageReport, IconThumbDown, IconThumbUp } from "@tabler/icons-react";
+import { IconChartBar, IconLoader2, IconMessageReport, IconThumbDown, IconThumbUp, IconUsers } from "@tabler/icons-react";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { Navigate } from "react-router";
 
@@ -63,6 +63,7 @@ export default function AnalyticsRoute() {
     lastWeek: number;
     totalUsers: number;
     totalSent: number;
+    byUser: UserActivity[];
   };
 
   const sentRate = pct(d.totalSent, d.totalProspects);
@@ -127,6 +128,9 @@ export default function AnalyticsRoute() {
           <FunnelRow label="Sent" count={d.statusCounts.sent} total={d.totalProspects} />
         </CardContent>
       </Card>
+
+      {/* Team Activity */}
+      <TeamActivitySection byUser={d.byUser} />
 
       {/* User Feedback */}
       <FeedbackSection feedbackData={feedbackData} />
@@ -198,6 +202,66 @@ function FeedbackSection({ feedbackData }: { feedbackData: unknown }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+type UserActivity = {
+  ownerEmail: string | null;
+  total: number;
+  drafted: number;
+  sent: number;
+  strong: number;
+  possible: number;
+  weak: number;
+  inconclusive: number;
+};
+
+function TeamActivitySection({ byUser }: { byUser: UserActivity[] }) {
+  return (
+    <div>
+      <h2 className="mb-2 text-sm font-medium text-muted-foreground">Team Activity</h2>
+      {byUser.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+          <IconUsers className="size-7 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">No prospects added yet.</p>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2 font-medium">Teammate</th>
+                  <th className="px-4 py-2 text-right font-medium">Added</th>
+                  <th className="px-4 py-2 text-right font-medium">Drafted</th>
+                  <th className="px-4 py-2 text-right font-medium">Sent</th>
+                  <th className="px-4 py-2 text-right font-medium">Send Rate</th>
+                  <th className="px-4 py-2 text-right font-medium">Strong / Possible / Weak</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {byUser.map((u) => (
+                  <tr key={u.ownerEmail ?? "unassigned"}>
+                    <td className="px-4 py-2.5 font-medium">{u.ownerEmail ?? "Unassigned"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{u.total.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{u.drafted.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{u.sent.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{pct(u.sent, u.total)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      <span className="text-emerald-600 dark:text-emerald-400">{u.strong}</span>
+                      {" / "}
+                      <span className="text-amber-600 dark:text-amber-400">{u.possible}</span>
+                      {" / "}
+                      <span className="text-rose-600 dark:text-rose-400">{u.weak}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
