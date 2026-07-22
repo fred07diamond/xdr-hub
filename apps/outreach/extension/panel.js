@@ -34,6 +34,8 @@ const tokenSaveStatus = document.getElementById("token-save-status");
 const tokenStatusBadge = document.getElementById("token-status-badge");
 const autoModeToggle = document.getElementById("auto-mode-toggle");
 const feedbackSection = document.getElementById("feedback-section");
+const canvasPickerSection = document.getElementById("canvas-picker-section");
+const canvasSelect = document.getElementById("canvas-select");
 const thumbUpBtn = document.getElementById("thumb-up-btn");
 const thumbDownBtn = document.getElementById("thumb-down-btn");
 const feedbackForm = document.getElementById("feedback-form");
@@ -272,6 +274,36 @@ function resetPanel() {
   feedbackSection.style.display = "none";
 }
 
+// ── Canvas picker ────────────────────────────────────────────────────────────
+
+async function loadCanvases() {
+  const { apiToken: token } = await chrome.storage.local.get(["apiToken"]);
+  const { lastCanvasId } = await chrome.storage.local.get(["lastCanvasId"]);
+  const result = await chrome.runtime.sendMessage({ type: "LIST_CANVASES", apiToken: token });
+  const canvases = result?.canvases ?? [];
+
+  if (canvases.length === 0) {
+    canvasPickerSection.style.display = "none";
+    return;
+  }
+
+  // Build options with textContent (not innerHTML) to avoid XSS from canvas names
+  canvasSelect.innerHTML = "";
+  canvases.forEach((c) => {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = c.name;
+    if (c.id === lastCanvasId) opt.selected = true;
+    canvasSelect.appendChild(opt);
+  });
+
+  canvasPickerSection.style.display = "block";
+}
+
+canvasSelect.addEventListener("change", () => {
+  chrome.storage.local.set({ lastCanvasId: canvasSelect.value });
+});
+
 // ── Init: scrape immediately on open ────────────────────────────────────────
 
 async function init({ navTriggered = false } = {}) {
@@ -320,6 +352,9 @@ async function init({ navTriggered = false } = {}) {
   chrome.runtime.sendMessage({ type: "GET_DAILY_STATS" })
     .then((stats) => { if (currentProfileUrl) renderDailyMeter(stats); })
     .catch(() => {});
+
+  // Load canvas picker (fire-and-forget).
+  loadCanvases().catch(() => {});
 
   // Non-critical cosmetic check — fire-and-forget so isInitializing drops now,
   // not after the 3 s timeout. Guard against showing a banner for the wrong profile.
@@ -457,9 +492,14 @@ draftBtn.addEventListener("click", async () => {
 
     setStatus("Sending to Builder.LI… (the agent is drafting, this takes ~30s)");
 
+    const selectedCanvasId = canvasSelect.value || null;
+    if (selectedCanvasId) {
+      chrome.storage.local.set({ lastCanvasId: selectedCanvasId });
+    }
+
     const result = await chrome.runtime.sendMessage({
       type: "DRAFT_REQUEST",
-      data: scrapeData,
+      data: { ...scrapeData, canvasId: selectedCanvasId },
     });
 
     if (!result?.ok) throw new Error(result?.error || "Unknown error");
