@@ -5,10 +5,10 @@ import { messagingCanvases, messagingEdges, messagingNodes } from "../db/schema.
 
 // Bump the version suffix to force a reseed of system templates.
 export const SYSTEM_CANVAS_IDS = {
-  account:  "sys-canvas-account-v2",
-  role:     "sys-canvas-role-v2",
-  prospect: "sys-canvas-prospect-v2",
-  blank:    "sys-canvas-blank-v2",
+  account:  "sys-canvas-account-v3",
+  role:     "sys-canvas-role-v3",
+  prospect: "sys-canvas-prospect-v3",
+  blank:    "sys-canvas-blank-v3",
 } as const;
 
 type SystemSlug = keyof typeof SYSTEM_CANVAS_IDS;
@@ -117,18 +117,19 @@ const SYSTEM_TEMPLATES: TemplateDef[] = [
     ],
   },
 
-  // ── Role-Based (single buyer persona, pain-centric) ───────────────────────────
+  // ── Role-Based (job title as root, pain-centric trickle-down) ────────────────
   {
     slug: "role",
     name: "Role-Based",
     nodes: [
       {
-        key: "persona",
-        type: "persona",
-        title: "Target Persona",
+        key: "jobtitle",
+        type: "role",
+        title: "Job Title / Function",
         positionX: 80, positionY: 300,
-        notes: "Who you're targeting: their title, seniority, company type, and what frustrates them most. The sharper this is, the more specific your outreach can be. Replace this with your actual ICP details.",
-        tone: "Empathetic and role-specific. Write like someone who has held that job and knows the daily frustrations. Don't lead with your product — lead with their pain. Make them feel understood in the first sentence.",
+        notes: "Put the specific job title here — e.g. 'Director of Product', 'Software Engineer', 'Head of Revenue Operations'. This is who you're messaging across many accounts. Everything below refines how you speak to this role.",
+        tone: "Empathetic and role-specific. Write like someone who has held that job and knows the daily frustrations. Don't lead with your product — lead with their pain.",
+        phrasesToUse: "a lot of [role]s I talk to, teams your size, at the stage you're at",
       },
       {
         key: "voice",
@@ -179,81 +180,73 @@ const SYSTEM_TEMPLATES: TemplateDef[] = [
       },
     ],
     edges: [
-      { sourceKey: "persona",  targetKey: "voice"        },
-      { sourceKey: "persona",  targetKey: "phrases"      },
-      { sourceKey: "persona",  targetKey: "pain"         },
-      { sourceKey: "persona",  targetKey: "example"      },
+      { sourceKey: "jobtitle", targetKey: "voice"        },
+      { sourceKey: "jobtitle", targetKey: "phrases"      },
+      { sourceKey: "jobtitle", targetKey: "pain"         },
+      { sourceKey: "jobtitle", targetKey: "example"      },
       { sourceKey: "pain",     targetKey: "pain-voice"   },
       { sourceKey: "pain",     targetKey: "pain-example" },
     ],
   },
 
-  // ── Prospect-Driven (signal-led, ultra-personalized) ──────────────────────────
+  // ── Prospect-Driven (company → specific role → signal-led messaging) ──────────
   {
     slug: "prospect",
     name: "Prospect-Driven",
     nodes: [
       {
-        key: "persona",
-        type: "persona",
-        title: "Hot Prospect",
-        positionX: 80, positionY: 320,
-        notes: "Someone you've researched specifically. You have a concrete signal: a post they wrote, a job change, a funding announcement, a talk they gave, a tool they mentioned. The note must reference something specific to THIS person.",
+        key: "company",
+        type: "company",
+        title: "Target Company",
+        positionX: 80, positionY: 380,
+        notes: "",
       },
       {
-        key: "voice",
-        type: "tone",
-        title: "Signal-First Voice",
-        positionX: 380, positionY: 60,
-        tone: "Ultra-personalized. The first sentence makes them feel like you wrote this for them specifically. Reference something real — not their company or title, but something THEY said or did. Never write 'I came across your profile.'",
-        valueProps: "Connect your value to the exact signal you found. Make the ask feel like the obvious next step from what they're already thinking about.",
+        key: "role",
+        type: "role",
+        title: "Their Title",
+        positionX: 380, positionY: 280,
+        notes: "The specific job title of the person you're messaging. What does this title mean for your angle? What are they responsible for? What would make them look good or bad internally?",
+        tone: "Ultra-personalized. The first sentence makes them feel like you wrote this for them. Reference something real — not their company or title, but something THEY said or did.",
       },
       {
         key: "phrases",
         type: "phrase_rule",
         title: "Phrase Rules",
-        positionX: 380, positionY: 280,
+        positionX: 380, positionY: 510,
         phrasesToUse: "noticed your post on, saw that you, given the [recent event], as you're [navigating/scaling/launching], sounds like you're in the middle of",
-        phrasesToAvoid: "I came across your profile, I think we could work well together, I'd love to connect, mutually beneficial, hope this finds you well, I wanted to reach out, excited to share",
+        phrasesToAvoid: "I came across your profile, I think we could work well together, I'd love to connect, mutually beneficial, hope this finds you well, I wanted to reach out",
       },
       {
         key: "signal",
         type: "role",
-        title: "Signal → Angle Map",
-        positionX: 380, positionY: 500,
-        notes: "Match your opening angle to the signal:\n• Funding round → scale pains, build vs. buy pressure, speed to revenue\n• New AE/BDR hires → outbound ramp and coverage\n• Job change → making their mark fast, proving the new role\n• Post or talk → belief they publicly hold, connect to their worldview\n• Product launch → the upstream problem it creates for their team",
-        tone: "Lead with the signal in the first 5 words. Make the connection feel obvious and natural.",
+        title: "Signal → Angle",
+        positionX: 680, positionY: 160,
+        notes: "Match your opening angle to the signal you found:\n• Funding round → scale pains, build vs. buy pressure\n• New AE/BDR hires → outbound ramp and coverage\n• Job change → making their mark fast, proving the new role\n• Post or talk → belief they publicly hold\n• Product launch → the upstream problem it creates",
+        tone: "Lead with the signal in the first 5 words. Make the connection feel obvious.",
+      },
+      {
+        key: "voice",
+        type: "tone",
+        title: "Signal-First Voice",
+        positionX: 680, positionY: 390,
+        tone: "Open with the specific signal. One sentence on why it caught your attention. One sentence on the outcome you create. One ask — that's it.",
+        valueProps: "Make them feel seen. The value is in the specificity — you did the homework they expect everyone to skip.",
       },
       {
         key: "example",
         type: "example",
         title: "Example Note",
-        positionX: 380, positionY: 720,
-        exampleNotes: "[Name] — your post on [specific topic] resonated. We help [role]s deal with exactly that. Worth comparing notes?",
-      },
-      {
-        key: "signal-voice",
-        type: "tone",
-        title: "Signal-Led Voice",
-        positionX: 680, positionY: 400,
-        tone: "Open with the specific signal. One sentence on why it caught your attention. One sentence on the outcome you create. One ask — that's it.",
-        valueProps: "Make them feel seen. The value is in the specificity — you did the homework they expect everyone to skip.",
-      },
-      {
-        key: "signal-example",
-        type: "example",
-        title: "Signal-Led Example",
-        positionX: 680, positionY: 610,
+        positionX: 680, positionY: 600,
         exampleNotes: "Hi [Name] — given the Series B you just closed, teams at your stage usually hit [specific scaling pain] fast. We've helped [Company A] and [Company B] navigate it. Interested in comparing notes?",
       },
     ],
     edges: [
-      { sourceKey: "persona",  targetKey: "voice"          },
-      { sourceKey: "persona",  targetKey: "phrases"        },
-      { sourceKey: "persona",  targetKey: "signal"         },
-      { sourceKey: "persona",  targetKey: "example"        },
-      { sourceKey: "signal",   targetKey: "signal-voice"   },
-      { sourceKey: "signal",   targetKey: "signal-example" },
+      { sourceKey: "company", targetKey: "role"    },
+      { sourceKey: "role",    targetKey: "signal"  },
+      { sourceKey: "role",    targetKey: "phrases" },
+      { sourceKey: "role",    targetKey: "voice"   },
+      { sourceKey: "role",    targetKey: "example" },
     ],
   },
 
@@ -263,11 +256,11 @@ const SYSTEM_TEMPLATES: TemplateDef[] = [
     name: "Blank",
     nodes: [
       {
-        key: "persona",
-        type: "persona",
-        title: "Your ICP Persona",
+        key: "jobtitle",
+        type: "role",
+        title: "Job Title / Function",
         positionX: 200, positionY: 200,
-        notes: "Start here: describe who you're targeting, what they care about, and what they're trying to accomplish. Branch off nodes to layer in tone, phrases, role adjustments, and example notes.",
+        notes: "Start here: put the job title or function you're targeting. Branch off tone, phrase rules, and example notes to build your messaging strategy.",
       },
     ],
     edges: [],
