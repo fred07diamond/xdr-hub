@@ -24,17 +24,26 @@ import {
 } from "@xyflow/react";
 import type { Connection, Edge, EdgeProps, Node, NodeProps } from "@xyflow/react";
 import {
+  IconAlertCircle,
   IconBriefcase,
   IconBuilding,
+  IconChecklist,
+  IconCoin,
+  IconFileText,
   IconFileUpload,
   IconLock,
   IconMicrophone2,
   IconNote,
   IconPlus,
   IconRefresh,
+  IconRoute,
   IconSparkles,
+  IconStar,
+  IconSword,
+  IconTarget,
   IconTextPlus,
   IconTrash,
+  IconUserCheck,
   IconUsers,
   IconX,
 } from "@tabler/icons-react";
@@ -57,7 +66,11 @@ export function meta() {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type NodeKind = "persona" | "tone" | "phrase_rule" | "example" | "role" | "company";
+type NodeKind =
+  | "persona" | "tone" | "phrase_rule" | "example" | "role" | "company"
+  | "metrics" | "economic_buyer" | "decision_criteria" | "decision_process"
+  | "paper_process" | "identify_pain" | "champion" | "competition"
+  | "persona_ref";
 
 interface MessagingNode {
   id: string;
@@ -147,6 +160,69 @@ const NODE_CONFIG: Record<NodeKind, {
     color: "#0e7490",
     Icon: IconBuilding,
     description: "Company context — auto-researches from the internet",
+    previewFields: ["notes"],
+  },
+  metrics: {
+    label: "Metrics",
+    color: "#16a34a",
+    Icon: IconTarget,
+    description: "Quantifiable business outcomes delivered",
+    previewFields: ["notes"],
+  },
+  economic_buyer: {
+    label: "Economic Buyer",
+    color: "#b45309",
+    Icon: IconCoin,
+    description: "Person with budget authority",
+    previewFields: ["notes"],
+  },
+  decision_criteria: {
+    label: "Decision Criteria",
+    color: "#4338ca",
+    Icon: IconChecklist,
+    description: "Technical and financial requirements",
+    previewFields: ["notes"],
+  },
+  decision_process: {
+    label: "Decision Process",
+    color: "#0284c7",
+    Icon: IconRoute,
+    description: "Steps to reach a purchasing decision",
+    previewFields: ["notes"],
+  },
+  paper_process: {
+    label: "Paper Process",
+    color: "#64748b",
+    Icon: IconFileText,
+    description: "Legal, procurement, and contract steps",
+    previewFields: ["notes"],
+  },
+  identify_pain: {
+    label: "Identify Pain",
+    color: "#dc2626",
+    Icon: IconAlertCircle,
+    description: "The core problem requiring a solution",
+    previewFields: ["notes"],
+  },
+  champion: {
+    label: "Champion",
+    color: "#d97706",
+    Icon: IconStar,
+    description: "An influential internal advocate",
+    previewFields: ["notes"],
+  },
+  competition: {
+    label: "Competition",
+    color: "#7c2d12",
+    Icon: IconSword,
+    description: "Knowledge of rival solutions",
+    previewFields: ["notes"],
+  },
+  persona_ref: {
+    label: "Persona",
+    color: "#0a66c2",
+    Icon: IconUserCheck,
+    description: "Pin a specific ICP persona to this branch",
     previewFields: ["notes"],
   },
 };
@@ -309,6 +385,54 @@ function CompanyNode({ data }: NodeProps) {
   );
 }
 
+function PersonaRefNode({ data }: NodeProps) {
+  const d = data as NodeData & {
+    allPersonas: Persona[];
+    onPersonaSelect: (nodeId: string, personaId: string) => void;
+  };
+  const selected = (d.allPersonas ?? []).find((p) => p.id === d.dbNode.personaId);
+  const headerColor = selected?.color ?? "#0a66c2";
+
+  return (
+    <div
+      className="relative rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden group"
+      onClick={() => d.onClick(d.dbNode)}
+    >
+      <button
+        type="button"
+        className="absolute top-1 right-1 z-10 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-black/20 hover:bg-destructive text-white transition-colors"
+        onClick={(e) => { e.stopPropagation(); d.onDelete(d.dbNode.id); }}
+      >
+        <IconX size={9} />
+      </button>
+      <div className="flex items-center gap-1.5 px-3 py-2 text-white" style={{ background: headerColor }}>
+        <IconUserCheck size={12} className="shrink-0 opacity-90" />
+        <p className="text-[11px] font-semibold truncate flex-1">
+          {selected?.name ?? "Select Persona"}
+        </p>
+      </div>
+      <div className="px-3 py-2 flex flex-col gap-1.5">
+        <select
+          value={d.dbNode.personaId ?? ""}
+          onChange={(e) => { e.stopPropagation(); d.onPersonaSelect(d.dbNode.id, e.target.value); }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full text-xs bg-transparent border border-zinc-200 dark:border-zinc-700 rounded px-1 py-0.5 outline-none"
+        >
+          <option value="">Choose persona…</option>
+          {(d.allPersonas ?? []).map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        {d.dbNode.notes && (
+          <p className="text-[10px] text-zinc-500 line-clamp-2">{d.dbNode.notes}</p>
+        )}
+      </div>
+      <Handle type="target" position={Position.Left} />
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+
 // Walks edges upward from each node to find its persona root.
 function computeAncestorPersonas(
   nodes: MessagingNode[],
@@ -398,12 +522,21 @@ const edgeTypes = { deletable: DeletableEdge };
 
 // ── Node type palette ──────────────────────────────────────────────────────────
 
-type PaletteKind = "tone" | "phrase_rule" | "example" | "role" | "company";
-const PALETTE_TYPES: PaletteKind[] = ["tone", "phrase_rule", "example", "role", "company"];
+type PaletteKind =
+  | "tone" | "phrase_rule" | "example" | "role" | "company"
+  | "metrics" | "economic_buyer" | "decision_criteria" | "decision_process"
+  | "paper_process" | "identify_pain" | "champion" | "competition"
+  | "persona_ref";
+const PALETTE_TYPES: PaletteKind[] = [
+  "tone", "phrase_rule", "example", "role", "company",
+  "metrics", "economic_buyer", "decision_criteria", "decision_process",
+  "paper_process", "identify_pain", "champion", "competition",
+  "persona_ref",
+];
 
 function NodePalette({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
   return (
-    <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900 overflow-hidden">
+    <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900 max-h-[480px] overflow-y-auto">
       {PALETTE_TYPES.map((kind) => {
         const cfg = NODE_CONFIG[kind];
         return (
@@ -572,8 +705,11 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     onClose();
   }
 
-  // Persona nodes: Notes + Tone only — value props, phrases, examples belong in child nodes
-  const showNotes = isGlobal || isPersona || node?.type === "role";
+  const NOTES_ONLY_TYPES = new Set([
+    "metrics", "economic_buyer", "decision_criteria", "decision_process",
+    "paper_process", "identify_pain", "champion", "competition", "persona_ref",
+  ]);
+  const showNotes = isGlobal || isPersona || node?.type === "role" || NOTES_ONLY_TYPES.has(node?.type ?? "");
   const showTone = isGlobal || isPersona || node?.type === "tone" || node?.type === "role";
   const showValueProps = isGlobal || node?.type === "tone";
   const showUse = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
@@ -837,6 +973,7 @@ function toFlowNode(
   onContextMenu: (n: MessagingNode, e: MouseEvent) => void,
   onDelete: (id: string) => void,
   onResearch?: (id: string, company: string) => void,
+  onPersonaSelect?: (nodeId: string, personaId: string) => void,
 ): Node {
   return {
     id: dbNode.id,
@@ -851,6 +988,7 @@ function toFlowNode(
       onContextMenu,
       onDelete,
       ...(dbNode.type === "company" && onResearch ? { onResearch } : {}),
+      ...(dbNode.type === "persona_ref" ? { allPersonas: personas, onPersonaSelect } : {}),
     } as NodeData,
   };
 }
@@ -1022,7 +1160,26 @@ function MessagingCanvas() {
     example: CanvasNode,
     role: CanvasNode,
     company: CompanyNode,
+    metrics: CanvasNode,
+    economic_buyer: CanvasNode,
+    decision_criteria: CanvasNode,
+    decision_process: CanvasNode,
+    paper_process: CanvasNode,
+    identify_pain: CanvasNode,
+    champion: CanvasNode,
+    competition: CanvasNode,
+    persona_ref: PersonaRefNode,
   }), []);
+
+  function handlePersonaSelect(nodeId: string, personaId: string) {
+    updateNode.mutate({ id: nodeId, personaId: personaId || null });
+    setNodes((nds) => nds.map((n) => {
+      if (n.id !== nodeId) return n;
+      const dbNode = { ...(n.data as NodeData).dbNode, personaId: personaId || null };
+      const selected = personasRef.current.find((p) => p.id === personaId);
+      return { ...n, data: { ...n.data, dbNode, persona: selected, allPersonas: personasRef.current } as unknown as NodeData };
+    }));
+  }
 
   function handleCompanyResearch(nodeId: string, companyName: string) {
     updateNode.mutate({ id: nodeId, title: companyName });
@@ -1066,7 +1223,7 @@ function MessagingCanvas() {
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handleCompanyResearch)));
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handleCompanyResearch, handlePersonaSelect)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
