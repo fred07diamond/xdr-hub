@@ -334,50 +334,37 @@ function CanvasNode({ data }: NodeProps) {
 }
 
 function CompanyNode({ data }: NodeProps) {
-  const d = data as NodeData & { onResearch: (id: string, company: string) => void };
-  const [company, setCompany] = useState(d.dbNode.title === "Company" ? "" : d.dbNode.title);
-  const [researching, setResearching] = useState(false);
-  const prevCompanyRef = useRef(company);
-
-  useEffect(() => {
-    if (d.dbNode.notes) setResearching(false);
-  }, [d.dbNode.notes]);
-
-  function handleBlur() {
-    const trimmed = company.trim();
-    if (!trimmed || trimmed === prevCompanyRef.current) return;
-    prevCompanyRef.current = trimmed;
-    setResearching(true);
-    d.onResearch(d.dbNode.id, trimmed);
-  }
+  const d = data as NodeData;
+  const hasName = d.dbNode.title && d.dbNode.title !== "Company";
+  const hasNotes = !!d.dbNode.notes;
 
   return (
     <div
-      className="rounded-xl border-2 border-cyan-600 bg-white dark:bg-zinc-900 shadow-md w-[220px] overflow-hidden"
+      className="relative rounded-xl border-2 border-cyan-600 bg-white dark:bg-zinc-900 shadow-md w-[220px] overflow-hidden cursor-pointer group"
       onClick={() => d.onClick(d.dbNode)}
+      onContextMenu={(e) => { e.preventDefault(); d.onContextMenu(d.dbNode, e); }}
     >
+      <button
+        type="button"
+        className="absolute top-1 right-1 z-10 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-black/20 hover:bg-destructive text-white transition-colors"
+        onClick={(e) => { e.stopPropagation(); d.onDelete(d.dbNode.id); }}
+      >
+        <IconX size={9} />
+      </button>
       <Handle type="target" position={Position.Left} />
       <div className="flex items-center gap-1.5 px-3 py-2 text-white bg-cyan-700">
         <IconBuilding size={12} className="shrink-0 opacity-90" />
-        <p className="text-[11px] font-semibold flex-1 truncate">Company</p>
+        <p className="text-[11px] font-semibold flex-1 truncate">
+          {hasName ? d.dbNode.title : "Company"}
+        </p>
       </div>
-      <div className="px-3 py-2 flex flex-col gap-1.5">
-        <input
-          value={company}
-          onChange={(e) => setCompany(e.target.value)}
-          onBlur={handleBlur}
-          onClick={(e) => e.stopPropagation()}
-          placeholder="Company name…"
-          className="w-full bg-transparent border-b border-zinc-200 dark:border-zinc-700 text-xs outline-none pb-0.5"
-        />
-        {researching && (
-          <p className="text-[10px] text-cyan-600 italic animate-pulse">Researching…</p>
-        )}
-        {d.dbNode.notes && !researching && (
+      <div className="px-3 py-2">
+        {hasNotes ? (
           <p className="text-[10px] text-zinc-500 line-clamp-3">{d.dbNode.notes}</p>
-        )}
-        {!d.dbNode.notes && !researching && company && (
-          <p className="text-[10px] text-zinc-400 italic">No research yet</p>
+        ) : (
+          <p className="text-[10px] text-zinc-400 italic">
+            {hasName ? "Click to add research →" : "Click to set company name →"}
+          </p>
         )}
       </div>
       <Handle type="source" position={Position.Right} />
@@ -656,7 +643,9 @@ interface EditorProps {
 function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorProps) {
   const updateNode = useActionMutation("update-messaging-node");
   const deleteNode = useActionMutation("delete-messaging-node");
+  const researchCompany = useActionMutation("research-company");
 
+  const isCompany = node?.type === "company";
   const isPersona = node?.type === "persona";
   const isGlobal = (node?.type as string) === "global";
   const readOnly = (isGlobal || isPersona) && !isAdmin;
@@ -705,9 +694,24 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     onClose();
   }
 
+  async function handleAddResearch() {
+    if (!node || !title.trim()) return;
+    await updateNode.mutateAsync({ id: node.id, title });
+    onSaved({ title });
+    try {
+      const result = await researchCompany.mutateAsync({ nodeId: node.id, companyName: title.trim() }) as { notes: string };
+      setNotes(result.notes ?? "");
+      onSaved({ title, notes: result.notes });
+      toast.success("Research complete");
+    } catch {
+      toast.error("Research failed — try again.");
+    }
+  }
+
   const NOTES_ONLY_TYPES = new Set([
     "metrics", "economic_buyer", "decision_criteria", "decision_process",
     "paper_process", "identify_pain", "champion", "competition", "persona_ref",
+    "company",
   ]);
   const showNotes = isGlobal || isPersona || node?.type === "role" || NOTES_ONLY_TYPES.has(node?.type ?? "");
   const showTone = isGlobal || isPersona || node?.type === "tone" || node?.type === "role";
@@ -738,15 +742,29 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
           </EditorField>
 
           {showNotes && (
-            <EditorField label={node?.type === "role" ? "Role description" : "Notes"} readOnly={readOnly}>
+            <EditorField
+              label={isCompany ? "Research Notes" : node?.type === "role" ? "Role description" : "Notes"}
+              readOnly={readOnly}
+            >
               <textarea
                 className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                rows={3}
+                rows={isCompany ? 8 : 3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                disabled={readOnly}
-                placeholder={node?.type === "role" ? "e.g. When messaging VPs of Engineering, lead with reliability and team impact..." : "Any other instructions for the AI..."}
+                disabled={readOnly || researchCompany.isPending}
+                placeholder={
+                  isCompany
+                    ? "Research results will appear here after you click Add Research…"
+                    : node?.type === "role"
+                    ? "e.g. When messaging VPs of Engineering, lead with reliability and team impact..."
+                    : "Any other instructions for the AI..."
+                }
               />
+              {researchCompany.isPending && (
+                <p className="text-[11px] text-cyan-600 italic animate-pulse flex items-center gap-1">
+                  <IconRefresh size={11} className="animate-spin" /> Researching {title}…
+                </p>
+              )}
             </EditorField>
           )}
 
@@ -817,14 +835,37 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
 
           {!readOnly && (
             <div className="flex items-center gap-2 pt-2">
-              <Button onClick={handleSave} disabled={updateNode.isPending} className="flex-1">
-                {updateNode.isPending && <IconRefresh className="animate-spin mr-1" size={13} />}
-                Save
-              </Button>
-              {!isGlobal && !isPersona && (
-                <Button variant="destructive" onClick={handleDelete} disabled={deleteNode.isPending}>
-                  <IconTrash size={14} />
-                </Button>
+              {isCompany ? (
+                <>
+                  <Button
+                    onClick={handleAddResearch}
+                    disabled={researchCompany.isPending || !title.trim()}
+                    className="flex-1 gap-1.5"
+                  >
+                    {researchCompany.isPending
+                      ? <><IconRefresh className="animate-spin" size={13} /> Researching…</>
+                      : <><IconSparkles size={13} /> Add Research</>
+                    }
+                  </Button>
+                  <Button variant="outline" onClick={handleSave} disabled={updateNode.isPending} size="sm">
+                    Save
+                  </Button>
+                  <Button variant="destructive" onClick={handleDelete} disabled={deleteNode.isPending} size="sm">
+                    <IconTrash size={14} />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button onClick={handleSave} disabled={updateNode.isPending} className="flex-1">
+                    {updateNode.isPending && <IconRefresh className="animate-spin mr-1" size={13} />}
+                    Save
+                  </Button>
+                  {!isGlobal && !isPersona && (
+                    <Button variant="destructive" onClick={handleDelete} disabled={deleteNode.isPending}>
+                      <IconTrash size={14} />
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -972,7 +1013,6 @@ function toFlowNode(
   onClick: (n: MessagingNode) => void,
   onContextMenu: (n: MessagingNode, e: MouseEvent) => void,
   onDelete: (id: string) => void,
-  onResearch?: (id: string, company: string) => void,
   onPersonaSelect?: (nodeId: string, personaId: string) => void,
 ): Node {
   return {
@@ -987,7 +1027,6 @@ function toFlowNode(
       onClick,
       onContextMenu,
       onDelete,
-      ...(dbNode.type === "company" && onResearch ? { onResearch } : {}),
       ...(dbNode.type === "persona_ref" ? { allPersonas: personas, onPersonaSelect } : {}),
     } as NodeData,
   };
@@ -1051,7 +1090,6 @@ function MessagingCanvas() {
   const deleteNode = useActionMutation("delete-messaging-node");
   const updateNode = useActionMutation("update-messaging-node");
   const generatePreview = useActionMutation("generate-canvas-preview");
-  const researchCompany = useActionMutation("research-company");
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -1181,23 +1219,6 @@ function MessagingCanvas() {
     }));
   }
 
-  function handleCompanyResearch(nodeId: string, companyName: string) {
-    updateNode.mutate({ id: nodeId, title: companyName });
-    researchCompany.mutateAsync({ nodeId, companyName })
-      .then((result) => {
-        const notes = (result as { notes?: string }).notes ?? null;
-        setNodes((nds) => nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, dbNode: { ...(n.data as NodeData).dbNode, notes } } as NodeData }
-            : n,
-        ));
-      })
-      .catch(() => {
-        toast.error("Company research failed.");
-        refetch();
-      });
-  }
-
   function handleGeneratePreview() {
     if (!activeCanvasId) return;
     setPreviewing(true);
@@ -1223,7 +1244,7 @@ function MessagingCanvas() {
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handleCompanyResearch, handlePersonaSelect)));
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handlePersonaSelect)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
@@ -1270,7 +1291,7 @@ function MessagingCanvas() {
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
     }) as MessagingNode;
-    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handleCompanyResearch)]);
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete)]);
     setEditingNode(result);
   }
 
