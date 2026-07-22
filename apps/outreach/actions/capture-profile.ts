@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
 import { buildMessagingContext } from "../server/helpers/build-messaging-context.js";
+import { buildCanvasContext } from "../server/helpers/build-canvas-context.js";
 import { draftProfile } from "../server/helpers/draft-profile.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
@@ -21,6 +22,7 @@ export default defineAction({
     about: z.string().nullish(),
     recentActivity: z.string().nullish(),
     apiToken: z.string().nullish().describe("Personal API token from the user's Settings page"),
+    canvasId: z.string().nullish().describe("Optional messaging canvas ID to use for context"),
   }),
   requiresAuth: false,
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
@@ -83,7 +85,11 @@ export default defineAction({
 
     const { icpText, personaId, personaName, personaColor } = await selectPersona(db, profile);
     const profileSummary = buildProfileSummary(profile);
-    const messagingContext = await buildMessagingContext(personaId, ownerEmail, db);
+    const canvasMessagingContext = args.canvasId
+      ? await buildCanvasContext(args.canvasId, db)
+      : null;
+    const messagingContext =
+      canvasMessagingContext ?? (await buildMessagingContext(personaId, ownerEmail, db));
 
     const { fitVerdict, fitReason, draftNote, draftFollowUp } = await draftProfile({
       icpText,
