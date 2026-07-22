@@ -70,28 +70,33 @@ export async function seedSystemCanvases(db: ReturnType<typeof getDb>): Promise<
 
     const now = new Date().toISOString();
 
-    await db.insert(messagingCanvases).values({
-      id: canvasId,
-      name: template.name,
-      templateSlug: template.slug,
-      isSystem: 1,
-      ownerEmail: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    for (const n of template.nodes) {
-      await db.insert(messagingNodes).values({
-        id: nanoid(),
-        type: n.type,
-        title: n.title,
+    try {
+      await db.insert(messagingCanvases).values({
+        id: canvasId,
+        name: template.name,
+        templateSlug: template.slug,
+        isSystem: 1,
         ownerEmail: null,
-        canvasId,
-        positionX: n.positionX,
-        positionY: n.positionY,
         createdAt: now,
         updatedAt: now,
       });
+
+      for (const n of template.nodes) {
+        await db.insert(messagingNodes).values({
+          id: nanoid(),
+          type: n.type,
+          title: n.title,
+          ownerEmail: null,
+          canvasId,
+          positionX: n.positionX,
+          positionY: n.positionY,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } catch {
+      // A concurrent request already inserted this canvas — silently skip.
+      return;
     }
   }
 }
