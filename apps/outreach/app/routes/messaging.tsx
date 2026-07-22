@@ -44,6 +44,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { APP_TITLE } from "@/lib/app-config";
+import { CanvasTabBar } from "../components/canvas/CanvasTabBar.js";
+import { TemplatePicker, type TemplateSlug } from "../components/canvas/TemplatePicker.js";
 
 export function meta() {
   return [{ title: `${APP_TITLE} — Messaging` }];
@@ -806,7 +808,22 @@ function MessagingCanvas() {
   const { canManageOrg } = useOrgRole();
   const isAdmin = canManageOrg;
 
-  const { data: graph, isLoading, refetch } = useActionQuery<GraphData>("get-messaging-graph", {});
+  const { data: canvasData, refetch: refetchCanvases } = useActionQuery<{
+    canvases: Array<{ id: string; name: string; isSystem: number; templateSlug: string | null }>;
+  }>("list-canvases", {});
+
+  const createCanvas = useActionMutation("create-canvas");
+  const renameCanvas = useActionMutation("rename-canvas");
+  const deleteCanvas = useActionMutation("delete-canvas");
+
+  const [activeCanvasId, setActiveCanvasId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const { data: graph, isLoading, refetch } = useActionQuery<GraphData>(
+    "get-messaging-graph",
+    activeCanvasId ? { canvasId: activeCanvasId } : {},
+    { enabled: !!activeCanvasId },
+  );
   const createNode = useActionMutation("create-messaging-node");
   const createEdge = useActionMutation("create-messaging-edge");
   const deleteEdge = useActionMutation("delete-messaging-edge");
@@ -820,6 +837,24 @@ function MessagingCanvas() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
+
+  const userCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 0);
+  const systemCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 1);
+  const allTabCanvases = [...systemCanvases, ...userCanvases];
+
+  // Show template picker when user has no canvases
+  useEffect(() => {
+    if (canvasData && userCanvases.length === 0) {
+      setPickerOpen(true);
+    }
+  }, [canvasData]);
+
+  // Set active canvas when canvases load
+  useEffect(() => {
+    if (!activeCanvasId && userCanvases.length > 0) {
+      setActiveCanvasId(userCanvases[0].id);
+    }
+  }, [canvasData]);
 
   const personasRef = useRef<Persona[]>([]);
   const hasAutoInitializedRef = useRef(false);
@@ -965,6 +1000,30 @@ function MessagingCanvas() {
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
   }
 
+  async function handleSelectTemplate(slug: TemplateSlug) {
+    setPickerOpen(false);
+    const result = await createCanvas.mutateAsync({ templateSlug: slug }) as { id: string; name: string };
+    await refetchCanvases();
+    setActiveCanvasId(result.id);
+  }
+
+  async function handleRenameCanvas(id: string, name: string) {
+    await renameCanvas.mutateAsync({ id, name });
+    refetchCanvases();
+  }
+
+  async function handleDeleteCanvas(id: string) {
+    await deleteCanvas.mutateAsync({ id });
+    await refetchCanvases();
+    const remaining = userCanvases.filter((c) => c.id !== id);
+    if (remaining.length > 0) {
+      setActiveCanvasId(remaining[0].id);
+    } else {
+      setActiveCanvasId(null);
+      setPickerOpen(true);
+    }
+  }
+
   if (isLoading) {
     return <div className="flex h-full items-center justify-center text-sm text-zinc-500">Loading canvas…</div>;
   }
@@ -1020,6 +1079,20 @@ function MessagingCanvas() {
           <IconRefresh size={14} />
         </Button>
       </div>
+
+      <CanvasTabBar
+        canvases={allTabCanvases}
+        activeId={activeCanvasId ?? ""}
+        onSelect={setActiveCanvasId}
+        onAdd={() => setPickerOpen(true)}
+        onRename={handleRenameCanvas}
+        onDelete={handleDeleteCanvas}
+      />
+      <TemplatePicker
+        open={pickerOpen}
+        onSelect={handleSelectTemplate}
+        onClose={userCanvases.length > 0 ? () => setPickerOpen(false) : undefined}
+      />
 
       {/* Legend */}
       <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-1.5 dark:border-zinc-800/50 flex-wrap">
