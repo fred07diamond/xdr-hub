@@ -25,6 +25,7 @@ import {
 import type { Connection, Edge, EdgeProps, Node, NodeProps } from "@xyflow/react";
 import {
   IconBriefcase,
+  IconBuilding,
   IconFileUpload,
   IconLock,
   IconMicrophone2,
@@ -53,7 +54,7 @@ export function meta() {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type NodeKind = "persona" | "tone" | "phrase_rule" | "example" | "role";
+type NodeKind = "persona" | "tone" | "phrase_rule" | "example" | "role" | "company";
 
 interface MessagingNode {
   id: string;
@@ -137,6 +138,13 @@ const NODE_CONFIG: Record<NodeKind, {
     Icon: IconBriefcase,
     description: "Adjustments when messaging a specific role/title",
     previewFields: ["notes", "tone", "phrasesToUse", "phrasesToAvoid"],
+  },
+  company: {
+    label: "Company",
+    color: "#0e7490",
+    Icon: IconBuilding,
+    description: "Company context — auto-researches from the internet",
+    previewFields: ["notes"],
   },
 };
 
@@ -230,7 +238,53 @@ function CanvasNode({ data }: NodeProps) {
   );
 }
 
-const nodeTypes = { persona: CanvasNode, tone: CanvasNode, phrase_rule: CanvasNode, example: CanvasNode, role: CanvasNode };
+function CompanyNode({ data }: NodeProps) {
+  const d = data as NodeData & { onResearch: (id: string, company: string) => void };
+  const [company, setCompany] = useState(d.dbNode.title === "Company" ? "" : d.dbNode.title);
+  const [researching, setResearching] = useState(false);
+  const prevCompanyRef = useRef(company);
+
+  function handleBlur() {
+    const trimmed = company.trim();
+    if (!trimmed || trimmed === prevCompanyRef.current) return;
+    prevCompanyRef.current = trimmed;
+    setResearching(true);
+    d.onResearch(d.dbNode.id, trimmed);
+  }
+
+  return (
+    <div
+      className="rounded-xl border-2 border-cyan-600 bg-white dark:bg-zinc-900 shadow-md w-[220px] overflow-hidden"
+      onClick={() => d.onClick(d.dbNode)}
+    >
+      <Handle type="target" position={Position.Left} />
+      <div className="flex items-center gap-1.5 px-3 py-2 text-white bg-cyan-700">
+        <IconBuilding size={12} className="shrink-0 opacity-90" />
+        <p className="text-[11px] font-semibold flex-1 truncate">Company</p>
+      </div>
+      <div className="px-3 py-2 flex flex-col gap-1.5">
+        <input
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          onBlur={handleBlur}
+          onClick={(e) => e.stopPropagation()}
+          placeholder="Company name…"
+          className="w-full bg-transparent border-b border-zinc-200 dark:border-zinc-700 text-xs outline-none pb-0.5"
+        />
+        {researching && (
+          <p className="text-[10px] text-cyan-600 italic animate-pulse">Researching…</p>
+        )}
+        {d.dbNode.notes && !researching && (
+          <p className="text-[10px] text-zinc-500 line-clamp-3">{d.dbNode.notes}</p>
+        )}
+        {!d.dbNode.notes && !researching && company && (
+          <p className="text-[10px] text-zinc-400 italic">No research yet</p>
+        )}
+      </div>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
 
 // Walks edges upward from each node to find its persona root.
 function computeAncestorPersonas(
@@ -321,8 +375,8 @@ const edgeTypes = { deletable: DeletableEdge };
 
 // ── Node type palette ──────────────────────────────────────────────────────────
 
-type PaletteKind = "tone" | "phrase_rule" | "example" | "role";
-const PALETTE_TYPES: PaletteKind[] = ["tone", "phrase_rule", "example", "role"];
+type PaletteKind = "tone" | "phrase_rule" | "example" | "role" | "company";
+const PALETTE_TYPES: PaletteKind[] = ["tone", "phrase_rule", "example", "role", "company"];
 
 function NodePalette({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
   return (
@@ -757,6 +811,7 @@ function toFlowNode(
   ancestorPersonaMap: Map<string, Persona>,
   isAdmin: boolean,
   onClick: (n: MessagingNode) => void,
+  onResearch?: (id: string, company: string) => void,
 ): Node {
   return {
     id: dbNode.id,
@@ -768,6 +823,7 @@ function toFlowNode(
       ancestorPersona: ancestorPersonaMap.get(dbNode.id),
       isAdmin,
       onClick,
+      ...(dbNode.type === "company" && onResearch ? { onResearch } : {}),
     } as NodeData,
   };
 }
@@ -878,6 +934,29 @@ function MessagingCanvas() {
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
 
+  const nodeTypes = useMemo(() => ({
+    persona: CanvasNode,
+    tone: CanvasNode,
+    phrase_rule: CanvasNode,
+    example: CanvasNode,
+    role: CanvasNode,
+    company: CompanyNode,
+  }), []);
+
+  function handleCompanyResearch(nodeId: string, companyName: string) {
+    updateNode.mutate({ id: nodeId, title: companyName });
+    pendingBuildRef.current = true;
+    sendToAgentChat({
+      message:
+        `Research the company "${companyName}" and write a concise summary for use in LinkedIn outreach. ` +
+        `Cover: industry, company size, recent news or announcements, key business initiatives, GTM motion, ` +
+        `and inferred buyer pain points that would make them receptive to outreach.\n\n` +
+        `When done, call update-messaging-node with id="${nodeId}" and set notes to your summary. ` +
+        `Keep it under 200 words, factual, no fluff.`,
+      submit: true,
+    });
+  }
+
   const ancestorPersonaMap = useMemo(
     () => graph ? computeAncestorPersonas(graph.nodes, graph.edges, graph.personas) : new Map<string, Persona>(),
     [graph],
@@ -888,7 +967,7 @@ function MessagingCanvas() {
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor)));
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleCompanyResearch)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
@@ -934,7 +1013,7 @@ function MessagingCanvas() {
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
     }) as MessagingNode;
-    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor)]);
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleCompanyResearch)]);
     setEditingNode(result);
   }
 
