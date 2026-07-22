@@ -1237,6 +1237,7 @@ function MessagingCanvas() {
         <Button
           size="sm"
           variant="outline"
+          disabled={previewing || !activeCanvasId || !graph}
           onClick={() => { setPreviewOpen(true); handleGeneratePreview(); }}
           className="gap-1.5"
         >
