@@ -47,6 +47,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { APP_TITLE } from "@/lib/app-config";
 import { CanvasTabBar } from "../components/canvas/CanvasTabBar.js";
 import { TemplatePicker, type TemplateSlug } from "../components/canvas/TemplatePicker.js";
+import { PreviewPanel } from "../components/canvas/PreviewPanel.js";
 
 export function meta() {
   return [{ title: `${APP_TITLE} — Messaging` }];
@@ -897,6 +898,9 @@ function MessagingCanvas() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const previewPendingRef = useRef(false);
 
   const userCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 0);
   const systemCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 1);
@@ -928,9 +932,16 @@ function MessagingCanvas() {
   const [isGenerating] = useAgentChatGenerating();
   const wasGeneratingRef = useRef(false);
   useEffect(() => {
-    if (wasGeneratingRef.current && !isGenerating && pendingBuildRef.current) {
-      pendingBuildRef.current = false;
-      refetch();
+    if (wasGeneratingRef.current && !isGenerating) {
+      if (previewPendingRef.current) {
+        previewPendingRef.current = false;
+        setPreviewing(false);
+        // The result is in the agent chat panel — no need to extract it
+      }
+      if (pendingBuildRef.current) {
+        pendingBuildRef.current = false;
+        refetch();
+      }
     }
     wasGeneratingRef.current = isGenerating;
   }, [isGenerating, refetch]);
@@ -957,6 +968,26 @@ function MessagingCanvas() {
         `and inferred buyer pain points that would make them receptive to outreach.\n\n` +
         `When done, call update-messaging-node with id="${nodeId}" and set notes to your summary. ` +
         `Keep it under 200 words, factual, no fluff.`,
+      submit: true,
+    });
+  }
+
+  function handleGeneratePreview() {
+    if (!graph || !activeCanvasId) return;
+    setPreviewing(true);
+    previewPendingRef.current = true;
+
+    const nodesSummary = graph.nodes
+      .filter((n) => n.tone || n.valueProps || n.phrasesToUse || n.phrasesToAvoid || n.exampleNotes || n.notes)
+      .map((n) => `[${n.type.toUpperCase()}: ${n.title}]\n${[n.tone, n.valueProps, n.phrasesToUse, n.phrasesToAvoid, n.exampleNotes, n.notes].filter(Boolean).join(" | ")}`)
+      .join("\n\n");
+
+    sendToAgentChat({
+      message:
+        `Generate a sample LinkedIn connection note using the messaging canvas below. ` +
+        `Draft it as if messaging a fictional prospect: Alex Chen, VP of Sales at a mid-size B2B SaaS company. ` +
+        `Do NOT call any actions. Just write the connection note — 200–300 characters — and reply with ONLY the note, no preamble.\n\n` +
+        `## Canvas guidelines\n${nodesSummary || "(empty canvas — use a neutral professional tone)"}`,
       submit: true,
     });
   }
@@ -1164,6 +1195,15 @@ function MessagingCanvas() {
         </p>
         <Button
           size="sm"
+          variant="outline"
+          onClick={() => { setPreviewOpen(true); handleGeneratePreview(); }}
+          className="gap-1.5"
+        >
+          <IconSparkles size={14} />
+          Preview message
+        </Button>
+        <Button
+          size="sm"
           onClick={() => setBuildOpen(true)}
           className="gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-700 hover:to-indigo-700 border-0"
         >
@@ -1231,7 +1271,7 @@ function MessagingCanvas() {
       </div>
 
       {/* Canvas */}
-      <div className="flex-1">
+      <div className="flex-1 relative">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1260,6 +1300,13 @@ function MessagingCanvas() {
             maskColor="rgba(0,0,0,0.05)"
           />
         </ReactFlow>
+        <PreviewPanel
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          onGenerate={handleGeneratePreview}
+          preview={null}
+          generating={previewing}
+        />
       </div>
 
       <ImportDocDialog open={importOpen} onClose={() => setImportOpen(false)} personas={personas} />
