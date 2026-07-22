@@ -88,6 +88,7 @@ interface GraphData {
   nodes: MessagingNode[];
   edges: MessagingEdge[];
   personas: Persona[];
+  activeCanvasId: string;
   newPersonaNodeIds?: string[];
 }
 
@@ -893,6 +894,7 @@ function MessagingCanvas() {
     setPaletteOpen(false);
     const pos = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const result = await createNode.mutateAsync({
+      canvasId: graph!.activeCanvasId,
       nodeType,
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
@@ -912,7 +914,7 @@ function MessagingCanvas() {
     async (conn: Connection) => {
       const optimistic = addEdge({ ...conn, type: "deletable", animated: false, style: { stroke: "#94a3b8", strokeWidth: 1.5 }, markerEnd: { type: "arrowclosed" as any, color: "#94a3b8" } }, edges);
       setEdges(optimistic);
-      const res = await createEdge.mutateAsync({ sourceId: conn.source!, targetId: conn.target! }) as any;
+      const res = await createEdge.mutateAsync({ canvasId: graph!.activeCanvasId, sourceId: conn.source!, targetId: conn.target! }) as any;
       if (res?.ok === false) {
         toast.error(res.error ?? "Could not connect nodes.");
         setEdges(edges);

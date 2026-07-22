@@ -9,12 +9,14 @@ const DEFAULT_TITLES: Record<string, string> = {
   phrase_rule: "Phrase Rule",
   example: "Example Note",
   role: "Role Targeting",
+  company: "Company",
 };
 
 export default defineAction({
   description: "Create a new typed messaging node on the canvas, owned by the current user. Pass content fields to populate the node in one call — avoids a follow-up update.",
   schema: z.object({
-    nodeType: z.enum(["tone", "phrase_rule", "example", "role"]).default("tone"),
+    canvasId: z.string(),
+    nodeType: z.enum(["tone", "phrase_rule", "example", "role", "company"]).default("tone"),
     title: z.string().min(1).max(120).optional(),
     positionX: z.number().int().default(300),
     positionY: z.number().int().default(300),
@@ -26,7 +28,7 @@ export default defineAction({
     notes: z.string().nullable().optional(),
   }),
   requiresAuth: true,
-  run: async ({ nodeType, title: titleArg, positionX, positionY, tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes }, ctx) => {
+  run: async ({ canvasId, nodeType, title: titleArg, positionX, positionY, tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes }, ctx) => {
     const db = getDb();
     const id = nanoid();
     const now = new Date().toISOString();
@@ -37,6 +39,7 @@ export default defineAction({
       type: nodeType,
       title,
       ownerEmail: ctx!.userEmail,
+      canvasId,
       positionX,
       positionY,
       tone: tone ?? null,
@@ -54,6 +57,7 @@ export default defineAction({
       type: nodeType,
       title,
       ownerEmail: ctx!.userEmail,
+      canvasId,
       personaId: null,
       tone: tone ?? null,
       valueProps: valueProps ?? null,
