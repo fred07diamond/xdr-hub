@@ -924,7 +924,7 @@ function MessagingCanvas() {
         ));
       }
     },
-    [edges, createEdge],
+    [edges, createEdge, graph],
   );
 
   const handleEdgesDelete = useCallback(
