@@ -39,6 +39,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -167,7 +168,7 @@ interface NodeData extends Record<string, unknown> {
   ancestorPersona: Persona | undefined; // for child nodes: the persona this tree traces back to
   isAdmin: boolean;
   onClick: (node: MessagingNode) => void;
-  onContextMenu: (node: MessagingNode, event: React.MouseEvent) => void;
+  onContextMenu: (node: MessagingNode, event: MouseEvent) => void;
 }
 
 // ── Unified canvas node component ──────────────────────────────────────────────
@@ -819,7 +820,7 @@ function toFlowNode(
   ancestorPersonaMap: Map<string, Persona>,
   isAdmin: boolean,
   onClick: (n: MessagingNode) => void,
-  onContextMenu: (n: MessagingNode, e: React.MouseEvent) => void,
+  onContextMenu: (n: MessagingNode, e: MouseEvent) => void,
   onResearch?: (id: string, company: string) => void,
 ): Node {
   return {
@@ -957,7 +958,7 @@ function MessagingCanvas() {
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
 
-  const handleNodeContextMenu = useCallback((node: MessagingNode, e: React.MouseEvent) => {
+  const handleNodeContextMenu = useCallback((node: MessagingNode, e: MouseEvent) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, node });
   }, []);
