@@ -169,6 +169,7 @@ interface NodeData extends Record<string, unknown> {
   isAdmin: boolean;
   onClick: (node: MessagingNode) => void;
   onContextMenu: (node: MessagingNode, event: MouseEvent) => void;
+  onDelete: (id: string) => void;
 }
 
 // ── Unified canvas node component ──────────────────────────────────────────────
@@ -187,11 +188,24 @@ function CanvasNode({ data }: NodeProps) {
 
   return (
     <div
-      className="rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden"
+      className="relative rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden group"
       style={accentColor ? { borderLeft: `3px solid ${accentColor}` } : undefined}
       onClick={() => d.onClick(d.dbNode)}
       onContextMenu={(e) => { e.preventDefault(); d.onContextMenu(d.dbNode, e); }}
     >
+      {/* Hover delete — only for non-persona, non-global nodes */}
+      {!isPersona && !isGlobal && (
+        <button
+          type="button"
+          className="absolute top-1 right-1 z-10 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-black/20 hover:bg-destructive text-white transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            d.onDelete(d.dbNode.id);
+          }}
+        >
+          <IconX size={9} />
+        </button>
+      )}
       {/* Header */}
       <div
         className="flex items-center gap-1.5 px-3 py-2 text-white"
@@ -821,6 +835,7 @@ function toFlowNode(
   isAdmin: boolean,
   onClick: (n: MessagingNode) => void,
   onContextMenu: (n: MessagingNode, e: MouseEvent) => void,
+  onDelete: (id: string) => void,
   onResearch?: (id: string, company: string) => void,
 ): Node {
   return {
@@ -834,6 +849,7 @@ function toFlowNode(
       isAdmin,
       onClick,
       onContextMenu,
+      onDelete,
       ...(dbNode.type === "company" && onResearch ? { onResearch } : {}),
     } as NodeData,
   };
@@ -958,6 +974,11 @@ function MessagingCanvas() {
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
 
+  const handleHoverDelete = useCallback((id: string) => {
+    deleteNode.mutate({ id });
+    handleNodeDeleted(id);
+  }, [deleteNode]);
+
   const handleNodeContextMenu = useCallback((node: MessagingNode, e: MouseEvent) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, node });
@@ -1044,7 +1065,7 @@ function MessagingCanvas() {
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleCompanyResearch)));
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handleCompanyResearch)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
@@ -1090,7 +1111,7 @@ function MessagingCanvas() {
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
     }) as MessagingNode;
-    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleCompanyResearch)]);
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handleCompanyResearch)]);
     setEditingNode(result);
   }
 
