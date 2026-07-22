@@ -80,6 +80,7 @@ export const messagingNodes = table("messaging_nodes", {
   type: text("type").notNull().default("user"),
   title: text("title").notNull().default("New Node"),
   ownerEmail: text("owner_email"),
+  canvasId: text("canvas_id"),
   personaId: text("persona_id"),
   tone: text("tone"),
   valueProps: text("value_props"),
@@ -100,7 +101,20 @@ export const messagingEdges = table("messaging_edges", {
   sourceId: text("source_id").notNull(),
   targetId: text("target_id").notNull(),
   ownerEmail: text("owner_email"),
+  canvasId: text("canvas_id"),
   createdAt: text("created_at").default(now()),
+});
+
+// Named messaging canvases. System templates have is_system=1 and no owner_email.
+// User-created canvases are scoped by owner_email.
+export const messagingCanvases = table("messaging_canvases", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  templateSlug: text("template_slug"),      // "account" | "role" | "prospect" | "blank" | null
+  isSystem: integer("is_system").notNull().default(0),
+  ownerEmail: text("owner_email"),           // null for system templates
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
 });
 
 // Singleton row that holds ICP configuration.

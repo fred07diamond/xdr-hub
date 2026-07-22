@@ -177,6 +177,28 @@ export default runMigrations(
     { version: 28, sql: `CREATE INDEX IF NOT EXISTS send_history_owner_url ON send_history(owner_email, profile_url)` },
     { version: 29, sql: `CREATE INDEX IF NOT EXISTS api_tokens_token ON api_tokens(token)` },
     { version: 30, sql: `CREATE INDEX IF NOT EXISTS icp_personas_active ON icp_personas(is_active)` },
+    {
+      version: 31,
+      sql: `CREATE TABLE IF NOT EXISTS messaging_canvases (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        template_slug TEXT,
+        is_system INTEGER NOT NULL DEFAULT 0,
+        owner_email TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    { version: 32, sql: `ALTER TABLE messaging_nodes ADD COLUMN canvas_id TEXT` },
+    { version: 33, sql: `ALTER TABLE messaging_edges ADD COLUMN canvas_id TEXT` },
+    {
+      version: 34,
+      sql: `CREATE INDEX IF NOT EXISTS messaging_nodes_canvas ON messaging_nodes(canvas_id)`,
+    },
+    {
+      version: 35,
+      sql: `CREATE INDEX IF NOT EXISTS messaging_edges_canvas ON messaging_edges(canvas_id)`,
+    },
   ],
   { table: "outreach_migrations" },
 );

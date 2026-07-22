@@ -94,6 +94,7 @@ export default defineAction({
           type: "persona",
           title: persona.name,
           ownerEmail: null,
+          canvasId: null,
           personaId: persona.id,
           tone: null,
           valueProps: null,
