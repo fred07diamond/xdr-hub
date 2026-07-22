@@ -13,26 +13,26 @@ interface Template {
 const TEMPLATES: Template[] = [
   {
     slug: "account",
-    name: "Account Messaging",
-    description: "Build messaging around a specific company or account plan",
+    name: "Account-Based",
+    description: "Company at the root, branches to org-level tone and role-specific messaging. The trickle-down model.",
     Icon: IconBuilding,
   },
   {
     slug: "role",
-    name: "Role Messaging",
-    description: "Target a specific job function or seniority level",
+    name: "Role-Based",
+    description: "Target a specific buyer persona. Pain-centric with role-specific language and example notes.",
     Icon: IconBriefcase,
   },
   {
     slug: "prospect",
-    name: "Prospect Messaging",
-    description: "Personalized one-to-one outreach for an individual",
+    name: "Prospect-Driven",
+    description: "Signal-led, ultra-personalized. Built for when you've done real research on a specific person.",
     Icon: IconUser,
   },
   {
     slug: "blank",
     name: "Blank",
-    description: "Empty canvas — start from scratch",
+    description: "Start with a single persona node and build your own structure from scratch.",
     Icon: IconX,
   },
 ];

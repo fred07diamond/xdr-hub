@@ -931,7 +931,7 @@ function MessagingCanvas() {
 
   const userCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 0);
   const systemCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 1);
-  const allTabCanvases = [...systemCanvases, ...userCanvases];
+  const allTabCanvases = userCanvases;
 
   // Show template picker when user has no canvases
   useEffect(() => {

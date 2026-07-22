@@ -4,13 +4,13 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { messagingCanvases, messagingNodes } from "../server/db/schema.js";
+import { messagingCanvases, messagingEdges, messagingNodes } from "../server/db/schema.js";
 import { SYSTEM_CANVAS_IDS } from "../server/helpers/seed-system-canvases.js";
 
 const TEMPLATE_NAMES: Record<string, string> = {
-  account:  "Account Messaging",
-  role:     "Role Messaging",
-  prospect: "Prospect Messaging",
+  account:  "Account-Based",
+  role:     "Role-Based",
+  prospect: "Prospect-Driven",
   blank:    "Blank",
 };
 
@@ -51,7 +51,7 @@ export default defineAction({
       updatedAt: now,
     });
 
-    // Copy template nodes into the new canvas (skip blank)
+    // Copy template nodes and edges into the new canvas (skip blank)
     if (templateSlug !== "blank") {
       const systemCanvasId = SYSTEM_CANVAS_IDS[templateSlug as keyof typeof SYSTEM_CANVAS_IDS];
       const templateNodes = await db
@@ -59,14 +59,38 @@ export default defineAction({
         .from(messagingNodes)
         .where(eq(messagingNodes.canvasId, systemCanvasId));
 
+      // Build old-id → new-id map for edge remapping
+      const nodeIdMap = new Map<string, string>();
       for (const n of templateNodes) {
+        const newId = nanoid();
+        nodeIdMap.set(n.id, newId);
         await db.insert(messagingNodes).values({
           ...n,
-          id: nanoid(),
+          id: newId,
           ownerEmail,
           canvasId,
           createdAt: now,
           updatedAt: now,
+        });
+      }
+
+      // Copy edges, remapping node IDs
+      const templateEdges = await db
+        .select()
+        .from(messagingEdges)
+        .where(eq(messagingEdges.canvasId, systemCanvasId));
+
+      for (const e of templateEdges) {
+        const newSourceId = nodeIdMap.get(e.sourceId);
+        const newTargetId = nodeIdMap.get(e.targetId);
+        if (!newSourceId || !newTargetId) continue;
+        await db.insert(messagingEdges).values({
+          id: nanoid(),
+          sourceId: newSourceId,
+          targetId: newTargetId,
+          ownerEmail,
+          canvasId,
+          createdAt: now,
         });
       }
     }
