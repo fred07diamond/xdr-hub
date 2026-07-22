@@ -48,6 +48,7 @@ import { APP_TITLE } from "@/lib/app-config";
 import { CanvasTabBar } from "../components/canvas/CanvasTabBar.js";
 import { TemplatePicker, type TemplateSlug } from "../components/canvas/TemplatePicker.js";
 import { PreviewPanel } from "../components/canvas/PreviewPanel.js";
+import { NodeContextMenu } from "../components/canvas/NodeContextMenu.js";
 
 export function meta() {
   return [{ title: `${APP_TITLE} — Messaging` }];
@@ -166,6 +167,7 @@ interface NodeData extends Record<string, unknown> {
   ancestorPersona: Persona | undefined; // for child nodes: the persona this tree traces back to
   isAdmin: boolean;
   onClick: (node: MessagingNode) => void;
+  onContextMenu: (node: MessagingNode, event: React.MouseEvent) => void;
 }
 
 // ── Unified canvas node component ──────────────────────────────────────────────
@@ -187,6 +189,7 @@ function CanvasNode({ data }: NodeProps) {
       className="rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden"
       style={accentColor ? { borderLeft: `3px solid ${accentColor}` } : undefined}
       onClick={() => d.onClick(d.dbNode)}
+      onContextMenu={(e) => { e.preventDefault(); d.onContextMenu(d.dbNode, e); }}
     >
       {/* Header */}
       <div
@@ -816,6 +819,7 @@ function toFlowNode(
   ancestorPersonaMap: Map<string, Persona>,
   isAdmin: boolean,
   onClick: (n: MessagingNode) => void,
+  onContextMenu: (n: MessagingNode, e: React.MouseEvent) => void,
   onResearch?: (id: string, company: string) => void,
 ): Node {
   return {
@@ -828,6 +832,7 @@ function toFlowNode(
       ancestorPersona: ancestorPersonaMap.get(dbNode.id),
       isAdmin,
       onClick,
+      onContextMenu,
       ...(dbNode.type === "company" && onResearch ? { onResearch } : {}),
     } as NodeData,
   };
@@ -901,6 +906,9 @@ function MessagingCanvas() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const previewPendingRef = useRef(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number; node: MessagingNode;
+  } | null>(null);
 
   const userCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 0);
   const systemCanvases = (canvasData?.canvases ?? []).filter((c) => c.isSystem === 1);
@@ -948,6 +956,39 @@ function MessagingCanvas() {
   const { screenToFlowPosition } = useReactFlow();
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
+
+  const handleNodeContextMenu = useCallback((node: MessagingNode, e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, node });
+  }, []);
+
+  function handleAIAction(action: "variations" | "generate" | "rewrite", nodeId: string) {
+    const node = graph?.nodes.find((n) => n.id === nodeId);
+    if (!node || !activeCanvasId) return;
+
+    const nodeContent = [node.tone, node.valueProps, node.phrasesToUse, node.phrasesToAvoid, node.exampleNotes, node.notes]
+      .filter(Boolean).join("\n");
+
+    const prompts: Record<typeof action, string> = {
+      variations:
+        `Create 2 alternative versions of this messaging node and add them to the canvas.\n\n` +
+        `Original node id: ${node.id}\nType: ${node.type}\nTitle: ${node.title}\nContent:\n${nodeContent || "(empty)"}\n\n` +
+        `For each variation, call create-messaging-node with canvasId="${activeCanvasId}", the same nodeType="${node.type}", ` +
+        `a slightly different title (e.g. "${node.title} — Variant A"), and different content. ` +
+        `Place them at positionX=${node.positionX + 260}, positionY=${node.positionY} and positionY=${node.positionY + 240}.`,
+      generate:
+        `Fill this empty messaging node with content based on the rest of the canvas.\n\n` +
+        `Node id: ${node.id}\nType: ${node.type}\nTitle: ${node.title}\n\n` +
+        `Call update-messaging-node with id="${node.id}" and fill in appropriate content fields for this node type.`,
+      rewrite:
+        `Rewrite this messaging node's content from a different angle while keeping the same node type and structure.\n\n` +
+        `Node id: ${node.id}\nType: ${node.type}\nTitle: ${node.title}\nCurrent content:\n${nodeContent || "(empty)"}\n\n` +
+        `Call update-messaging-node with id="${node.id}" and replace the content fields with a rewritten version.`,
+    };
+
+    pendingBuildRef.current = true;
+    sendToAgentChat({ message: prompts[action], submit: true });
+  }
 
   const nodeTypes = useMemo(() => ({
     persona: CanvasNode,
@@ -1002,7 +1043,7 @@ function MessagingCanvas() {
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleCompanyResearch)));
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleCompanyResearch)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
@@ -1048,7 +1089,7 @@ function MessagingCanvas() {
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
     }) as MessagingNode;
-    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleCompanyResearch)]);
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleCompanyResearch)]);
     setEditingNode(result);
   }
 
@@ -1326,6 +1367,20 @@ function MessagingCanvas() {
         onSaved={handleNodeSaved}
         onDeleted={handleNodeDeleted}
       />
+
+      {contextMenu && (
+        <NodeContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          node={contextMenu.node}
+          onClose={() => setContextMenu(null)}
+          onDelete={() => {
+            deleteNode.mutate({ id: contextMenu.node.id });
+            handleNodeDeleted(contextMenu.node.id);
+          }}
+          onAIAction={handleAIAction}
+        />
+      )}
     </div>
   );
 }
