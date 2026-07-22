@@ -244,6 +244,10 @@ function CompanyNode({ data }: NodeProps) {
   const [researching, setResearching] = useState(false);
   const prevCompanyRef = useRef(company);
 
+  useEffect(() => {
+    if (d.dbNode.notes) setResearching(false);
+  }, [d.dbNode.notes]);
+
   function handleBlur() {
     const trimmed = company.trim();
     if (!trimmed || trimmed === prevCompanyRef.current) return;
