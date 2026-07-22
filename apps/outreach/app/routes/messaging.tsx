@@ -1081,9 +1081,14 @@ function MessagingCanvas() {
 
   async function handleSelectTemplate(slug: TemplateSlug) {
     setPickerOpen(false);
-    const result = await createCanvas.mutateAsync({ templateSlug: slug }) as { id: string; name: string };
-    await refetchCanvases();
-    setActiveCanvasId(result.id);
+    try {
+      const result = await createCanvas.mutateAsync({ templateSlug: slug }) as { id: string; name: string };
+      await refetchCanvases();
+      setActiveCanvasId(result.id);
+    } catch {
+      setPickerOpen(true);
+      toast.error("Could not create canvas. Please try again.");
+    }
   }
 
   async function handleRenameCanvas(id: string, name: string) {
@@ -1103,17 +1108,43 @@ function MessagingCanvas() {
     }
   }
 
+  const tabBar = (
+    <CanvasTabBar
+      canvases={allTabCanvases}
+      activeId={activeCanvasId ?? ""}
+      onSelect={setActiveCanvasId}
+      onAdd={() => setPickerOpen(true)}
+      onRename={handleRenameCanvas}
+      onDelete={handleDeleteCanvas}
+    />
+  );
+  const templatePicker = (
+    <TemplatePicker
+      open={pickerOpen}
+      onSelect={handleSelectTemplate}
+      onClose={userCanvases.length > 0 ? () => setPickerOpen(false) : undefined}
+    />
+  );
+
   if (isLoading) {
-    return <div className="flex h-full items-center justify-center text-sm text-zinc-500">Loading canvas…</div>;
+    return (
+      <div className="flex h-full flex-col">
+        {tabBar}{templatePicker}
+        <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">Loading canvas…</div>
+      </div>
+    );
   }
 
   if (graph && graph.personas.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <IconUsers size={32} className="mx-auto mb-3 text-zinc-300" />
-          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">No ICP personas yet</p>
-          <p className="mt-1 text-xs text-zinc-400">Create personas on the ICP tab, then come back here to add messaging guidelines.</p>
+      <div className="flex h-full flex-col">
+        {tabBar}{templatePicker}
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center">
+            <IconUsers size={32} className="mx-auto mb-3 text-zinc-300" />
+            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">No ICP personas yet</p>
+            <p className="mt-1 text-xs text-zinc-400">Create personas on the ICP tab, then come back here to add messaging guidelines.</p>
+          </div>
         </div>
       </div>
     );
