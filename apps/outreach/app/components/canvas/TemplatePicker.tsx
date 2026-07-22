@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import { IconBriefcase, IconBuilding, IconUser, IconX } from "@tabler/icons-react";
 
 export type TemplateSlug = "account" | "role" | "prospect" | "blank";
@@ -6,7 +7,7 @@ interface Template {
   slug: TemplateSlug;
   name: string;
   description: string;
-  Icon: React.ComponentType<{ size?: number; className?: string }>;
+  Icon: ComponentType<{ size?: number; className?: string }>;
 }
 
 const TEMPLATES: Template[] = [
