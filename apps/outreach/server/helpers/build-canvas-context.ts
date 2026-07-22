@@ -1,6 +1,5 @@
-// apps/outreach/server/helpers/build-canvas-context.ts
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/index.js";
+import type { getDb } from "../db/index.js";
 import { messagingNodes } from "../db/schema.js";
 
 type Db = ReturnType<typeof getDb>;
@@ -51,5 +50,6 @@ export async function buildCanvasContext(
     }
   }
 
+  if (lines.length === 1) return null;
   return lines.join("\n").trim();
 }
