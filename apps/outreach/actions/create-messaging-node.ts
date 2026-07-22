@@ -10,16 +10,30 @@ const DEFAULT_TITLES: Record<string, string> = {
   example: "Example Note",
   role: "Role Targeting",
   company: "Company",
+  metrics: "Metrics",
+  economic_buyer: "Economic Buyer",
+  decision_criteria: "Decision Criteria",
+  decision_process: "Decision Process",
+  paper_process: "Paper Process",
+  identify_pain: "Identify Pain",
+  champion: "Champion",
+  competition: "Competition",
+  persona_ref: "Persona",
 };
 
 export default defineAction({
   description: "Create a new typed messaging node on the canvas, owned by the current user. Pass content fields to populate the node in one call — avoids a follow-up update.",
   schema: z.object({
     canvasId: z.string(),
-    nodeType: z.enum(["tone", "phrase_rule", "example", "role", "company"]).default("tone"),
+    nodeType: z.enum([
+      "tone", "phrase_rule", "example", "role", "company",
+      "metrics", "economic_buyer", "decision_criteria", "decision_process",
+      "paper_process", "identify_pain", "champion", "competition", "persona_ref",
+    ]).default("tone"),
     title: z.string().min(1).max(120).optional(),
     positionX: z.number().int().default(300),
     positionY: z.number().int().default(300),
+    personaId: z.string().nullable().optional(),
     tone: z.string().nullable().optional(),
     valueProps: z.string().nullable().optional(),
     phrasesToUse: z.string().nullable().optional(),
@@ -28,7 +42,7 @@ export default defineAction({
     notes: z.string().nullable().optional(),
   }),
   requiresAuth: true,
-  run: async ({ canvasId, nodeType, title: titleArg, positionX, positionY, tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes }, ctx) => {
+  run: async ({ canvasId, nodeType, title: titleArg, positionX, positionY, personaId, tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes }, ctx) => {
     const db = getDb();
     const id = nanoid();
     const now = new Date().toISOString();
@@ -42,6 +56,7 @@ export default defineAction({
       canvasId,
       positionX,
       positionY,
+      personaId: personaId ?? null,
       tone: tone ?? null,
       valueProps: valueProps ?? null,
       phrasesToUse: phrasesToUse ?? null,
@@ -58,7 +73,7 @@ export default defineAction({
       title,
       ownerEmail: ctx!.userEmail,
       canvasId,
-      personaId: null,
+      personaId: personaId ?? null,
       tone: tone ?? null,
       valueProps: valueProps ?? null,
       phrasesToUse: phrasesToUse ?? null,
