@@ -161,6 +161,21 @@ async function getDailyStats() {
   }
 }
 
+async function listCanvases(apiToken) {
+  const { appUrl } = await getSettings();
+  if (!appUrl) return { canvases: [] };
+  try {
+    const tokenParam = apiToken ? `?apiToken=${encodeURIComponent(apiToken)}` : "";
+    const res = await fetch(`${appUrl}/_agent-native/actions/list-canvases${tokenParam}`);
+    if (!res.ok) return { canvases: [] };
+    const json = await res.json();
+    // Extension only shows user-owned canvases (isSystem === 0)
+    return { canvases: (json.canvases ?? []).filter((c) => c.isSystem === 0) };
+  } catch {
+    return { canvases: [] };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "DRAFT_REQUEST") {
     captureThenPoll(msg.data)
@@ -208,6 +223,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     submitFeedback(msg)
       .then((result) => sendResponse(result ?? { ok: false }))
       .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (msg.type === "LIST_CANVASES") {
+    listCanvases(msg.apiToken)
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ canvases: [] }));
     return true;
   }
 });
