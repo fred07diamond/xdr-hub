@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { prospects } from "../server/db/schema.js";
+import { messagingCanvases, prospects } from "../server/db/schema.js";
 import { buildMessagingContext } from "../server/helpers/build-messaging-context.js";
 import { buildCanvasContext } from "../server/helpers/build-canvas-context.js";
 import { draftProfile } from "../server/helpers/draft-profile.js";
@@ -82,6 +82,22 @@ export default defineAction({
       recentActivity: args.recentActivity,
       profileUrl: args.profileUrl,
     };
+
+    // Verify the requested canvas belongs to the owner or is a system canvas.
+    // Silently fall back to null rather than leaking that a canvas ID exists.
+    if (args.canvasId) {
+      const canvas = await db
+        .select()
+        .from(messagingCanvases)
+        .where(eq(messagingCanvases.id, args.canvasId))
+        .limit(1);
+      const allowed =
+        canvas.length > 0 &&
+        (canvas[0].isSystem === 1 || canvas[0].ownerEmail === ownerEmail);
+      if (!allowed) {
+        args = { ...args, canvasId: undefined };
+      }
+    }
 
     const { icpText, personaId, personaName, personaColor } = await selectPersona(db, profile);
     const profileSummary = buildProfileSummary(profile);
