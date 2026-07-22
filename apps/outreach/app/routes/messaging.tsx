@@ -913,6 +913,7 @@ function MessagingCanvas() {
   const deleteNode = useActionMutation("delete-messaging-node");
   const updateNode = useActionMutation("update-messaging-node");
   const generatePreview = useActionMutation("generate-canvas-preview");
+  const researchCompany = useActionMutation("research-company");
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -1025,16 +1026,19 @@ function MessagingCanvas() {
 
   function handleCompanyResearch(nodeId: string, companyName: string) {
     updateNode.mutate({ id: nodeId, title: companyName });
-    pendingBuildRef.current = true;
-    sendToAgentChat({
-      message:
-        `Research the company "${companyName}" and write a concise summary for use in LinkedIn outreach. ` +
-        `Cover: industry, company size, recent news or announcements, key business initiatives, GTM motion, ` +
-        `and inferred buyer pain points that would make them receptive to outreach.\n\n` +
-        `When done, call update-messaging-node with id="${nodeId}" and set notes to your summary. ` +
-        `Keep it under 200 words, factual, no fluff.`,
-      submit: true,
-    });
+    researchCompany.mutateAsync({ nodeId, companyName })
+      .then((result) => {
+        const notes = (result as { notes?: string }).notes ?? null;
+        setNodes((nds) => nds.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, dbNode: { ...(n.data as NodeData).dbNode, notes } } as NodeData }
+            : n,
+        ));
+      })
+      .catch(() => {
+        toast.error("Company research failed.");
+        refetch();
+      });
   }
 
   function handleGeneratePreview() {

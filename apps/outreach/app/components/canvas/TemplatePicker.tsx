@@ -32,7 +32,7 @@ const TEMPLATES: Template[] = [
   {
     slug: "blank",
     name: "Blank",
-    description: "Start with a single persona node and build your own structure from scratch.",
+    description: "Start with a single role node and build your own structure from scratch.",
     Icon: IconX,
   },
 ];
