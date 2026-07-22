@@ -293,7 +293,7 @@ async function loadCanvases() {
     const opt = document.createElement("option");
     opt.value = c.id;
     opt.textContent = c.name;
-    if (c.id === lastCanvasId) opt.selected = true;
+    if (String(c.id) === String(lastCanvasId)) opt.selected = true;
     canvasSelect.appendChild(opt);
   });
 
