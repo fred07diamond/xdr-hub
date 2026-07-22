@@ -912,6 +912,7 @@ function MessagingCanvas() {
   const deleteEdge = useActionMutation("delete-messaging-edge");
   const deleteNode = useActionMutation("delete-messaging-node");
   const updateNode = useActionMutation("update-messaging-node");
+  const generatePreview = useActionMutation("generate-canvas-preview");
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -922,6 +923,7 @@ function MessagingCanvas() {
   const [buildOpen, setBuildOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [previewText, setPreviewText] = useState<string | null>(null);
   const previewPendingRef = useRef(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; node: MessagingNode;
@@ -1036,23 +1038,18 @@ function MessagingCanvas() {
   }
 
   function handleGeneratePreview() {
-    if (!graph || !activeCanvasId) return;
+    if (!activeCanvasId) return;
     setPreviewing(true);
-    previewPendingRef.current = true;
-
-    const nodesSummary = graph.nodes
-      .filter((n) => n.tone || n.valueProps || n.phrasesToUse || n.phrasesToAvoid || n.exampleNotes || n.notes)
-      .map((n) => `[${n.type.toUpperCase()}: ${n.title}]\n${[n.tone, n.valueProps, n.phrasesToUse, n.phrasesToAvoid, n.exampleNotes, n.notes].filter(Boolean).join(" | ")}`)
-      .join("\n\n");
-
-    sendToAgentChat({
-      message:
-        `Generate a sample LinkedIn connection note using the messaging canvas below. ` +
-        `Draft it as if messaging a fictional prospect: Alex Chen, VP of Sales at a mid-size B2B SaaS company. ` +
-        `Do NOT call any actions. Just write the connection note — 200–300 characters — and reply with ONLY the note, no preamble.\n\n` +
-        `## Canvas guidelines\n${nodesSummary || "(empty canvas — use a neutral professional tone)"}`,
-      submit: true,
-    });
+    generatePreview.mutateAsync({ canvasId: activeCanvasId })
+      .then((result) => {
+        setPreviewText((result as { preview?: string | null }).preview ?? null);
+      })
+      .catch(() => {
+        toast.error("Preview generation failed.");
+      })
+      .finally(() => {
+        setPreviewing(false);
+      });
   }
 
   const ancestorPersonaMap = useMemo(
@@ -1103,6 +1100,7 @@ function MessagingCanvas() {
   }, [graph, isAdmin]);
 
   async function handleAddNode(nodeType: PaletteKind) {
+    if (!activeCanvasId || !graph) return;
     setPaletteOpen(false);
     const pos = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const result = await createNode.mutateAsync({
@@ -1368,7 +1366,7 @@ function MessagingCanvas() {
           open={previewOpen}
           onClose={() => setPreviewOpen(false)}
           onGenerate={handleGeneratePreview}
-          preview={null}
+          preview={previewText}
           generating={previewing}
         />
       </div>
