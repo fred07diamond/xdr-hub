@@ -478,7 +478,7 @@ clearTokenBtn.addEventListener("click", () => {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 chrome.storage.local.get(["apiToken", "autoMode"], (result) => {
-  autoModeToggle.checked = result.autoMode !== false; // default ON
+  autoModeToggle.checked = result.autoMode === true; // default OFF
   if (!result.apiToken) {
     showSettings();
   } else {
