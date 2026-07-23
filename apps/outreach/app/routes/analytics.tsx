@@ -1,7 +1,8 @@
-import { useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { useOrgRole } from "@agent-native/core/client/org";
-import { IconChartBar, IconLoader2, IconMessageReport, IconThumbDown, IconThumbUp, IconUsers } from "@tabler/icons-react";
+import { IconChartBar, IconCheck, IconLoader2, IconMessageReport, IconThumbDown, IconThumbUp, IconUsers } from "@tabler/icons-react";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
+import { useState } from "react";
 import { Navigate } from "react-router";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +31,7 @@ export default function AnalyticsRoute() {
   const { canManageOrg } = useOrgRole();
   if (!canManageOrg) return <Navigate to="/" replace />;
   const { data, isLoading, error } = useActionQuery("get-analytics", {});
-  const { data: feedbackData } = useActionQuery("list-feedback", {});
+  const { data: feedbackData, refetch: refetchFeedback } = useActionQuery("list-feedback", {});
 
   if (isLoading) {
     return (
@@ -133,25 +134,34 @@ export default function AnalyticsRoute() {
       <TeamActivitySection byUser={d.byUser} />
 
       {/* User Feedback */}
-      <FeedbackSection feedbackData={feedbackData} />
+      <FeedbackSection feedbackData={feedbackData} refetch={refetchFeedback} />
     </div>
   );
 }
 
-type FeedbackItem = { id: string; userEmail: string | null; sentiment: string | null; message: string; draftNote: string | null; createdAt: string | null };
+type FeedbackItem = { id: string; userEmail: string | null; sentiment: string | null; message: string; draftNote: string | null; createdAt: string | null; resolvedAt: string | null };
 
-function FeedbackSection({ feedbackData }: { feedbackData: unknown }) {
-  const items = (feedbackData as { feedback?: FeedbackItem[] } | undefined)?.feedback;
-  if (!items) return null;
+function FeedbackSection({ feedbackData, refetch }: { feedbackData: unknown; refetch: () => void }) {
+  const [tab, setTab] = useState<"active" | "resolved">("active");
+  const { mutate: resolve, isPending } = useActionMutation("resolve-feedback");
 
-  const positiveCount = items.filter((i) => i.sentiment === "positive").length;
-  const negativeCount = items.filter((i) => i.sentiment === "negative").length;
+  const all = (feedbackData as { feedback?: FeedbackItem[] } | undefined)?.feedback ?? [];
+  const active = all.filter((i) => !i.resolvedAt);
+  const resolved = all.filter((i) => !!i.resolvedAt);
+  const items = tab === "active" ? active : resolved;
+
+  const positiveCount = active.filter((i) => i.sentiment === "positive").length;
+  const negativeCount = active.filter((i) => i.sentiment === "negative").length;
+
+  function handleResolve(id: string, isResolved: boolean) {
+    resolve({ id, resolved: !isResolved }, { onSuccess: refetch });
+  }
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium text-muted-foreground">User Feedback</h2>
-        {items.length > 0 && (
+        {active.length > 0 && (
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1 text-emerald-600">
               <IconThumbUp size={12} /> {positiveCount}
@@ -162,15 +172,52 @@ function FeedbackSection({ feedbackData }: { feedbackData: unknown }) {
           </div>
         )}
       </div>
+
+      {/* Tabs */}
+      <div className="mb-3 flex gap-1 rounded-lg border border-border bg-muted/40 p-1 w-fit">
+        <button
+          onClick={() => setTab("active")}
+          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            tab === "active"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Active
+          {active.length > 0 && (
+            <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+              {active.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setTab("resolved")}
+          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            tab === "resolved"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Resolved
+          {resolved.length > 0 && (
+            <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              {resolved.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {items.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
           <IconMessageReport className="size-7 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">No feedback submitted yet.</p>
+          <p className="text-sm text-muted-foreground">
+            {tab === "active" ? "No active feedback." : "No resolved feedback yet."}
+          </p>
         </div>
       ) : (
         <div className="divide-y divide-border rounded-lg border border-border">
           {items.map((item) => (
-            <div key={item.id} className="flex gap-3 px-4 py-3">
+            <div key={item.id} className={`flex gap-3 px-4 py-3 ${item.resolvedAt ? "opacity-60" : ""}`}>
               <div className="mt-0.5 shrink-0">
                 {item.sentiment === "positive" ? (
                   <IconThumbUp size={14} className="text-emerald-500" />
@@ -185,9 +232,21 @@ function FeedbackSection({ feedbackData }: { feedbackData: unknown }) {
                   <span className="truncate text-xs font-medium text-muted-foreground">
                     {item.userEmail ?? "Anonymous"}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground/60">
-                    {formatDate(item.createdAt)}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-xs text-muted-foreground/60">{formatDate(item.createdAt)}</span>
+                    <button
+                      onClick={() => handleResolve(item.id, !!item.resolvedAt)}
+                      disabled={isPending}
+                      title={item.resolvedAt ? "Mark as active" : "Mark as resolved"}
+                      className={`rounded p-0.5 transition-colors ${
+                        item.resolvedAt
+                          ? "text-muted-foreground/40 hover:text-foreground"
+                          : "text-muted-foreground/40 hover:text-emerald-600"
+                      }`}
+                    >
+                      <IconCheck size={14} />
+                    </button>
+                  </div>
                 </div>
                 {item.message && (
                   <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.message}</p>

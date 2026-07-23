@@ -199,6 +199,7 @@ export default runMigrations(
       version: 35,
       sql: `CREATE INDEX IF NOT EXISTS messaging_edges_canvas ON messaging_edges(canvas_id)`,
     },
+    { version: 36, sql: `ALTER TABLE feedback ADD COLUMN resolved_at TEXT` },
   ],
   { table: "outreach_migrations" },
 );
