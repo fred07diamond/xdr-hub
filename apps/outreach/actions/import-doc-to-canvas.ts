@@ -98,15 +98,22 @@ ${docText.slice(0, 10000)}
 Extract entities and create canvas nodes. Focus on what's actually in the document.`;
 
     const ownerCtx = await getOwnerCtx();
-    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 2000 });
+    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 4000 });
     const result = ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
 
     let nodes: z.infer<typeof NODE_SCHEMA>;
     try {
-      const raw = result.text.trim().replace(/^```json\n?/, "").replace(/\n?```$/, "");
+      // Extract the first JSON array from the response, tolerating preamble/postamble text
+      const text = result.text.trim();
+      const arrayStart = text.indexOf("[");
+      const arrayEnd = text.lastIndexOf("]");
+      if (arrayStart === -1 || arrayEnd === -1 || arrayEnd < arrayStart) {
+        return { nodesCreated: 0, error: "Model did not return a JSON array" };
+      }
+      const raw = text.slice(arrayStart, arrayEnd + 1);
       nodes = NODE_SCHEMA.parse(JSON.parse(raw));
-    } catch {
-      return { nodesCreated: 0, error: "Could not parse model output as JSON" };
+    } catch (err) {
+      return { nodesCreated: 0, error: `Could not parse model output: ${err instanceof Error ? err.message : String(err)}` };
     }
 
     const PERSONA_AFFILIATED = new Set(["tone", "phrase_rule", "example", "role"]);
