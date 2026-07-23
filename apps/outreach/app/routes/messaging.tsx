@@ -50,6 +50,10 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { toast } from "sonner";
+// Vite bundles the pdfjs worker as a static asset and returns its correct URL for both dev and production
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -568,10 +572,7 @@ function ImportDocDialog({ open, onClose, personas, canvasId, onImported }: { op
       if (ext === "pdf") {
         const arrayBuffer = await file.arrayBuffer();
         const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url,
-        ).href;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pages = await Promise.all(
           Array.from({ length: pdf.numPages }, (_, i) =>
@@ -593,6 +594,8 @@ function ImportDocDialog({ open, onClose, personas, canvasId, onImported }: { op
         reader.onload = () => setText(reader.result as string);
         reader.readAsText(file);
       }
+    } catch {
+      toast.error("Could not parse file — try pasting the text directly");
     } finally {
       setParsing(false);
     }
