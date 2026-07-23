@@ -11,9 +11,14 @@ export default defineAction({
   run: async () => {
     const token = getHubSpotToken();
     if (!token) return { lists: [], error: "HubSpot not connected" };
-    const data = (await hubspotFetch(
-      "/crm/v3/lists?objectTypeId=0-1&limit=100&includeFilters=false"
-    )) as Record<string, unknown>;
+    let data: Record<string, unknown>;
+    try {
+      data = (await hubspotFetch(
+        "/crm/v3/lists?objectTypeId=0-1&limit=100&includeFilters=false"
+      )) as Record<string, unknown>;
+    } catch (err) {
+      return { lists: [], error: err instanceof Error ? err.message : String(err) };
+    }
 
     // HubSpot returns `lists` for this endpoint; `results` is used by other CRM endpoints
     const rawLists = (data.lists ?? data.results ?? []) as Array<{
