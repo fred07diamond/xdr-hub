@@ -30,7 +30,6 @@ import {
   IconChecklist,
   IconCoin,
   IconFileText,
-  IconFileUpload,
   IconLock,
   IconMicrophone2,
   IconNote,
@@ -50,10 +49,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { toast } from "sonner";
-// Vite bundles the pdfjs worker as a static asset and returns its correct URL for both dev and production
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -553,114 +548,6 @@ function NodePalette({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
   );
 }
 
-// ── Import from doc dialog ─────────────────────────────────────────────────────
-
-function ImportDocDialog({ open, onClose, personas, canvasId, onImported }: { open: boolean; onClose: () => void; personas: Persona[]; canvasId: string | null; onImported: () => void }) {
-  const [text, setText] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [parsing, setParsing] = useState(false);
-  const importDoc = useActionMutation("import-doc-to-canvas");
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFileName(file.name);
-    setParsing(true);
-    try {
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      if (ext === "pdf") {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const pages = await Promise.all(
-          Array.from({ length: pdf.numPages }, (_, i) =>
-            pdf.getPage(i + 1).then((p) =>
-              p.getTextContent().then((tc) =>
-                tc.items.map((item) => ("str" in item ? item.str : "")).join(" "),
-              ),
-            ),
-          ),
-        );
-        setText(pages.join("\n\n"));
-      } else if (ext === "docx" || ext === "doc") {
-        const arrayBuffer = await file.arrayBuffer();
-        const mammoth = await import("mammoth");
-        const result = await mammoth.extractRawText({ arrayBuffer });
-        setText(result.value);
-      } else {
-        const reader = new FileReader();
-        reader.onload = () => setText(reader.result as string);
-        reader.readAsText(file);
-      }
-    } catch {
-      toast.error("Could not parse file — try pasting the text directly");
-    } finally {
-      setParsing(false);
-    }
-  }
-
-  async function handleImport() {
-    if (!text.trim()) return;
-    if (!canvasId) {
-      toast.error("No canvas selected — pick or create a canvas first");
-      return;
-    }
-    try {
-      const result = await importDoc.mutateAsync({ docText: text.trim(), canvasId }) as { nodesCreated?: number; error?: string };
-      setText(""); setFileName("");
-      onImported();
-      onClose();
-      if (result.nodesCreated) {
-        toast.success(`Built ${result.nodesCreated} node${result.nodesCreated !== 1 ? "s" : ""} from your doc`);
-      } else {
-        toast.error(result.error ?? "No nodes could be extracted from this document");
-      }
-    } catch (err) {
-      toast.error((err as Error)?.message ?? "Import failed");
-    }
-  }
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[520px] rounded-xl bg-white shadow-2xl dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold">Import messaging doc</h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700"><IconX size={16} /></button>
-        </div>
-        <div className="flex flex-col gap-4 p-5">
-          <p className="text-xs text-zinc-500">
-            Paste your messaging guidelines or upload a file. The agent will parse it and create typed nodes automatically.
-          </p>
-          <div>
-            <input ref={fileRef} type="file" accept=".txt,.md,.markdown,.pdf,.doc,.docx,.rtf,.csv" className="hidden" onChange={handleFile} />
-            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-1.5" disabled={parsing}>
-              <IconFileUpload size={14} />
-              {parsing ? "Parsing…" : fileName || "Upload file"}
-            </Button>
-            {fileName && !parsing && <span className="ml-2 text-xs text-zinc-400">{fileName}</span>}
-          </div>
-          <textarea
-            className="h-48 w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-            placeholder="Or paste your messaging doc here…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" onClick={handleImport} disabled={!text.trim() || parsing || importDoc.isPending}>
-              {importDoc.isPending ? "Building…" : "Import"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Node editor sheet ──────────────────────────────────────────────────────────
 
 interface EditorProps {
@@ -1127,7 +1014,6 @@ function MessagingCanvas() {
   const [editingNode, setEditingNode] = useState<MessagingNode | null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -1465,7 +1351,7 @@ function MessagingCanvas() {
       <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h1 className="text-sm font-semibold">Messaging Canvas</h1>
         <p className="text-xs text-zinc-500 flex-1 hidden sm:block">
-          Personas are root anchors. Branch off nodes to add messaging rules. Drag to multi-select · Delete to remove.
+          Personas are root anchors. Branch off nodes to add messaging rules. Drag to multi-select · Delete to remove. · Share a doc in Chat to auto-build nodes.
         </p>
         <Button
           size="sm"
@@ -1484,10 +1370,6 @@ function MessagingCanvas() {
         >
           <IconSparkles size={14} />
           Build with AI
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="gap-1.5">
-          <IconFileUpload size={14} />
-          Import doc
         </Button>
         {/* Add node button with palette */}
         <div className="relative">
@@ -1584,8 +1466,6 @@ function MessagingCanvas() {
           generating={previewing}
         />
       </div>
-
-      <ImportDocDialog open={importOpen} onClose={() => setImportOpen(false)} personas={personas} canvasId={activeCanvasId} onImported={refetch} />
 
       {buildOpen && graph && (
         <BuildWithAIDialog
