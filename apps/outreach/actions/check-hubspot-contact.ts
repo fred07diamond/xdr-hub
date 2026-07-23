@@ -11,12 +11,13 @@ export default defineAction({
   schema: z.object({
     profileUrl: z.string().describe("LinkedIn profile URL to look up"),
     apiToken: z.string().nullish().describe("Personal API token"),
+    debug: z.boolean().nullish().describe("Return raw contact properties for field name verification"),
   }),
   requiresAuth: false,
   readOnly: true,
   http: { method: "GET" },
   publicAgent: { expose: true, readOnly: true, requiresAuth: false },
-  run: async ({ profileUrl, apiToken }, ctx) => {
+  run: async ({ profileUrl, apiToken, debug }, ctx) => {
     const token = getHubSpotToken();
     if (!token) return { connected: false, found: false };
 
@@ -74,6 +75,13 @@ export default defineAction({
       results[0];
 
     if (!match) return { connected: true, found: false };
+
+    // In debug mode, return raw properties so you can verify field names
+    // before trusting the mapped values below.
+    // Usage: GET /check-hubspot-contact?profileUrl=...&debug=true
+    if (debug) {
+      return { connected: true, found: true, contactId: match.id, rawProperties: match.properties };
+    }
 
     // Get portal ID to construct the direct HubSpot link (best-effort)
     let portalId: number | null = null;
