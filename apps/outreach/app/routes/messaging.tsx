@@ -605,18 +605,24 @@ function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: 
 
     sendToAgentChat({
       message:
-        `Parse this messaging document and build out the Messaging Canvas.\n\n` +
+        `Parse this messaging document and build out the Messaging Canvas. Be aggressive — extract everything useful and create nodes for it.\n\n` +
         `## Canvas model\n` +
-        `Each ICP persona has a persona anchor node (type='persona'). Fine-tuning nodes (tone, phrase_rule, example, role) branch off personas via edges. Source = parent, target = child.\n\n` +
+        `- Persona anchor nodes (type="persona") are the roots. Child nodes branch off them via edges.\n` +
+        `- Node types: "tone" (voice/style guidance), "phrase_rule" (use/avoid phrases), "example" (example notes or templates), "role" (role-specific angle).\n` +
+        `- Edges: source = parent id, target = child id.\n\n` +
         `## Instructions\n` +
-        `1. Call get-messaging-graph to get current node IDs — persona anchor nodes are already there.\n` +
-        `2. For each persona, if the doc has persona-level baseline messaging (tone, value props, phrases, examples), call update-messaging-node on that persona's canvas node (find it by type='persona' and matching personaId).\n` +
-        `3. For each distinct tone/voice section within a persona, create a "tone" node.\n` +
-        `4. For each set of use/avoid phrases, create a "phrase_rule" node.\n` +
-        `5. For each example note or template, create an "example" node.\n` +
-        `6. For each role-specific section, create a "role" node with the role name as the title.\n` +
-        `7. Wire each new node to its parent with create-messaging-edge (source = parent id, target = child id).\n` +
-        `8. Be faithful to the doc — don't invent content that isn't there.` +
+        `1. Call get-messaging-graph to see what persona anchor nodes exist.\n` +
+        `2. If the canvas has NO persona nodes yet: call create-messaging-node for each persona you can identify in the doc (type="persona"). If the doc is not persona-specific, create one generic persona node called "General".\n` +
+        `3. For every section in the doc — regardless of how it's labelled — extract the content and create the most appropriate child node type:\n` +
+        `   - Tone/voice/style sections → "tone" node\n` +
+        `   - Phrases, words to use, words to avoid → "phrase_rule" node\n` +
+        `   - Example messages, templates, sample notes → "example" node\n` +
+        `   - Role-specific or title-specific guidance → "role" node\n` +
+        `4. If content applies to all personas, attach it to each persona anchor.\n` +
+        `5. Wire every new child node to its persona anchor with create-messaging-edge.\n` +
+        `6. Use the doc's actual wording in node content — don't paraphrase.\n` +
+        `7. If you're unsure which node type fits, default to "tone".\n` +
+        `\nWhen in doubt, create the node. An imperfect node is better than an empty canvas.` +
         personaList +
         `\n\n## Document\n\n${text.trim()}`,
       submit: true,
