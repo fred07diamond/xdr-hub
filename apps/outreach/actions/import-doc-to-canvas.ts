@@ -108,8 +108,7 @@ Extract entities and create canvas nodes. Focus on what's actually in the docume
       const arrayStart = text.indexOf("[");
       const arrayEnd = text.lastIndexOf("]");
       if (arrayStart === -1 || arrayEnd === -1 || arrayEnd < arrayStart) {
-        // Treat as empty result — model declined to extract rather than a hard error
-        return { nodesCreated: 0, error: "No entities found in this document — try uploading account research, an org chart, or a prospect brief" };
+        return { nodesCreated: 0, error: `No JSON array in model response. Raw output (first 300 chars): ${text.slice(0, 300)}` };
       }
       const raw = text.slice(arrayStart, arrayEnd + 1);
       nodes = NODE_SCHEMA.parse(JSON.parse(raw));
