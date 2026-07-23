@@ -86,7 +86,8 @@ WHEN TO CREATE EACH NODE TYPE (only create when the doc gives real, specific sig
 
 SCHEMA for each node: { type, title, personaName?, tone?, valueProps?, phrasesToUse?, phrasesToAvoid?, exampleNotes?, notes? }
 Only set personaName for tone/phrase_rule/example/role when a specific persona is clearly implied.
-Never fabricate — only use what the document actually says.`;
+Never fabricate — only use what the document actually says.
+Keep every text field to 2 sentences maximum — concise and actionable.`;
 
     const input = `Available personas: ${personaNames}
 
@@ -98,7 +99,7 @@ ${docText.slice(0, 5000)}
 Extract entities and create canvas nodes. Focus on what's actually in the document.`;
 
     const ownerCtx = await getOwnerCtx();
-    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 1500 });
+    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 2500 });
     const result = ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
 
     let nodes: z.infer<typeof NODE_SCHEMA>;
@@ -108,7 +109,7 @@ Extract entities and create canvas nodes. Focus on what's actually in the docume
       const arrayStart = text.indexOf("[");
       const arrayEnd = text.lastIndexOf("]");
       if (arrayStart === -1 || arrayEnd === -1 || arrayEnd < arrayStart) {
-        return { nodesCreated: 0, error: `No JSON array in model response. Raw output (first 300 chars): ${text.slice(0, 300)}` };
+        return { nodesCreated: 0, error: "No entities could be extracted — try uploading account research, an org chart, or a prospect brief" };
       }
       const raw = text.slice(arrayStart, arrayEnd + 1);
       nodes = NODE_SCHEMA.parse(JSON.parse(raw));
