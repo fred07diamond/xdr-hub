@@ -13,11 +13,11 @@ export async function getHubSpotToken(): Promise<string | null> {
   return rows[0]?.value ?? null;
 }
 
-export async function hubspotFetch(path: string, options?: RequestInit): Promise<unknown> {
-  const token = await getHubSpotToken();
-  if (!token) {
-    throw new Error("HubSpot not connected. Add your API key in Settings.");
-  }
+async function hubspotFetchWithToken(
+  token: string,
+  path: string,
+  options?: RequestInit,
+): Promise<unknown> {
   const res = await fetch(`${HUBSPOT_API_BASE}${path}`, {
     ...options,
     headers: {
@@ -31,4 +31,22 @@ export async function hubspotFetch(path: string, options?: RequestInit): Promise
     throw new Error(`HubSpot API error (${res.status}): ${body}`);
   }
   return res.json();
+}
+
+export async function hubspotFetch(path: string, options?: RequestInit): Promise<unknown> {
+  const token = await getHubSpotToken();
+  if (!token) {
+    throw new Error("HubSpot not connected. Add your API key in Settings.");
+  }
+  return hubspotFetchWithToken(token, path, options);
+}
+
+export async function hubspotFetchIfConnected(
+  path: string,
+  options?: RequestInit,
+): Promise<{ token: string; data: unknown } | null> {
+  const token = await getHubSpotToken();
+  if (!token) return null;
+  const data = await hubspotFetchWithToken(token, path, options);
+  return { token, data };
 }
