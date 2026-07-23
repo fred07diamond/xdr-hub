@@ -157,7 +157,7 @@ export default defineAction({
       contactId: match.id,
       hubspotUrl,
       ownerName,
-      xdrOwner: match.properties.xdr_owner ?? null,
+      xdrOwner: match.properties.xdr_owner || null,
       email: match.properties.email ?? null,
       formMessage: match.properties.message ?? null,
       firstPageSeen: match.properties.hs_analytics_first_url ?? null,
