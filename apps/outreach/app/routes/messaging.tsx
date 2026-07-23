@@ -599,14 +599,18 @@ function ImportDocDialog({ open, onClose, personas, canvasId, onImported }: { op
   }
 
   async function handleImport() {
-    if (!text.trim() || !canvasId) return;
+    if (!text.trim()) return;
+    if (!canvasId) {
+      toast.error("No canvas selected — pick or create a canvas first");
+      return;
+    }
     try {
       const result = await importDoc.mutateAsync({ docText: text.trim(), canvasId }) as { nodesCreated?: number; error?: string };
       setText(""); setFileName("");
       onImported();
       onClose();
       if (result.nodesCreated) {
-        toast.success(`Built ${result.nodesCreated} messaging node${result.nodesCreated !== 1 ? "s" : ""} from your doc`);
+        toast.success(`Built ${result.nodesCreated} node${result.nodesCreated !== 1 ? "s" : ""} from your doc`);
       } else {
         toast.error(result.error ?? "No nodes could be extracted from this document");
       }
