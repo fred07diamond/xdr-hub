@@ -64,6 +64,7 @@ export default defineAction({
             "email", "hubspot_owner_id", "message",
             "hs_analytics_first_url", "hs_analytics_last_url",
             "hs_sequences_is_enrolled", "hs_latest_sequence_enrolled",
+            "xdr_owner",
           ],
           limit: 5,
         }),
@@ -75,12 +76,22 @@ export default defineAction({
     const results = searchResult.results ?? [];
 
     const match =
+      // Best: first + last + company all match
       results.find(
         (r) =>
           (r.properties.lastname ?? "").toLowerCase() === lastName &&
+          companyLower &&
           (r.properties.company ?? "").toLowerCase() === companyLower,
       ) ??
-      results.find((r) => (r.properties.company ?? "").toLowerCase() === companyLower) ??
+      // Good: first + last match (company may be stored differently in HubSpot)
+      results.find(
+        (r) => lastName && (r.properties.lastname ?? "").toLowerCase() === lastName,
+      ) ??
+      // Fallback: first + company match
+      results.find(
+        (r) => companyLower && (r.properties.company ?? "").toLowerCase() === companyLower,
+      ) ??
+      // Last resort: only one result for this first name
       (results.length === 1 ? results[0] : undefined);
 
     if (!match) return { connected: true, found: false };
@@ -146,6 +157,7 @@ export default defineAction({
       contactId: match.id,
       hubspotUrl,
       ownerName,
+      xdrOwner: match.properties.xdr_owner ?? null,
       email: match.properties.email ?? null,
       formMessage: match.properties.message ?? null,
       firstPageSeen: match.properties.hs_analytics_first_url ?? null,
