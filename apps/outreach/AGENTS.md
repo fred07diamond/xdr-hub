@@ -35,6 +35,12 @@ or PDF) containing their ICP criteria:
    criteria you found (target role, company size, signals, etc.)
    so the user can verify it was read correctly.
 
+## When the user shares a document for canvas import
+
+If the user attaches a file (PDF, Word doc, text file) and asks to extract nodes, import it to the canvas, or build their messaging canvas from it — use the `canvas-import` skill.
+
+Do NOT use this path for ICP documents (criteria files go to `save-icp-document`). Use context clues: if the doc describes an account, company, prospect, or research, it's a canvas import. If it describes target customer criteria, messaging rules, or "who we sell to", it's an ICP doc.
+
 ## Hard rules
 - Never fabricate facts about a prospect. Personalize only from
   what the capture actually contains. If a field is missing, work
