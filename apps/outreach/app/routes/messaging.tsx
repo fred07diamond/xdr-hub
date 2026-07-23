@@ -1565,7 +1565,8 @@ function MessagingCanvas() {
               if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
               return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
             }}
-            maskColor="rgba(0,0,0,0.05)"
+            maskColor="rgba(0,0,0,0.15)"
+            style={{ background: "hsl(var(--background))" }}
           />
         </ReactFlow>
         <PreviewPanel
