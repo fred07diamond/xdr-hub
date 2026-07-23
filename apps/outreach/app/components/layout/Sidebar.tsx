@@ -14,6 +14,7 @@ import {
   IconEdit,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconListCheck,
   IconMessageCircle,
   IconMessages,
   IconPin,
@@ -22,7 +23,7 @@ import {
   IconTarget,
   IconUsers,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -41,43 +42,20 @@ import {
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  {
-    icon: IconUsers,
-    labelKey: "navigation.prospects",
-    href: "/",
-    view: "prospects",
-  },
-  {
-    icon: IconTarget,
-    labelKey: "navigation.icp",
-    href: "/icp",
-    view: "icp",
-  },
-  {
-    icon: IconMessages,
-    labelKey: "navigation.messaging",
-    href: "/messaging",
-    view: "messaging",
-  },
-  {
-    icon: IconMessageCircle,
-    labelKey: "navigation.chat",
-    href: "/chat",
-    view: "chat",
-  },
-  {
-    icon: IconChartBar,
-    labelKey: "navigation.analytics",
-    href: "/analytics",
-    view: "analytics",
-  },
-  {
-    icon: IconSettings,
-    labelKey: "navigation.settings",
-    href: "/settings",
-    view: "settings",
-  },
+const navItems: Array<{
+  icon: ComponentType<{ className?: string }>;
+  labelKey: string;
+  label?: string;
+  href: string;
+  view: string;
+}> = [
+  { icon: IconUsers, labelKey: "navigation.prospects", href: "/", view: "prospects" },
+  { icon: IconListCheck, labelKey: "navigation.queue", label: "Queue", href: "/queue", view: "queue" },
+  { icon: IconTarget, labelKey: "navigation.icp", href: "/icp", view: "icp" },
+  { icon: IconMessages, labelKey: "navigation.messaging", href: "/messaging", view: "messaging" },
+  { icon: IconMessageCircle, labelKey: "navigation.chat", href: "/chat", view: "chat" },
+  { icon: IconChartBar, labelKey: "navigation.analytics", href: "/analytics", view: "analytics" },
+  { icon: IconSettings, labelKey: "navigation.settings", href: "/settings", view: "settings" },
 ];
 
 const CHAT_STORAGE_KEY = "chat";
@@ -521,11 +499,11 @@ export function Sidebar({
                 }}
                 className={navClass({ isActive })}
                 aria-current={isActive ? "page" : undefined}
-                aria-label={collapsed ? t(item.labelKey) : undefined}
+                aria-label={collapsed ? (item.label ?? t(item.labelKey)) : undefined}
               >
                 <Icon className="size-4 shrink-0" />
                 <span className={collapsed ? "sr-only" : "truncate"}>
-                  {t(item.labelKey)}
+                  {item.label ?? t(item.labelKey)}
                 </span>
               </Link>
             );
@@ -535,7 +513,7 @@ export function Sidebar({
                   <Tooltip>
                     <TooltipTrigger asChild>{link}</TooltipTrigger>
                     <TooltipContent side="right">
-                      {t(item.labelKey)}
+                      {item.label ?? t(item.labelKey)}
                     </TooltipContent>
                   </Tooltip>
                 ) : (

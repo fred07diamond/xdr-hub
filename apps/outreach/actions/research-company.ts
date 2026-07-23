@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { messagingNodes } from "../server/db/schema.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
+import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
 
 export default defineAction({
   description:
@@ -21,7 +22,40 @@ export default defineAction({
       "Cover: industry, estimated company size, business model, likely buyer pain points, recent news or initiatives, and GTM motion if inferrable.\n\n" +
       "Keep it under 180 words. Be factual and specific. No fluff, no filler sentences. Write in plain prose, not bullet points.";
 
-    const input = `Research this company for outreach purposes: ${companyName}`;
+    // Best-effort: enrich with HubSpot company data when connected
+    let crmContext = "";
+    const hsToken = await getHubSpotToken();
+    if (hsToken) {
+      try {
+        const companySearch = (await hubspotFetch("/crm/v3/objects/companies/search", {
+          method: "POST",
+          body: JSON.stringify({
+            filterGroups: [
+              { filters: [{ propertyName: "name", operator: "EQ", value: companyName }] },
+            ],
+            properties: ["industry", "numberofemployees", "city", "hs_num_open_deals"],
+            limit: 1,
+          }),
+        })) as { results?: Array<{ properties: Record<string, string> }> };
+
+        const co = companySearch.results?.[0]?.properties;
+        if (co) {
+          const parts = [
+            co.industry && `Industry: ${co.industry}`,
+            co.numberofemployees && `Employees: ~${co.numberofemployees}`,
+            co.city && `HQ: ${co.city}`,
+            co.hs_num_open_deals && Number(co.hs_num_open_deals) > 0
+              ? `Open deals in CRM: ${co.hs_num_open_deals}`
+              : null,
+          ].filter(Boolean);
+          if (parts.length) crmContext = `\n\nCRM context (HubSpot): ${parts.join(", ")}.`;
+        }
+      } catch {
+        // best-effort — continue without CRM data
+      }
+    }
+
+    const input = `Research this company for outreach purposes: ${companyName}${crmContext}`;
 
     const ownerCtx = await getOwnerCtx();
     const callCompleteText = () =>

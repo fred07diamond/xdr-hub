@@ -18,7 +18,7 @@ import {
   useRemoveMember,
 } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconBrain, IconCheck, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
+import { IconBrain, IconPlugConnected, IconCheck, IconCircleCheck, IconCircleX, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -349,6 +349,97 @@ function OrgMembersSection() {
   );
 }
 
+function HubSpotCard() {
+  const { data: connData, isLoading: connLoading, refetch } = useActionQuery("get-hubspot-connection", {});
+  const conn = connData as { connected?: boolean; error?: string } | undefined;
+  const saveToken = useActionMutation("save-hubspot-token");
+  const [tokenInput, setTokenInput] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave() {
+    if (!tokenInput.trim()) return;
+    await saveToken.mutateAsync({ token: tokenInput.trim() });
+    setTokenInput("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    refetch();
+  }
+
+  return (
+    <Card id="hubspot" className="scroll-mt-16">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <IconPlugConnected size={16} />
+          HubSpot
+        </CardTitle>
+        <CardDescription>
+          Connect your HubSpot workspace to pull contact lists as outreach queues, see CRM status on prospects, and enrich company research.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Connection status */}
+        <div className="flex items-center gap-2 text-sm">
+          {connLoading ? (
+            <IconLoader2 size={14} className="animate-spin text-muted-foreground" />
+          ) : conn?.connected ? (
+            <>
+              <IconCircleCheck size={14} className="text-emerald-600" />
+              <span className="text-emerald-700 dark:text-emerald-400 font-medium">Connected</span>
+            </>
+          ) : (
+            <>
+              <IconCircleX size={14} className="text-muted-foreground" />
+              <span className="text-muted-foreground">Not connected</span>
+              {conn?.error && <span className="text-destructive text-xs">— {conn.error}</span>}
+            </>
+          )}
+        </div>
+
+        {/* Token input */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-foreground">Private App Access Token</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              placeholder={conn?.connected ? "Enter new token to replace…" : "pat-na1-xxxxxxxx…"}
+              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono"
+            />
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saveToken.isPending || !tokenInput.trim()}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saveToken.isPending ? (
+                <IconLoader2 size={13} className="animate-spin" />
+              ) : saved ? (
+                <IconCheck size={13} />
+              ) : null}
+              {saved ? "Saved!" : "Save"}
+            </button>
+          </div>
+          {saveToken.isError && (
+            <p className="text-xs text-destructive">{(saveToken.error as Error)?.message ?? "Failed to save"}</p>
+          )}
+        </div>
+
+        {/* Setup instructions */}
+        <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">Setup instructions</p>
+          <ol className="list-decimal ps-4 space-y-0.5">
+            <li>In HubSpot: Settings → Integrations → Private Apps → Create app.</li>
+            <li>Required scopes: <code className="font-mono">crm.lists.read</code>, <code className="font-mono">crm.objects.contacts.read</code>, <code className="font-mono">crm.objects.companies.read</code>, <code className="font-mono">crm.objects.deals.read</code>.</li>
+            <li>Copy the access token and paste it above.</li>
+          </ol>
+          <p className="pt-0.5 text-[10px]">The token is stored in your private app database — never in source code or environment variables.</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AgentWorkspaceCard() {
   const navigate = useNavigate();
   return (
@@ -430,6 +521,8 @@ export default function SettingsRoute() {
           <ApiTokenCard />
 
           <DailyLimitCard />
+
+          <HubSpotCard />
 
           {canManageOrg && <AgentWorkspaceCard />}
 

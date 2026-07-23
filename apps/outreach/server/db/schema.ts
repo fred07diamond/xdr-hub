@@ -117,6 +117,36 @@ export const messagingCanvases = table("messaging_canvases", {
   updatedAt: text("updated_at").default(now()),
 });
 
+// HubSpot outreach queues — each queue mirrors one HubSpot contact list.
+export const hubspotQueues = table("hubspot_queues", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  name: text("name").notNull(),
+  hubspotListId: text("hubspot_list_id").notNull(),
+  hubspotListName: text("hubspot_list_name").notNull(),
+  status: text("status", { enum: ["active", "done"] }).notNull().default("active"),
+  totalCount: integer("total_count").notNull().default(0),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
+
+// Individual contacts within a HubSpot queue.
+export const hubspotQueueItems = table("hubspot_queue_items", {
+  id: text("id").primaryKey(),
+  queueId: text("queue_id").notNull(),
+  hubspotContactId: text("hubspot_contact_id").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  email: text("email"),
+  company: text("company"),
+  jobTitle: text("job_title"),
+  linkedinUrl: text("linkedin_url"),
+  status: text("status", { enum: ["pending", "visited", "skipped"] }).notNull().default("pending"),
+  position: integer("position").notNull(),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
+
 // Singleton row that holds ICP configuration.
 // icpText: the full text of the user's uploaded ICP document — used by
 //   capture-profile to score and draft every captured LinkedIn profile.
