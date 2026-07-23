@@ -13,7 +13,7 @@ export default defineAction({
     name: z.string().nullish().describe("Full name scraped from the LinkedIn profile (used when not yet in DB)"),
     company: z.string().nullish().describe("Company name scraped from the LinkedIn profile (used when not yet in DB)"),
     apiToken: z.string().nullish().describe("Personal API token"),
-    debug: z.boolean().nullish().describe("Return raw contact properties for field name verification"),
+    debug: z.coerce.boolean().nullish().describe("Return raw contact properties for field name verification"),
   }),
   requiresAuth: false,
   readOnly: true,
@@ -66,7 +66,7 @@ export default defineAction({
             "hs_sequences_is_enrolled", "hs_latest_sequence_enrolled",
             "xdr_owner",
           ],
-          limit: 5,
+          limit: 10,
         }),
       })) as typeof searchResult;
     } catch {
