@@ -350,20 +350,8 @@ function OrgMembersSection() {
 }
 
 function HubSpotCard() {
-  const { data: connData, isLoading: connLoading, refetch } = useActionQuery("get-hubspot-connection", {});
+  const { data: connData, isLoading: connLoading } = useActionQuery("get-hubspot-connection", {});
   const conn = connData as { connected?: boolean; error?: string } | undefined;
-  const saveToken = useActionMutation("save-hubspot-token");
-  const [tokenInput, setTokenInput] = useState("");
-  const [saved, setSaved] = useState(false);
-
-  async function handleSave() {
-    if (!tokenInput.trim()) return;
-    await saveToken.mutateAsync({ token: tokenInput.trim() });
-    setTokenInput("");
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-    refetch();
-  }
 
   return (
     <Card id="hubspot" className="scroll-mt-16">
@@ -395,45 +383,17 @@ function HubSpotCard() {
           )}
         </div>
 
-        {/* Token input */}
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-foreground">Private App Access Token</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              placeholder={conn?.connected ? "Enter new token to replace…" : "pat-na1-xxxxxxxx…"}
-              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-            />
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saveToken.isPending || !tokenInput.trim()}
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {saveToken.isPending ? (
-                <IconLoader2 size={13} className="animate-spin" />
-              ) : saved ? (
-                <IconCheck size={13} />
-              ) : null}
-              {saved ? "Saved!" : "Save"}
-            </button>
-          </div>
-          {saveToken.isError && (
-            <p className="text-xs text-destructive">{(saveToken.error as Error)?.message ?? "Failed to save"}</p>
-          )}
-        </div>
-
         {/* Setup instructions */}
         <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
           <p className="font-medium text-foreground">Setup instructions</p>
           <ol className="list-decimal ps-4 space-y-0.5">
             <li>In HubSpot: Settings → Integrations → Private Apps → Create app.</li>
             <li>Required scopes: <code className="font-mono">crm.lists.read</code>, <code className="font-mono">crm.objects.contacts.read</code>, <code className="font-mono">crm.objects.companies.read</code>, <code className="font-mono">crm.objects.deals.read</code>.</li>
-            <li>Copy the access token and paste it above.</li>
+            <li>Copy the access token.</li>
+            <li>In Netlify: Site → Environment variables → add <code className="font-mono">HUBSPOT_ACCESS_TOKEN</code> with the token as the value.</li>
+            <li>Trigger a redeploy — the status above will show Connected.</li>
           </ol>
-          <p className="pt-0.5 text-[10px]">The token is stored in your private app database — never in source code or environment variables.</p>
+          <p className="pt-0.5 text-[10px]">The token is stored as a Netlify environment variable, never in the database or source code.</p>
         </div>
       </CardContent>
     </Card>

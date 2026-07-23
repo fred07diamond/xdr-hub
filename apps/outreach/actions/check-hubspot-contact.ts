@@ -12,7 +12,7 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async ({ prospectId }, ctx) => {
-    const token = await getHubSpotToken();
+    const token = getHubSpotToken();
     if (!token) return { connected: false, found: false };
 
     const db = getDb();

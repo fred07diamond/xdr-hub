@@ -1,16 +1,7 @@
-import { eq } from "drizzle-orm";
-import { getDb } from "../db/index.js";
-import { workspaceSettings } from "../db/schema.js";
-
 const HUBSPOT_API_BASE = "https://api.hubapi.com";
 
-export async function getHubSpotToken(): Promise<string | null> {
-  const db = getDb();
-  const rows = await db
-    .select()
-    .from(workspaceSettings)
-    .where(eq(workspaceSettings.key, "hubspot_access_token"));
-  return rows[0]?.value ?? null;
+export function getHubSpotToken(): string | null {
+  return process.env.HUBSPOT_ACCESS_TOKEN ?? null;
 }
 
 async function hubspotFetchWithToken(
@@ -34,9 +25,9 @@ async function hubspotFetchWithToken(
 }
 
 export async function hubspotFetch(path: string, options?: RequestInit): Promise<unknown> {
-  const token = await getHubSpotToken();
+  const token = getHubSpotToken();
   if (!token) {
-    throw new Error("HubSpot not connected. Add your API key in Settings.");
+    throw new Error("HubSpot not connected. Set HUBSPOT_ACCESS_TOKEN in your environment.");
   }
   return hubspotFetchWithToken(token, path, options);
 }
@@ -45,7 +36,7 @@ export async function hubspotFetchIfConnected(
   path: string,
   options?: RequestInit,
 ): Promise<{ token: string; data: unknown } | null> {
-  const token = await getHubSpotToken();
+  const token = getHubSpotToken();
   if (!token) return null;
   const data = await hubspotFetchWithToken(token, path, options);
   return { token, data };

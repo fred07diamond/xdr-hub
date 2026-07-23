@@ -9,7 +9,7 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async () => {
-    const token = await getHubSpotToken();
+    const token = getHubSpotToken();
     if (!token) return { lists: [], error: "HubSpot not connected" };
     const data = (await hubspotFetch(
       "/crm/v3/lists?objectTypeId=0-1&limit=100&includeFilters=false"
