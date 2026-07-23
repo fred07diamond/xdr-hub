@@ -102,6 +102,21 @@ prospect's row and set status "drafted" so the extension can
 display them. Record the profile in send_history only when the
 user marks it sent (via mark-sent), not at draft time.
 
+## Writing style (hard rules)
+
+These apply to every note and follow-up, no exceptions:
+
+- **No em dashes** (—). Never use them. Rewrite the sentence instead.
+- **No semicolons** (;). Break into two sentences if needed.
+- **No corporate filler**: "I wanted to reach out", "I hope this finds
+  you well", "touching base", "synergy", "leverage", "circle back".
+- **No surveillance openers**: "I noticed you…", "I saw that you…",
+  "I came across your profile…".
+- Short sentences. One idea per sentence.
+- Active voice. Real words, not buzzwords.
+- Read the note aloud before returning it. If it sounds like a
+  template, rewrite it until it doesn't.
+
 ## Do / Don't
 - DON'T fabricate anything about the prospect or the ICP.
 - DON'T design or suggest auto-send or browser automation.
