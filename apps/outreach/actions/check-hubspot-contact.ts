@@ -7,7 +7,7 @@ import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
 
 export default defineAction({
-  description: "Check if a prospect exists in HubSpot and return their CRM status and a direct link to their contact record.",
+  description: "Check if a prospect exists in HubSpot and return their CRM status, owner, warm signals, and a direct link to their contact record.",
   schema: z.object({
     profileUrl: z.string().describe("LinkedIn profile URL to look up"),
     apiToken: z.string().nullish().describe("Personal API token"),
@@ -47,7 +47,12 @@ export default defineAction({
           filterGroups: [
             { filters: [{ propertyName: "firstname", operator: "EQ", value: firstName }] },
           ],
-          properties: ["firstname", "lastname", "company", "lifecyclestage", "hs_lead_status"],
+          properties: [
+            "firstname", "lastname", "company", "lifecyclestage", "hs_lead_status",
+            "email", "hubspot_owner_id", "message",
+            "hs_analytics_first_url", "hs_analytics_last_url",
+            "hs_sequences_is_enrolled", "hs_latest_sequence_enrolled",
+          ],
           limit: 5,
         }),
       })) as typeof searchResult;
@@ -81,6 +86,21 @@ export default defineAction({
       ? `https://app.hubspot.com/contacts/${portalId}/contact/${match.id}`
       : null;
 
+    // Resolve owner name from ownerId (best-effort)
+    const ownerId = match.properties.hubspot_owner_id ?? null;
+    let ownerName: string | null = null;
+    if (ownerId) {
+      try {
+        const ownerRes = (await hubspotFetch(`/crm/v3/owners/${ownerId}`)) as {
+          firstName?: string;
+          lastName?: string;
+          email?: string;
+        };
+        const parts = [ownerRes.firstName, ownerRes.lastName].filter(Boolean);
+        ownerName = parts.length ? parts.join(" ") : (ownerRes.email ?? null);
+      } catch { /* best-effort */ }
+    }
+
     // Best-effort deal lookup
     let deals: Array<{ name: string; stage: string }> = [];
     try {
@@ -109,6 +129,12 @@ export default defineAction({
       found: true,
       contactId: match.id,
       hubspotUrl,
+      ownerName,
+      email: match.properties.email ?? null,
+      formMessage: match.properties.message ?? null,
+      firstPageSeen: match.properties.hs_analytics_first_url ?? null,
+      lastPageSeen: match.properties.hs_analytics_last_url ?? null,
+      isInSequence: match.properties.hs_sequences_is_enrolled === "true",
       contact: {
         lifecycleStage: match.properties.lifecyclestage ?? "",
         leadStatus: match.properties.hs_lead_status ?? "",
