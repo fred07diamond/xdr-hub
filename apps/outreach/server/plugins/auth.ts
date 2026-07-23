@@ -13,5 +13,6 @@ export default createAuthPlugin({
     "/_agent-native/actions/submit-feedback",
     "/_agent-native/actions/resolve-connect-button",
     "/_agent-native/actions/list-canvases",
+    "/_agent-native/actions/check-hubspot-contact",
   ],
 });
