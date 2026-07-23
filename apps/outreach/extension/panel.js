@@ -380,8 +380,11 @@ async function init({ navTriggered = false } = {}) {
       hubspotLink.href = hsRes.hubspotUrl;
       hubspotLink.style.display = "inline-flex";
     }
-    if (hsRes.ownerName) {
-      hubspotOwner.textContent = `HubSpot owner: ${hsRes.ownerName}`;
+    const ownerParts = [];
+    if (hsRes.ownerName) ownerParts.push(hsRes.ownerName);
+    if (hsRes.xdrOwner && hsRes.xdrOwner !== hsRes.ownerName) ownerParts.push(`xDR: ${hsRes.xdrOwner}`);
+    if (ownerParts.length) {
+      hubspotOwner.textContent = `Owner: ${ownerParts.join(" · ")}`;
       hubspotOwner.style.display = "block";
     }
     if (hsRes.isInSequence) {
