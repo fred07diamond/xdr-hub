@@ -41,7 +41,6 @@ export default defineAction({
         .orderBy(asc(messagingNodes.createdAt)),
       db.select({ id: icpPersonas.id, name: icpPersonas.name })
         .from(icpPersonas)
-        .where(eq(icpPersonas.ownerEmail, userEmail))
         .orderBy(asc(icpPersonas.createdAt)),
     ]);
 
@@ -65,16 +64,16 @@ export default defineAction({
       const personaId = isPersonaAffiliated && node.personaName
         ? (personaMap.get(node.personaName.toLowerCase()) ?? null)
         : null;
-      const anchorNode = isPersonaAffiliated
+      const anchorNode = isPersonaAffiliated && personaId !== null
         ? existingNodes.find((n) => n.type === "persona" && n.personaId === personaId)
         : null;
 
       const nodeId = nanoid();
       const x = node.type === "company" ? 200 : 520;
-      if (node.type !== "company") allNonCompanyIdx++;
       const y = node.type === "company"
         ? 200 + (sorted.filter((n) => n.type !== "company").length * 110) / 2
         : 80 + allNonCompanyIdx * 220;
+      if (node.type !== "company") allNonCompanyIdx++;
 
       await db.insert(messagingNodes).values({
         id: nodeId, type: node.type, title: node.title,
