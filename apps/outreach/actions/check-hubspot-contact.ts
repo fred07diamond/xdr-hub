@@ -1,27 +1,40 @@
 import { defineAction } from "@agent-native/core";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
 import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
+import { resolveOwner } from "../server/helpers/resolve-owner.js";
 
 export default defineAction({
-  description: "Check if a prospect exists in HubSpot and return their CRM status.",
-  schema: z.object({ prospectId: z.string() }),
-  requiresAuth: true,
+  description: "Check if a prospect exists in HubSpot and return their CRM status and a direct link to their contact record.",
+  schema: z.object({
+    profileUrl: z.string().describe("LinkedIn profile URL to look up"),
+    apiToken: z.string().nullish().describe("Personal API token"),
+  }),
+  requiresAuth: false,
   readOnly: true,
   http: { method: "GET" },
-  run: async ({ prospectId }, ctx) => {
+  publicAgent: { expose: true, readOnly: true, requiresAuth: false },
+  run: async ({ profileUrl, apiToken }, ctx) => {
     const token = getHubSpotToken();
     if (!token) return { connected: false, found: false };
+
+    const ownerEmail = await resolveOwner(apiToken, ctx);
 
     const db = getDb();
     const rows = await db
       .select()
       .from(prospects)
-      .where(and(eq(prospects.id, prospectId), eq(prospects.ownerEmail, ctx!.userEmail)));
+      .where(eq(prospects.profileUrl, profileUrl))
+      .limit(1);
     const prospect = rows[0];
     if (!prospect) return { connected: true, found: false };
+
+    // Scope result to the requesting user when we have an owner
+    if (ownerEmail && prospect.ownerEmail && prospect.ownerEmail !== ownerEmail) {
+      return { connected: true, found: false };
+    }
 
     const nameParts = (prospect.name ?? "").trim().split(/\s+/);
     const firstName = nameParts[0] ?? "";
@@ -46,7 +59,6 @@ export default defineAction({
     const lastName = nameParts.slice(1).join(" ").toLowerCase();
     const company = (prospect.company ?? "").toLowerCase();
 
-    // Prefer result where both last name and company match; fall back to first result
     const match =
       results.find(
         (r) =>
@@ -57,6 +69,17 @@ export default defineAction({
       results[0];
 
     if (!match) return { connected: true, found: false };
+
+    // Get portal ID to construct the direct HubSpot link (best-effort)
+    let portalId: number | null = null;
+    try {
+      const info = (await hubspotFetch("/account-info/v3/details")) as { portalId?: number };
+      portalId = info.portalId ?? null;
+    } catch { /* best-effort */ }
+
+    const hubspotUrl = portalId
+      ? `https://app.hubspot.com/contacts/${portalId}/contact/${match.id}`
+      : null;
 
     // Best-effort deal lookup
     let deals: Array<{ name: string; stage: string }> = [];
@@ -84,6 +107,8 @@ export default defineAction({
     return {
       connected: true,
       found: true,
+      contactId: match.id,
+      hubspotUrl,
       contact: {
         lifecycleStage: match.properties.lifecyclestage ?? "",
         leadStatus: match.properties.hs_lead_status ?? "",
