@@ -169,12 +169,18 @@ async function checkHubspot(profileUrl, name, company) {
     if (name) params.set("name", name);
     if (company) params.set("company", company);
     if (apiToken) params.set("apiToken", apiToken);
-    const res = await fetch(
-      `${appUrl}/_agent-native/actions/check-hubspot-contact?${params.toString()}`,
-    );
-    if (!res.ok) return { found: false };
-    return await res.json();
-  } catch {
+    const url = `${appUrl}/_agent-native/actions/check-hubspot-contact?${params.toString()}`;
+    console.log("[BLI] HubSpot lookup →", { profileUrl, name, company, url });
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn("[BLI] HubSpot lookup failed", res.status, await res.text().catch(() => ""));
+      return { found: false };
+    }
+    const json = await res.json();
+    console.log("[BLI] HubSpot result ←", json);
+    return json;
+  } catch (err) {
+    console.error("[BLI] HubSpot lookup error", err);
     return { found: false };
   }
 }
