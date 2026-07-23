@@ -61,6 +61,39 @@ function StatusPill({ status }: { status: QueueItem["status"] }) {
   );
 }
 
+function HubSpotScopeError({ message }: { message?: string }) {
+  const isScopeError = message?.includes("scope") || message?.includes("403") || message?.includes("granted");
+  if (isScopeError) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-800/50 dark:bg-amber-900/20">
+        <p className="font-medium text-amber-800 dark:text-amber-300 mb-1">Missing HubSpot scope</p>
+        <p className="text-amber-700 dark:text-amber-400 mb-2">
+          Your Private App token needs the <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">crm.lists.read</code> scope.
+        </p>
+        <ol className="list-decimal list-inside space-y-0.5 text-amber-700 dark:text-amber-400 mb-2">
+          <li>Go to HubSpot → Settings → Private Apps</li>
+          <li>Open your app → Scopes → check <strong>crm.lists.read</strong></li>
+          <li>Click <strong>Rotate &amp; copy token</strong></li>
+          <li>Paste the new token in <strong>Settings</strong> here</li>
+        </ol>
+        <a
+          href="https://app.hubspot.com/private-apps"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-amber-800 dark:text-amber-300 underline"
+        >
+          Open HubSpot Private Apps <IconExternalLink size={11} />
+        </a>
+      </div>
+    );
+  }
+  return (
+    <p className="text-xs text-destructive">
+      {message ?? "Failed to load HubSpot lists. Check your token in Settings."}
+    </p>
+  );
+}
+
 function NewQueueDialog({
   open,
   onClose,
@@ -118,18 +151,11 @@ function NewQueueDialog({
                 Loading lists…
               </div>
             ) : listsQuery.isError ? (
-              <p className="text-xs text-destructive">
-                {(listsQuery.error as Error)?.message ?? "Failed to load lists"}. Check your HubSpot token in Settings.
-              </p>
+              <HubSpotScopeError message={(listsQuery.error as Error)?.message} />
             ) : (listsQuery.data as { error?: string } | undefined)?.error ? (
-              <p className="text-xs text-destructive">
-                {(listsQuery.data as { error?: string }).error}
-              </p>
+              <HubSpotScopeError message={(listsQuery.data as { error?: string }).error} />
             ) : lists.length === 0 ? (
-              <p className="text-xs text-destructive">
-                {(listsQuery.data as { error?: string } | undefined)?.error
-                  ?? `No contact lists found. Your Private App token likely needs the crm.lists.read scope — add it in HubSpot → Settings → Private Apps.`}
-              </p>
+              <HubSpotScopeError message="No contact lists found." />
             ) : (
               <select
                 value={selectedListId}

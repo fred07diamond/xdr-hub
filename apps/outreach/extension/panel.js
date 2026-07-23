@@ -14,6 +14,7 @@ const personaChip = document.getElementById("persona-chip");
 const personaIndicator = document.getElementById("persona-indicator");
 const personaNameLabel = document.getElementById("persona-name-label");
 const alreadyContacted = document.getElementById("already-contacted");
+const hubspotLink = document.getElementById("hubspot-link");
 const dailyMeter = document.getElementById("daily-meter");
 const dailyMeterText = document.getElementById("daily-meter-text");
 const dailyMeterBar = document.getElementById("daily-meter-bar");
@@ -260,6 +261,8 @@ function resetPanel() {
   profileLocation.style.display = "none";
 
   alreadyContacted.style.display = "none";
+  hubspotLink.style.display = "none";
+  hubspotLink.href = "#";
   dailyMeter.style.display = "none";
   draftBtn.disabled = true;
   draftBtn.textContent = "Draft note";
@@ -355,6 +358,18 @@ async function init({ navTriggered = false } = {}) {
 
   // Load canvas picker (fire-and-forget).
   loadCanvases().catch(() => {});
+
+  // HubSpot lookup — fire-and-forget, shows icon link if prospect is found in CRM.
+  const urlForHubspot = currentProfileUrl;
+  Promise.race([
+    chrome.runtime.sendMessage({ type: "CHECK_HUBSPOT", profileUrl: urlForHubspot }),
+    new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
+  ]).then((hsRes) => {
+    if (currentProfileUrl === urlForHubspot && hsRes?.found && hsRes?.hubspotUrl) {
+      hubspotLink.href = hsRes.hubspotUrl;
+      hubspotLink.style.display = "inline-flex";
+    }
+  }).catch(() => {});
 
   // Non-critical cosmetic check — fire-and-forget so isInitializing drops now,
   // not after the 3 s timeout. Guard against showing a banner for the wrong profile.

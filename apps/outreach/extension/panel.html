@@ -175,6 +175,31 @@
       display: none;
     }
 
+    #profile-name-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 3px;
+    }
+
+    #hubspot-link {
+      display: none;
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      background: #ff7a59;
+      color: #fff;
+      text-decoration: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      transition: opacity 0.15s;
+    }
+    #hubspot-link:hover { opacity: 0.85; }
+
     .meta-chip {
       display: inline-block;
       border-radius: 12px;
@@ -535,7 +560,10 @@
     <div id="profile-card">
       <div id="profile-loading">Reading profile…</div>
       <div id="profile-data">
-        <div id="profile-full-name"></div>
+        <div id="profile-name-row">
+          <div id="profile-full-name" style="flex:1; margin-bottom:0;"></div>
+          <a id="hubspot-link" href="#" target="_blank" rel="noopener noreferrer" title="Open in HubSpot">H</a>
+        </div>
         <div id="profile-headline-text"></div>
         <div id="profile-meta"></div>
         <div id="profile-location"></div>
