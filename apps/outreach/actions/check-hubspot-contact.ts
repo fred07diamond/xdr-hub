@@ -51,23 +51,45 @@ export default defineAction({
     const lastName = nameParts.slice(1).join(" ").toLowerCase();
     const companyLower = resolvedCompany.toLowerCase();
 
+    const SEARCH_PROPERTIES = [
+      "firstname", "lastname", "company", "lifecyclestage", "hs_lead_status",
+      "email", "hubspot_owner_id", "message",
+      "hs_analytics_first_url", "hs_analytics_last_url",
+      "hs_sequences_is_enrolled", "hs_latest_sequence_enrolled",
+      "xdr_owner",
+    ];
+
+    // Build filter groups (OR'd in HubSpot). Prefer narrower filters first so
+    // the most precise match wins without needing a high limit.
+    const filterGroups: Array<{ filters: Array<{ propertyName: string; operator: string; value: string }> }> = [];
+    if (lastName) {
+      // firstname AND lastname: most precise, handles the "many Simons" case.
+      filterGroups.push({
+        filters: [
+          { propertyName: "firstname", operator: "EQ", value: firstName },
+          { propertyName: "lastname", operator: "EQ", value: lastName },
+        ],
+      });
+    }
+    if (resolvedCompany) {
+      // firstname AND company: useful when lastname differs or missing.
+      filterGroups.push({
+        filters: [
+          { propertyName: "firstname", operator: "EQ", value: firstName },
+          { propertyName: "company", operator: "CONTAINS_TOKEN", value: resolvedCompany },
+        ],
+      });
+    }
+    if (!filterGroups.length) {
+      // Last resort: firstname only (low signal, but better than nothing).
+      filterGroups.push({ filters: [{ propertyName: "firstname", operator: "EQ", value: firstName }] });
+    }
+
     let searchResult: { results?: Array<{ id: string; properties: Record<string, string> }> } = {};
     try {
       searchResult = (await hubspotFetch("/crm/v3/objects/contacts/search", {
         method: "POST",
-        body: JSON.stringify({
-          filterGroups: [
-            { filters: [{ propertyName: "firstname", operator: "EQ", value: firstName }] },
-          ],
-          properties: [
-            "firstname", "lastname", "company", "lifecyclestage", "hs_lead_status",
-            "email", "hubspot_owner_id", "message",
-            "hs_analytics_first_url", "hs_analytics_last_url",
-            "hs_sequences_is_enrolled", "hs_latest_sequence_enrolled",
-            "xdr_owner",
-          ],
-          limit: 10,
-        }),
+        body: JSON.stringify({ filterGroups, properties: SEARCH_PROPERTIES, limit: 10 }),
       })) as typeof searchResult;
     } catch {
       return { connected: true, found: false };
