@@ -4,6 +4,7 @@ import {
   IconBrandLinkedin,
   IconCheck,
   IconClipboard,
+  IconExternalLink,
   IconLoader2,
   IconRefresh,
   IconSearch,
@@ -152,13 +153,15 @@ function ProspectSheet({
 
   const crmQuery = useActionQuery(
     "check-hubspot-contact",
-    { prospectId: prospect.id },
+    { profileUrl: prospect.profileUrl },
     { enabled: true },
   );
   const crm = crmQuery.data as
     | {
         connected: boolean;
         found: boolean;
+        contactId?: string;
+        hubspotUrl?: string | null;
         contact?: { lifecycleStage: string; leadStatus: string };
         deals?: Array<{ name: string; stage: string }>;
       }
@@ -257,17 +260,37 @@ function ProspectSheet({
             )}
             {crm?.connected && (
               crm.found ? (
-                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                  crm.contact?.lifecycleStage === "customer"
-                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                    : crm.contact?.lifecycleStage === "opportunity"
-                    ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
-                    : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                }`}>
-                  <IconPlugConnected size={10} />
-                  {crm.contact?.lifecycleStage ? crm.contact.lifecycleStage.replace(/_/g, " ") : "In CRM"}
-                  {crm.deals && crm.deals.length > 0 && ` · ${crm.deals.length} deal${crm.deals.length > 1 ? "s" : ""}`}
-                </span>
+                crm.hubspotUrl ? (
+                  <a
+                    href={crm.hubspotUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium no-underline ${
+                      crm.contact?.lifecycleStage === "customer"
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                        : crm.contact?.lifecycleStage === "opportunity"
+                        ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
+                        : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                    }`}
+                  >
+                    <IconPlugConnected size={10} />
+                    {crm.contact?.lifecycleStage ? crm.contact.lifecycleStage.replace(/_/g, " ") : "In CRM"}
+                    {crm.deals && crm.deals.length > 0 && ` · ${crm.deals.length} deal${crm.deals.length > 1 ? "s" : ""}`}
+                    <IconExternalLink size={9} />
+                  </a>
+                ) : (
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    crm.contact?.lifecycleStage === "customer"
+                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                      : crm.contact?.lifecycleStage === "opportunity"
+                      ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
+                      : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                  }`}>
+                    <IconPlugConnected size={10} />
+                    {crm.contact?.lifecycleStage ? crm.contact.lifecycleStage.replace(/_/g, " ") : "In CRM"}
+                    {crm.deals && crm.deals.length > 0 && ` · ${crm.deals.length} deal${crm.deals.length > 1 ? "s" : ""}`}
+                  </span>
+                )
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                   <IconPlugConnected size={10} />

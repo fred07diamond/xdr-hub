@@ -161,6 +161,21 @@ async function getDailyStats() {
   }
 }
 
+async function checkHubspot(profileUrl) {
+  const { appUrl, apiToken } = await getSettings();
+  if (!appUrl) return { found: false };
+  try {
+    const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+    const res = await fetch(
+      `${appUrl}/_agent-native/actions/check-hubspot-contact?profileUrl=${encodeURIComponent(profileUrl)}${tokenParam}`,
+    );
+    if (!res.ok) return { found: false };
+    return await res.json();
+  } catch {
+    return { found: false };
+  }
+}
+
 async function listCanvases(apiToken) {
   const { appUrl } = await getSettings();
   if (!appUrl) return { canvases: [] };
@@ -230,6 +245,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     listCanvases(msg.apiToken)
       .then((result) => sendResponse(result))
       .catch(() => sendResponse({ canvases: [] }));
+    return true;
+  }
+
+  if (msg.type === "CHECK_HUBSPOT") {
+    checkHubspot(msg.profileUrl)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch(() => sendResponse({ ok: true, found: false }));
     return true;
   }
 });
