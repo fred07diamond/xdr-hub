@@ -82,8 +82,8 @@ Node types and when to use each:
 - "example": sample outreach copy found in the doc. Title = short label. exampleNotes = the example text.
 
 Rules:
-- Extract every meaningful entity. A good doc should yield 3-10 nodes.
-- For company nodes: extract everything useful from the doc into notes — don't make things up, but be thorough with what's there.
+- Return 3 to 5 nodes maximum. Prioritize the most impactful entities.
+- For company nodes: extract the most useful facts from the doc into notes.
 - Set personaName only for tone/phrase_rule/example/role nodes when a specific persona is clearly implied. Leave it empty otherwise.
 - Do not refuse. Every document has useful signal.
 - Output raw JSON array only — no markdown, no explanation.`;
@@ -93,12 +93,12 @@ Rules:
 ${existingSummary}
 
 Document to analyze:
-${docText.slice(0, 10000)}
+${docText.slice(0, 5000)}
 
 Extract entities and create canvas nodes. Focus on what's actually in the document.`;
 
     const ownerCtx = await getOwnerCtx();
-    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 4000 });
+    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 1500 });
     const result = ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
 
     let nodes: z.infer<typeof NODE_SCHEMA>;
