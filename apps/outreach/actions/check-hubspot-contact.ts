@@ -94,7 +94,13 @@ export default defineAction({
       // Last resort: only one result for this first name
       (results.length === 1 ? results[0] : undefined);
 
-    if (!match) return { connected: true, found: false };
+    if (!match) {
+      // Debug: return the raw search results so we can see what HubSpot returned.
+      if (debug) {
+        return { connected: true, found: false, debugSearched: { firstName, lastName, companyLower }, debugResults: results.map(r => ({ id: r.id, properties: r.properties })) };
+      }
+      return { connected: true, found: false };
+    }
 
     // In debug mode, return raw properties so you can verify field names.
     // Usage: GET /check-hubspot-contact?profileUrl=...&debug=true
