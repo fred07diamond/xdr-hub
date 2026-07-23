@@ -126,7 +126,10 @@ function NewQueueDialog({
                 {(listsQuery.data as { error?: string }).error}
               </p>
             ) : lists.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No contact lists found in your HubSpot account.</p>
+              <p className="text-xs text-destructive">
+                {(listsQuery.data as { error?: string } | undefined)?.error
+                  ?? `No contact lists found. Your Private App token likely needs the crm.lists.read scope — add it in HubSpot → Settings → Private Apps.`}
+              </p>
             ) : (
               <select
                 value={selectedListId}
