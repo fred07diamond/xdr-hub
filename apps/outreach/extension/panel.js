@@ -376,10 +376,8 @@ async function init({ navTriggered = false } = {}) {
     new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
   ]).then((hsRes) => {
     if (currentProfileUrl !== urlForHubspot || !hsRes?.found) return;
-    if (hsRes.hubspotUrl) {
-      hubspotLink.href = hsRes.hubspotUrl;
-      hubspotLink.style.display = "inline-flex";
-    }
+    hubspotLink.href = hsRes.hubspotUrl || "https://app.hubspot.com/contacts/";
+    hubspotLink.style.display = "inline-flex";
     const ownerParts = [];
     if (hsRes.ownerName) ownerParts.push(hsRes.ownerName);
     if (hsRes.xdrOwner && hsRes.xdrOwner !== hsRes.ownerName) ownerParts.push(`xDR: ${hsRes.xdrOwner}`);
