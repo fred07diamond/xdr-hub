@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
@@ -11,12 +11,15 @@ export default defineAction({
   requiresAuth: true,
   readOnly: true,
   http: { method: "GET" },
-  run: async ({ prospectId }) => {
+  run: async ({ prospectId }, ctx) => {
     const token = await getHubSpotToken();
     if (!token) return { connected: false, found: false };
 
     const db = getDb();
-    const rows = await db.select().from(prospects).where(eq(prospects.id, prospectId));
+    const rows = await db
+      .select()
+      .from(prospects)
+      .where(and(eq(prospects.id, prospectId), eq(prospects.ownerEmail, ctx!.userEmail)));
     const prospect = rows[0];
     if (!prospect) return { connected: true, found: false };
 

@@ -9,6 +9,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
@@ -84,8 +85,11 @@ function NewQueueDialog({
       listId: selectedList.id,
       listName: selectedList.name,
       name: customName.trim() || undefined,
-    }) as { queueId?: string; error?: string };
+    }) as { queueId?: string; error?: string; truncated?: boolean };
     if (result.queueId) {
+      if (result.truncated) {
+        toast.warning("First 100 contacts imported — HubSpot lists larger than 100 are capped at this limit.");
+      }
       setSelectedListId("");
       setCustomName("");
       onCreated(result.queueId);

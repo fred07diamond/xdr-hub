@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { messagingNodes } from "../server/db/schema.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
-import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
+import { hubspotFetchIfConnected } from "../server/helpers/hubspot-client.js";
 
 export default defineAction({
   description:
@@ -24,21 +24,20 @@ export default defineAction({
 
     // Best-effort: enrich with HubSpot company data when connected
     let crmContext = "";
-    const hsToken = await getHubSpotToken();
-    if (hsToken) {
-      try {
-        const companySearch = (await hubspotFetch("/crm/v3/objects/companies/search", {
-          method: "POST",
-          body: JSON.stringify({
-            filterGroups: [
-              { filters: [{ propertyName: "name", operator: "EQ", value: companyName }] },
-            ],
-            properties: ["industry", "numberofemployees", "city", "hs_num_open_deals"],
-            limit: 1,
-          }),
-        })) as { results?: Array<{ properties: Record<string, string> }> };
-
-        const co = companySearch.results?.[0]?.properties;
+    try {
+      const hsResult = await hubspotFetchIfConnected("/crm/v3/objects/companies/search", {
+        method: "POST",
+        body: JSON.stringify({
+          filterGroups: [
+            { filters: [{ propertyName: "name", operator: "EQ", value: companyName }] },
+          ],
+          properties: ["industry", "numberofemployees", "city", "hs_num_open_deals"],
+          limit: 1,
+        }),
+      });
+      if (hsResult) {
+        const search = hsResult.data as { results?: Array<{ properties: Record<string, string> }> };
+        const co = search.results?.[0]?.properties;
         if (co) {
           const parts = [
             co.industry && `Industry: ${co.industry}`,
@@ -50,9 +49,9 @@ export default defineAction({
           ].filter(Boolean);
           if (parts.length) crmContext = `\n\nCRM context (HubSpot): ${parts.join(", ")}.`;
         }
-      } catch {
-        // best-effort — continue without CRM data
       }
+    } catch {
+      // best-effort — continue without CRM data
     }
 
     const input = `Research this company for outreach purposes: ${companyName}${crmContext}`;
