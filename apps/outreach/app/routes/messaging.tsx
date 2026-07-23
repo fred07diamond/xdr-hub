@@ -551,10 +551,11 @@ function NodePalette({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
 
 // ── Import from doc dialog ─────────────────────────────────────────────────────
 
-function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: () => void; personas: Persona[] }) {
+function ImportDocDialog({ open, onClose, personas, canvasId, onImported }: { open: boolean; onClose: () => void; personas: Persona[]; canvasId: string | null; onImported: () => void }) {
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
+  const importDoc = useActionMutation("import-doc-to-canvas");
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -597,41 +598,21 @@ function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: 
     }
   }
 
-  function handleImport() {
-    if (!text.trim()) return;
-    const personaList = personas.length > 0
-      ? `\nExisting ICP personas:\n${personas.map((p) => `- ${p.name} (id: ${p.id})`).join("\n")}`
-      : "";
-
-    sendToAgentChat({
-      message:
-        `Parse this messaging document and update the Messaging Canvas. Be aggressive — extract everything useful.\n\n` +
-        `## Canvas model\n` +
-        `- Persona anchor nodes (type="persona") are the roots. Child nodes branch off them via edges.\n` +
-        `- Node types: "tone" (voice/style guidance), "phrase_rule" (use/avoid phrases), "example" (example notes or templates), "role" (role-specific angle).\n` +
-        `- Edges: source = parent id, target = child id.\n\n` +
-        `## Instructions\n` +
-        `1. Call get-messaging-graph first to read the current canvas state.\n` +
-        `2. Assess what's already there:\n` +
-        `   - EMPTY canvas (no persona nodes): create persona nodes from the doc first, then add all child nodes.\n` +
-        `   - FILLED canvas (persona nodes exist): do NOT recreate what's already covered. Instead, enrich — add new child nodes for content the doc has that the canvas doesn't, and call update-messaging-node on existing nodes to append new detail from the doc.\n` +
-        `3. For every section in the doc, extract and create the best-fit node type:\n` +
-        `   - Tone/voice/style → "tone" node\n` +
-        `   - Phrases to use or avoid → "phrase_rule" node\n` +
-        `   - Example messages or templates → "example" node\n` +
-        `   - Role/title-specific guidance → "role" node\n` +
-        `   - If unsure, default to "tone".\n` +
-        `4. If content applies to all personas, attach it to each persona anchor.\n` +
-        `5. Wire every new child node to its persona with create-messaging-edge.\n` +
-        `6. Use the doc's actual wording — don't paraphrase.\n` +
-        `\nWhen in doubt, create the node. An imperfect node is better than nothing.` +
-        personaList +
-        `\n\n## Document\n\n${text.trim()}`,
-      submit: true,
-    });
-
-    setText(""); setFileName(""); onClose();
-    toast.success("Sent to agent — check the Chat tab for progress");
+  async function handleImport() {
+    if (!text.trim() || !canvasId) return;
+    try {
+      const result = await importDoc.mutateAsync({ docText: text.trim(), canvasId }) as { nodesCreated?: number; error?: string };
+      setText(""); setFileName("");
+      onImported();
+      onClose();
+      if (result.nodesCreated) {
+        toast.success(`Built ${result.nodesCreated} messaging node${result.nodesCreated !== 1 ? "s" : ""} from your doc`);
+      } else {
+        toast.error(result.error ?? "No nodes could be extracted from this document");
+      }
+    } catch (err) {
+      toast.error((err as Error)?.message ?? "Import failed");
+    }
   }
 
   if (!open) return null;
@@ -663,7 +644,9 @@ function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: 
           />
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" onClick={handleImport} disabled={!text.trim() || parsing}>Import</Button>
+            <Button size="sm" onClick={handleImport} disabled={!text.trim() || parsing || importDoc.isPending}>
+              {importDoc.isPending ? "Building…" : "Import"}
+            </Button>
           </div>
         </div>
       </div>
@@ -1594,7 +1577,7 @@ function MessagingCanvas() {
         />
       </div>
 
-      <ImportDocDialog open={importOpen} onClose={() => setImportOpen(false)} personas={personas} />
+      <ImportDocDialog open={importOpen} onClose={() => setImportOpen(false)} personas={personas} canvasId={activeCanvasId} onImported={refetch} />
 
       {buildOpen && graph && (
         <BuildWithAIDialog
