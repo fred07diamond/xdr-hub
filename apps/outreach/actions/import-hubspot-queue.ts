@@ -15,17 +15,20 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async ({ listId, listName, name: queueName }, ctx) => {
-    // Get member contact IDs from the list
+    const IMPORT_LIMIT = 100;
+
+    // Get member contact IDs from the list (capped at IMPORT_LIMIT)
     const memberships = (await hubspotFetch(
-      `/crm/v3/lists/${listId}/memberships?limit=100`
+      `/crm/v3/lists/${listId}/memberships?limit=${IMPORT_LIMIT}`
     )) as { results?: Array<{ recordId: string }> };
 
     const contactIds = (memberships.results ?? []).map((m) => m.recordId);
     if (contactIds.length === 0) {
       return { queueId: "", totalCount: 0, error: "This list has no contacts." };
     }
+    const truncated = contactIds.length >= IMPORT_LIMIT;
 
-    // Batch-read contact properties
+    // Batch-read contact properties in one call
     const batch = (await hubspotFetch("/crm/v3/objects/contacts/batch/read", {
       method: "POST",
       body: JSON.stringify({
@@ -51,26 +54,27 @@ export default defineAction({
       updatedAt: now,
     });
 
-    for (let i = 0; i < contacts.length; i++) {
-      const c = contacts[i];
-      const p = c.properties;
-      await db.insert(hubspotQueueItems).values({
-        id: nanoid(),
-        queueId,
-        hubspotContactId: c.id,
-        firstName: p.firstname ?? null,
-        lastName: p.lastname ?? null,
-        email: p.email ?? null,
-        company: p.company ?? null,
-        jobTitle: p.jobtitle ?? null,
-        linkedinUrl: p.hs_linkedin_url ?? null,
-        status: "pending",
-        position: i,
-        createdAt: now,
-        updatedAt: now,
-      });
+    // Bulk insert all items in a single DB call
+    if (contacts.length > 0) {
+      await db.insert(hubspotQueueItems).values(
+        contacts.map((c, i) => ({
+          id: nanoid(),
+          queueId,
+          hubspotContactId: c.id,
+          firstName: c.properties.firstname ?? null,
+          lastName: c.properties.lastname ?? null,
+          email: c.properties.email ?? null,
+          company: c.properties.company ?? null,
+          jobTitle: c.properties.jobtitle ?? null,
+          linkedinUrl: c.properties.hs_linkedin_url ?? null,
+          status: "pending" as const,
+          position: i,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
     }
 
-    return { queueId, totalCount: contacts.length };
+    return { queueId, totalCount: contacts.length, truncated };
   },
 });
