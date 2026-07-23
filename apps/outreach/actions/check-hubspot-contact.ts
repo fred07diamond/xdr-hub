@@ -10,6 +10,8 @@ export default defineAction({
   description: "Check if a prospect exists in HubSpot and return their CRM status, owner, warm signals, and a direct link to their contact record.",
   schema: z.object({
     profileUrl: z.string().describe("LinkedIn profile URL to look up"),
+    name: z.string().nullish().describe("Full name scraped from the LinkedIn profile (used when not yet in DB)"),
+    company: z.string().nullish().describe("Company name scraped from the LinkedIn profile (used when not yet in DB)"),
     apiToken: z.string().nullish().describe("Personal API token"),
     debug: z.boolean().nullish().describe("Return raw contact properties for field name verification"),
   }),
@@ -17,12 +19,13 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   publicAgent: { expose: true, readOnly: true, requiresAuth: false },
-  run: async ({ profileUrl, apiToken, debug }, ctx) => {
+  run: async ({ profileUrl, name: nameParam, company: companyParam, apiToken, debug }, ctx) => {
     const token = getHubSpotToken();
     if (!token) return { connected: false, found: false };
 
     const ownerEmail = await resolveOwner(apiToken, ctx);
 
+    // Try DB first — gives us stored name/company and lets us scope by owner.
     const db = getDb();
     const rows = await db
       .select()
@@ -30,15 +33,23 @@ export default defineAction({
       .where(eq(prospects.profileUrl, profileUrl))
       .limit(1);
     const prospect = rows[0];
-    if (!prospect) return { connected: true, found: false };
 
-    // Scope result to the requesting user when we have an owner
-    if (ownerEmail && prospect.ownerEmail && prospect.ownerEmail !== ownerEmail) {
+    // Scope to the requesting user when we have a DB record with an owner set.
+    if (prospect && ownerEmail && prospect.ownerEmail && prospect.ownerEmail !== ownerEmail) {
       return { connected: true, found: false };
     }
 
-    const nameParts = (prospect.name ?? "").trim().split(/\s+/);
+    // Resolve name/company: prefer DB values, fall back to params passed from the extension scrape.
+    const resolvedName = (prospect?.name ?? nameParam ?? "").trim();
+    const resolvedCompany = (prospect?.company ?? companyParam ?? "").trim();
+
+    // Nothing to search with — profile not captured yet and no scrape data passed.
+    if (!resolvedName) return { connected: true, found: false };
+
+    const nameParts = resolvedName.split(/\s+/);
     const firstName = nameParts[0] ?? "";
+    const lastName = nameParts.slice(1).join(" ").toLowerCase();
+    const companyLower = resolvedCompany.toLowerCase();
 
     let searchResult: { results?: Array<{ id: string; properties: Record<string, string> }> } = {};
     try {
@@ -62,22 +73,19 @@ export default defineAction({
     }
 
     const results = searchResult.results ?? [];
-    const lastName = nameParts.slice(1).join(" ").toLowerCase();
-    const company = (prospect.company ?? "").toLowerCase();
 
     const match =
       results.find(
         (r) =>
           (r.properties.lastname ?? "").toLowerCase() === lastName &&
-          (r.properties.company ?? "").toLowerCase() === company,
+          (r.properties.company ?? "").toLowerCase() === companyLower,
       ) ??
-      results.find((r) => (r.properties.company ?? "").toLowerCase() === company) ??
-      results[0];
+      results.find((r) => (r.properties.company ?? "").toLowerCase() === companyLower) ??
+      (results.length === 1 ? results[0] : undefined);
 
     if (!match) return { connected: true, found: false };
 
-    // In debug mode, return raw properties so you can verify field names
-    // before trusting the mapped values below.
+    // In debug mode, return raw properties so you can verify field names.
     // Usage: GET /check-hubspot-contact?profileUrl=...&debug=true
     if (debug) {
       return { connected: true, found: true, contactId: match.id, rawProperties: match.properties };
