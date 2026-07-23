@@ -161,13 +161,16 @@ async function getDailyStats() {
   }
 }
 
-async function checkHubspot(profileUrl) {
+async function checkHubspot(profileUrl, name, company) {
   const { appUrl, apiToken } = await getSettings();
   if (!appUrl) return { found: false };
   try {
-    const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+    const params = new URLSearchParams({ profileUrl });
+    if (name) params.set("name", name);
+    if (company) params.set("company", company);
+    if (apiToken) params.set("apiToken", apiToken);
     const res = await fetch(
-      `${appUrl}/_agent-native/actions/check-hubspot-contact?profileUrl=${encodeURIComponent(profileUrl)}${tokenParam}`,
+      `${appUrl}/_agent-native/actions/check-hubspot-contact?${params.toString()}`,
     );
     if (!res.ok) return { found: false };
     return await res.json();
@@ -249,7 +252,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "CHECK_HUBSPOT") {
-    checkHubspot(msg.profileUrl)
+    checkHubspot(msg.profileUrl, msg.name, msg.company)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch(() => sendResponse({ ok: true, found: false }));
     return true;
