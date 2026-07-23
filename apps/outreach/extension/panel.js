@@ -367,7 +367,12 @@ async function init({ navTriggered = false } = {}) {
   // HubSpot lookup — fire-and-forget, shows icon link, owner, and sequence warning.
   const urlForHubspot = currentProfileUrl;
   Promise.race([
-    chrome.runtime.sendMessage({ type: "CHECK_HUBSPOT", profileUrl: urlForHubspot }),
+    chrome.runtime.sendMessage({
+      type: "CHECK_HUBSPOT",
+      profileUrl: urlForHubspot,
+      name: cachedScrape?.name ?? "",
+      company: cachedScrape?.company ?? "",
+    }),
     new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
   ]).then((hsRes) => {
     if (currentProfileUrl !== urlForHubspot || !hsRes?.found) return;
