@@ -64,44 +64,29 @@ export default defineAction({
         ? `The canvas already has ${existingNodes.length} nodes covering: ${[...new Set(existingNodes.map((n) => n.type))].join(", ")}. Add new content — do not duplicate what's already there.`
         : "The canvas is empty — build it out fully.";
 
-    const systemPrompt = `You are a B2B sales intelligence analyst building a LinkedIn outreach intelligence canvas. Read the document and extract actionable outreach intelligence mapped to specific node types. Each node type feeds directly into how connection notes are drafted — only create a node if the doc gives you enough real, specific signal to make it useful.
+    const systemPrompt = `OUTPUT FORMAT: Respond with a raw JSON array only. Start with [ and end with ]. No markdown, no explanation, no preamble. If nothing qualifies, return [].
 
-NODE TYPES — what each does downstream and what makes it worth creating:
+You are a B2B sales intelligence analyst. Extract outreach intelligence from documents and map to canvas nodes. Each node feeds into how LinkedIn connection notes are drafted.
 
-"company" — The agent uses company context to personalize the opening line of a connection note ("I saw EY is expanding their AI practice..."). Create one per named account. Title = company name. notes = everything the doc says that is useful for outreach: industry, size, strategic focus, current initiatives, pain, context. Be thorough — this is the anchor for all other account intel.
+WHEN TO CREATE EACH NODE TYPE (only create when the doc gives real, specific signal):
 
-"identify_pain" — The agent references this pain to create urgency ("I know many [role]s at firms like [company] are dealing with X..."). Only create if the doc names a real, specific pain — not a vague business challenge. Title = the pain in 4-6 words. notes = the pain + why it matters for someone receiving a cold connection request.
+- "company": Named company in doc. Use for personalizing "I saw [company] is..." openings. title=company name. notes=industry, size, initiatives, pain, context — everything useful from the doc.
+- "identify_pain": Specific pain that creates outreach urgency. title=pain in 4-6 words. notes=pain + why it matters for cold outreach.
+- "champion": Named person or role who'd advocate internally. title=person/role name. notes=position, interests, how to open with them.
+- "economic_buyer": Person/role who controls budget. title=role or name. notes=what they care about, how decisions are framed.
+- "competition": Competitor or current vendor mentioned. title=competitor name. notes=relationship to account, differentiation angles.
+- "decision_criteria": Specific evaluation criteria (not generic "ROI"). title=short label. notes=the criteria.
+- "decision_process": Real intel on approval steps or committees. title=short label. notes=the process.
+- "paper_process": Compliance, procurement, or security requirements. title=short label. notes=what's required.
+- "metrics": Specific KPIs or success metrics. title=metric name. notes=context and what good looks like.
+- "role": Messaging guidance for a job function. title=role title. notes=what they care about. phrasesToUse=language that lands. phrasesToAvoid=language to avoid.
+- "tone": Communication style guidance. title=short label. tone=the voice. valueProps=key value props.
+- "phrase_rule": Specific language dos/don'ts. title=short label. phrasesToUse=exact phrases. phrasesToAvoid=exact phrases.
+- "example": Sample outreach copy from the doc. title=short label. exampleNotes=the example text.
 
-"champion" — A named person or specific role who would advocate for you internally. The agent tailors the message to their actual interests. Only create if the doc names a real individual or a role with clear motivations. Title = person name or role. notes = their position, what they care about, and how to open with them.
-
-"economic_buyer" — The person or role who controls budget for what you sell. The agent calibrates the hook toward business outcomes for this audience. Only create if the doc surfaces real signal about who owns budget. Title = role or person name. notes = what they care about, how decisions are framed at this level.
-
-"competition" — A competitor or alternative approach the prospect is likely already using. The agent uses this to avoid landmines and position differentiation. Only create if the doc mentions a real competitor or current vendor. Title = competitor name. notes = their relationship to the account and differentiation angles worth knowing.
-
-"decision_criteria" — The criteria the account uses to evaluate solutions. Helps the agent emphasize the right things. Only create if the doc gives specific evaluation criteria — not generic "they want ROI." Title = short label. notes = the criteria in detail.
-
-"decision_process" — How buying decisions are made. Helps the agent set expectations and frame appropriately. Only create if the doc gives real intel on approval steps, committees, or timelines. Title = short label. notes = the process.
-
-"paper_process" — Legal, procurement, or compliance steps. Only create if the doc specifically mentions compliance reviews, security gates, or procurement requirements. Title = short label. notes = what's required.
-
-"metrics" — KPIs or success metrics the account cares about. The agent frames value in these terms. Only create if the doc names specific metrics — not just "they want efficiency." Title = metric name. notes = context and what success looks like.
-
-"role" — Messaging guidance for a specific job function. Only create if the doc gives real signal about what this function cares about. Title = role title. notes = what they care about. phrasesToUse = language that lands. phrasesToAvoid = language that turns them off.
-
-"tone" — Voice and style for outreach. Only create if the doc gives real signal about communication style. Title = short label. tone = the voice. valueProps = key value propositions to lead with.
-
-"phrase_rule" — Specific language rules. Only create if the doc gives real language do's and don'ts. Title = short label. phrasesToUse = exact phrases. phrasesToAvoid = exact phrases to avoid.
-
-"example" — Sample outreach copy from the doc. Only create if the doc contains real example messaging worth reusing. Title = short label. exampleNotes = the example text.
-
-RULES:
-- Quality over quantity. Only create a node when the doc gives specific, actionable signal.
-- Never fabricate. Only populate fields from what the document actually says.
-- If any named account appears, create a "company" node first — it anchors all other account intel.
-- Set personaName only for tone/phrase_rule/example/role nodes if a specific persona is clearly implied.
-- Your response MUST be a raw JSON array and nothing else — no markdown, no explanation, no preamble.
-- If nothing in the document qualifies, return an empty array: []
-- Start your response with [ and end with ]`;
+SCHEMA for each node: { type, title, personaName?, tone?, valueProps?, phrasesToUse?, phrasesToAvoid?, exampleNotes?, notes? }
+Only set personaName for tone/phrase_rule/example/role when a specific persona is clearly implied.
+Never fabricate — only use what the document actually says.`;
 
     const input = `Available personas: ${personaNames}
 
@@ -123,7 +108,8 @@ Extract entities and create canvas nodes. Focus on what's actually in the docume
       const arrayStart = text.indexOf("[");
       const arrayEnd = text.lastIndexOf("]");
       if (arrayStart === -1 || arrayEnd === -1 || arrayEnd < arrayStart) {
-        return { nodesCreated: 0, error: "Model did not return a JSON array" };
+        // Treat as empty result — model declined to extract rather than a hard error
+        return { nodesCreated: 0, error: "No entities found in this document — try uploading account research, an org chart, or a prospect brief" };
       }
       const raw = text.slice(arrayStart, arrayEnd + 1);
       nodes = NODE_SCHEMA.parse(JSON.parse(raw));
