@@ -1,5 +1,6 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
+  IconPlugConnected,
   IconBrandLinkedin,
   IconCheck,
   IconClipboard,
@@ -149,6 +150,20 @@ function ProspectSheet({
   const rateProspect = useActionMutation("rate-prospect");
   const redraft = useActionMutation("redraft-prospect");
 
+  const crmQuery = useActionQuery(
+    "check-hubspot-contact",
+    { prospectId: prospect.id },
+    { enabled: true },
+  );
+  const crm = crmQuery.data as
+    | {
+        connected: boolean;
+        found: boolean;
+        contact?: { lifecycleStage: string; leadStatus: string };
+        deals?: Array<{ name: string; stage: string }>;
+      }
+    | undefined;
+
   const [note, setNote] = useState(prospect.draftNote ?? "");
   const [followUp, setFollowUp] = useState(prospect.draftFollowUp ?? "");
   const [noteDirty, setNoteDirty] = useState(false);
@@ -239,6 +254,26 @@ function ProspectSheet({
                 <span style={{ background: prospect.personaColor }} className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" />
                 {prospect.personaName}
               </span>
+            )}
+            {crm?.connected && (
+              crm.found ? (
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  crm.contact?.lifecycleStage === "customer"
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                    : crm.contact?.lifecycleStage === "opportunity"
+                    ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
+                    : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                }`}>
+                  <IconPlugConnected size={10} />
+                  {crm.contact?.lifecycleStage ? crm.contact.lifecycleStage.replace(/_/g, " ") : "In CRM"}
+                  {crm.deals && crm.deals.length > 0 && ` · ${crm.deals.length} deal${crm.deals.length > 1 ? "s" : ""}`}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <IconPlugConnected size={10} />
+                  Not in CRM
+                </span>
+              )
             )}
           </div>
         </SheetHeader>
