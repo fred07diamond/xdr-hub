@@ -99,7 +99,9 @@ RULES:
 - Never fabricate. Only populate fields from what the document actually says.
 - If any named account appears, create a "company" node first — it anchors all other account intel.
 - Set personaName only for tone/phrase_rule/example/role nodes if a specific persona is clearly implied.
-- Output raw JSON array only — no markdown, no explanation.`;
+- Your response MUST be a raw JSON array and nothing else — no markdown, no explanation, no preamble.
+- If nothing in the document qualifies, return an empty array: []
+- Start your response with [ and end with ]`;
 
     const input = `Available personas: ${personaNames}
 
