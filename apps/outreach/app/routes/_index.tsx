@@ -1,6 +1,5 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
-  IconPlugConnected,
   IconBrandLinkedin,
   IconCheck,
   IconClipboard,
@@ -13,6 +12,15 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
+
+function HubSpotIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="16" fill="#ff7a59" />
+      <text x="16" y="21" textAnchor="middle" fill="white" fontSize="16" fontWeight="700" fontFamily="sans-serif">H</text>
+    </svg>
+  );
+}
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -258,43 +266,26 @@ function ProspectSheet({
                 {prospect.personaName}
               </span>
             )}
-            {crm?.connected && (
-              crm.found ? (
-                crm.hubspotUrl ? (
-                  <a
-                    href={crm.hubspotUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium no-underline ${
-                      crm.contact?.lifecycleStage === "customer"
-                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                        : crm.contact?.lifecycleStage === "opportunity"
-                        ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
-                        : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                    }`}
-                  >
-                    <IconPlugConnected size={10} />
-                    {crm.contact?.lifecycleStage ? crm.contact.lifecycleStage.replace(/_/g, " ") : "In CRM"}
-                    {crm.deals && crm.deals.length > 0 && ` · ${crm.deals.length} deal${crm.deals.length > 1 ? "s" : ""}`}
-                    <IconExternalLink size={9} />
-                  </a>
-                ) : (
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                    crm.contact?.lifecycleStage === "customer"
-                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                      : crm.contact?.lifecycleStage === "opportunity"
-                      ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
-                      : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                  }`}>
-                    <IconPlugConnected size={10} />
-                    {crm.contact?.lifecycleStage ? crm.contact.lifecycleStage.replace(/_/g, " ") : "In CRM"}
-                    {crm.deals && crm.deals.length > 0 && ` · ${crm.deals.length} deal${crm.deals.length > 1 ? "s" : ""}`}
-                  </span>
-                )
+            {crm?.connected && crm.found && (
+              crm.hubspotUrl ? (
+                <a
+                  href={crm.hubspotUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium no-underline"
+                  style={{ background: "rgba(255,122,89,0.15)", color: "#ff7a59" }}
+                >
+                  <HubSpotIcon />
+                  HubSpot
+                  <IconExternalLink size={9} />
+                </a>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                  <IconPlugConnected size={10} />
-                  Not in CRM
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{ background: "rgba(255,122,89,0.15)", color: "#ff7a59" }}
+                >
+                  <HubSpotIcon />
+                  HubSpot
                 </span>
               )
             )}
