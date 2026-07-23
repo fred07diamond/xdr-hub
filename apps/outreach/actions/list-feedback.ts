@@ -21,6 +21,7 @@ export default defineAction({
         message: feedback.message,
         draftNote: feedback.draftNote,
         createdAt: feedback.createdAt,
+        resolvedAt: feedback.resolvedAt,
       })
       .from(feedback)
       .orderBy(desc(feedback.createdAt));
