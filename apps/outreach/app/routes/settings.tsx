@@ -356,46 +356,29 @@ function HubSpotCard() {
   return (
     <Card id="hubspot" className="scroll-mt-16">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <IconPlugConnected size={16} />
-          HubSpot
-        </CardTitle>
-        <CardDescription>
-          Connect your HubSpot workspace to pull contact lists as outreach queues, see CRM status on prospects, and enrich company research.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Connection status */}
-        <div className="flex items-center gap-2 text-sm">
+        <CardTitle className="flex items-center justify-between text-base">
+          <span className="flex items-center gap-2">
+            <IconPlugConnected size={16} />
+            HubSpot
+          </span>
           {connLoading ? (
             <IconLoader2 size={14} className="animate-spin text-muted-foreground" />
           ) : conn?.connected ? (
-            <>
-              <IconCircleCheck size={14} className="text-emerald-600" />
-              <span className="text-emerald-700 dark:text-emerald-400 font-medium">Connected</span>
-            </>
+            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+              <IconCircleCheck size={13} />
+              Connected
+            </span>
           ) : (
-            <>
-              <IconCircleX size={14} className="text-muted-foreground" />
-              <span className="text-muted-foreground">Not connected</span>
-              {conn?.error && <span className="text-destructive text-xs">— {conn.error}</span>}
-            </>
+            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <IconCircleX size={13} />
+              Not connected
+            </span>
           )}
-        </div>
-
-        {/* Setup instructions */}
-        <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
-          <p className="font-medium text-foreground">Setup instructions</p>
-          <ol className="list-decimal ps-4 space-y-0.5">
-            <li>In HubSpot: Settings → Integrations → Private Apps → Create app.</li>
-            <li>Required scopes: <code className="font-mono">crm.lists.read</code>, <code className="font-mono">crm.objects.contacts.read</code>, <code className="font-mono">crm.objects.companies.read</code>, <code className="font-mono">crm.objects.deals.read</code>.</li>
-            <li>Copy the access token.</li>
-            <li>In Netlify: Site → Environment variables → add <code className="font-mono">HUBSPOT_ACCESS_TOKEN</code> with the token as the value.</li>
-            <li>Trigger a redeploy — the status above will show Connected.</li>
-          </ol>
-          <p className="pt-0.5 text-[10px]">The token is stored as a Netlify environment variable, never in the database or source code.</p>
-        </div>
-      </CardContent>
+        </CardTitle>
+        {conn?.error && (
+          <p className="text-xs text-destructive">{conn.error}</p>
+        )}
+      </CardHeader>
     </Card>
   );
 }
