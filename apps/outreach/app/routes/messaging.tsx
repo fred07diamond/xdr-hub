@@ -554,15 +554,47 @@ function NodePalette({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
 function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: () => void; personas: Persona[] }) {
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState("");
+  const [parsing, setParsing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => setText(reader.result as string);
-    reader.readAsText(file);
+    setParsing(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (ext === "pdf") {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/build/pdf.worker.min.mjs",
+          import.meta.url,
+        ).href;
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pages = await Promise.all(
+          Array.from({ length: pdf.numPages }, (_, i) =>
+            pdf.getPage(i + 1).then((p) =>
+              p.getTextContent().then((tc) =>
+                tc.items.map((item) => ("str" in item ? item.str : "")).join(" "),
+              ),
+            ),
+          ),
+        );
+        setText(pages.join("\n\n"));
+      } else if (ext === "docx" || ext === "doc") {
+        const arrayBuffer = await file.arrayBuffer();
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        setText(result.value);
+      } else {
+        const reader = new FileReader();
+        reader.onload = () => setText(reader.result as string);
+        reader.readAsText(file);
+      }
+    } finally {
+      setParsing(false);
+    }
   }
 
   function handleImport() {
@@ -605,14 +637,15 @@ function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: 
         </div>
         <div className="flex flex-col gap-4 p-5">
           <p className="text-xs text-zinc-500">
-            Paste your messaging guidelines or upload a .txt / .md file. The agent will parse it and create typed nodes automatically.
+            Paste your messaging guidelines or upload a file. The agent will parse it and create typed nodes automatically.
           </p>
           <div>
-            <input ref={fileRef} type="file" accept=".txt,.md,.markdown" className="hidden" onChange={handleFile} />
-            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-1.5">
+            <input ref={fileRef} type="file" accept=".txt,.md,.markdown,.pdf,.doc,.docx,.rtf,.csv" className="hidden" onChange={handleFile} />
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-1.5" disabled={parsing}>
               <IconFileUpload size={14} />
-              {fileName || "Upload file"}
+              {parsing ? "Parsing…" : fileName || "Upload file"}
             </Button>
+            {fileName && !parsing && <span className="ml-2 text-xs text-zinc-400">{fileName}</span>}
           </div>
           <textarea
             className="h-48 w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
@@ -622,7 +655,7 @@ function ImportDocDialog({ open, onClose, personas }: { open: boolean; onClose: 
           />
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" onClick={handleImport} disabled={!text.trim()}>Import</Button>
+            <Button size="sm" onClick={handleImport} disabled={!text.trim() || parsing}>Import</Button>
           </div>
         </div>
       </div>
