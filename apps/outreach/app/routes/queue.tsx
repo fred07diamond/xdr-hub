@@ -117,10 +117,16 @@ function NewQueueDialog({
                 <IconLoader2 size={13} className="animate-spin" />
                 Loading lists…
               </div>
+            ) : listsQuery.isError ? (
+              <p className="text-xs text-destructive">
+                {(listsQuery.error as Error)?.message ?? "Failed to load lists"}. Check your HubSpot token in Settings.
+              </p>
             ) : (listsQuery.data as { error?: string } | undefined)?.error ? (
               <p className="text-xs text-destructive">
-                {(listsQuery.data as { error?: string }).error}. Connect HubSpot in Settings first.
+                {(listsQuery.data as { error?: string }).error}
               </p>
+            ) : lists.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No contact lists found in your HubSpot account.</p>
             ) : (
               <select
                 value={selectedListId}
@@ -338,7 +344,7 @@ export default function QueuePage() {
               <div>
                 <p className="text-sm font-medium">No queues yet</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Connect HubSpot in Settings, then click "New" to import a contact list.
+                  Click "New" to import a HubSpot contact list.
                 </p>
               </div>
             </div>
