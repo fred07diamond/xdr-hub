@@ -362,23 +362,6 @@
     #mark-sent-btn:hover { border-color: #0a66c2; color: #0a66c2; }
     #mark-sent-btn.sent { background: #e6f4ea; border-color: #1e7e34; color: #1e7e34; cursor: default; }
 
-    #auto-mode-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      padding: 7px 10px;
-      background: #f8fafc;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      cursor: pointer;
-      text-transform: none;
-      letter-spacing: 0;
-      font-weight: normal;
-      color: inherit;
-      margin-bottom: 10px;
-    }
-
     .auto-mode-label {
       font-size: 12px;
       font-weight: 500;
@@ -550,6 +533,17 @@
       Get your token from
       <a href="https://builder-li.netlify.app/outreach/settings" target="_blank">Builder.LI → Settings</a>.
     </div>
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid #e5e7eb;">
+      <div class="settings-section-title" style="margin-bottom:10px;">Behaviour</div>
+      <label id="auto-mode-row" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:7px 0; text-transform:none; letter-spacing:0; font-weight:normal; color:inherit; margin-bottom:0;">
+        <span class="auto-mode-label">Auto-connect after drafting</span>
+        <span class="toggle-switch">
+          <input type="checkbox" id="auto-mode-toggle" />
+          <span class="toggle-slider"></span>
+        </span>
+      </label>
+      <p style="font-size:11px; color:#888; margin-top:4px; line-height:1.5;">When on, the extension automatically clicks Connect &amp; send after a draft appears.</p>
+    </div>
   </div>
 
   <div id="not-linkedin" style="display:none">
@@ -621,13 +615,6 @@
       </div>
 
       <div id="sent-section">
-        <label id="auto-mode-row">
-          <span class="auto-mode-label">Auto-connect after drafting</span>
-          <span class="toggle-switch">
-            <input type="checkbox" id="auto-mode-toggle" />
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
         <button id="auto-connect-btn">Connect &amp; send</button>
         <button id="mark-sent-btn">Mark as sent manually</button>
       </div>
