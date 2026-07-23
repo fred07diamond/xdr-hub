@@ -30,6 +30,7 @@ import {
   IconChecklist,
   IconCoin,
   IconFileText,
+  IconFileUpload,
   IconLock,
   IconMicrophone2,
   IconNote,
@@ -1015,6 +1016,7 @@ function MessagingCanvas() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewText, setPreviewText] = useState<string | null>(null);
@@ -1363,6 +1365,10 @@ function MessagingCanvas() {
           <IconSparkles size={14} />
           Preview message
         </Button>
+        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="gap-1.5">
+          <IconFileUpload size={14} />
+          Import doc
+        </Button>
         <Button
           size="sm"
           onClick={() => setBuildOpen(true)}
@@ -1475,6 +1481,8 @@ function MessagingCanvas() {
         />
       )}
 
+      <ImportDocModal open={importOpen} onClose={() => setImportOpen(false)} />
+
       <NodeEditorSheet
         node={editingNode}
         isAdmin={isAdmin}
@@ -1496,6 +1504,213 @@ function MessagingCanvas() {
           onAIAction={handleAIAction}
         />
       )}
+    </div>
+  );
+}
+
+// ── Import Doc Modal ───────────────────────────────────────────────────────────
+
+type ImportStatus = "idle" | "parsing" | "sending" | "done" | "error";
+
+const ACCEPTED_TYPES: Record<string, string[]> = {
+  "application/pdf": [],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [],
+  "application/msword": [],
+  "text/plain": [],
+  "text/markdown": [],
+};
+const ACCEPTED_EXT = ".pdf,.docx,.doc,.txt,.md,.markdown";
+
+async function extractText(file: File): Promise<string> {
+  const mime = file.type || "";
+  const name = file.name.toLowerCase();
+
+  if (mime === "application/pdf" || name.endsWith(".pdf")) {
+    const pdfjsLib = await import("pdfjs-dist");
+    const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.href;
+    const bytes = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((it) => ("str" in it ? it.str : "")).join(" "));
+    }
+    return pages.join("\n\n");
+  }
+
+  if (
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.endsWith(".docx")
+  ) {
+    const mammoth = await import("mammoth");
+    const bytes = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: bytes });
+    return result.value;
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+function ImportDocModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [status, setStatus] = useState<ImportStatus>("idle");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function reset() {
+    setStatus("idle");
+    setFileName(null);
+    setErrorMsg(null);
+    setDragOver(false);
+  }
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
+  useEffect(() => {
+    if (!open) reset();
+  }, [open]);
+
+  async function processFile(file: File) {
+    const accepted = Object.keys(ACCEPTED_TYPES).includes(file.type) ||
+      ACCEPTED_EXT.split(",").some((ext) => file.name.toLowerCase().endsWith(ext.trim()));
+    if (!accepted) {
+      setStatus("error");
+      setErrorMsg("Unsupported file type. Use PDF, DOCX, DOC, or TXT.");
+      return;
+    }
+
+    setFileName(file.name);
+    setStatus("parsing");
+    setErrorMsg(null);
+
+    let text: string;
+    try {
+      text = await extractText(file);
+    } catch {
+      setStatus("error");
+      setErrorMsg("Could not read the file. Try a different format.");
+      return;
+    }
+
+    if (!text.trim()) {
+      setStatus("error");
+      setErrorMsg("The file appears to be empty or could not be read.");
+      return;
+    }
+
+    setStatus("sending");
+    sendToAgentChat({
+      message: `I've attached "${file.name}". Extract canvas nodes from this document and build my messaging canvas.`,
+      context: text,
+      submit: true,
+    });
+
+    setStatus("done");
+    setTimeout(() => {
+      handleClose();
+    }, 1800);
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processFile(file);
+  }
+
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+    e.target.value = "";
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={handleClose} />
+      <div className="relative z-10 w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+        <button
+          onClick={handleClose}
+          className="absolute right-4 top-4 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+        >
+          <IconX size={16} />
+        </button>
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
+          Import document
+        </h2>
+        <p className="text-xs text-zinc-500 mb-4">
+          Drop a PDF, Word doc, or text file. The agent will extract canvas nodes from it.
+        </p>
+
+        {status === "idle" || status === "error" ? (
+          <>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => inputRef.current?.click()}
+              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-10 transition-colors ${
+                dragOver
+                  ? "border-violet-500 bg-violet-50 dark:bg-violet-900/20"
+                  : "border-zinc-300 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-500"
+              }`}
+            >
+              <IconFileUpload size={28} className="text-zinc-400" />
+              <p className="text-xs text-zinc-500">
+                Drop file here or <span className="text-violet-600 dark:text-violet-400">click to browse</span>
+              </p>
+              <p className="text-xs text-zinc-400">PDF, DOCX, DOC, TXT</p>
+            </div>
+            <input
+              ref={inputRef}
+              type="file"
+              accept={ACCEPTED_EXT}
+              className="hidden"
+              onChange={handleFileInput}
+            />
+            {status === "error" && errorMsg && (
+              <p className="mt-3 text-xs text-red-500">{errorMsg}</p>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-3 py-8">
+            {status === "parsing" && (
+              <>
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
+                <p className="text-xs text-zinc-500">Reading {fileName}…</p>
+              </>
+            )}
+            {status === "sending" && (
+              <>
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
+                <p className="text-xs text-zinc-500">Sending to agent…</p>
+              </>
+            )}
+            {status === "done" && (
+              <>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 8l3.5 3.5L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <p className="text-xs text-zinc-500">Sent! Check the Chat panel for results.</p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
