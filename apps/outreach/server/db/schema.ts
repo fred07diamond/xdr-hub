@@ -64,6 +64,7 @@ export const feedback = table("feedback", {
   message: text("message").notNull(),
   draftNote: text("draft_note"),  // the connection note the user rated
   createdAt: text("created_at").default(now()),
+  resolvedAt: text("resolved_at"), // null = active; set to ISO string when resolved
 });
 
 // Admin-controlled workspace settings (key-value store).
