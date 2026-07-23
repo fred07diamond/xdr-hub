@@ -19,7 +19,15 @@ async function hubspotFetchWithToken(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`HubSpot API error (${res.status}): ${body}`);
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { message?: string };
+      message = parsed.message ?? body;
+    } catch { /* use raw body */ }
+    if (res.status === 401) {
+      throw new Error("Invalid token — make sure you're using a HubSpot Private App token (starts with pat-), not an API key.");
+    }
+    throw new Error(`HubSpot error (${res.status}): ${message}`);
   }
   return res.json();
 }
