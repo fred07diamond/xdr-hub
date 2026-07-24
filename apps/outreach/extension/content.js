@@ -531,31 +531,53 @@ async function sendConnectionRequest(note) {
       ? list
       : list.filter((c) => `${c.ariaLabel || ""} ${c.contextText || ""}`.toLowerCase().includes(profileName.toLowerCase()));
 
-  // Scoped search: look within the profile card section first.
-  // The profile name is inside an h1/h2 inside a <section>; that same section
-  // contains only the target profile's action buttons. This avoids the
-  // document-wide forThisProfile() filter which relies on contextText including
-  // the name — a check that fails when el.closest("div") returns the small
-  // action-bar div that doesn't reach the section containing the name.
-  const cardSection = getProfileNameEl()?.closest("section") ?? null;
+  // Scoped search: walk up from the profile name element to find the smallest
+  // ancestor that ALSO contains a visible Connect button. That ancestor is the
+  // profile card container — it holds only the target profile's actions and
+  // nothing from the sidebar or "People similar to" sections.
+  //
+  // We can't rely on closest("section") because LinkedIn sometimes uses only
+  // nested <div>s for the profile card, returning null and forcing a fallback
+  // to the document-wide search where decoy buttons exist.
+  const nameEl = getProfileNameEl();
+  const mainEl = document.querySelector("main, [role='main']") || document.body;
+
+  const isConnectEl = (el) => {
+    const text = (el.innerText || el.textContent || "").trim();
+    const label = el.getAttribute("aria-label") || "";
+    if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
+    if (el.offsetParent === null) return false;
+    if (el.tagName === "A") {
+      const href = (el.getAttribute("href") || "").trim();
+      if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) return false;
+    }
+    return true;
+  };
+
+  const toCandidate = (el, index) => ({
+    index, tag: el.tagName,
+    text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+    ariaLabel: el.getAttribute("aria-label"),
+    contextText: "",
+    _el: el,
+  });
+
+  // Walk up from the name element, stopping at <main>, to find the profile card.
+  let cardSection = null;
+  if (nameEl) {
+    let container = nameEl.parentElement;
+    while (container && container !== mainEl && container !== document.body) {
+      const hasConnect = Array.from(container.querySelectorAll("button, [role='button']"))
+        .some(isConnectEl);
+      if (hasConnect) { cardSection = container; break; }
+      container = container.parentElement;
+    }
+  }
+
   const cardCandidates = cardSection
-    ? Array.from(cardSection.querySelectorAll("button, a, [role='button']")).filter((el) => {
-        const text = (el.innerText || el.textContent || "").trim();
-        const label = el.getAttribute("aria-label") || "";
-        if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
-        if (el.offsetParent === null) return false;
-        if (el.tagName === "A") {
-          const href = (el.getAttribute("href") || "").trim();
-          if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) return false;
-        }
-        return true;
-      }).map((el, index) => ({
-        index, tag: el.tagName,
-        text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
-        ariaLabel: el.getAttribute("aria-label"),
-        contextText: "",
-        _el: el,
-      }))
+    ? Array.from(cardSection.querySelectorAll("button, a, [role='button']"))
+        .filter(isConnectEl)
+        .map(toCandidate)
     : [];
 
   let candidates = cardCandidates.length > 0
