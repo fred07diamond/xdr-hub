@@ -464,12 +464,11 @@ function gatherConnectCandidates() {
       if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
       const _r = el.getBoundingClientRect();
       if (_r.width === 0 && _r.height === 0) return false;
-      // Exclude <a> tags whose href would hard-navigate away from the profile.
-      // Feed/post links navigate; LinkedIn profile overlay URLs (/in/...) are
-      // handled by the SPA and open a modal — allow those through.
+      // Exclude <a> tags that hard-navigate away (external or LinkedIn content pages).
+      // Allow /in/, /sales/, /uas/, and any relative LinkedIn path — all handled by SPA.
       if (el.tagName === "A") {
         const href = (el.getAttribute("href") || "").trim();
-        if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) return false;
+        if (/^https?:\/\//i.test(href) || /^\/(feed|jobs|learning|search|pulse|mynetwork)\//.test(href)) return false;
       }
       return true;
     })
@@ -522,8 +521,13 @@ async function sendConnectionRequest(note) {
   // people — those are decoys, not something to let the agent guess among.
   // Only trust a candidate whose accessible name actually references the
   // profile being viewed.
+  // Strip LinkedIn's degree badge ("• 2nd", "· 2nd degree connection", etc.)
+  // that appears inside the h1 as a child span. Without stripping, profileName
+  // becomes "Becca Z. • 2nd" and the aria-label lookup "invite becca z. to connect"
+  // never matches it.
+  const rawName = getProfileNameEl()?.innerText?.trim() || "";
   const profileName =
-    getProfileNameEl()?.innerText?.trim() ||
+    rawName.replace(/\s*[•·]\s*.*/s, "").trim() ||
     document.title.replace(/\s*[-–|].*$/, "").trim() ||
     "Unknown";
 
@@ -543,7 +547,9 @@ async function sendConnectionRequest(note) {
     if (rect.width === 0 && rect.height === 0) return false;
     if (el.tagName === "A") {
       const href = (el.getAttribute("href") || "").trim();
-      if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) return false;
+      // Block external links and LinkedIn content pages that would hard-navigate
+      // away. Allow /in/, /sales/, /uas/, and any other LinkedIn-relative path.
+      if (/^https?:\/\//i.test(href) || /^\/(feed|jobs|learning|search|pulse|mynetwork)\//.test(href)) return false;
     }
     return true;
   };
@@ -704,14 +710,12 @@ async function sendConnectionRequest(note) {
   const connectBtn = candidates[targetIndex]?._el;
   if (!connectBtn) return { ok: false, error: "Agent returned invalid element index." };
 
-  // Safety check: don't click a link that would hard-navigate away from the
-  // profile page. LinkedIn's "..." dropdown "Connect" item may be an <a> with
-  // href="/in/.../overlay/connect/" — the SPA intercepts that and opens the
-  // modal without a full navigation. Block only hrefs that clearly point to
-  // content (post feeds) or external sites.
+  // Safety check: don't click a link that hard-navigates away from the profile.
+  // LinkedIn's SPA intercepts all relative paths (/in/, /sales/, /uas/, etc.)
+  // and opens a modal — only block truly external URLs.
   if (connectBtn.tagName === "A") {
     const href = (connectBtn.getAttribute("href") || "").trim();
-    if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) {
+    if (/^https?:\/\//i.test(href) || href.startsWith("//")) {
       return { ok: false, error: "No Connect button found for this profile. LinkedIn may not show a direct Connect option here." };
     }
   }
@@ -773,18 +777,24 @@ async function sendConnectionRequest(note) {
 window.__bliDiagnose = function () {
   const mainEl = document.querySelector("main, [role='main']");
   const nameEl = mainEl?.querySelector("h1");
-  const profileName = nameEl?.innerText?.trim() ?? "";
-  const firstName = profileName.split(/\s+/)[0].toLowerCase();
-  console.log("[BLI] Profile name:", profileName, "| firstName:", firstName);
+  const rawName = nameEl?.innerText?.trim() ?? "";
+  const profileName = rawName.replace(/\s*[•·]\s*.*/s, "").trim();
+  console.log("[BLI] Raw h1 text:", JSON.stringify(rawName));
+  console.log("[BLI] Cleaned profileName:", JSON.stringify(profileName));
 
-  const byLabel = Array.from(document.querySelectorAll("button")).filter((b) => {
+  const byLabel = Array.from(document.querySelectorAll("button, a, [role='button']")).filter((b) => {
     const label = (b.getAttribute("aria-label") ?? "").toLowerCase();
     return label.includes("connect");
   });
-  console.log("[BLI] Buttons with 'connect' in aria-label:", byLabel.map(b => `"${b.getAttribute("aria-label")}"`));
+  console.log("[BLI] Elements with 'connect' in aria-label:", byLabel.map(b =>
+    `tag=${b.tagName} label="${b.getAttribute("aria-label")}" href="${b.getAttribute("href") ?? ""}" rect=${JSON.stringify(b.getBoundingClientRect().toJSON()).slice(0,60)}`
+  ));
 
-  const byText = Array.from(document.querySelectorAll("button")).filter(b => /connect/i.test(b.innerText.trim()));
-  console.log("[BLI] Buttons with 'Connect' in text:", byText.map(b => `"${b.innerText.trim()}" (aria="${b.getAttribute("aria-label")}") visible=${b.offsetParent !== null}`));
+  const byText = Array.from(document.querySelectorAll("button, a, [role='button']")).filter(b => /connect/i.test(b.innerText.trim()) && b.innerText.trim().length < 35);
+  console.log("[BLI] Short elements with 'Connect' text:", byText.map(b => {
+    const r = b.getBoundingClientRect();
+    return `tag=${b.tagName} text="${b.innerText.trim()}" aria="${b.getAttribute("aria-label")}" href="${b.getAttribute("href") ?? ""}" x=${r.left.toFixed(0)} y=${r.top.toFixed(0)} w=${r.width.toFixed(0)} h=${r.height.toFixed(0)}`;
+  }));
 };
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
