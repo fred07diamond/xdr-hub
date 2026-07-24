@@ -246,6 +246,53 @@ interface NodeData extends Record<string, unknown> {
   onClick: (node: MessagingNode) => void;
   onContextMenu: (node: MessagingNode, event: MouseEvent) => void;
   onDelete: (id: string) => void;
+  onAddConnected?: (sourceId: string, type: PaletteKind) => void;
+}
+
+// ── Interactive source handle with click-to-add ────────────────────────────────
+
+function SourceAddHandle({ nodeId, onAddConnected }: {
+  nodeId: string;
+  onAddConnected?: (sourceId: string, type: PaletteKind) => void;
+}) {
+  const [palettePos, setPalettePos] = useState<{ x: number; y: number } | null>(null);
+  const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
+
+  return (
+    <>
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-[18px] !h-[18px] !bg-white dark:!bg-zinc-800 !border-2 !border-zinc-300 dark:!border-zinc-600 hover:!border-primary hover:!bg-primary/10 !transition-all !duration-150 !flex !items-center !justify-center"
+        onMouseDown={(e) => { mouseDownPos.current = { x: e.clientX, y: e.clientY }; }}
+        onClick={(e) => {
+          if (!mouseDownPos.current || !onAddConnected) return;
+          const dist = Math.hypot(e.clientX - mouseDownPos.current.x, e.clientY - mouseDownPos.current.y);
+          mouseDownPos.current = null;
+          if (dist < 6) {
+            e.stopPropagation();
+            setPalettePos({ x: e.clientX + 12, y: e.clientY - 10 });
+          }
+        }}
+      >
+        <IconPlus size={9} className="pointer-events-none text-zinc-400" />
+      </Handle>
+
+      {palettePos && onAddConnected && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPalettePos(null)} />
+          <div className="fixed z-50" style={{ left: palettePos.x, top: palettePos.y }}>
+            <NodePalette
+              onSelect={(type) => {
+                onAddConnected(nodeId, type);
+                setPalettePos(null);
+              }}
+            />
+          </div>
+        </>
+      )}
+    </>
+  );
 }
 
 // ── Unified canvas node component ──────────────────────────────────────────────
@@ -328,7 +375,7 @@ function CanvasNode({ data }: NodeProps) {
 
       {/* Persona nodes are source-only anchors — no incoming connections allowed */}
       {!isGlobal && !isPersona && <Handle type="target" position={Position.Left} />}
-      <Handle type="source" position={Position.Right} />
+      <SourceAddHandle nodeId={d.dbNode.id} onAddConnected={d.onAddConnected} />
     </div>
   );
 }
@@ -367,7 +414,7 @@ function CompanyNode({ data }: NodeProps) {
           </p>
         )}
       </div>
-      <Handle type="source" position={Position.Right} />
+      <SourceAddHandle nodeId={d.dbNode.id} onAddConnected={d.onAddConnected} />
     </div>
   );
 }
@@ -415,7 +462,7 @@ function PersonaRefNode({ data }: NodeProps) {
         )}
       </div>
       <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      <SourceAddHandle nodeId={d.dbNode.id} onAddConnected={d.onAddConnected} />
     </div>
   );
 }
@@ -933,6 +980,7 @@ function toFlowNode(
   onContextMenu: (n: MessagingNode, e: MouseEvent) => void,
   onDelete: (id: string) => void,
   onPersonaSelect?: (nodeId: string, personaId: string) => void,
+  onAddConnected?: (sourceId: string, type: PaletteKind) => void,
 ): Node {
   return {
     id: dbNode.id,
@@ -946,6 +994,7 @@ function toFlowNode(
       onClick,
       onContextMenu,
       onDelete,
+      onAddConnected,
       ...(dbNode.type === "persona_ref" ? { allPersonas: personas, onPersonaSelect } : {}),
     } as NodeData,
   };
@@ -1047,6 +1096,11 @@ function MessagingCanvas() {
   const hasAutoInitializedRef = useRef(false);
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingBuildRef = useRef(false);
+  const addConnectedRef = useRef<((sourceId: string, type: PaletteKind) => void) | null>(null);
+  const stableAddConnected = useCallback(
+    (sourceId: string, type: PaletteKind) => addConnectedRef.current?.(sourceId, type),
+    [],
+  );
 
   // Clear any pending drag-save timer when the canvas unmounts
   useEffect(() => () => { if (dragTimerRef.current) clearTimeout(dragTimerRef.current); }, []);
@@ -1158,12 +1212,55 @@ function MessagingCanvas() {
     [graph],
   );
 
+  const handleAddConnected = useCallback(
+    async (sourceNodeId: string, type: PaletteKind) => {
+      if (!activeCanvasId || !graph) return;
+      const sourceNode = graph.nodes.find((n) => n.id === sourceNodeId);
+      if (!sourceNode) return;
+
+      const newNode = await createNode.mutateAsync({
+        canvasId: activeCanvasId,
+        nodeType: type,
+        positionX: sourceNode.positionX + 280,
+        positionY: sourceNode.positionY,
+      }) as MessagingNode;
+
+      setNodes((nds) => [
+        ...nds,
+        toFlowNode(newNode, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, undefined, stableAddConnected),
+      ]);
+
+      const edgeRes = await createEdge.mutateAsync({
+        canvasId: activeCanvasId,
+        sourceId: sourceNodeId,
+        targetId: newNode.id,
+      }) as any;
+
+      if (edgeRes?.ok !== false) {
+        const nodeById = new Map([...graph.nodes, newNode].map((n) => [n.id, n]));
+        setEdges((eds) => [
+          ...eds,
+          toFlowEdge(
+            { id: edgeRes.id, sourceId: sourceNodeId, targetId: newNode.id, createdAt: null },
+            nodeById, ancestorPersonaMap, personasRef.current,
+          ),
+        ]);
+      }
+
+      setEditingNode(newNode);
+    },
+    [activeCanvasId, graph, createNode, createEdge, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, stableAddConnected, ancestorPersonaMap],
+  );
+
+  // Keep ref current so stableAddConnected always calls the latest closure
+  addConnectedRef.current = handleAddConnected;
+
   useEffect(() => {
     if (!graph) return;
     personasRef.current = graph.personas;
     setPersonas(graph.personas);
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handlePersonaSelect)));
+    setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handlePersonaSelect, stableAddConnected)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
@@ -1210,7 +1307,7 @@ function MessagingCanvas() {
       positionX: Math.round(pos.x),
       positionY: Math.round(pos.y),
     }) as MessagingNode;
-    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete)]);
+    setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, undefined, stableAddConnected)]);
     setEditingNode(result);
   }
 
