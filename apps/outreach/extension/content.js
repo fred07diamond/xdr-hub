@@ -534,55 +534,42 @@ async function sendConnectionRequest(note) {
 
   if (candidates.length === 0) {
     // Connect may be collapsed into the "More actions" ("...") overflow menu.
-    // After opening the menu, search INSIDE the dropdown that appeared — not
-    // document-wide — so we never accidentally pick up sidebar buttons or
-    // newly-rendered activity-feed links for other profiles.
+    // LinkedIn's dropdown does not use role="menu" or any stable data attribute,
+    // so we cannot locate it by DOM role. Instead we record the button's
+    // viewport position before clicking, then keep only elements that are
+    // spatially close to it after the menu opens. The dropdown always floats
+    // within ~400 px of the button; activity-section post links are 500–1000 px
+    // below; sidebar "People also viewed" cards are far to the right — so
+    // proximity alone reliably isolates dropdown items from the rest of the page.
     const moreBtn = findMoreActionsButton();
     if (moreBtn) {
+      const moreBtnRect = moreBtn.getBoundingClientRect();
       moreBtn.click();
-      // Wait for the dropdown menu to appear in the DOM.
-      const menu = await waitForEl(
-        () =>
-          document.querySelector('[role="menu"]') ??
-          document.querySelector('[data-test-dropdown-menu]') ??
-          // Fallback: any newly-visible descendant of the profile card with listbox role.
-          (moreBtn.closest("section, [data-member-id], main") ?? document).querySelector('[role="listbox"]') ??
-          null,
-        { timeout: 1500 },
-      );
+      // Give the dropdown time to fully render before scanning.
+      await new Promise((r) => setTimeout(r, 500));
 
-      if (menu) {
-        // Prefer to search within the menu itself — avoids picking up unrelated
-        // sidebar or activity-section elements that may have re-rendered.
-        const items = Array.from(
-          menu.querySelectorAll("button, a, [role='menuitem'], [role='option'], [role='button']"),
-        ).filter((el) => {
-          const text = (el.innerText || el.textContent || "").trim();
-          const label = el.getAttribute("aria-label") || "";
-          if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
-          if (el.offsetParent === null) return false;
-          // Still exclude plain navigating links — LinkedIn's Connect item in a
-          // dropdown fires a modal via event delegation, not href navigation.
-          if (el.tagName === "A") {
-            const href = (el.getAttribute("href") || "").trim();
-            if (href && href !== "#" && !href.startsWith("javascript:")) return false;
-          }
-          return true;
-        });
-        candidates = items.map((el, index) => ({
-          index,
-          tag: el.tagName,
-          text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
-          ariaLabel: el.getAttribute("aria-label"),
-          contextText: "",
-          _el: el,
-        }));
-      } else {
-        // Dropdown not found via role — fall back to the diff approach but
-        // apply forThisProfile so sidebar decoys are excluded.
-        await new Promise((r) => setTimeout(r, 200));
-        candidates = forThisProfile(gatherConnectCandidates());
-      }
+      const nearbyConnectEls = Array.from(
+        document.querySelectorAll("button, a, [role='button'], [role='menuitem'], [role='option'], li"),
+      ).filter((el) => {
+        const text = (el.innerText || el.textContent || "").trim();
+        const label = el.getAttribute("aria-label") || "";
+        if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
+        if (el.offsetParent === null) return false;
+        const rect = el.getBoundingClientRect();
+        return (
+          Math.abs(rect.left - moreBtnRect.left) < 500 &&
+          Math.abs(rect.top - moreBtnRect.top) < 600
+        );
+      });
+
+      candidates = nearbyConnectEls.map((el, index) => ({
+        index,
+        tag: el.tagName,
+        text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+        ariaLabel: el.getAttribute("aria-label"),
+        contextText: "",
+        _el: el,
+      }));
     }
   }
 
@@ -608,10 +595,14 @@ async function sendConnectionRequest(note) {
   const connectBtn = candidates[targetIndex]?._el;
   if (!connectBtn) return { ok: false, error: "Agent returned invalid element index." };
 
-  // Final safety check: never click a navigating link — that would leave the profile page.
+  // Safety check: don't click a link that would hard-navigate away from the
+  // profile page. LinkedIn's "..." dropdown "Connect" item may be an <a> with
+  // href="/in/.../overlay/connect/" — the SPA intercepts that and opens the
+  // modal without a full navigation. Block only hrefs that clearly point to
+  // content (post feeds) or external sites.
   if (connectBtn.tagName === "A") {
     const href = (connectBtn.getAttribute("href") || "").trim();
-    if (href && href !== "#" && !href.startsWith("javascript:")) {
+    if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) {
       return { ok: false, error: "No Connect button found for this profile. LinkedIn may not show a direct Connect option here." };
     }
   }
