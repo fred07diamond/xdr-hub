@@ -531,7 +531,36 @@ async function sendConnectionRequest(note) {
       ? list
       : list.filter((c) => `${c.ariaLabel || ""} ${c.contextText || ""}`.toLowerCase().includes(profileName.toLowerCase()));
 
-  let candidates = forThisProfile(gatherConnectCandidates());
+  // Scoped search: look within the profile card section first.
+  // The profile name is inside an h1/h2 inside a <section>; that same section
+  // contains only the target profile's action buttons. This avoids the
+  // document-wide forThisProfile() filter which relies on contextText including
+  // the name — a check that fails when el.closest("div") returns the small
+  // action-bar div that doesn't reach the section containing the name.
+  const cardSection = getProfileNameEl()?.closest("section") ?? null;
+  const cardCandidates = cardSection
+    ? Array.from(cardSection.querySelectorAll("button, a, [role='button']")).filter((el) => {
+        const text = (el.innerText || el.textContent || "").trim();
+        const label = el.getAttribute("aria-label") || "";
+        if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
+        if (el.offsetParent === null) return false;
+        if (el.tagName === "A") {
+          const href = (el.getAttribute("href") || "").trim();
+          if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) return false;
+        }
+        return true;
+      }).map((el, index) => ({
+        index, tag: el.tagName,
+        text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+        ariaLabel: el.getAttribute("aria-label"),
+        contextText: "",
+        _el: el,
+      }))
+    : [];
+
+  let candidates = cardCandidates.length > 0
+    ? cardCandidates
+    : forThisProfile(gatherConnectCandidates());
 
   if (candidates.length === 0) {
     // Connect may be collapsed into the "More actions" ("...") overflow menu.
@@ -577,9 +606,14 @@ async function sendConnectionRequest(note) {
       // --- Approach 2: elementFromPoint grid ---
       if (candidates.length === 0) {
         const btnRect = moreBtn.getBoundingClientRect();
-        // Sweep below and to the left where the dropdown typically opens.
-        outer: for (let dy = 30; dy < 450; dy += 15) {
-          for (let dx = -220; dx <= 60; dx += 25) {
+        // Probe within the dropdown's own visual footprint (roughly ±140px
+        // horizontally from the button). The open dropdown has higher z-index
+        // than page content, so elementFromPoint returns dropdown elements at
+        // any point inside the overlay — even if a "People similar to" card
+        // sits underneath. The previous wide dx=-220 sweep escaped the
+        // overlay and landed on embedded Connect buttons for OTHER people.
+        outer: for (let dy = 10; dy < 400; dy += 10) {
+          for (let dx = -60; dx <= 140; dx += 20) {
             const probed = document.elementFromPoint(btnRect.left + dx, btnRect.bottom + dy);
             if (!probed || probed === moreBtn || probed === document.body) continue;
             let check = probed;
