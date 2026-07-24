@@ -48,6 +48,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { MouseEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -292,7 +293,7 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
         />
       </Handle>
 
-      {palettePos && onAddConnected && (
+      {palettePos && onAddConnected && createPortal(
         <>
           <div className="fixed inset-0 z-40" onClick={() => setPalettePos(null)} />
           <div className="fixed z-50" style={{ left: palettePos.x, top: palettePos.y }}>
@@ -303,7 +304,8 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
               }}
             />
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </>
   );
