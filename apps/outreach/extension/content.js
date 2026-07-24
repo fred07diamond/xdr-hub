@@ -461,7 +461,15 @@ function gatherConnectCandidates() {
     .filter((el) => {
       const text = (el.innerText || el.textContent || "").trim();
       const label = el.getAttribute("aria-label") || "";
-      return (/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label)) && el.offsetParent !== null;
+      if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
+      if (el.offsetParent === null) return false;
+      // Exclude <a> tags with real hrefs — clicking those navigates the page instead of
+      // opening the connection modal. LinkedIn's Connect button is always a <button>.
+      if (el.tagName === "A") {
+        const href = (el.getAttribute("href") || "").trim();
+        if (href && href !== "#" && !href.startsWith("javascript:")) return false;
+      }
+      return true;
     })
     .map((el, index) => ({
       index,
@@ -560,6 +568,14 @@ async function sendConnectionRequest(note) {
 
   const connectBtn = candidates[targetIndex]?._el;
   if (!connectBtn) return { ok: false, error: "Agent returned invalid element index." };
+
+  // Final safety check: never click a navigating link — that would leave the profile page.
+  if (connectBtn.tagName === "A") {
+    const href = (connectBtn.getAttribute("href") || "").trim();
+    if (href && href !== "#" && !href.startsWith("javascript:")) {
+      return { ok: false, error: "No Connect button found for this profile. LinkedIn may not show a direct Connect option here." };
+    }
+  }
 
   connectBtn.click();
   await new Promise((r) => setTimeout(r, 1000));
