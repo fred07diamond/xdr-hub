@@ -1269,8 +1269,6 @@ function MessagingCanvas() {
           ),
         ]);
       }
-
-      setEditingNode(newNode);
     },
     [activeCanvasId, graph, createNode, createEdge, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, stableAddConnected, ancestorPersonaMap],
   );
