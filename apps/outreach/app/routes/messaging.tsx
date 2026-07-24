@@ -322,7 +322,7 @@ function CanvasNode({ data }: NodeProps) {
 
   return (
     <div
-      className="relative rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden group"
+      className="relative rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] group"
       style={accentColor ? { borderLeft: `3px solid ${accentColor}` } : undefined}
       onClick={() => d.onClick(d.dbNode)}
       onContextMenu={(e) => { e.preventDefault(); d.onContextMenu(d.dbNode, e); }}
@@ -340,49 +340,52 @@ function CanvasNode({ data }: NodeProps) {
           <IconX size={9} />
         </button>
       )}
-      {/* Header */}
-      <div
-        className="flex items-center gap-1.5 px-3 py-2 text-white"
-        style={{ background: headerColor }}
-      >
-        <cfg.Icon size={12} className="shrink-0 opacity-90" />
-        <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-semibold truncate">
-            {isPersona ? (d.persona?.name ?? d.dbNode.title) : d.dbNode.title}
-          </p>
-          {isPersona && <p className="text-[9px] opacity-75">ICP Persona</p>}
+      {/* Content clipped to rounded corners; handles live outside this wrapper */}
+      <div className="overflow-hidden rounded-xl">
+        {/* Header */}
+        <div
+          className="flex items-center gap-1.5 px-3 py-2 text-white"
+          style={{ background: headerColor }}
+        >
+          <cfg.Icon size={12} className="shrink-0 opacity-90" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold truncate">
+              {isPersona ? (d.persona?.name ?? d.dbNode.title) : d.dbNode.title}
+            </p>
+            {isPersona && <p className="text-[9px] opacity-75">ICP Persona</p>}
+          </div>
+          {(isGlobal || isPersona) && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
         </div>
-        {(isGlobal || isPersona) && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
-      </div>
 
-      {/* Field preview */}
-      <div className="px-3 py-2 text-[10px] space-y-0.5">
-        {filled.length === 0 ? (
-          <p className="italic text-zinc-400">
-            {isPersona ? "No baseline messaging yet — click to add" : "Empty — click to edit"}
-          </p>
-        ) : (
-          filled.map(({ key, label, val }) => {
-            const text = String(val ?? "");
-            return (
-              <div key={String(key)} className="flex gap-1 leading-snug">
-                <span className="shrink-0 font-semibold text-zinc-400">{label}:</span>
-                <span className="text-zinc-600 dark:text-zinc-300 break-words line-clamp-2">
-                  {text.length > 60 ? text.slice(0, 57) + "…" : text}
-                </span>
-              </div>
-            );
-          })
+        {/* Field preview */}
+        <div className="px-3 py-2 text-[10px] space-y-0.5">
+          {filled.length === 0 ? (
+            <p className="italic text-zinc-400">
+              {isPersona ? "No baseline messaging yet — click to add" : "Empty — click to edit"}
+            </p>
+          ) : (
+            filled.map(({ key, label, val }) => {
+              const text = String(val ?? "");
+              return (
+                <div key={String(key)} className="flex gap-1 leading-snug">
+                  <span className="shrink-0 font-semibold text-zinc-400">{label}:</span>
+                  <span className="text-zinc-600 dark:text-zinc-300 break-words line-clamp-2">
+                    {text.length > 60 ? text.slice(0, 57) + "…" : text}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Persona ancestry badge */}
+        {accentColor && d.ancestorPersona && (
+          <div className="flex items-center gap-1.5 border-t border-zinc-100 dark:border-zinc-800 px-3 py-1">
+            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: accentColor }} />
+            <span className="text-[9px] text-zinc-400 truncate">{d.ancestorPersona.name}</span>
+          </div>
         )}
       </div>
-
-      {/* Persona ancestry badge */}
-      {accentColor && d.ancestorPersona && (
-        <div className="flex items-center gap-1.5 border-t border-zinc-100 dark:border-zinc-800 px-3 py-1">
-          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: accentColor }} />
-          <span className="text-[9px] text-zinc-400 truncate">{d.ancestorPersona.name}</span>
-        </div>
-      )}
 
       {/* Persona nodes are source-only anchors — no incoming connections allowed */}
       {!isGlobal && !isPersona && <Handle type="target" position={Position.Left} />}
@@ -398,7 +401,7 @@ function CompanyNode({ data }: NodeProps) {
 
   return (
     <div
-      className="relative rounded-xl border-2 border-cyan-600 bg-white dark:bg-zinc-900 shadow-md w-[220px] overflow-hidden cursor-pointer group"
+      className="relative rounded-xl border-2 border-cyan-600 bg-white dark:bg-zinc-900 shadow-md w-[220px] cursor-pointer group"
       onClick={() => d.onClick(d.dbNode)}
       onContextMenu={(e) => { e.preventDefault(); d.onContextMenu(d.dbNode, e); }}
     >
@@ -410,20 +413,22 @@ function CompanyNode({ data }: NodeProps) {
         <IconX size={9} />
       </button>
       <Handle type="target" position={Position.Left} />
-      <div className="flex items-center gap-1.5 px-3 py-2 text-white bg-cyan-700">
-        <IconBuilding size={12} className="shrink-0 opacity-90" />
-        <p className="text-[11px] font-semibold flex-1 truncate">
-          {hasName ? d.dbNode.title : "Company"}
-        </p>
-      </div>
-      <div className="px-3 py-2">
-        {hasNotes ? (
-          <p className="text-[10px] text-zinc-500 line-clamp-3">{d.dbNode.notes}</p>
-        ) : (
-          <p className="text-[10px] text-zinc-400 italic">
-            {hasName ? "Click to add research →" : "Click to set company name →"}
+      <div className="overflow-hidden rounded-xl">
+        <div className="flex items-center gap-1.5 px-3 py-2 text-white bg-cyan-700">
+          <IconBuilding size={12} className="shrink-0 opacity-90" />
+          <p className="text-[11px] font-semibold flex-1 truncate">
+            {hasName ? d.dbNode.title : "Company"}
           </p>
-        )}
+        </div>
+        <div className="px-3 py-2">
+          {hasNotes ? (
+            <p className="text-[10px] text-zinc-500 line-clamp-3">{d.dbNode.notes}</p>
+          ) : (
+            <p className="text-[10px] text-zinc-400 italic">
+              {hasName ? "Click to add research →" : "Click to set company name →"}
+            </p>
+          )}
+        </div>
       </div>
       <SourceAddHandle nodeId={d.dbNode.id} onAddConnected={d.onAddConnected} />
     </div>
@@ -440,7 +445,7 @@ function PersonaRefNode({ data }: NodeProps) {
 
   return (
     <div
-      className="relative rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] overflow-hidden group"
+      className="relative rounded-xl border border-zinc-200/60 bg-white shadow-md dark:border-zinc-700/60 dark:bg-zinc-900 cursor-pointer w-[220px] group"
       onClick={() => d.onClick(d.dbNode)}
     >
       <button
@@ -450,27 +455,29 @@ function PersonaRefNode({ data }: NodeProps) {
       >
         <IconX size={9} />
       </button>
-      <div className="flex items-center gap-1.5 px-3 py-2 text-white" style={{ background: headerColor }}>
-        <IconUserCheck size={12} className="shrink-0 opacity-90" />
-        <p className="text-[11px] font-semibold truncate flex-1">
-          {selected?.name ?? "Select Persona"}
-        </p>
-      </div>
-      <div className="px-3 py-2 flex flex-col gap-1.5">
-        <select
-          value={d.dbNode.personaId ?? ""}
-          onChange={(e) => { e.stopPropagation(); d.onPersonaSelect(d.dbNode.id, e.target.value); }}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full text-xs bg-transparent border border-zinc-200 dark:border-zinc-700 rounded px-1 py-0.5 outline-none"
-        >
-          <option value="">Choose persona…</option>
-          {(d.allPersonas ?? []).map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        {d.dbNode.notes && (
-          <p className="text-[10px] text-zinc-500 line-clamp-2">{d.dbNode.notes}</p>
-        )}
+      <div className="overflow-hidden rounded-xl">
+        <div className="flex items-center gap-1.5 px-3 py-2 text-white" style={{ background: headerColor }}>
+          <IconUserCheck size={12} className="shrink-0 opacity-90" />
+          <p className="text-[11px] font-semibold truncate flex-1">
+            {selected?.name ?? "Select Persona"}
+          </p>
+        </div>
+        <div className="px-3 py-2 flex flex-col gap-1.5">
+          <select
+            value={d.dbNode.personaId ?? ""}
+            onChange={(e) => { e.stopPropagation(); d.onPersonaSelect(d.dbNode.id, e.target.value); }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full text-xs bg-transparent border border-zinc-200 dark:border-zinc-700 rounded px-1 py-0.5 outline-none"
+          >
+            <option value="">Choose persona…</option>
+            {(d.allPersonas ?? []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          {d.dbNode.notes && (
+            <p className="text-[10px] text-zinc-500 line-clamp-2">{d.dbNode.notes}</p>
+          )}
+        </div>
       </div>
       <Handle type="target" position={Position.Left} />
       <SourceAddHandle nodeId={d.dbNode.id} onAddConnected={d.onAddConnected} />
