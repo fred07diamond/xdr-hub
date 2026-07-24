@@ -295,8 +295,8 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
 
       {palettePos && onAddConnected && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setPalettePos(null)} />
-          <div className="fixed z-50" style={{ left: palettePos.x, top: palettePos.y }}>
+          <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setPalettePos(null); }} />
+          <div className="fixed z-50" style={{ left: palettePos.x, top: palettePos.y }} onClick={(e) => e.stopPropagation()}>
             <NodePalette
               onSelect={(type) => {
                 onAddConnected(nodeId, type);
