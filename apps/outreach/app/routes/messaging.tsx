@@ -256,6 +256,7 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
   onAddConnected?: (sourceId: string, type: PaletteKind) => void;
 }) {
   const [palettePos, setPalettePos] = useState<{ x: number; y: number } | null>(null);
+  const [hovered, setHovered] = useState(false);
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
   return (
@@ -263,7 +264,13 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-[18px] !h-[18px] !bg-white dark:!bg-zinc-800 !border-2 !border-zinc-300 dark:!border-zinc-600 hover:!border-primary hover:!bg-primary/10 !transition-all !duration-150 !flex !items-center !justify-center"
+        className={`!w-5 !h-5 !border-2 !transition-all !duration-150 !flex !items-center !justify-center ${
+          hovered
+            ? "!bg-primary/10 !border-primary !scale-110"
+            : "!bg-white dark:!bg-zinc-800 !border-zinc-300 dark:!border-zinc-600"
+        }`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         onMouseDown={(e) => { mouseDownPos.current = { x: e.clientX, y: e.clientY }; }}
         onClick={(e) => {
           if (!mouseDownPos.current || !onAddConnected) return;
@@ -275,7 +282,11 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
           }
         }}
       >
-        <IconPlus size={9} className="pointer-events-none text-zinc-400" />
+        {/* "+" appears only on hover */}
+        <IconPlus
+          size={10}
+          className={`pointer-events-none transition-opacity duration-150 ${hovered ? "opacity-100 text-primary" : "opacity-0"}`}
+        />
       </Handle>
 
       {palettePos && onAddConnected && (
