@@ -531,14 +531,6 @@ async function sendConnectionRequest(note) {
       ? list
       : list.filter((c) => `${c.ariaLabel || ""} ${c.contextText || ""}`.toLowerCase().includes(profileName.toLowerCase()));
 
-  // Scoped search: walk up from the profile name element to find the smallest
-  // ancestor that ALSO contains a visible Connect button. That ancestor is the
-  // profile card container — it holds only the target profile's actions and
-  // nothing from the sidebar or "People similar to" sections.
-  //
-  // We can't rely on closest("section") because LinkedIn sometimes uses only
-  // nested <div>s for the profile card, returning null and forcing a fallback
-  // to the document-wide search where decoy buttons exist.
   const nameEl = getProfileNameEl();
   const mainEl = document.querySelector("main, [role='main']") || document.body;
 
@@ -562,29 +554,28 @@ async function sendConnectionRequest(note) {
     _el: el,
   });
 
-  // Walk up from the name element, stopping at <main>, to find the profile card.
-  let cardSection = null;
-  if (nameEl) {
-    let container = nameEl.parentElement;
-    while (container && container !== mainEl && container !== document.body) {
-      const hasConnect = Array.from(container.querySelectorAll("button, [role='button']"))
-        .some(isConnectEl);
-      if (hasConnect) { cardSection = container; break; }
-      container = container.parentElement;
-    }
-  }
+  // Spatial constraint: the profile action bar (where Connect lives) is always
+  // within ~200px directly below the profile name. Activity sections, "People
+  // similar to", and sidebar cards are all further away. This avoids any
+  // dependency on LinkedIn's DOM structure (section vs. div wrappers) and
+  // eliminates decoy buttons for other people.
+  const nameRect = nameEl?.getBoundingClientRect();
+  const vw = window.innerWidth || 1280;
 
-  const cardCandidates = (() => {
-    if (!cardSection) return [];
-    const raw = Array.from(cardSection.querySelectorAll("button, a, [role='button']"))
-      .filter(isConnectEl);
-    // Deduplicate: if a [role="button"] wrapper contains a <button> that also
-    // matched, keep only the innermost element so we don't end up with two
-    // candidates for the same action.
-    return raw
+  let cardCandidates = [];
+  if (nameRect && nameRect.width > 0) {
+    const raw = Array.from(mainEl.querySelectorAll("button, a, [role='button']"))
+      .filter(isConnectEl)
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        const dy = r.top - nameRect.top; // positive = below the name
+        return dy >= -20 && dy <= 220 && r.left < vw * 0.72;
+      });
+    // Keep only innermost when elements nest (div[role=button] wrapping button)
+    cardCandidates = raw
       .filter((el) => !raw.some((other) => other !== el && el.contains(other)))
       .map(toCandidate);
-  })();
+  }
 
   let candidates = cardCandidates.length > 0
     ? cardCandidates
