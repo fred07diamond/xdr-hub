@@ -463,11 +463,12 @@ function gatherConnectCandidates() {
       const label = el.getAttribute("aria-label") || "";
       if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
       if (el.offsetParent === null) return false;
-      // Exclude <a> tags with real hrefs — clicking those navigates the page instead of
-      // opening the connection modal. LinkedIn's Connect button is always a <button>.
+      // Exclude <a> tags whose href would hard-navigate away from the profile.
+      // Feed/post links navigate; LinkedIn profile overlay URLs (/in/...) are
+      // handled by the SPA and open a modal — allow those through.
       if (el.tagName === "A") {
         const href = (el.getAttribute("href") || "").trim();
-        if (href && href !== "#" && !href.startsWith("javascript:")) return false;
+        if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) return false;
       }
       return true;
     })
@@ -534,56 +535,27 @@ async function sendConnectionRequest(note) {
 
   if (candidates.length === 0) {
     // Connect may be collapsed into the "More actions" ("...") overflow menu.
-    // Strategy: visibility diff. LinkedIn pre-renders dropdown items as hidden
-    // DOM nodes, so snapshotting by object identity (including hidden elements)
-    // puts the dropdown items in beforeEls and they get excluded after the click.
-    // Instead, snapshot only VISIBLE elements — hidden pre-rendered items are
-    // absent from the snapshot — so when the dropdown opens and makes them
-    // visible, they correctly appear as "newly visible".
-    // Activity-section post links that were already visible before the click
-    // are captured in the snapshot and excluded. Any that lazy-load at the same
-    // time are <a> tags with /feed/ hrefs and are filtered below.
+    // Snapshot visible candidates before opening, then diff after — the
+    // dropdown's Connect item (hidden before, visible after) appears in the
+    // diff. gatherConnectCandidates now allows /in/ hrefs so LinkedIn's
+    // overlay/connect anchor is included.
     const moreBtn = findMoreActionsButton();
     if (moreBtn) {
-      const visibleBefore = new Set(
-        Array.from(
-          document.querySelectorAll("button, a, [role='button'], [role='menuitem'], [role='option'], li"),
-        ).filter((el) => {
-          if (el.offsetParent === null) return false; // only capture currently-visible elements
-          const text = (el.innerText || el.textContent || "").trim();
-          const label = el.getAttribute("aria-label") || "";
-          return /\bconnect\b/i.test(text) || /\bconnect\b/i.test(label);
-        }),
-      );
+      const beforeEls = new Set(gatherConnectCandidates().map((c) => c._el));
+      console.log("[BLI] more-btn before-click candidates:", beforeEls.size);
 
       moreBtn.click();
       await new Promise((r) => setTimeout(r, 500));
 
-      const newlyVisibleEls = Array.from(
-        document.querySelectorAll("button, a, [role='button'], [role='menuitem'], [role='option'], li"),
-      ).filter((el) => {
-        if (visibleBefore.has(el)) return false; // was already visible — not from the dropdown
-        if (el.offsetParent === null) return false; // must be visible now
-        const text = (el.innerText || el.textContent || "").trim();
-        const label = el.getAttribute("aria-label") || "";
-        if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
-        // Exclude <a> tags whose href clearly points to feed/post content.
-        if (el.tagName === "A") {
-          const href = (el.getAttribute("href") || "").trim();
-          if (/\/(feed|posts)\/|\/feed\/update\//.test(href)) return false;
-          if (href.startsWith("http") && !href.includes("linkedin.com")) return false;
-        }
-        return true;
-      });
+      const afterCandidates = gatherConnectCandidates();
+      console.log(
+        "[BLI] more-btn after-click candidates:",
+        afterCandidates.length,
+        afterCandidates.map((c) => `${c.tag} "${c.text}" href="${c._el.getAttribute("href")}"`),
+      );
 
-      candidates = newlyVisibleEls.map((el, index) => ({
-        index,
-        tag: el.tagName,
-        text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
-        ariaLabel: el.getAttribute("aria-label"),
-        contextText: "",
-        _el: el,
-      }));
+      candidates = afterCandidates.filter((c) => !beforeEls.has(c._el));
+      console.log("[BLI] more-btn diff (new):", candidates.length, candidates.map((c) => c.text));
     }
   }
 
