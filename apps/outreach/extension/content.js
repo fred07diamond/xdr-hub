@@ -535,27 +535,42 @@ async function sendConnectionRequest(note) {
 
   if (candidates.length === 0) {
     // Connect may be collapsed into the "More actions" ("...") overflow menu.
-    // Snapshot visible candidates before opening, then diff after — the
-    // dropdown's Connect item (hidden before, visible after) appears in the
-    // diff. gatherConnectCandidates now allows /in/ hrefs so LinkedIn's
-    // overlay/connect anchor is included.
+    // The dropdown's Connect button is pre-rendered as a hidden DOM node —
+    // gatherConnectCandidates() finds it (offsetParent != null) even before the
+    // menu opens. A before/after object-identity diff returns nothing because the
+    // DOM node already exists. Instead: use checkVisibility() (which checks
+    // visibility:hidden and opacity:0 that offsetParent misses) to record which
+    // candidates are *truly* visible before the click, then find whichever one
+    // flips to truly-visible after "..." is clicked — that's the dropdown item.
     const moreBtn = findMoreActionsButton();
     if (moreBtn) {
-      const beforeEls = new Set(gatherConnectCandidates().map((c) => c._el));
-      console.log("[BLI] more-btn before-click candidates:", beforeEls.size);
+      const isCheckVis = (el) =>
+        el.checkVisibility
+          ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
+          : el.offsetParent !== null;
+
+      const allCandidates = gatherConnectCandidates();
+      const trulyVisibleBefore = new Set(
+        allCandidates.filter((c) => isCheckVis(c._el)).map((c) => c._el),
+      );
+      console.log(
+        "[BLI] more-btn: total =", allCandidates.length,
+        "trulyVisible before =", trulyVisibleBefore.size,
+      );
 
       moreBtn.click();
       await new Promise((r) => setTimeout(r, 500));
 
       const afterCandidates = gatherConnectCandidates();
-      console.log(
-        "[BLI] more-btn after-click candidates:",
-        afterCandidates.length,
-        afterCandidates.map((c) => `${c.tag} "${c.text}" href="${c._el.getAttribute("href")}"`),
+      candidates = afterCandidates.filter(
+        (c) => !trulyVisibleBefore.has(c._el) && isCheckVis(c._el),
       );
-
-      candidates = afterCandidates.filter((c) => !beforeEls.has(c._el));
-      console.log("[BLI] more-btn diff (new):", candidates.length, candidates.map((c) => c.text));
+      console.log(
+        "[BLI] more-btn: trulyVisible after =",
+        afterCandidates.filter((c) => isCheckVis(c._el)).length,
+        "newly-visible =", candidates.length,
+        candidates.map((c) => c.text),
+      );
     }
   }
 
