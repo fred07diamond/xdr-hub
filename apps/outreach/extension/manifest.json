@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Builder.LI",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Score LinkedIn profiles against your ICP and draft personalized connection notes.",
   "permissions": ["activeTab", "storage", "sidePanel", "scripting"],
   "host_permissions": [

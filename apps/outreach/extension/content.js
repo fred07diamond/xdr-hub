@@ -535,42 +535,71 @@ async function sendConnectionRequest(note) {
 
   if (candidates.length === 0) {
     // Connect may be collapsed into the "More actions" ("...") overflow menu.
-    // The dropdown's Connect button is pre-rendered as a hidden DOM node —
-    // gatherConnectCandidates() finds it (offsetParent != null) even before the
-    // menu opens. A before/after object-identity diff returns nothing because the
-    // DOM node already exists. Instead: use checkVisibility() (which checks
-    // visibility:hidden and opacity:0 that offsetParent misses) to record which
-    // candidates are *truly* visible before the click, then find whichever one
-    // flips to truly-visible after "..." is clicked — that's the dropdown item.
+    // LinkedIn hides the dropdown button via z-index / layering — not via
+    // display:none, visibility:hidden, or opacity:0 — so every CSS-visibility
+    // check (offsetParent, checkVisibility) returns "visible" for it even when
+    // the dropdown is closed. DOM diffing cannot isolate it.
+    //
+    // Instead: after the menu opens that button IS the topmost element at its
+    // screen position. We find it two ways, in order:
+    //   1. aria-controls: if LinkedIn stamps the control ID on the "..." button
+    //      we get the dropdown container directly and search within it.
+    //   2. elementFromPoint grid: probe a grid of points below/left of the "..."
+    //      button and walk up from whatever element is on top looking for a
+    //      short "Connect" label.
     const moreBtn = findMoreActionsButton();
     if (moreBtn) {
-      const isCheckVis = (el) =>
-        el.checkVisibility
-          ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
-          : el.offsetParent !== null;
-
-      const allCandidates = gatherConnectCandidates();
-      const trulyVisibleBefore = new Set(
-        allCandidates.filter((c) => isCheckVis(c._el)).map((c) => c._el),
-      );
-      console.log(
-        "[BLI] more-btn: total =", allCandidates.length,
-        "trulyVisible before =", trulyVisibleBefore.size,
-      );
-
       moreBtn.click();
       await new Promise((r) => setTimeout(r, 500));
 
-      const afterCandidates = gatherConnectCandidates();
-      candidates = afterCandidates.filter(
-        (c) => !trulyVisibleBefore.has(c._el) && isCheckVis(c._el),
-      );
-      console.log(
-        "[BLI] more-btn: trulyVisible after =",
-        afterCandidates.filter((c) => isCheckVis(c._el)).length,
-        "newly-visible =", candidates.length,
-        candidates.map((c) => c.text),
-      );
+      const connectRe = /\bconnect\b/i;
+
+      // --- Approach 1: aria-controls ---
+      const ctrlId = moreBtn.getAttribute("aria-controls");
+      const dropdownEl = ctrlId ? document.getElementById(ctrlId) : null;
+      console.log("[BLI] aria-controls:", ctrlId, "found:", !!dropdownEl);
+      if (dropdownEl) {
+        const connectEl = Array.from(
+          dropdownEl.querySelectorAll("button, a, [role='button'], [role='menuitem'], li, div"),
+        ).find((el) => {
+          const text = (el.innerText || el.textContent || "").trim();
+          return connectRe.test(text) && text.length < 40;
+        });
+        if (connectEl) {
+          candidates = [{
+            index: 0, tag: connectEl.tagName,
+            text: (connectEl.innerText || connectEl.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+            ariaLabel: connectEl.getAttribute("aria-label"), contextText: "", _el: connectEl,
+          }];
+        }
+      }
+
+      // --- Approach 2: elementFromPoint grid ---
+      if (candidates.length === 0) {
+        const btnRect = moreBtn.getBoundingClientRect();
+        // Sweep below and to the left where the dropdown typically opens.
+        outer: for (let dy = 30; dy < 450; dy += 15) {
+          for (let dx = -220; dx <= 60; dx += 25) {
+            const probed = document.elementFromPoint(btnRect.left + dx, btnRect.bottom + dy);
+            if (!probed || probed === moreBtn || probed === document.body) continue;
+            let check = probed;
+            for (let depth = 0; depth < 5; depth++) {
+              if (!check || check === document.body) break;
+              const text = (check.innerText || check.textContent || "").trim().replace(/\s+/g, " ");
+              if (connectRe.test(text) && text.length < 35) {
+                candidates = [{
+                  index: 0, tag: check.tagName,
+                  text: text.slice(0, 60),
+                  ariaLabel: check.getAttribute("aria-label"), contextText: "", _el: check,
+                }];
+                break outer;
+              }
+              check = check.parentElement;
+            }
+          }
+        }
+        console.log("[BLI] elementFromPoint candidates:", candidates.length, candidates.map((c) => c.text));
+      }
     }
   }
 
