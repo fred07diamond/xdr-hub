@@ -279,7 +279,8 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
           const dist = Math.hypot(e.clientX - pos.x, e.clientY - pos.y);
           if (dist < 6 && onAddConnected) {
             e.stopPropagation();
-            setPalettePos({ x: e.clientX + 12, y: e.clientY - 10 });
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setPalettePos({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20 });
           }
         }}
         onClick={(e) => e.stopPropagation()}
