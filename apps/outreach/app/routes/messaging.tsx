@@ -264,7 +264,7 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
       <Handle
         type="source"
         position={Position.Right}
-        className={`!w-5 !h-5 !border-2 !transition-all !duration-150 !flex !items-center !justify-center ${
+        className={`!w-4 !h-4 !border-2 !transition-all !duration-150 !flex !items-center !justify-center ${
           hovered
             ? "!bg-primary/10 !border-primary !scale-110"
             : "!bg-white dark:!bg-zinc-800 !border-zinc-300 dark:!border-zinc-600"
@@ -272,19 +272,21 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onMouseDown={(e) => { mouseDownPos.current = { x: e.clientX, y: e.clientY }; }}
-        onClick={(e) => {
-          if (!mouseDownPos.current || !onAddConnected) return;
-          const dist = Math.hypot(e.clientX - mouseDownPos.current.x, e.clientY - mouseDownPos.current.y);
+        onMouseUp={(e) => {
+          if (!mouseDownPos.current) return;
+          const pos = mouseDownPos.current;
           mouseDownPos.current = null;
-          if (dist < 6) {
+          const dist = Math.hypot(e.clientX - pos.x, e.clientY - pos.y);
+          if (dist < 6 && onAddConnected) {
             e.stopPropagation();
             setPalettePos({ x: e.clientX + 12, y: e.clientY - 10 });
           }
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* "+" appears only on hover */}
         <IconPlus
-          size={10}
+          size={8}
           className={`pointer-events-none transition-opacity duration-150 ${hovered ? "opacity-100 text-primary" : "opacity-0"}`}
         />
       </Handle>
