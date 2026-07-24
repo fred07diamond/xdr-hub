@@ -534,35 +534,38 @@ async function sendConnectionRequest(note) {
 
   if (candidates.length === 0) {
     // Connect may be collapsed into the "More actions" ("...") overflow menu.
-    // LinkedIn's dropdown does not use role="menu" or any stable data attribute,
-    // so we cannot locate it by DOM role. Instead we record the button's
-    // viewport position before clicking, then keep only elements that are
-    // spatially close to it after the menu opens. The dropdown always floats
-    // within ~400 px of the button; activity-section post links are 500–1000 px
-    // below; sidebar "People also viewed" cards are far to the right — so
-    // proximity alone reliably isolates dropdown items from the rest of the page.
+    // Strategy: DOM diff. Snapshot every element with "connect" text BEFORE
+    // clicking the button — including hidden ones — so lazy-loaded activity
+    // items already in the DOM (but not yet visible) are excluded from the
+    // post-click diff. After the menu opens, the only NEW nodes are the
+    // dropdown items LinkedIn inserted. No spatial heuristics needed.
     const moreBtn = findMoreActionsButton();
     if (moreBtn) {
-      const moreBtnRect = moreBtn.getBoundingClientRect();
+      const beforeEls = new Set(
+        Array.from(
+          document.querySelectorAll("button, a, [role='button'], [role='menuitem'], [role='option'], li"),
+        ).filter((el) => {
+          const text = (el.innerText || el.textContent || "").trim();
+          const label = el.getAttribute("aria-label") || "";
+          return /\bconnect\b/i.test(text) || /\bconnect\b/i.test(label);
+        }),
+      );
+
       moreBtn.click();
-      // Give the dropdown time to fully render before scanning.
+      // Give the dropdown time to insert its DOM nodes.
       await new Promise((r) => setTimeout(r, 500));
 
-      const nearbyConnectEls = Array.from(
+      const newEls = Array.from(
         document.querySelectorAll("button, a, [role='button'], [role='menuitem'], [role='option'], li"),
       ).filter((el) => {
+        if (beforeEls.has(el)) return false; // existed before click — not a dropdown item
+        if (el.offsetParent === null) return false; // must be visible now
         const text = (el.innerText || el.textContent || "").trim();
         const label = el.getAttribute("aria-label") || "";
-        if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
-        if (el.offsetParent === null) return false;
-        const rect = el.getBoundingClientRect();
-        return (
-          Math.abs(rect.left - moreBtnRect.left) < 500 &&
-          Math.abs(rect.top - moreBtnRect.top) < 600
-        );
+        return /\bconnect\b/i.test(text) || /\bconnect\b/i.test(label);
       });
 
-      candidates = nearbyConnectEls.map((el, index) => ({
+      candidates = newEls.map((el, index) => ({
         index,
         tag: el.tagName,
         text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
