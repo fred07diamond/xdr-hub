@@ -462,7 +462,8 @@ function gatherConnectCandidates() {
       const text = (el.innerText || el.textContent || "").trim();
       const label = el.getAttribute("aria-label") || "";
       if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
-      if (el.offsetParent === null) return false;
+      const _r = el.getBoundingClientRect();
+      if (_r.width === 0 && _r.height === 0) return false;
       // Exclude <a> tags whose href would hard-navigate away from the profile.
       // Feed/post links navigate; LinkedIn profile overlay URLs (/in/...) are
       // handled by the SPA and open a modal — allow those through.
@@ -538,7 +539,8 @@ async function sendConnectionRequest(note) {
     const text = (el.innerText || el.textContent || "").trim();
     const label = el.getAttribute("aria-label") || "";
     if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
-    if (el.offsetParent === null) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return false;
     if (el.tagName === "A") {
       const href = (el.getAttribute("href") || "").trim();
       if (href && href !== "#" && !href.startsWith("javascript:") && !href.startsWith("/in/")) return false;
@@ -554,32 +556,56 @@ async function sendConnectionRequest(note) {
     _el: el,
   });
 
-  // Spatial constraint: the profile action bar (where Connect lives) is always
-  // within ~200px directly below the profile name. Activity sections, "People
-  // similar to", and sidebar cards are all further away. This avoids any
-  // dependency on LinkedIn's DOM structure (section vs. div wrappers) and
-  // eliminates decoy buttons for other people.
+  // Strategy 1 (most reliable, screen-size independent): aria-label match.
+  // LinkedIn stamps the profile's own Connect button with an aria-label that
+  // contains the profile name — e.g. "Invite Becca Z. to connect" or
+  // "Connect with Gary Gwin". Buttons for OTHER people (People similar,
+  // activity cards) contain THEIR names, so they never match here.
+  const dedup = (list) =>
+    list.filter((el) => !list.some((other) => other !== el && el.contains(other)));
+
+  const byAriaLabel = profileName !== "Unknown"
+    ? dedup(
+        Array.from(mainEl.querySelectorAll("button, a, [role='button']"))
+          .filter(isConnectEl)
+          .filter((el) =>
+            (el.getAttribute("aria-label") || "").toLowerCase().includes(profileName.toLowerCase()),
+          ),
+      ).map(toCandidate)
+    : [];
+
+  // Strategy 2 (spatial fallback for buttons with no name in aria-label):
+  // The profile action bar always sits within ~220px below the name element.
+  // Using the name element's viewport rect keeps this relative to layout, not
+  // screen resolution (getBoundingClientRect returns CSS pixels, unaffected by
+  // device pixel ratio). The threshold could fail at very high browser zoom
+  // levels, but that is covered by Strategy 1 above for named aria-labels.
   const nameRect = nameEl?.getBoundingClientRect();
   const vw = window.innerWidth || 1280;
+  const bySpatial =
+    nameRect && nameRect.width > 0
+      ? dedup(
+          Array.from(mainEl.querySelectorAll("button, a, [role='button']"))
+            .filter(isConnectEl)
+            .filter((el) => {
+              const r = el.getBoundingClientRect();
+              const dy = r.top - nameRect.top;
+              return dy >= -20 && dy <= 220 && r.left < vw * 0.72;
+            }),
+        ).map(toCandidate)
+      : [];
 
-  let cardCandidates = [];
-  if (nameRect && nameRect.width > 0) {
-    const raw = Array.from(mainEl.querySelectorAll("button, a, [role='button']"))
-      .filter(isConnectEl)
-      .filter((el) => {
-        const r = el.getBoundingClientRect();
-        const dy = r.top - nameRect.top; // positive = below the name
-        return dy >= -20 && dy <= 220 && r.left < vw * 0.72;
-      });
-    // Keep only innermost when elements nest (div[role=button] wrapping button)
-    cardCandidates = raw
-      .filter((el) => !raw.some((other) => other !== el && el.contains(other)))
-      .map(toCandidate);
-  }
+  const cardCandidates = byAriaLabel.length > 0 ? byAriaLabel : bySpatial;
 
   let candidates = cardCandidates.length > 0
     ? cardCandidates
     : forThisProfile(gatherConnectCandidates());
+
+  console.log("[BLI] profileName:", profileName);
+  console.log("[BLI] nameRect:", nameRect?.top?.toFixed(0), nameRect?.left?.toFixed(0));
+  console.log("[BLI] byAriaLabel:", byAriaLabel.map(c => c.ariaLabel || c.text));
+  console.log("[BLI] bySpatial:", bySpatial.map(c => c.ariaLabel || c.text));
+  console.log("[BLI] candidates:", candidates.length, candidates.map(c => c.ariaLabel || c.text));
 
   if (candidates.length === 0) {
     // Connect may be collapsed into the "More actions" ("...") overflow menu.
