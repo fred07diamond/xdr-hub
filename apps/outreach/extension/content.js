@@ -533,17 +533,56 @@ async function sendConnectionRequest(note) {
   let candidates = forThisProfile(gatherConnectCandidates());
 
   if (candidates.length === 0) {
-    // No Connect button directly references this profile — it may be
-    // collapsed into the "More actions" ("...") overflow menu instead.
-    // Diff against what existed before opening the menu so we only ever
-    // consider what's genuinely new (never re-guess among the same
-    // page-wide sidebar decoys).
-    const beforeEls = new Set(gatherConnectCandidates().map((c) => c._el));
+    // Connect may be collapsed into the "More actions" ("...") overflow menu.
+    // After opening the menu, search INSIDE the dropdown that appeared — not
+    // document-wide — so we never accidentally pick up sidebar buttons or
+    // newly-rendered activity-feed links for other profiles.
     const moreBtn = findMoreActionsButton();
     if (moreBtn) {
       moreBtn.click();
-      await new Promise((r) => setTimeout(r, 400));
-      candidates = gatherConnectCandidates().filter((c) => !beforeEls.has(c._el));
+      // Wait for the dropdown menu to appear in the DOM.
+      const menu = await waitForEl(
+        () =>
+          document.querySelector('[role="menu"]') ??
+          document.querySelector('[data-test-dropdown-menu]') ??
+          // Fallback: any newly-visible descendant of the profile card with listbox role.
+          (moreBtn.closest("section, [data-member-id], main") ?? document).querySelector('[role="listbox"]') ??
+          null,
+        { timeout: 1500 },
+      );
+
+      if (menu) {
+        // Prefer to search within the menu itself — avoids picking up unrelated
+        // sidebar or activity-section elements that may have re-rendered.
+        const items = Array.from(
+          menu.querySelectorAll("button, a, [role='menuitem'], [role='option'], [role='button']"),
+        ).filter((el) => {
+          const text = (el.innerText || el.textContent || "").trim();
+          const label = el.getAttribute("aria-label") || "";
+          if (!(/\bconnect\b/i.test(text) || /\bconnect\b/i.test(label))) return false;
+          if (el.offsetParent === null) return false;
+          // Still exclude plain navigating links — LinkedIn's Connect item in a
+          // dropdown fires a modal via event delegation, not href navigation.
+          if (el.tagName === "A") {
+            const href = (el.getAttribute("href") || "").trim();
+            if (href && href !== "#" && !href.startsWith("javascript:")) return false;
+          }
+          return true;
+        });
+        candidates = items.map((el, index) => ({
+          index,
+          tag: el.tagName,
+          text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+          ariaLabel: el.getAttribute("aria-label"),
+          contextText: "",
+          _el: el,
+        }));
+      } else {
+        // Dropdown not found via role — fall back to the diff approach but
+        // apply forThisProfile so sidebar decoys are excluded.
+        await new Promise((r) => setTimeout(r, 200));
+        candidates = forThisProfile(gatherConnectCandidates());
+      }
     }
   }
 
