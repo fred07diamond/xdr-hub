@@ -574,11 +574,17 @@ async function sendConnectionRequest(note) {
     }
   }
 
-  const cardCandidates = cardSection
-    ? Array.from(cardSection.querySelectorAll("button, a, [role='button']"))
-        .filter(isConnectEl)
-        .map(toCandidate)
-    : [];
+  const cardCandidates = (() => {
+    if (!cardSection) return [];
+    const raw = Array.from(cardSection.querySelectorAll("button, a, [role='button']"))
+      .filter(isConnectEl);
+    // Deduplicate: if a [role="button"] wrapper contains a <button> that also
+    // matched, keep only the innermost element so we don't end up with two
+    // candidates for the same action.
+    return raw
+      .filter((el) => !raw.some((other) => other !== el && el.contains(other)))
+      .map(toCandidate);
+  })();
 
   let candidates = cardCandidates.length > 0
     ? cardCandidates
