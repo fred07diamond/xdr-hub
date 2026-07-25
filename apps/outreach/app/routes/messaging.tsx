@@ -265,7 +265,7 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
       <Handle
         type="source"
         position={Position.Right}
-        className={`!w-4 !h-4 !border-2 !transition-all !duration-150 !flex !items-center !justify-center ${
+        className={`!w-4 !h-4 !border-2 !transition-all !duration-150 !flex !items-center !justify-center !cursor-pointer ${
           hovered
             ? "!bg-primary/10 !border-primary !scale-110"
             : "!bg-white dark:!bg-zinc-800 !border-zinc-300 dark:!border-zinc-600"
