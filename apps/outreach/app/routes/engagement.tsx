@@ -14,6 +14,47 @@ import { useMemo, useState } from "react";
 
 import { APP_TITLE } from "@/lib/app-config";
 
+// ── Confirm dialog ─────────────────────────────────────────────────────────────
+
+interface ConfirmDialogProps {
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isPending?: boolean;
+}
+
+function ConfirmDialog({ title, description, confirmLabel = "Delete", onConfirm, onCancel, isPending }: ConfirmDialogProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+      <div className="relative z-10 w-full max-w-sm rounded-xl border border-border bg-background p-6 shadow-xl">
+        <h2 className="text-base font-semibold">{title}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isPending}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
+          >
+            {isPending ? "Deleting…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function meta() {
   return [{ title: `${APP_TITLE} — Engagement` }];
 }
@@ -225,10 +266,15 @@ function StatusCell({ e }: { e: Engager }) {
 
 // ── page ───────────────────────────────────────────────────────────────────────
 
+type DialogState =
+  | { type: "bulk-delete"; ids: string[] }
+  | { type: "delete-post"; postUrl: string; postTitle: string | null }
+  | null;
+
 export default function EngagementRoute() {
   const [selectedPostUrl, setSelectedPostUrl] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
+  const [dialog, setDialog] = useState<DialogState>(null);
 
   const { data, isLoading, refetch } = useActionQuery("list-post-engagements", {}, {
     refetchInterval: (query) => {
@@ -238,6 +284,7 @@ export default function EngagementRoute() {
   });
 
   const bulkDelete = useActionMutation("bulk-delete-post-engagements");
+  const deletePost = useActionMutation("delete-post-engagements");
 
   const engagements: Engager[] = (data as any)?.engagements ?? [];
 
@@ -282,15 +329,48 @@ export default function EngagementRoute() {
     }
   }
 
-  async function handleBulkDelete() {
-    await bulkDelete.mutateAsync({ ids: Array.from(selectedIds) });
-    setSelectedIds(new Set());
-    setBulkConfirmDelete(false);
+  async function handleConfirm() {
+    if (!dialog) return;
+    if (dialog.type === "bulk-delete") {
+      await bulkDelete.mutateAsync({ ids: dialog.ids });
+      setSelectedIds(new Set());
+    } else if (dialog.type === "delete-post") {
+      await deletePost.mutateAsync({ postUrl: dialog.postUrl });
+      if (selectedPostUrl === dialog.postUrl) setSelectedPostUrl(null);
+      setSelectedIds(prev => {
+        // clear any selected ids that belonged to this post
+        const next = new Set(prev);
+        engagements.filter(e => e.postUrl === dialog.postUrl).forEach(e => next.delete(e.id));
+        return next;
+      });
+    }
+    setDialog(null);
     refetch();
   }
 
+  const isPending = bulkDelete.isPending || deletePost.isPending;
+
   return (
     <div className="flex h-full min-h-0">
+      {dialog && (
+        <ConfirmDialog
+          title={
+            dialog.type === "delete-post"
+              ? "Delete post?"
+              : `Delete ${dialog.ids.length} engager${dialog.ids.length !== 1 ? "s" : ""}?`
+          }
+          description={
+            dialog.type === "delete-post"
+              ? `This will permanently delete "${dialog.postTitle || dialog.postUrl}" and all ${posts.find(p => p.postUrl === dialog.postUrl)?.count ?? 0} engager${(posts.find(p => p.postUrl === dialog.postUrl)?.count ?? 0) !== 1 ? "s" : ""} associated with it. This cannot be undone.`
+              : `This will permanently delete ${dialog.ids.length} selected engager${dialog.ids.length !== 1 ? "s" : ""}. This cannot be undone.`
+          }
+          confirmLabel="Delete"
+          onConfirm={handleConfirm}
+          onCancel={() => setDialog(null)}
+          isPending={isPending}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className="w-56 shrink-0 overflow-y-auto border-e border-border bg-muted/30 px-3 py-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Posts</p>
@@ -303,15 +383,27 @@ export default function EngagementRoute() {
           <span className="ml-1 text-xs text-muted-foreground">({engagements.length})</span>
         </button>
         {posts.map(post => (
-          <button
+          <div
             key={post.postUrl}
-            type="button"
-            onClick={() => setSelectedPostUrl(post.postUrl)}
-            className={`mb-1 w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${selectedPostUrl === post.postUrl ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent/60"}`}
+            className={`group mb-1 flex w-full items-start gap-1 rounded-md transition-colors ${selectedPostUrl === post.postUrl ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"}`}
           >
-            <span className="block truncate">{post.postTitle || post.postUrl}</span>
-            <span className="text-xs text-muted-foreground">{post.count} engager{post.count !== 1 ? "s" : ""}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setSelectedPostUrl(post.postUrl)}
+              className="min-w-0 flex-1 px-2 py-1.5 text-left text-sm"
+            >
+              <span className="block truncate font-medium">{post.postTitle || post.postUrl}</span>
+              <span className="text-xs text-muted-foreground">{post.count} engager{post.count !== 1 ? "s" : ""}</span>
+            </button>
+            <button
+              type="button"
+              title="Delete post and all engagers"
+              onClick={(e) => { e.stopPropagation(); setDialog({ type: "delete-post", postUrl: post.postUrl, postTitle: post.postTitle }); }}
+              className="mt-1.5 mr-1.5 shrink-0 rounded p-1 text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+            >
+              <IconTrash className="size-3.5" />
+            </button>
+          </div>
         ))}
         {!posts.length && !isLoading && (
           <p className="mt-4 text-xs text-muted-foreground leading-relaxed">
@@ -338,41 +430,20 @@ export default function EngagementRoute() {
             <span className="text-sm font-semibold">{selectedIds.size} selected</span>
             <button
               type="button"
-              onClick={() => { setSelectedIds(new Set()); setBulkConfirmDelete(false); }}
+              onClick={() => setSelectedIds(new Set())}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
               Deselect all
             </button>
-            <div className="ml-auto flex items-center gap-2">
-              {bulkConfirmDelete ? (
-                <>
-                  <span className="text-xs text-muted-foreground">Delete {selectedIds.size} engager{selectedIds.size !== 1 ? "s" : ""}?</span>
-                  <button
-                    type="button"
-                    onClick={handleBulkDelete}
-                    disabled={bulkDelete.isPending}
-                    className="rounded bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
-                  >
-                    {bulkDelete.isPending ? "Deleting…" : "Confirm"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBulkConfirmDelete(false)}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted"
-                  >
-                    <IconX className="size-3.5" />
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setBulkConfirmDelete(true)}
-                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
-                >
-                  <IconTrash className="size-3.5" />
-                  Delete
-                </button>
-              )}
+            <div className="ml-auto">
+              <button
+                type="button"
+                onClick={() => setDialog({ type: "bulk-delete", ids: Array.from(selectedIds) })}
+                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                <IconTrash className="size-3.5" />
+                Delete
+              </button>
             </div>
           </div>
         )}
