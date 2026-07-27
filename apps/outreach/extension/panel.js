@@ -711,6 +711,30 @@ let engagerData = []; // { name, company, profileUrl, commentText, postUrl, post
 let loadedIds = {};   // profileUrl → { id, status, enriched }
 let currentPostUrl = null; // tracks the post URL independently of currentProfileUrl
 
+// Port-based channel to the background service worker.
+// Keeps the SW alive and guarantees progress message delivery.
+let bgEngagerPort = null;
+function connectEngagerPort() {
+  try {
+    bgEngagerPort = chrome.runtime.connect({ name: "bli-engager" });
+    console.log("[BLI panel] port connected");
+    bgEngagerPort.onMessage.addListener((msg) => {
+      if (msg.type === "POST_ENGAGER_PROGRESS") {
+        applyEngagerProgress(msg.progress);
+      }
+    });
+    bgEngagerPort.onDisconnect.addListener(() => {
+      console.log("[BLI panel] port disconnected, reconnecting…");
+      bgEngagerPort = null;
+      setTimeout(connectEngagerPort, 500);
+    });
+  } catch (err) {
+    console.warn("[BLI panel] port connect failed:", err);
+    bgEngagerPort = null;
+  }
+}
+connectEngagerPort();
+
 function isPostUrl(url) {
   return url.includes("linkedin.com/posts/") || url.includes("linkedin.com/feed/update/");
 }
@@ -814,16 +838,19 @@ loadSelectedBtn.addEventListener("click", async () => {
   loadSelectedBtn.disabled = true;
   loadSelectedBtn.textContent = "Loading…";
 
-  // Reset button after 3s — cards update themselves via POST_ENGAGER_PROGRESS.
-  // Don't rely on the sendMessage callback to reset: it only fires after ALL
-  // enrichment completes (potentially 5+ minutes) and only resets on error.
+  // Reset button after 3s — progress messages handle card UI from here.
   setTimeout(() => {
     loadSelectedBtn.disabled = false;
     updateLoadSelectedBtn();
   }, 3000);
 
-  chrome.runtime.sendMessage({ type: "LOAD_POST_ENGAGERS", engagers: selected })
-    .catch(() => {});
+  // Send via port (reliable) with sendMessage as fallback.
+  console.log("[BLI panel] sending LOAD_POST_ENGAGERS via port:", bgEngagerPort ? "yes" : "no (fallback)");
+  if (bgEngagerPort) {
+    bgEngagerPort.postMessage({ type: "LOAD_POST_ENGAGERS", engagers: selected });
+  } else {
+    chrome.runtime.sendMessage({ type: "LOAD_POST_ENGAGERS", engagers: selected }).catch(() => {});
+  }
 });
 
 function applyEngagerProgress(progress) {
@@ -846,14 +873,7 @@ function applyEngagerProgress(progress) {
   renderEngagersList();
 }
 
-// Primary: receive progress via chrome.storage.session (reliable in MV3 side panels).
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "session" && changes.lastEngagerProgress) {
-    applyEngagerProgress(changes.lastEngagerProgress.newValue);
-  }
-});
-
-// Fallback: also accept the direct sendMessage broadcast.
+// Fallback: catch any broadcast from older SW versions or if port isn't up yet.
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "POST_ENGAGER_PROGRESS" && msg.progress) {
     applyEngagerProgress(msg.progress);

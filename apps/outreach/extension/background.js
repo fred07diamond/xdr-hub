@@ -408,30 +408,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "LOAD_POST_ENGAGERS") {
-    // Progress is written to chrome.storage.session; the panel listens via
-    // onChanged, which is more reliable than sendMessage for SW→side-panel
-    // communication in MV3.
-    const writeProgress = (progress) => {
-      console.log("[BLI BG] progress", progress.status, progress.name);
-      chrome.storage.session
-        .set({ lastEngagerProgress: { ...progress, _seq: Date.now() } })
-        .catch((err) => console.error("[BLI BG] storage write failed", err));
-      // Also try sendMessage as a secondary channel.
-      chrome.runtime.sendMessage({ type: "POST_ENGAGER_PROGRESS", progress }).catch(() => {});
-    };
-    loadPostEngagers(msg.engagers, writeProgress)
-      .then(() => {
-        console.log("[BLI BG] loadPostEngagers complete");
-        sendResponse({ ok: true });
-      })
-      .catch((err) => {
-        console.error("[BLI BG] loadPostEngagers error", err);
-        sendResponse({ ok: false, error: err.message });
-      });
-    return true;
-  }
-
   if (msg.type === "GET_POST_ENGAGER") {
     chrome.storage.local.get(["apiToken"], (r) => {
       getPostEngager(msg.id, r.apiToken || "")
@@ -440,6 +416,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     });
     return true;
   }
+});
+
+// Port-based channel for post-engager loading.
+// An open port keeps the service worker alive and guarantees message
+// delivery — more reliable than sendMessage for side-panel↔SW communication.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "bli-engager") return;
+  console.log("[BLI BG] port connected");
+
+  port.onMessage.addListener(async (msg) => {
+    if (msg.type !== "LOAD_POST_ENGAGERS") return;
+    console.log("[BLI BG] LOAD_POST_ENGAGERS received", msg.engagers?.length, "engagers");
+
+    const writeProgress = (progress) => {
+      console.log("[BLI BG] progress", progress.status, progress.name);
+      try { port.postMessage({ type: "POST_ENGAGER_PROGRESS", progress }); } catch { /* port closed */ }
+    };
+
+    try {
+      await loadPostEngagers(msg.engagers, writeProgress);
+      console.log("[BLI BG] loadPostEngagers complete");
+      try { port.postMessage({ type: "LOAD_COMPLETE", ok: true }); } catch {}
+    } catch (err) {
+      console.error("[BLI BG] loadPostEngagers error", err);
+      try { port.postMessage({ type: "LOAD_COMPLETE", ok: false, error: err.message }); } catch {}
+    }
+  });
 });
 
 // Open side panel in Chrome; open panel in a new tab in Arc and other
