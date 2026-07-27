@@ -1,6 +1,6 @@
 import { createAuthPlugin } from "@agent-native/core/server";
 
-// The four extension-facing actions are called cross-origin without a session
+// Extension-facing actions are called cross-origin without a session
 // cookie. They must be in publicPaths so the global auth guard lets them
 // through before the action route's requiresAuth: false check can fire.
 export default createAuthPlugin({
@@ -14,5 +14,7 @@ export default createAuthPlugin({
     "/_agent-native/actions/resolve-connect-button",
     "/_agent-native/actions/list-canvases",
     "/_agent-native/actions/check-hubspot-contact",
+    "/_agent-native/actions/ingest-post-engager",
+    "/_agent-native/actions/get-post-engager",
   ],
 });
