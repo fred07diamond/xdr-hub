@@ -1,6 +1,6 @@
 // apps/outreach/actions/list-post-engagements.ts
 import { defineAction } from "@agent-native/core";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { postEngagements } from "../server/db/schema.js";
@@ -14,9 +14,12 @@ export default defineAction({
   readOnly: true,
   run: async ({ postUrl }, ctx) => {
     const db = getDb();
-    const ownerFilter = ctx?.userEmail
-      ? eq(postEngagements.ownerEmail, ctx.userEmail)
-      : isNull(postEngagements.ownerEmail);
+    const ownerFilter =
+      ctx?.userEmail != null && ctx.userEmail !== ""
+        ? eq(postEngagements.ownerEmail, ctx.userEmail)
+        : null;
+
+    if (!ownerFilter) return { engagements: [] };
 
     const conditions = postUrl
       ? and(ownerFilter, eq(postEngagements.postUrl, postUrl))
