@@ -913,11 +913,14 @@ function scrapeCommenters() {
     const commentText = bodySpans.reduce((a, b) => (b.length > a.length ? b : a), "").slice(0, 500);
 
     const postUrl = window.location.href.split("?")[0];
-    const postTitleEl = document.querySelector(
-      '.feed-shared-update-v2__description span[aria-hidden="true"], ' +
-      '.update-components-text span[aria-hidden="true"]'
-    );
-    const postTitle = (postTitleEl?.innerText || "").trim().slice(0, 80);
+    // Post title: find the first span with dir="ltr" that has meaningful text.
+    // dir="ltr" is a stable attribute LinkedIn puts on post body text;
+    // class names rotate on every deploy.
+    const postTextSpan = Array.from(document.querySelectorAll('span[dir="ltr"]')).find((el) => {
+      const t = (el.innerText || "").trim();
+      return t.length > 20 && !el.closest("header, nav, aside, [role='navigation']");
+    });
+    const postTitle = (postTextSpan?.innerText || "").trim().slice(0, 200);
 
     results.push({ name, company, profileUrl, commentText, postUrl, postTitle });
   }
