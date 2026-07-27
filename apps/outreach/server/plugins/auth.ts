@@ -16,5 +16,6 @@ export default createAuthPlugin({
     "/_agent-native/actions/check-hubspot-contact",
     "/_agent-native/actions/ingest-post-engager",
     "/_agent-native/actions/get-post-engager",
+    "/_agent-native/actions/enrich-post-engager",
   ],
 });
