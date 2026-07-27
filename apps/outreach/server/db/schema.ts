@@ -158,3 +158,30 @@ export const icpSources = table("icp_sources", {
   icpText: text("icp_text"),
   updatedAt: text("updated_at").default(now()),
 });
+
+// Post engagements — one row per LinkedIn post comment that has been processed.
+// Status lifecycle: pending → enriching → scoring → done
+export const postEngagements = table("post_engagements", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email"),
+  postUrl: text("post_url").notNull(),
+  postTitle: text("post_title"),
+  engagerName: text("engager_name").notNull(),
+  engagerCompany: text("engager_company"),
+  engagerHeadline: text("engager_headline"),
+  engagerRole: text("engager_role"),
+  engagerAbout: text("engager_about"),
+  engagerRecentActivity: text("engager_recent_activity"),
+  engagerProfileUrl: text("engager_profile_url").notNull(),
+  commentText: text("comment_text"),
+  xdrOwner: text("xdr_owner"),
+  contactOwner: text("contact_owner"),
+  hubspotStatus: text("hubspot_status", { enum: ["found", "new_opportunity"] }),
+  fitVerdict: text("fit_verdict", { enum: ["strong", "possible", "weak", "inconclusive"] }),
+  fitReason: text("fit_reason"),
+  status: text("status", { enum: ["pending", "enriching", "scoring", "done"] })
+    .notNull()
+    .default("pending"),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
