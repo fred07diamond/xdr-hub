@@ -205,7 +205,15 @@ async function ingestPostEngager(engager, apiToken) {
   const res = await fetch(`${appUrl}/_agent-native/actions/ingest-post-engager`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...engager, ...(apiToken ? { apiToken } : {}) }),
+    body: JSON.stringify({
+      postUrl: engager.postUrl,
+      postTitle: engager.postTitle ?? null,
+      engagerName: engager.name,
+      engagerCompany: engager.company ?? null,
+      engagerProfileUrl: engager.profileUrl,
+      commentText: engager.commentText ?? null,
+      ...(apiToken ? { apiToken } : {}),
+    }),
   });
   if (!res.ok) {
     const text = await res.text();
