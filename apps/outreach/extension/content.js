@@ -841,7 +841,8 @@ function scrapeCommenters() {
 
   for (const link of searchLinks) {
     const raw = link.href || "";
-    const profileUrl = raw.split("?")[0];
+    // Normalize: strip query string and trailing slash so /in/foo and /in/foo/ deduplicate.
+    const profileUrl = raw.split("?")[0].replace(/\/$/, "");
     if (!profileUrl.includes("/in/") || seen.has(profileUrl)) continue;
 
     // Name: find the first span inside the link that isn't a degree badge ("• 2nd" etc.).
