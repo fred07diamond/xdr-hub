@@ -814,33 +814,49 @@ loadSelectedBtn.addEventListener("click", async () => {
   loadSelectedBtn.disabled = true;
   loadSelectedBtn.textContent = "Loading…";
 
-  chrome.runtime.sendMessage({ type: "LOAD_POST_ENGAGERS", engagers: selected }, (res) => {
-    if (!res?.ok) {
-      loadSelectedBtn.disabled = false;
-      loadSelectedBtn.textContent = "Load selected (0)";
-    }
-  });
+  // Reset button after 3s — cards update themselves via POST_ENGAGER_PROGRESS.
+  // Don't rely on the sendMessage callback to reset: it only fires after ALL
+  // enrichment completes (potentially 5+ minutes) and only resets on error.
+  setTimeout(() => {
+    loadSelectedBtn.disabled = false;
+    updateLoadSelectedBtn();
+  }, 3000);
+
+  chrome.runtime.sendMessage({ type: "LOAD_POST_ENGAGERS", engagers: selected })
+    .catch(() => {});
 });
 
-// Receive progress updates from the background service worker.
+function applyEngagerProgress(progress) {
+  if (!progress) return;
+  const { id, status, profileUrl, enriched } = progress;
+  if (!profileUrl) return;
+  const prev = loadedIds[profileUrl] || {};
+  loadedIds[profileUrl] = {
+    id,
+    status,
+    fitVerdict: enriched?.fitVerdict ?? prev.fitVerdict ?? null,
+    enriched: enriched ?? prev.enriched ?? null,
+  };
+  if (status === "done" && enriched) {
+    const entry = engagerData.find((e) => e.profileUrl === profileUrl);
+    if (entry) {
+      entry.company = enriched.headline || enriched.role || entry.company;
+    }
+  }
+  renderEngagersList();
+}
+
+// Primary: receive progress via chrome.storage.session (reliable in MV3 side panels).
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "session" && changes.lastEngagerProgress) {
+    applyEngagerProgress(changes.lastEngagerProgress.newValue);
+  }
+});
+
+// Fallback: also accept the direct sendMessage broadcast.
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "POST_ENGAGER_PROGRESS" && msg.progress) {
-    const { id, status, profileUrl, enriched } = msg.progress;
-    const prev = loadedIds[profileUrl] || {};
-    loadedIds[profileUrl] = {
-      id,
-      status,
-      fitVerdict: enriched?.fitVerdict ?? prev.fitVerdict ?? null,
-      // Persist enriched data so it can be restored after a rescan.
-      enriched: enriched ?? prev.enriched ?? null,
-    };
-    if (status === "done" && enriched) {
-      const entry = engagerData.find((e) => e.profileUrl === profileUrl);
-      if (entry) {
-        entry.company = enriched.headline || enriched.role || entry.company;
-      }
-    }
-    renderEngagersList();
+    applyEngagerProgress(msg.progress);
   }
 });
 

@@ -216,16 +216,25 @@ async function ingestPostEngager(engager, apiToken) {
 
 async function enrichPostEngager(id, profileData, apiToken) {
   const { appUrl } = await getSettings();
-  const res = await fetch(`${appUrl}/_agent-native/actions/enrich-post-engager`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, ...profileData, ...(apiToken ? { apiToken } : {}) }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`enrich-post-engager failed (${res.status}): ${text.slice(0, 200)}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
+  try {
+    const res = await fetch(`${appUrl}/_agent-native/actions/enrich-post-engager`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...profileData, ...(apiToken ? { apiToken } : {}) }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`enrich-post-engager failed (${res.status}): ${text.slice(0, 200)}`);
+    }
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
   }
-  return await res.json();
 }
 
 async function getPostEngager(id, apiToken) {
@@ -249,11 +258,12 @@ async function scrapeProfileInBackground(profileUrl) {
         resolve(null);
       }, 20000); // 20s hard timeout per profile
 
-      function onUpdated(updatedTabId, changeInfo) {
-        if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
+      let scraped = false;
+      function doScrape() {
+        if (scraped) return;
+        scraped = true;
         chrome.tabs.onUpdated.removeListener(onUpdated);
         clearTimeout(timeout);
-
         chrome.scripting.executeScript(
           { target: { tabId }, files: ["content.js"] },
           () => {
@@ -265,7 +275,17 @@ async function scrapeProfileInBackground(profileUrl) {
         );
       }
 
+      function onUpdated(updatedTabId, changeInfo) {
+        if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
+        doScrape();
+      }
+
       chrome.tabs.onUpdated.addListener(onUpdated);
+      // Race guard: if the tab already reached "complete" before the listener
+      // was registered (e.g., served from cache), scrape immediately.
+      chrome.tabs.get(tabId, (tab) => {
+        if (tab?.status === "complete") doScrape();
+      });
     });
   });
 }
@@ -389,12 +409,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "LOAD_POST_ENGAGERS") {
-    // sendResponse is used for immediate ack; progress is sent via separate messages.
-    loadPostEngagers(msg.engagers, (progress) => {
+    // Progress is written to chrome.storage.session; the panel listens via
+    // onChanged, which is more reliable than sendMessage for SW→side-panel
+    // communication in MV3.
+    const writeProgress = (progress) => {
+      console.log("[BLI BG] progress", progress.status, progress.name);
+      chrome.storage.session
+        .set({ lastEngagerProgress: { ...progress, _seq: Date.now() } })
+        .catch((err) => console.error("[BLI BG] storage write failed", err));
+      // Also try sendMessage as a secondary channel.
       chrome.runtime.sendMessage({ type: "POST_ENGAGER_PROGRESS", progress }).catch(() => {});
-    })
-      .then(() => sendResponse({ ok: true }))
-      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    };
+    loadPostEngagers(msg.engagers, writeProgress)
+      .then(() => {
+        console.log("[BLI BG] loadPostEngagers complete");
+        sendResponse({ ok: true });
+      })
+      .catch((err) => {
+        console.error("[BLI BG] loadPostEngagers error", err);
+        sendResponse({ ok: false, error: err.message });
+      });
     return true;
   }
 
