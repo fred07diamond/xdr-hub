@@ -304,11 +304,22 @@ async function loadPostEngagers(engagers, sendProgress) {
         about: profileData.about ?? null,
         recentActivity: profileData.recentActivity ?? null,
       } : {};
-      await enrichPostEngager(id, enrichPayload, token);
-      sendProgress({ id, name: engager.name, status: "done", profileUrl: engager.profileUrl });
+      const enrichResult = await enrichPostEngager(id, enrichPayload, token);
+      sendProgress({
+        id,
+        name: engager.name,
+        status: "done",
+        profileUrl: engager.profileUrl,
+        enriched: {
+          headline: profileData?.headline ?? null,
+          role: profileData?.role ?? null,
+          fitVerdict: enrichResult?.fitVerdict ?? null,
+          fitReason: enrichResult?.fitReason ?? null,
+        },
+      });
     } catch (err) {
       console.error("[BLI] enrich failed for", engager.name, err);
-      sendProgress({ id, name: engager.name, status: "done", profileUrl: engager.profileUrl }); // still mark done to unblock UI
+      sendProgress({ id, name: engager.name, status: "done", profileUrl: engager.profileUrl });
     }
   }
 }
