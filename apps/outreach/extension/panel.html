@@ -573,48 +573,62 @@
     .engager-row {
       display: flex;
       align-items: flex-start;
-      gap: 8px;
-      padding: 8px;
+      gap: 10px;
+      padding: 10px 12px;
       border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      background: #fafafa;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      transition: box-shadow 0.15s;
     }
-    .engager-row.loaded { background: #f0f4ff; }
+    .engager-row:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .engager-row.loaded { background: #f0f4ff; border-color: #c7d2fe; }
 
-    .engager-check { margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+    .engager-check { margin-top: 3px; flex-shrink: 0; cursor: pointer; width: 15px; height: 15px; }
 
     .engager-info { flex: 1; min-width: 0; }
 
     .engager-name {
       font-size: 13px;
-      font-weight: 600;
-      color: #1a1a1a;
+      font-weight: 700;
+      color: #0a0a0a;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .engager-company {
-      font-size: 11px;
-      color: #666;
-      margin-top: 1px;
-    }
-    .engager-comment {
-      font-size: 11px;
-      color: #888;
-      margin-top: 3px;
+    .engager-headline {
+      font-size: 11.5px;
+      color: #444;
+      margin-top: 2px;
+      line-height: 1.4;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
+    }
+    .engager-comment {
+      font-size: 11px;
+      color: #777;
+      margin-top: 5px;
+      padding: 5px 8px;
+      background: #f6f6f6;
+      border-left: 2px solid #d1d5db;
+      border-radius: 0 4px 4px 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-style: italic;
     }
     .engager-status {
       font-size: 11px;
       color: #888;
       white-space: nowrap;
       flex-shrink: 0;
+      margin-top: 2px;
     }
     .engager-status.enriching { color: #b45309; }
-    .engager-status.done { color: #1e7e34; }
+    .engager-status.done { color: #1e7e34; font-weight: 600; }
 
     #engagers-empty {
       text-align: center;

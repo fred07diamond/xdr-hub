@@ -751,15 +751,18 @@ function renderEngagerRow(engager, idx) {
   nameEl.className = "engager-name";
   nameEl.textContent = engager.name;
 
-  const compEl = document.createElement("div");
-  compEl.className = "engager-company";
-  compEl.textContent = engager.company || "";
+  const headlineEl = document.createElement("div");
+  headlineEl.className = "engager-headline";
+  headlineEl.textContent = engager.company || "";
 
-  const commentEl = document.createElement("div");
-  commentEl.className = "engager-comment";
-  commentEl.textContent = engager.commentText || "";
+  info.append(nameEl, headlineEl);
 
-  info.append(nameEl, compEl, commentEl);
+  if (engager.commentText) {
+    const commentEl = document.createElement("div");
+    commentEl.className = "engager-comment";
+    commentEl.textContent = engager.commentText;
+    info.appendChild(commentEl);
+  }
 
   const statusEl = document.createElement("div");
   statusEl.className = `engager-status${loaded ? " " + loaded.status : ""}`;
