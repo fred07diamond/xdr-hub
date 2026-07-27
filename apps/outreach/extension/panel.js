@@ -821,6 +821,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 async function loadEngagersTab(tabId) {
   engagerData = [];
   loadedIds = {};
+  engagersEmpty.textContent = "Navigate to a LinkedIn post to see commenters here.";
   renderEngagersList();
 
   try {
@@ -871,13 +872,13 @@ function startUrlPollingWithEngagers() {
         init({ navTriggered: true }).finally(() => { isInitializing = false; });
       }
     } else if (isPostUrl(url)) {
-      // On a post page: show tab switcher, default to Engagers tab, hide profile content.
+      // Keep tab switcher visible on every tick; only switch tab and load on URL change.
       tabSwitcher.style.display = "flex";
-      notLinkedin.style.display = "none";
-      mainContent.style.display = "none";
-      switchTab("engagers");
       if (cleanUrl !== currentProfileUrl) {
         currentProfileUrl = cleanUrl;
+        notLinkedin.style.display = "none";
+        mainContent.style.display = "none";
+        switchTab("engagers");
         loadEngagersTab(tab.id);
       }
     } else {
