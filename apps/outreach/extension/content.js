@@ -804,63 +804,64 @@ function scrapeCommenters() {
   const results = [];
   const seen = new Set();
 
-  // LinkedIn writes comment author links as relative hrefs (/in/...), so
-  // querySelector on href*="linkedin.com/in/" matches nothing. Use /in/ instead;
-  // link.href always resolves to the absolute URL for deduplication.
-  const allLinks = Array.from(document.querySelectorAll('a[href*="/in/"]'));
+  // Anchor the comments section using stable UI elements instead of class names.
+  // LinkedIn rotates CSS classes on every deploy; placeholder text is stable.
+  let commentsRoot = null;
+  const addCommentInput =
+    document.querySelector('[placeholder*="comment" i]') ||
+    document.querySelector('[contenteditable][aria-label*="comment" i]') ||
+    document.querySelector('[data-placeholder*="comment" i]');
 
-  for (const link of allLinks) {
+  if (addCommentInput) {
+    let el = addCommentInput;
+    for (let i = 0; i < 12; i++) {
+      el = el.parentElement;
+      if (!el) break;
+      // Stop at the first ancestor that already contains commenter links.
+      if (el.querySelectorAll('a[href*="/in/"]').length >= 2) {
+        commentsRoot = el;
+        break;
+      }
+    }
+  }
+
+  // Search within the comments section when found; otherwise search the full page
+  // minus obvious chrome (header, nav, aside).
+  const searchLinks = commentsRoot
+    ? Array.from(commentsRoot.querySelectorAll('a[href*="/in/"]'))
+    : Array.from(document.querySelectorAll('a[href*="/in/"]')).filter(
+        (l) => !l.closest('header, nav, aside, [role="navigation"]')
+      );
+
+  for (const link of searchLinks) {
     const raw = link.href || "";
     const profileUrl = raw.split("?")[0];
     if (!profileUrl.includes("/in/") || seen.has(profileUrl)) continue;
 
-    // Find the comment container. LinkedIn rotates class hashes — match on
-    // stable partial class fragments and stable data attributes.
-    const commentContainer = link.closest(
-      'article[class*="comment"], ' +
-      '[class*="comments-comment-item"], ' +
-      '[class*="comment-item__"], ' +
-      '[class*="social-comment"], ' +
-      '[data-test-id="comment-container"]'
-    );
-    if (!commentContainer) continue;
+    // Must have a visible name.
+    const nameSpan = link.querySelector('span[aria-hidden="true"]');
+    const name = (nameSpan?.innerText || link.innerText || "").trim();
+    if (!name || name.length < 2) continue;
 
     seen.add(profileUrl);
 
-    // Name: prefer the aria-hidden span inside the link (stable), fall back to
-    // the link's full innerText.
-    const nameSpan = link.querySelector('span[aria-hidden="true"]');
-    const name = (nameSpan?.innerText || link.innerText || "").trim();
-    if (!name) continue;
-
-    // Headline/company: all visible spans near the link header, minus the name itself.
-    // Walk up from the link to find the actor/header wrapper; fall back to container.
-    const headerArea =
-      link.closest('[class*="comment-actor"], [class*="actor__"], [class*="post-meta"]') ||
-      commentContainer;
-    const allSpans = Array.from(headerArea.querySelectorAll('span[aria-hidden="true"]'))
-      .map(s => s.innerText?.trim())
-      .filter(s => s && s.toLowerCase() !== name.toLowerCase() && s.length < 120);
+    // Headline/company: search the small actor block immediately around the link.
+    const actorBlock =
+      link.parentElement?.parentElement?.parentElement || link.closest("div") || link;
+    const allSpans = Array.from(actorBlock.querySelectorAll('span[aria-hidden="true"]'))
+      .map((s) => s.innerText?.trim())
+      .filter((s) => s && s.toLowerCase() !== name.toLowerCase() && s.length < 120);
     const company = allSpans[0] || "";
 
-    // Comment body: prefer a dedicated content element; fall back to all visible spans
-    // in the container, skip anything matching name/company.
-    const bodyEl = commentContainer.querySelector(
-      '[class*="comment-content"] span[aria-hidden="true"], ' +
-      '[class*="comment__content"] span[aria-hidden="true"], ' +
-      '[class*="main-content"] span[aria-hidden="true"]'
-    );
-    let commentText = (bodyEl?.innerText || "").trim();
-    if (!commentText) {
-      // Fallback: pick the longest span in the container that isn't name/company.
-      const spans = Array.from(commentContainer.querySelectorAll('span[aria-hidden="true"]'))
-        .map(s => s.innerText?.trim() || "")
-        .filter(s => s.length > 10 && s.toLowerCase() !== name.toLowerCase() && s !== company);
-      commentText = spans.reduce((a, b) => (b.length > a.length ? b : a), "");
-    }
-    commentText = commentText.slice(0, 500);
+    // Comment body: walk up 6 levels from the name link to get the full comment item,
+    // then pick the longest span that isn't the name or headline.
+    let commentEl = link;
+    for (let i = 0; i < 6; i++) commentEl = commentEl.parentElement || commentEl;
+    const bodySpans = Array.from(commentEl.querySelectorAll('span[aria-hidden="true"]'))
+      .map((s) => s.innerText?.trim() || "")
+      .filter((s) => s.length > 15 && s.toLowerCase() !== name.toLowerCase() && s !== company);
+    const commentText = bodySpans.reduce((a, b) => (b.length > a.length ? b : a), "").slice(0, 500);
 
-    // Post URL and first ~80 chars of post text as title.
     const postUrl = window.location.href.split("?")[0];
     const postTitleEl = document.querySelector(
       '.feed-shared-update-v2__description span[aria-hidden="true"], ' +
