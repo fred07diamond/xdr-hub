@@ -872,41 +872,31 @@ function scrapeCommenters() {
 
     seen.add(profileUrl);
 
-    // Headline: LinkedIn does NOT use aria-hidden on headline spans, so
-    // searching only aria-hidden spans misses it and picks up "1 reply" instead.
-    // Search all elements: first siblings of the name link, then leaf nodes 2
-    // levels up. Filter out: link subtree, degree badges, digit-prefixed strings
-    // ("1 reply", "2 replies"), single UI words, and the name itself.
+    // Headline: LinkedIn's element structure varies (aria-hidden is not consistently
+    // applied, nesting depth differs between comment types). Use innerText-based
+    // extraction instead: split the actor block by newlines, drop the name/badge/
+    // timestamps/edit indicators, and take the first meaningful line.
     const linkParent = link.parentElement;
     let company = "";
+    const nameLower = name.toLowerCase();
+    const linkRawText = (link.innerText || "").toLowerCase().trim();
 
-    // Pass 1: direct sibling elements of the name link.
-    if (linkParent) {
-      for (const sib of Array.from(linkParent.children)) {
-        if (sib === link || link.contains(sib)) continue;
-        const t = (sib.innerText || sib.textContent || "").trim().split("\n")[0].trim();
-        if (t && t.length > 5 && t.length < 120
-            && !t.startsWith("•") && !/^\d/.test(t)
-            && !UI_WORDS.has(t.toLowerCase())
-            && t.toLowerCase() !== name.toLowerCase()) {
-          company = t; break;
-        }
-      }
-    }
-
-    // Pass 2: all leaf elements 2 levels up, excluding the link subtree.
-    if (!company) {
-      const actorBlock = linkParent?.parentElement || link.closest("div") || link;
-      for (const el of Array.from(actorBlock.querySelectorAll("*"))) {
-        if (link.contains(el) || el.children.length > 0) continue;
-        const t = (el.innerText || el.textContent || "").trim();
-        if (t && t.length > 5 && t.length < 120
-            && !t.startsWith("•") && !/^\d/.test(t)
-            && !UI_WORDS.has(t.toLowerCase())
-            && t.toLowerCase() !== name.toLowerCase()) {
-          company = t; break;
-        }
-      }
+    for (const block of [linkParent, linkParent?.parentElement].filter(Boolean)) {
+      const candidate = (block.innerText || "")
+        .split(/[\n\r•]+/)
+        .map((l) => l.trim())
+        .find(
+          (l) =>
+            l.length > 10 &&
+            l.length < 120 &&
+            l.toLowerCase() !== nameLower &&
+            !l.toLowerCase().split(/\s+/).every((w) => linkRawText.includes(w)) &&
+            !l.startsWith("•") &&
+            !/^\d/.test(l) &&       // "1 reply", "2h", "4h"
+            !/^\(/.test(l) &&       // "(edited)", "(edited) 4h"
+            !UI_WORDS.has(l.toLowerCase())
+        );
+      if (candidate) { company = candidate; break; }
     }
 
     // Comment body: walk up 6 levels to the full comment item and pick the longest
@@ -932,6 +922,7 @@ function scrapeCommenters() {
     results.push({ name, company, profileUrl, commentText, postUrl, postTitle });
   }
 
+  console.log("[BLI scrape] found", results.length, "engagers:", results.map(r => `${r.name} | ${r.company || "(no headline)"}`));
   return results;
 }
 
