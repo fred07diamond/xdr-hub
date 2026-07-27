@@ -804,52 +804,67 @@ function scrapeCommenters() {
   const results = [];
   const seen = new Set();
 
-  // Collect all profile links that appear inside comment sections.
-  // LinkedIn uses several container class patterns; we cast a wide net.
-  const allLinks = Array.from(document.querySelectorAll('a[href*="linkedin.com/in/"]'));
+  // LinkedIn writes comment author links as relative hrefs (/in/...), so
+  // querySelector on href*="linkedin.com/in/" matches nothing. Use /in/ instead;
+  // link.href always resolves to the absolute URL for deduplication.
+  const allLinks = Array.from(document.querySelectorAll('a[href*="/in/"]'));
 
   for (const link of allLinks) {
     const raw = link.href || "";
     const profileUrl = raw.split("?")[0];
     if (!profileUrl.includes("/in/") || seen.has(profileUrl)) continue;
 
-    // Filter to links inside comment containers only (exclude sidebar suggestions, etc.)
+    // Find the comment container. LinkedIn rotates class hashes — match on
+    // stable partial class fragments and stable data attributes.
     const commentContainer = link.closest(
-      ".comments-comment-item, .comments-comment-item__content, " +
-      "[data-test-id='comment-container'], .feed-shared-comments-list__comment-item"
+      'article[class*="comment"], ' +
+      '[class*="comments-comment-item"], ' +
+      '[class*="comment-item__"], ' +
+      '[class*="social-comment"], ' +
+      '[data-test-id="comment-container"]'
     );
     if (!commentContainer) continue;
 
     seen.add(profileUrl);
 
-    // Name: innerText of visible spans directly in the link, or the link itself.
+    // Name: prefer the aria-hidden span inside the link (stable), fall back to
+    // the link's full innerText.
     const nameSpan = link.querySelector('span[aria-hidden="true"]');
     const name = (nameSpan?.innerText || link.innerText || "").trim();
     if (!name) continue;
 
-    // Headline/company: first non-name visible span in the comment header area.
-    const headerArea = link.closest(
-      ".comments-post-meta, .feed-shared-actor__container, " +
-      ".comments-comment-item__actor, [class*='comment-meta']"
-    ) || commentContainer;
+    // Headline/company: all visible spans near the link header, minus the name itself.
+    // Walk up from the link to find the actor/header wrapper; fall back to container.
+    const headerArea =
+      link.closest('[class*="comment-actor"], [class*="actor__"], [class*="post-meta"]') ||
+      commentContainer;
     const allSpans = Array.from(headerArea.querySelectorAll('span[aria-hidden="true"]'))
       .map(s => s.innerText?.trim())
       .filter(s => s && s.toLowerCase() !== name.toLowerCase() && s.length < 120);
     const company = allSpans[0] || "";
 
-    // Comment body text.
+    // Comment body: prefer a dedicated content element; fall back to all visible spans
+    // in the container, skip anything matching name/company.
     const bodyEl = commentContainer.querySelector(
-      ".comments-comment-item__main-content span[aria-hidden='true'], " +
-      ".feed-shared-comment span[aria-hidden='true'], " +
-      "[class*='comment-content'] span[aria-hidden='true']"
+      '[class*="comment-content"] span[aria-hidden="true"], ' +
+      '[class*="comment__content"] span[aria-hidden="true"], ' +
+      '[class*="main-content"] span[aria-hidden="true"]'
     );
-    const commentText = (bodyEl?.innerText || "").trim().slice(0, 500);
+    let commentText = (bodyEl?.innerText || "").trim();
+    if (!commentText) {
+      // Fallback: pick the longest span in the container that isn't name/company.
+      const spans = Array.from(commentContainer.querySelectorAll('span[aria-hidden="true"]'))
+        .map(s => s.innerText?.trim() || "")
+        .filter(s => s.length > 10 && s.toLowerCase() !== name.toLowerCase() && s !== company);
+      commentText = spans.reduce((a, b) => (b.length > a.length ? b : a), "");
+    }
+    commentText = commentText.slice(0, 500);
 
     // Post URL and first ~80 chars of post text as title.
     const postUrl = window.location.href.split("?")[0];
     const postTitleEl = document.querySelector(
-      ".feed-shared-update-v2__description span[aria-hidden='true'], " +
-      ".update-components-text span[aria-hidden='true']"
+      '.feed-shared-update-v2__description span[aria-hidden="true"], ' +
+      '.update-components-text span[aria-hidden="true"]'
     );
     const postTitle = (postTitleEl?.innerText || "").trim().slice(0, 80);
 
