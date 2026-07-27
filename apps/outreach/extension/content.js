@@ -833,33 +833,49 @@ function scrapeCommenters() {
         (l) => !l.closest('header, nav, aside, [role="navigation"]')
       );
 
+  // UI action words that appear in comment controls — never a headline or comment body.
+  const UI_WORDS = new Set([
+    "like", "reply", "view", "more", "comment", "repost", "send",
+    "connect", "follow", "message", "report", "share", "load", "save",
+  ]);
+
   for (const link of searchLinks) {
     const raw = link.href || "";
     const profileUrl = raw.split("?")[0];
     if (!profileUrl.includes("/in/") || seen.has(profileUrl)) continue;
 
-    // Must have a visible name.
-    const nameSpan = link.querySelector('span[aria-hidden="true"]');
-    const name = (nameSpan?.innerText || link.innerText || "").trim();
+    // Name: find the first span inside the link that isn't a degree badge ("• 2nd" etc.).
+    const nameSpans = Array.from(link.querySelectorAll('span[aria-hidden="true"]'))
+      .map((s) => s.innerText?.trim())
+      .filter((s) => s && !s.startsWith("•") && s.length > 1);
+    const name = nameSpans[0] || (link.innerText || "").split("\n")[0].trim();
     if (!name || name.length < 2) continue;
 
     seen.add(profileUrl);
 
-    // Headline/company: search the small actor block immediately around the link.
-    const actorBlock =
-      link.parentElement?.parentElement?.parentElement || link.closest("div") || link;
-    const allSpans = Array.from(actorBlock.querySelectorAll('span[aria-hidden="true"]'))
+    // Headline/company: go 2 levels up from the link (the actor wrapper) and pick
+    // the first span that isn't the name, isn't a badge, and isn't a UI action word.
+    const actorBlock = link.parentElement?.parentElement || link.closest("div") || link;
+    const company = Array.from(actorBlock.querySelectorAll('span[aria-hidden="true"]'))
       .map((s) => s.innerText?.trim())
-      .filter((s) => s && s.toLowerCase() !== name.toLowerCase() && s.length < 120);
-    const company = allSpans[0] || "";
+      .filter((s) => s &&
+        s.toLowerCase() !== name.toLowerCase() &&
+        !s.startsWith("•") &&
+        !UI_WORDS.has(s.toLowerCase()) &&
+        s.length > 2 && s.length < 120
+      )[0] || "";
 
-    // Comment body: walk up 6 levels from the name link to get the full comment item,
-    // then pick the longest span that isn't the name or headline.
+    // Comment body: walk up 6 levels to the full comment item and pick the longest
+    // span that isn't the name, headline, or a UI action word.
     let commentEl = link;
     for (let i = 0; i < 6; i++) commentEl = commentEl.parentElement || commentEl;
     const bodySpans = Array.from(commentEl.querySelectorAll('span[aria-hidden="true"]'))
       .map((s) => s.innerText?.trim() || "")
-      .filter((s) => s.length > 15 && s.toLowerCase() !== name.toLowerCase() && s !== company);
+      .filter((s) => s.length > 15 &&
+        s.toLowerCase() !== name.toLowerCase() &&
+        s !== company &&
+        !UI_WORDS.has(s.toLowerCase())
+      );
     const commentText = bodySpans.reduce((a, b) => (b.length > a.length ? b : a), "").slice(0, 500);
 
     const postUrl = window.location.href.split("?")[0];
