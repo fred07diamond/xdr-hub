@@ -708,7 +708,8 @@ const selectAllBtn = document.getElementById("select-all-btn");
 const loadSelectedBtn = document.getElementById("load-selected-btn");
 
 let engagerData = []; // { name, company, profileUrl, commentText, postUrl, postTitle }
-let loadedIds = {};   // profileUrl → { id, status }
+let loadedIds = {};   // profileUrl → { id, status, enriched }
+let currentPostUrl = null; // tracks the post URL independently of currentProfileUrl
 
 function isPostUrl(url) {
   return url.includes("linkedin.com/posts/") || url.includes("linkedin.com/feed/update/");
@@ -830,9 +831,10 @@ chrome.runtime.onMessage.addListener((msg) => {
       id,
       status,
       fitVerdict: enriched?.fitVerdict ?? prev.fitVerdict ?? null,
+      // Persist enriched data so it can be restored after a rescan.
+      enriched: enriched ?? prev.enriched ?? null,
     };
     if (status === "done" && enriched) {
-      // Update the scraped entry with the richer data from LinkedIn profile + AI scoring.
       const entry = engagerData.find((e) => e.profileUrl === profileUrl);
       if (entry) {
         entry.company = enriched.headline || enriched.role || entry.company;
@@ -844,7 +846,11 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 async function loadEngagersTab(tabId) {
   engagerData = [];
-  loadedIds = {};
+  // Don't reset loadedIds — progress messages arrive asynchronously and URL
+  // polling can trigger a rescan while enrichment is in flight. Preserving
+  // loadedIds means cards keep their status and headline across rescans.
+  // loadedIds is only cleared in startUrlPollingWithEngagers when the post
+  // URL genuinely changes to a different post.
   engagersEmpty.textContent = "Navigate to a LinkedIn post to see commenters here.";
   renderEngagersList();
 
@@ -858,6 +864,13 @@ async function loadEngagersTab(tabId) {
     }
     if (result?.ok && result.commenters?.length) {
       engagerData = result.commenters;
+      // Restore enriched headline for any engagers already in loadedIds.
+      for (const e of engagerData) {
+        const loaded = loadedIds[e.profileUrl];
+        if (loaded?.enriched) {
+          e.company = loaded.enriched.headline || loaded.enriched.role || e.company;
+        }
+      }
       renderEngagersList();
     } else {
       engagersEmpty.textContent = "No commenters found. Try scrolling to load more comments, then switch back.";
@@ -897,8 +910,15 @@ function startUrlPollingWithEngagers() {
       }
     } else if (isPostUrl(url)) {
       // Keep tab switcher visible on every tick; only switch tab and load on URL change.
+      // Use currentPostUrl (not currentProfileUrl) so a resetPanel() triggered by a
+      // background LinkedIn profile tab doesn't cause a spurious rescan.
       tabSwitcher.style.display = "flex";
-      if (cleanUrl !== currentProfileUrl) {
+      if (cleanUrl !== currentPostUrl) {
+        if (currentPostUrl && currentPostUrl !== cleanUrl) {
+          // Moving to a genuinely different post — clear previous enrichment state.
+          loadedIds = {};
+        }
+        currentPostUrl = cleanUrl;
         currentProfileUrl = cleanUrl;
         notLinkedin.style.display = "none";
         mainContent.style.display = "none";
@@ -911,6 +931,7 @@ function startUrlPollingWithEngagers() {
       switchTab("profile");
       if (currentProfileUrl) {
         currentProfileUrl = null;
+        currentPostUrl = null;
         notLinkedin.style.display = "block";
         mainContent.style.display = "none";
       }
