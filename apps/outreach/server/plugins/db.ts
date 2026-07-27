@@ -237,6 +237,17 @@ export default runMigrations(
           ON post_engagements (post_url, engager_profile_url, COALESCE(owner_email, ''))`,
       ].join(";\n"),
     },
+    {
+      version: 39,
+      sql: [
+        `ALTER TABLE post_engagements ADD COLUMN IF NOT EXISTS company_owner TEXT`,
+        `ALTER TABLE post_engagements ADD COLUMN IF NOT EXISTS hubspot_contact_url TEXT`,
+        `ALTER TABLE post_engagements ADD COLUMN IF NOT EXISTS draft_note TEXT`,
+        `ALTER TABLE post_engagements ADD COLUMN IF NOT EXISTS persona_id TEXT`,
+        `ALTER TABLE post_engagements ADD COLUMN IF NOT EXISTS persona_name TEXT`,
+        `ALTER TABLE post_engagements ADD COLUMN IF NOT EXISTS persona_color TEXT`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );
