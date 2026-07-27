@@ -765,10 +765,19 @@ function renderEngagerRow(engager, idx) {
   }
 
   const statusEl = document.createElement("div");
-  statusEl.className = `engager-status${loaded ? " " + loaded.status : ""}`;
-  statusEl.textContent = loaded
-    ? (loaded.status === "done" ? "✓ Done" : loaded.status === "enriching" ? "Enriching…" : "Pending…")
-    : "";
+  let statusText = "";
+  let statusExtra = "";
+  if (loaded) {
+    const v = loaded.fitVerdict;
+    if (v === "strong")       { statusText = "● Strong";   statusExtra = " verdict-strong"; }
+    else if (v === "possible"){ statusText = "● Possible"; statusExtra = " verdict-possible"; }
+    else if (v === "weak")    { statusText = "● Weak";     statusExtra = " verdict-weak"; }
+    else if (loaded.status === "done")      { statusText = "✓ Done"; }
+    else if (loaded.status === "enriching") { statusText = "Enriching…"; }
+    else                                    { statusText = "Pending…"; }
+  }
+  statusEl.className = `engager-status${loaded ? " " + loaded.status : ""}${statusExtra}`;
+  statusEl.textContent = statusText;
 
   row.append(cb, info, statusEl);
   return row;
@@ -815,8 +824,20 @@ loadSelectedBtn.addEventListener("click", async () => {
 // Receive progress updates from the background service worker.
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "POST_ENGAGER_PROGRESS" && msg.progress) {
-    const { id, status, profileUrl } = msg.progress;
-    loadedIds[profileUrl] = { id, status };
+    const { id, status, profileUrl, enriched } = msg.progress;
+    const prev = loadedIds[profileUrl] || {};
+    loadedIds[profileUrl] = {
+      id,
+      status,
+      fitVerdict: enriched?.fitVerdict ?? prev.fitVerdict ?? null,
+    };
+    if (status === "done" && enriched) {
+      // Update the scraped entry with the richer data from LinkedIn profile + AI scoring.
+      const entry = engagerData.find((e) => e.profileUrl === profileUrl);
+      if (entry) {
+        entry.company = enriched.headline || enriched.role || entry.company;
+      }
+    }
     renderEngagersList();
   }
 });
