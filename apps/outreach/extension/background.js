@@ -244,6 +244,7 @@ async function scrapeProfileInBackground(profileUrl) {
     chrome.tabs.create({ url: profileUrl, active: false }, (tab) => {
       const tabId = tab.id;
       const timeout = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
         chrome.tabs.remove(tabId).catch(() => {});
         resolve(null);
       }, 20000); // 20s hard timeout per profile
@@ -378,12 +379,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === "LOAD_POST_ENGAGERS") {
     // sendResponse is used for immediate ack; progress is sent via separate messages.
-    const tabId = _sender.tab?.id;
     loadPostEngagers(msg.engagers, (progress) => {
-      // Send progress back to the panel via a message to the tab that opened the panel.
-      if (tabId) {
-        chrome.tabs.sendMessage(tabId, { type: "POST_ENGAGER_PROGRESS", progress }).catch(() => {});
-      }
+      chrome.runtime.sendMessage({ type: "POST_ENGAGER_PROGRESS", progress }).catch(() => {});
     })
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
