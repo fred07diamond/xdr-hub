@@ -825,6 +825,17 @@ function scrapeCommenters() {
     }
   }
 
+  // Pre-exclude the post author: their profile link is OUTSIDE commentsRoot
+  // (it's in the post header above the comment section).
+  if (commentsRoot) {
+    const pageLinks = Array.from(document.querySelectorAll('a[href*="/in/"]')).filter(
+      (l) => !commentsRoot.contains(l) && !l.closest('header, nav, aside, [role="navigation"]')
+    );
+    if (pageLinks.length > 0) {
+      seen.add(pageLinks[0].href.split("?")[0].replace(/\/$/, ""));
+    }
+  }
+
   // Search within the comments section when found; otherwise search the full page
   // minus obvious chrome (header, nav, aside).
   const searchLinks = commentsRoot
@@ -845,6 +856,13 @@ function scrapeCommenters() {
     const profileUrl = raw.split("?")[0].replace(/\/$/, "");
     if (!profileUrl.includes("/in/") || seen.has(profileUrl)) continue;
 
+    // Secondary author guard: LinkedIn adds an "Author" badge span to the post
+    // author's comment. Skip any commenter whose nearby spans contain exactly "Author".
+    const nearSpanTexts = Array.from(
+      (link.parentElement?.parentElement || link).querySelectorAll("span")
+    ).map((s) => (s.innerText || s.textContent || "").trim());
+    if (nearSpanTexts.some((t) => t === "Author")) continue;
+
     // Name: find the first span inside the link that isn't a degree badge ("• 2nd" etc.).
     const nameSpans = Array.from(link.querySelectorAll('span[aria-hidden="true"]'))
       .map((s) => s.innerText?.trim())
@@ -854,9 +872,13 @@ function scrapeCommenters() {
 
     seen.add(profileUrl);
 
-    // Headline/company: go 2 levels up from the link (the actor wrapper) and pick
-    // the first span that isn't the name, isn't a badge, and isn't a UI action word.
-    const actorBlock = link.parentElement?.parentElement || link.closest("div") || link;
+    // Headline: go 3 levels up (not 2) to reach the full actor block where name
+    // and headline sit in sibling divs, not nested inside each other.
+    const actorBlock =
+      link.parentElement?.parentElement?.parentElement ||
+      link.parentElement?.parentElement ||
+      link.closest("div") ||
+      link;
     const company = Array.from(actorBlock.querySelectorAll('span[aria-hidden="true"]'))
       .map((s) => s.innerText?.trim())
       .filter((s) => s &&
