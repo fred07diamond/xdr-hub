@@ -200,6 +200,118 @@ async function listCanvases(apiToken) {
   }
 }
 
+async function ingestPostEngager(engager, apiToken) {
+  const { appUrl } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/ingest-post-engager`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...engager, ...(apiToken ? { apiToken } : {}) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`ingest-post-engager failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { ok, id, status }
+}
+
+async function enrichPostEngager(id, profileData, apiToken) {
+  const { appUrl } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/enrich-post-engager`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...profileData, ...(apiToken ? { apiToken } : {}) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`enrich-post-engager failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json();
+}
+
+async function getPostEngager(id, apiToken) {
+  const { appUrl } = await getSettings();
+  const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+  const res = await fetch(`${appUrl}/_agent-native/actions/get-post-engager?id=${encodeURIComponent(id)}${tokenParam}`);
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+// Scrapes the LinkedIn profile at profileUrl in a background tab, returns the
+// profile data. Opens a non-active tab, waits for load, injects the content
+// script, reads the profile, closes the tab.
+async function scrapeProfileInBackground(profileUrl) {
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url: profileUrl, active: false }, (tab) => {
+      const tabId = tab.id;
+      const timeout = setTimeout(() => {
+        chrome.tabs.remove(tabId).catch(() => {});
+        resolve(null);
+      }, 20000); // 20s hard timeout per profile
+
+      function onUpdated(updatedTabId, changeInfo) {
+        if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        clearTimeout(timeout);
+
+        chrome.scripting.executeScript(
+          { target: { tabId }, files: ["content.js"] },
+          () => {
+            chrome.tabs.sendMessage(tabId, { type: "SCRAPE_PROFILE" }, (result) => {
+              chrome.tabs.remove(tabId).catch(() => {});
+              resolve(result?.ok ? result.data : null);
+            });
+          }
+        );
+      }
+
+      chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+  });
+}
+
+// Loads an array of selected engager objects: ingests all at once (to create
+// DB rows and return ids quickly), then enriches each sequentially (to avoid
+// LinkedIn rate-limiting on background tab opens).
+async function loadPostEngagers(engagers, sendProgress) {
+  const { apiToken } = await chrome.storage.local.get(["apiToken"]);
+  const token = apiToken || "";
+
+  // Phase 1: ingest all to get ids. Fire in parallel — this is just DB inserts.
+  const ingested = await Promise.all(
+    engagers.map(async (engager) => {
+      try {
+        const result = await ingestPostEngager(engager, token);
+        sendProgress({ id: result.id, name: engager.name, status: "pending", profileUrl: engager.profileUrl });
+        return { id: result.id, engager };
+      } catch (err) {
+        console.error("[BLI] ingest failed for", engager.name, err);
+        return null;
+      }
+    })
+  );
+
+  const valid = ingested.filter(Boolean);
+
+  // Phase 2: enrich each sequentially to avoid LinkedIn rate limits.
+  for (const { id, engager } of valid) {
+    sendProgress({ id, name: engager.name, status: "enriching" });
+    try {
+      const profileData = await scrapeProfileInBackground(engager.profileUrl);
+      const enrichPayload = profileData ? {
+        headline: profileData.headline ?? null,
+        role: profileData.role ?? null,
+        about: profileData.about ?? null,
+        recentActivity: profileData.recentActivity ?? null,
+      } : {};
+      await enrichPostEngager(id, enrichPayload, token);
+      sendProgress({ id, name: engager.name, status: "done" });
+    } catch (err) {
+      console.error("[BLI] enrich failed for", engager.name, err);
+      sendProgress({ id, name: engager.name, status: "done" }); // still mark done to unblock UI
+    }
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "DRAFT_REQUEST") {
     captureThenPoll(msg.data)
@@ -261,6 +373,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     checkHubspot(msg.profileUrl, msg.name, msg.company)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch(() => sendResponse({ ok: true, found: false }));
+    return true;
+  }
+
+  if (msg.type === "LOAD_POST_ENGAGERS") {
+    // sendResponse is used for immediate ack; progress is sent via separate messages.
+    const tabId = _sender.tab?.id;
+    loadPostEngagers(msg.engagers, (progress) => {
+      // Send progress back to the panel via a message to the tab that opened the panel.
+      if (tabId) {
+        chrome.tabs.sendMessage(tabId, { type: "POST_ENGAGER_PROGRESS", progress }).catch(() => {});
+      }
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "GET_POST_ENGAGER") {
+    chrome.storage.local.get(["apiToken"], (r) => {
+      getPostEngager(msg.id, r.apiToken || "")
+        .then((result) => sendResponse(result ?? { status: "not_found" }))
+        .catch(() => sendResponse({ status: "not_found" }));
+    });
     return true;
   }
 });
