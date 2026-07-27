@@ -14,8 +14,8 @@ import {
   IconEdit,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconActivity,
   IconListCheck,
-  IconMessageCircle,
   IconMessages,
   IconPin,
   IconPlus,
@@ -53,7 +53,7 @@ const navItems: Array<{
   { icon: IconListCheck, labelKey: "navigation.queue", label: "Queue", href: "/queue", view: "queue" },
   { icon: IconTarget, labelKey: "navigation.icp", href: "/icp", view: "icp" },
   { icon: IconMessages, labelKey: "navigation.messaging", href: "/messaging", view: "messaging" },
-  { icon: IconMessageCircle, labelKey: "navigation.chat", href: "/chat", view: "chat" },
+  { icon: IconActivity, labelKey: "navigation.engagement", label: "Engagement", href: "/engagement", view: "engagement" },
   { icon: IconChartBar, labelKey: "navigation.analytics", href: "/analytics", view: "analytics" },
   { icon: IconSettings, labelKey: "navigation.settings", href: "/settings", view: "settings" },
 ];
