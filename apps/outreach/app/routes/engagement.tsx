@@ -3,7 +3,6 @@ import { useActionQuery } from "@agent-native/core/client";
 import {
   IconActivity,
   IconBrandLinkedin,
-  IconExternalLink,
   IconLoader2,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
