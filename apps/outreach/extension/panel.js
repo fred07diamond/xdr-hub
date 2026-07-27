@@ -924,14 +924,20 @@ function startUrlPollingWithEngagers() {
         mainContent.style.display = "none";
         switchTab("engagers");
         loadEngagersTab(tab.id);
+      } else {
+        // Same post — user may have just switched back from another tab.
+        // Restore UI without reloading or re-scraping.
+        notLinkedin.style.display = "none";
+        switchTab("engagers");
       }
     } else {
       // Non-LinkedIn page: hide tab switcher, show not-LinkedIn message.
+      // currentPostUrl is intentionally NOT cleared here so returning to the
+      // same post tab won't trigger a redundant rescan.
       tabSwitcher.style.display = "none";
       switchTab("profile");
       if (currentProfileUrl) {
         currentProfileUrl = null;
-        currentPostUrl = null;
         notLinkedin.style.display = "block";
         mainContent.style.display = "none";
       }
