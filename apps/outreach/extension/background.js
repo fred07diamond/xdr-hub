@@ -295,7 +295,7 @@ async function loadPostEngagers(engagers, sendProgress) {
 
   // Phase 2: enrich each sequentially to avoid LinkedIn rate limits.
   for (const { id, engager } of valid) {
-    sendProgress({ id, name: engager.name, status: "enriching" });
+    sendProgress({ id, name: engager.name, status: "enriching", profileUrl: engager.profileUrl });
     try {
       const profileData = await scrapeProfileInBackground(engager.profileUrl);
       const enrichPayload = profileData ? {
@@ -305,10 +305,10 @@ async function loadPostEngagers(engagers, sendProgress) {
         recentActivity: profileData.recentActivity ?? null,
       } : {};
       await enrichPostEngager(id, enrichPayload, token);
-      sendProgress({ id, name: engager.name, status: "done" });
+      sendProgress({ id, name: engager.name, status: "done", profileUrl: engager.profileUrl });
     } catch (err) {
       console.error("[BLI] enrich failed for", engager.name, err);
-      sendProgress({ id, name: engager.name, status: "done" }); // still mark done to unblock UI
+      sendProgress({ id, name: engager.name, status: "done", profileUrl: engager.profileUrl }); // still mark done to unblock UI
     }
   }
 }
