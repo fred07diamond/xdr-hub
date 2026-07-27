@@ -1,6 +1,6 @@
 import { defineAction } from "@agent-native/core";
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -43,19 +43,50 @@ export default defineAction({
     const now = new Date().toISOString();
     const ownerEmail = await resolveOwner(args.apiToken, ctx);
 
-    // Reuse existing post name if we already have one for this URL; otherwise
-    // generate once from the raw post text and reuse for all subsequent engagers.
-    let postTitle: string | null = null;
-    const existing = await db
-      .select({ postTitle: postEngagements.postTitle })
+    // Check if this (postUrl, engagerProfileUrl, ownerEmail) combo already exists.
+    const ownerFilter = ownerEmail
+      ? eq(postEngagements.ownerEmail, ownerEmail)
+      : isNull(postEngagements.ownerEmail);
+    const existingEngager = await db
+      .select()
       .from(postEngagements)
-      .where(eq(postEngagements.postUrl, args.postUrl))
+      .where(
+        and(
+          eq(postEngagements.postUrl, args.postUrl),
+          eq(postEngagements.engagerProfileUrl, args.engagerProfileUrl),
+          ownerFilter,
+        ),
+      )
       .limit(1);
 
-    if (existing[0]?.postTitle) {
-      postTitle = existing[0].postTitle;
-    } else if (args.postTitle && args.postTitle.trim().length > 10) {
+    // Resolve post title: reuse from any existing row for this post URL, or generate once.
+    let postTitle: string | null = existingEngager[0]?.postTitle ?? null;
+    if (!postTitle) {
+      const existingPost = await db
+        .select({ postTitle: postEngagements.postTitle })
+        .from(postEngagements)
+        .where(and(eq(postEngagements.postUrl, args.postUrl), ownerFilter))
+        .limit(1);
+      postTitle = existingPost[0]?.postTitle ?? null;
+    }
+    if (!postTitle && args.postTitle && args.postTitle.trim().length > 10) {
       postTitle = await generatePostName(args.postTitle);
+    }
+
+    if (existingEngager[0]) {
+      // Already exists — update metadata but preserve enriched data (status, fitVerdict, headline).
+      const row = existingEngager[0];
+      await db
+        .update(postEngagements)
+        .set({
+          postTitle: postTitle ?? row.postTitle,
+          engagerName: args.engagerName,
+          engagerCompany: args.engagerCompany ?? row.engagerCompany,
+          commentText: args.commentText ?? row.commentText,
+          updatedAt: now,
+        })
+        .where(eq(postEngagements.id, row.id));
+      return { ok: true, id: row.id, status: row.status };
     }
 
     const id = nanoid();

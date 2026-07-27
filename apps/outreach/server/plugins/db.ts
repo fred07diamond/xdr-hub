@@ -225,6 +225,18 @@ export default runMigrations(
         updated_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 38,
+      sql: [
+        // Remove duplicate rows first (keep one per unique combo), then add the constraint.
+        `DELETE FROM post_engagements WHERE id NOT IN (
+          SELECT MIN(id) FROM post_engagements
+          GROUP BY post_url, engager_profile_url, COALESCE(owner_email, '')
+        )`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_post_engagements_unique
+          ON post_engagements (post_url, engager_profile_url, COALESCE(owner_email, ''))`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );
