@@ -834,7 +834,7 @@ function scrapeCommenters() {
     ) || commentContainer;
     const allSpans = Array.from(headerArea.querySelectorAll('span[aria-hidden="true"]'))
       .map(s => s.innerText?.trim())
-      .filter(s => s && s !== name && s.length < 120);
+      .filter(s => s && s.toLowerCase() !== name.toLowerCase() && s.length < 120);
     const company = allSpans[0] || "";
 
     // Comment body text.
