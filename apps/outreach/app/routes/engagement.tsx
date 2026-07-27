@@ -1,5 +1,5 @@
 // apps/outreach/app/routes/engagement.tsx
-import { useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconActivity,
   IconBrandLinkedin,
@@ -7,6 +7,8 @@ import {
   IconCopy,
   IconExternalLink,
   IconLoader2,
+  IconTrash,
+  IconX,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
@@ -225,13 +227,17 @@ function StatusCell({ e }: { e: Engager }) {
 
 export default function EngagementRoute() {
   const [selectedPostUrl, setSelectedPostUrl] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
 
-  const { data, isLoading } = useActionQuery("list-post-engagements", {}, {
+  const { data, isLoading, refetch } = useActionQuery("list-post-engagements", {}, {
     refetchInterval: (query) => {
       const engagements: Engager[] = (query.state.data as any)?.engagements ?? [];
       return engagements.some(e => e.status !== "done") ? 3000 : false;
     },
   });
+
+  const bulkDelete = useActionMutation("bulk-delete-post-engagements");
 
   const engagements: Engager[] = (data as any)?.engagements ?? [];
 
@@ -248,6 +254,40 @@ export default function EngagementRoute() {
   const filtered = selectedPostUrl
     ? engagements.filter(e => e.postUrl === selectedPostUrl)
     : engagements;
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(e => selectedIds.has(e.id));
+  const someSelected = selectedIds.size > 0;
+
+  function toggleOne(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filtered.forEach(e => next.delete(e.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filtered.forEach(e => next.add(e.id));
+        return next;
+      });
+    }
+  }
+
+  async function handleBulkDelete() {
+    await bulkDelete.mutateAsync({ ids: Array.from(selectedIds) });
+    setSelectedIds(new Set());
+    setBulkConfirmDelete(false);
+    refetch();
+  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -292,6 +332,51 @@ export default function EngagementRoute() {
           )}
         </div>
 
+        {/* Bulk action bar */}
+        {someSelected && (
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-border bg-muted/50 px-4 py-2.5">
+            <span className="text-sm font-semibold">{selectedIds.size} selected</span>
+            <button
+              type="button"
+              onClick={() => { setSelectedIds(new Set()); setBulkConfirmDelete(false); }}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Deselect all
+            </button>
+            <div className="ml-auto flex items-center gap-2">
+              {bulkConfirmDelete ? (
+                <>
+                  <span className="text-xs text-muted-foreground">Delete {selectedIds.size} engager{selectedIds.size !== 1 ? "s" : ""}?</span>
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    disabled={bulkDelete.isPending}
+                    className="rounded bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                  >
+                    {bulkDelete.isPending ? "Deleting…" : "Confirm"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkConfirmDelete(false)}
+                    className="rounded p-1 text-muted-foreground hover:bg-muted"
+                  >
+                    <IconX className="size-3.5" />
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setBulkConfirmDelete(true)}
+                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                >
+                  <IconTrash className="size-3.5" />
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {isLoading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <IconLoader2 className="size-4 animate-spin" />
@@ -310,23 +395,46 @@ export default function EngagementRoute() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
+                  <th className="w-10 px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleAll}
+                      className="rounded border-border"
+                      title={allFilteredSelected ? "Deselect all" : "Select all"}
+                    />
+                  </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Person</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fit</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">HubSpot</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Draft note</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[1%]" />
+                  <th className="w-[1%] px-4 py-2.5" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(e => (
-                  <tr key={e.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
-                    <PersonCell e={e} />
-                    <FitCell e={e} />
-                    <HubspotOwnerCell e={e} />
-                    <DraftCell e={e} />
-                    <StatusCell e={e} />
-                  </tr>
-                ))}
+                {filtered.map(e => {
+                  const isChecked = selectedIds.has(e.id);
+                  return (
+                    <tr
+                      key={e.id}
+                      className={`border-b border-border/60 last:border-0 transition-colors ${isChecked ? "bg-accent/30" : "hover:bg-muted/20"}`}
+                    >
+                      <td className="w-10 px-3 py-3 align-top">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleOne(e.id)}
+                          className="rounded border-border"
+                        />
+                      </td>
+                      <PersonCell e={e} />
+                      <FitCell e={e} />
+                      <HubspotOwnerCell e={e} />
+                      <DraftCell e={e} />
+                      <StatusCell e={e} />
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
