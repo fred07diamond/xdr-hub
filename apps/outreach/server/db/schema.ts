@@ -176,9 +176,15 @@ export const postEngagements = table("post_engagements", {
   commentText: text("comment_text"),
   xdrOwner: text("xdr_owner"),
   contactOwner: text("contact_owner"),
+  companyOwner: text("company_owner"),
   hubspotStatus: text("hubspot_status", { enum: ["found", "new_opportunity"] }),
+  hubspotContactUrl: text("hubspot_contact_url"),
   fitVerdict: text("fit_verdict", { enum: ["strong", "possible", "weak", "inconclusive"] }),
   fitReason: text("fit_reason"),
+  draftNote: text("draft_note"),
+  personaId: text("persona_id"),
+  personaName: text("persona_name"),
+  personaColor: text("persona_color"),
   status: text("status", { enum: ["pending", "enriching", "scoring", "done"] })
     .notNull()
     .default("pending"),
