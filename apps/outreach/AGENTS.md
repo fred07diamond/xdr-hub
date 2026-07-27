@@ -41,6 +41,18 @@ If the user attaches a file (PDF, Word doc, text file) and asks to extract nodes
 
 Do NOT use this path for ICP documents (criteria files go to `save-icp-document`). Use context clues: if the doc describes an account, company, prospect, or research, it's a canvas import. If it describes target customer criteria, messaging rules, or "who we sell to", it's an ICP doc.
 
+## When asked about the Engagement tab
+
+The Engagement tab shows LinkedIn post commenters loaded from the extension.
+Each engager goes through a two-step enrichment:
+1. `ingest-post-engager` — creates the row with basic info (name, company, comment).
+2. `enrich-post-engager` — updates with full LinkedIn profile data, runs HubSpot
+   owner lookup, and scores fit against the ICP. See the `post-engager-score` skill.
+
+If asked to re-score an engager, call `enrich-post-engager` with the engager's id.
+Do NOT draft connection notes for engagers from this tab — the user initiates
+outreach separately via the normal LinkedIn profile flow.
+
 ## Hard rules
 - Never fabricate facts about a prospect. Personalize only from
   what the capture actually contains. If a field is missing, work

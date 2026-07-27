@@ -695,3 +695,206 @@ markSentBtn.addEventListener("click", async () => {
     setStatus("Failed to mark as sent. Try again.");
   }
 });
+
+// ── Engagers tab ─────────────────────────────────────────────────────────────
+
+const tabSwitcher = document.getElementById("tab-switcher");
+const tabProfileBtn = document.getElementById("tab-profile-btn");
+const tabEngagersBtn = document.getElementById("tab-engagers-btn");
+const engagersTab = document.getElementById("engagers-tab");
+const engagersList = document.getElementById("engagers-list");
+const engagersEmpty = document.getElementById("engagers-empty");
+const selectAllBtn = document.getElementById("select-all-btn");
+const loadSelectedBtn = document.getElementById("load-selected-btn");
+
+let engagerData = []; // { name, company, profileUrl, commentText, postUrl, postTitle }
+let loadedIds = {};   // profileUrl → { id, status }
+
+function isPostUrl(url) {
+  return url.includes("linkedin.com/posts/") || url.includes("linkedin.com/feed/update/");
+}
+
+function switchTab(tab) {
+  const isProfile = tab === "profile";
+  tabProfileBtn.classList.toggle("active", isProfile);
+  tabEngagersBtn.classList.toggle("active", !isProfile);
+  mainContent.style.display = isProfile ? "block" : "none";
+  engagersTab.style.display = isProfile ? "none" : "block";
+}
+
+tabProfileBtn.addEventListener("click", () => switchTab("profile"));
+tabEngagersBtn.addEventListener("click", () => switchTab("engagers"));
+
+function updateLoadSelectedBtn() {
+  const checked = document.querySelectorAll(".engager-check:checked");
+  const count = checked.length;
+  loadSelectedBtn.disabled = count === 0;
+  loadSelectedBtn.textContent = count > 0 ? `Load selected (${count})` : "Load selected (0)";
+}
+
+function renderEngagerRow(engager, idx) {
+  const loaded = loadedIds[engager.profileUrl];
+  const row = document.createElement("div");
+  row.className = `engager-row${loaded ? " loaded" : ""}`;
+  row.dataset.idx = idx;
+
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.className = "engager-check";
+  cb.disabled = !!loaded;
+  cb.addEventListener("change", updateLoadSelectedBtn);
+
+  const info = document.createElement("div");
+  info.className = "engager-info";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "engager-name";
+  nameEl.textContent = engager.name;
+
+  const compEl = document.createElement("div");
+  compEl.className = "engager-company";
+  compEl.textContent = engager.company || "";
+
+  const commentEl = document.createElement("div");
+  commentEl.className = "engager-comment";
+  commentEl.textContent = engager.commentText || "";
+
+  info.append(nameEl, compEl, commentEl);
+
+  const statusEl = document.createElement("div");
+  statusEl.className = `engager-status${loaded ? " " + loaded.status : ""}`;
+  statusEl.textContent = loaded
+    ? (loaded.status === "done" ? "✓ Done" : loaded.status === "enriching" ? "Enriching…" : "Pending…")
+    : "";
+
+  row.append(cb, info, statusEl);
+  return row;
+}
+
+function renderEngagersList() {
+  engagersList.innerHTML = "";
+  if (!engagerData.length) {
+    engagersList.appendChild(engagersEmpty);
+    return;
+  }
+  engagerData.forEach((e, i) => engagersList.appendChild(renderEngagerRow(e, i)));
+  updateLoadSelectedBtn();
+}
+
+selectAllBtn.addEventListener("click", () => {
+  const checkboxes = document.querySelectorAll(".engager-check:not(:disabled)");
+  const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+  checkboxes.forEach(cb => { cb.checked = !allChecked; });
+  selectAllBtn.textContent = allChecked ? "Select all" : "Deselect all";
+  updateLoadSelectedBtn();
+});
+
+loadSelectedBtn.addEventListener("click", async () => {
+  const checkboxes = Array.from(document.querySelectorAll(".engager-check:checked"));
+  const selected = checkboxes.map(cb => {
+    const idx = parseInt(cb.closest(".engager-row").dataset.idx, 10);
+    return engagerData[idx];
+  }).filter(Boolean);
+
+  if (!selected.length) return;
+
+  loadSelectedBtn.disabled = true;
+  loadSelectedBtn.textContent = "Loading…";
+
+  chrome.runtime.sendMessage({ type: "LOAD_POST_ENGAGERS", engagers: selected }, (res) => {
+    if (!res?.ok) {
+      loadSelectedBtn.disabled = false;
+      loadSelectedBtn.textContent = "Load selected (0)";
+    }
+  });
+});
+
+// Receive progress updates from the background service worker.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "POST_ENGAGER_PROGRESS" && msg.progress) {
+    const { id, status, profileUrl } = msg.progress;
+    loadedIds[profileUrl] = { id, status };
+    renderEngagersList();
+  }
+});
+
+async function loadEngagersTab(tabId) {
+  engagerData = [];
+  loadedIds = {};
+  engagersEmpty.textContent = "Navigate to a LinkedIn post to see commenters here.";
+  renderEngagersList();
+
+  try {
+    let result;
+    try {
+      result = await chrome.tabs.sendMessage(tabId, { type: "SCRAPE_COMMENTERS" });
+    } catch {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+      result = await chrome.tabs.sendMessage(tabId, { type: "SCRAPE_COMMENTERS" });
+    }
+    if (result?.ok && result.commenters?.length) {
+      engagerData = result.commenters;
+      renderEngagersList();
+    } else {
+      engagersEmpty.textContent = "No commenters found. Try scrolling to load more comments, then switch back.";
+      engagersList.appendChild(engagersEmpty);
+    }
+  } catch {
+    engagersEmpty.textContent = "Could not read comments. Make sure you're on a LinkedIn post page.";
+    engagersList.appendChild(engagersEmpty);
+  }
+}
+
+// Extend the existing init and URL polling to handle post pages.
+// Patch: after the URL polling loop detects a new URL, also handle post pages.
+// We do this by overriding the urlPollTimer logic to check isPostUrl.
+const _origStartUrlPolling = startUrlPolling;
+
+function startUrlPollingWithEngagers() {
+  if (urlPollTimer) clearInterval(urlPollTimer);
+  urlPollTimer = setInterval(async () => {
+    if (isInitializing) return;
+    let tab;
+    try {
+      [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    } catch { return; }
+    if (!tab) return;
+    const url = tab.url || "";
+    const cleanUrl = url.split("?")[0];
+
+    if (isProfileUrl(url)) {
+      // Show Profile tab; hide Engagers tab from switcher focus but keep switcher visible
+      tabSwitcher.style.display = "flex";
+      if (cleanUrl !== currentProfileUrl) {
+        isInitializing = true;
+        resetPanel();
+        switchTab("profile");
+        init({ navTriggered: true }).finally(() => { isInitializing = false; });
+      }
+    } else if (isPostUrl(url)) {
+      // Keep tab switcher visible on every tick; only switch tab and load on URL change.
+      tabSwitcher.style.display = "flex";
+      if (cleanUrl !== currentProfileUrl) {
+        currentProfileUrl = cleanUrl;
+        notLinkedin.style.display = "none";
+        mainContent.style.display = "none";
+        switchTab("engagers");
+        loadEngagersTab(tab.id);
+      }
+    } else {
+      // Non-LinkedIn page: hide tab switcher, show not-LinkedIn message.
+      tabSwitcher.style.display = "none";
+      switchTab("profile");
+      if (currentProfileUrl) {
+        currentProfileUrl = null;
+        notLinkedin.style.display = "block";
+        mainContent.style.display = "none";
+      }
+    }
+  }, 750);
+}
+
+// Replace the polling start call in the boot sequence.
+// Note: panel.js calls `startUrlPolling()` in two places (after init() and after token save).
+// We shadow the function name so those calls use the new version.
+startUrlPolling = startUrlPollingWithEngagers;

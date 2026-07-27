@@ -797,9 +797,77 @@ window.__bliDiagnose = function () {
   }));
 };
 
+// ── Post page commenter scraper ───────────────────────────────────────────────
+// LinkedIn's DOM is unstable; selectors use aria-hidden="true" spans and
+// stable /in/ profile link hrefs as anchors, same approach as profile scraping.
+function scrapeCommenters() {
+  const results = [];
+  const seen = new Set();
+
+  // Collect all profile links that appear inside comment sections.
+  // LinkedIn uses several container class patterns; we cast a wide net.
+  const allLinks = Array.from(document.querySelectorAll('a[href*="linkedin.com/in/"]'));
+
+  for (const link of allLinks) {
+    const raw = link.href || "";
+    const profileUrl = raw.split("?")[0];
+    if (!profileUrl.includes("/in/") || seen.has(profileUrl)) continue;
+
+    // Filter to links inside comment containers only (exclude sidebar suggestions, etc.)
+    const commentContainer = link.closest(
+      ".comments-comment-item, .comments-comment-item__content, " +
+      "[data-test-id='comment-container'], .feed-shared-comments-list__comment-item"
+    );
+    if (!commentContainer) continue;
+
+    seen.add(profileUrl);
+
+    // Name: innerText of visible spans directly in the link, or the link itself.
+    const nameSpan = link.querySelector('span[aria-hidden="true"]');
+    const name = (nameSpan?.innerText || link.innerText || "").trim();
+    if (!name) continue;
+
+    // Headline/company: first non-name visible span in the comment header area.
+    const headerArea = link.closest(
+      ".comments-post-meta, .feed-shared-actor__container, " +
+      ".comments-comment-item__actor, [class*='comment-meta']"
+    ) || commentContainer;
+    const allSpans = Array.from(headerArea.querySelectorAll('span[aria-hidden="true"]'))
+      .map(s => s.innerText?.trim())
+      .filter(s => s && s.toLowerCase() !== name.toLowerCase() && s.length < 120);
+    const company = allSpans[0] || "";
+
+    // Comment body text.
+    const bodyEl = commentContainer.querySelector(
+      ".comments-comment-item__main-content span[aria-hidden='true'], " +
+      ".feed-shared-comment span[aria-hidden='true'], " +
+      "[class*='comment-content'] span[aria-hidden='true']"
+    );
+    const commentText = (bodyEl?.innerText || "").trim().slice(0, 500);
+
+    // Post URL and first ~80 chars of post text as title.
+    const postUrl = window.location.href.split("?")[0];
+    const postTitleEl = document.querySelector(
+      ".feed-shared-update-v2__description span[aria-hidden='true'], " +
+      ".update-components-text span[aria-hidden='true']"
+    );
+    const postTitle = (postTitleEl?.innerText || "").trim().slice(0, 80);
+
+    results.push({ name, company, profileUrl, commentText, postUrl, postTitle });
+  }
+
+  return results;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "SCRAPE_PROFILE") {
     sendResponse({ ok: true, data: scrapeProfile() });
+  }
+
+  if (msg.type === "SCRAPE_COMMENTERS") {
+    const commenters = scrapeCommenters();
+    sendResponse({ ok: true, commenters });
+    return true;
   }
 
   if (msg.type === "SEND_CONNECTION_REQUEST") {
