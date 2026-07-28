@@ -486,19 +486,36 @@ function waitForEl(fn, { timeout = 4000, interval = 150 } = {}) {
 }
 
 // Sales Nav's Ember dropdowns (and some React menus) attach handlers to
-// pointer/mouse events, not the click event — a bare el.click() silently does
-// nothing and the menu stays open. Dispatch the full sequence.
+// pointer/mouse events on a SPECIFIC element in the menu item's DOM stack —
+// dispatching on the wrong node (outer li vs inner a) silently does nothing
+// and the menu stays open. Real mouse clicks don't have this problem because
+// the browser targets the topmost element at the cursor and lets events
+// bubble. Reproduce that: find the topmost element at the target's center
+// and dispatch the full pointer/mouse sequence there with real coordinates.
 function simulateClick(el) {
-  const opts = { bubbles: true, cancelable: true, view: window };
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const target =
+    (r.width > 0 && document.elementFromPoint(cx, cy)) || el;
+  const opts = {
+    bubbles: true, cancelable: true, view: window,
+    clientX: cx, clientY: cy,
+  };
   try {
-    el.dispatchEvent(new PointerEvent("pointerdown", opts));
-    el.dispatchEvent(new MouseEvent("mousedown", opts));
-    el.dispatchEvent(new PointerEvent("pointerup", opts));
-    el.dispatchEvent(new MouseEvent("mouseup", opts));
+    target.dispatchEvent(new PointerEvent("pointerover", opts));
+    target.dispatchEvent(new MouseEvent("mouseover", opts));
+    target.dispatchEvent(new PointerEvent("pointerdown", opts));
+    target.dispatchEvent(new MouseEvent("mousedown", opts));
+    target.dispatchEvent(new PointerEvent("pointerup", opts));
+    target.dispatchEvent(new MouseEvent("mouseup", opts));
+    target.dispatchEvent(new MouseEvent("click", opts));
   } catch {
-    // PointerEvent unavailable — fall through to click()
+    // PointerEvent unavailable — fall through to plain click()
   }
-  el.click();
+  // Belt-and-braces: also fire the native click on the original element in
+  // case the handler sits above the topmost hit-test node.
+  if (target !== el) el.click();
 }
 
 // React holds internal state inside the textarea node. Setting .value directly
@@ -872,6 +889,20 @@ async function sendConnectionRequest(note) {
   simulateClick(connectBtn);
   await new Promise((r) => setTimeout(r, 1000));
 
+  // If no modal opened and the clicked element is still on screen, the click
+  // didn't land (menus sometimes re-render between find and click) — retry once.
+  const modalProbe = () =>
+    document.querySelector("[role='dialog'], [role='alertdialog'], .artdeco-modal, div[class*='modal']");
+  if (
+    !modalProbe() &&
+    connectBtn.isConnected &&
+    connectBtn.getBoundingClientRect().width > 0
+  ) {
+    console.log("[BLI] connect click didn't open a modal — retrying once");
+    simulateClick(connectBtn);
+    await new Promise((r) => setTimeout(r, 800));
+  }
+
   // 2. Modal — either goes straight to the note textarea, or asks
   // "Add a note?" first. Race both so we don't waste time waiting on a
   // step LinkedIn may skip, and so a slow-to-render "Add a note" button
@@ -957,6 +988,30 @@ async function sendConnectionRequest(note) {
   simulateClick(sendBtn);
   return { ok: true };
 }
+
+// Menu diagnostic — call window.__bliDumpMenu() in the tab console on a lead
+// page. Opens the overflow menu and prints the Connect item's DOM structure so
+// selector/click-target fixes can be made against the real markup.
+window.__bliDumpMenu = async function () {
+  const moreBtn = findMoreActionsButton();
+  if (!moreBtn) return console.log("[BLI] no overflow button found");
+  moreBtn.click();
+  await new Promise((r) => setTimeout(r, 600));
+  const exact = deepQueryAll("li, [role='menuitem'], button, a, div, span")
+    .filter((el) => /^connect$/i.test((el.innerText || el.textContent || "").trim()));
+  console.log("[BLI] exact 'Connect' elements:", exact.length);
+  for (const el of exact.slice(0, 5)) {
+    const chain = [];
+    let cur = el;
+    for (let i = 0; i < 7 && cur && cur !== document.body; i++) {
+      const role = cur.getAttribute("role");
+      chain.push(`${cur.tagName.toLowerCase()}${role ? `[role=${role}]` : ""}.${String(cur.className || "").slice(0, 40)}`);
+      cur = cur.parentElement;
+    }
+    console.log("[BLI] ancestor chain:", chain.join("  <  "));
+    console.log("[BLI] outerHTML:", (el.closest("li") || el).outerHTML.slice(0, 900));
+  }
+};
 
 // Sales Nav diagnostic — call window.__bliDiagnoseSalesNav() in the tab console
 // on a lead page and paste the output when scraping misses fields.
