@@ -1,8 +1,34 @@
-// Calls the Agent Native Calendar app via its HTTP API.
-// Prereq: Calendar app running locally (e.g. http://localhost:8081/calendar).
-// Set CALENDAR_APP_URL in .env to point to the running Calendar app.
-// Set AGENT_NATIVE_TOKEN if the Calendar app requires auth (omit for local dev).
+import { getOAuthAccounts } from "@agent-native/core/server";
+import { saveOAuthTokens } from "@agent-native/core/oauth-tokens";
 
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const CALENDAR_EVENTS_URL =
+  "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1";
+const MEETING_DURATION_MIN = 45;
+
+async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+  const res = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { access_token?: string };
+  return data.access_token ?? null;
+}
+
+// Creates the booked meeting directly on the XDR's Google Calendar (primary),
+// using their stored Google OAuth connection. Requires the calendar.events
+// scope — users who connected before that scope was added must reconnect in
+// Settings.
 export async function bookCalendarEvent({
   title,
   datetime,
@@ -18,36 +44,83 @@ export async function bookCalendarEvent({
   xdrEmail: string;
   description: string;
 }): Promise<{ eventId: string; meetingLink: string }> {
-  const calendarUrl = process.env.CALENDAR_APP_URL ?? "http://localhost:8081/calendar";
-  const agentNativeToken = process.env.AGENT_NATIVE_TOKEN;
+  const start = new Date(datetime);
+  if (Number.isNaN(start.getTime())) {
+    throw new Error(`Calendar booking failed: invalid meeting datetime "${datetime}"`);
+  }
+  const end = new Date(start.getTime() + MEETING_DURATION_MIN * 60 * 1000);
 
-  // Call the Calendar app's create-event action via HTTP API.
-  // The action schema (title, start) matches the Calendar app template's CLI interface.
-  // If the Calendar app's create-event supports additional fields (attendees, conferencing),
-  // add them to the body below after inspecting the Calendar app's action source.
-  const res = await fetch(`${calendarUrl}/_agent-native/actions/create-event`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(agentNativeToken ? { Authorization: `Bearer ${agentNativeToken}` } : {}),
-    },
-    body: JSON.stringify({
-      title,
-      start: datetime,
-      // Include attendees if the Calendar app's create-event action supports them:
-      attendees: [aeEmail, xdrEmail, ...(prospectEmail ? [prospectEmail] : [])],
-      description,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Calendar booking failed (${res.status}): ${body.slice(0, 200)}`);
+  const accounts = await getOAuthAccounts("google", xdrEmail);
+  const account = accounts[0];
+  let token = account?.tokens?.access_token as string | undefined;
+  const refreshToken = account?.tokens?.refresh_token as string | undefined;
+  if (!token) {
+    throw new Error(
+      "Calendar booking failed: no Google Calendar connection. Connect Google Calendar in Settings.",
+    );
   }
 
-  const data = (await res.json()) as { eventId?: string; meetingLink?: string; id?: string; hangoutLink?: string };
+  const attendees = [aeEmail, xdrEmail, ...(prospectEmail ? [prospectEmail] : [])]
+    .filter(Boolean)
+    .map((email) => ({ email }));
+
+  const body = JSON.stringify({
+    summary: title,
+    description,
+    start: { dateTime: start.toISOString() },
+    end: { dateTime: end.toISOString() },
+    attendees,
+    conferenceData: {
+      createRequest: {
+        requestId: `xdr-booking-${start.getTime()}-${xdrEmail.split("@")[0]}`,
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    },
+  });
+
+  const createEvent = (accessToken: string) =>
+    fetch(CALENDAR_EVENTS_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body,
+    });
+
+  let res = await createEvent(token);
+
+  if (res.status === 401 && refreshToken) {
+    const newToken = await refreshAccessToken(refreshToken);
+    if (newToken) {
+      await saveOAuthTokens(
+        "google",
+        (account!.accountId as string) ?? xdrEmail,
+        { ...account!.tokens, access_token: newToken },
+        xdrEmail,
+      );
+      token = newToken;
+      res = await createEvent(newToken);
+    }
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(
+      "Calendar booking failed: Google Calendar connection lacks write access. Reconnect Google Calendar in Settings to grant it.",
+    );
+  }
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Calendar booking failed (${res.status}): ${errBody.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as {
+    id?: string;
+    hangoutLink?: string;
+    htmlLink?: string;
+  };
   return {
-    eventId: data.eventId ?? data.id ?? "",
-    meetingLink: data.meetingLink ?? data.hangoutLink ?? "",
+    eventId: data.id ?? "",
+    meetingLink: data.hangoutLink ?? data.htmlLink ?? "",
   };
 }
