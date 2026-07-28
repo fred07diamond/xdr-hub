@@ -8,7 +8,7 @@ import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
   description:
-    "Create (or retry creating) the Google Calendar event for a confirmed meeting whose calendar booking previously failed. Books on the XDR's connected Google Calendar with the AE and prospect as attendees.",
+    "Create or update the Google Calendar event for a confirmed meeting — books on the XDR's connected Google Calendar with the AE and prospect as attendees, or moves the existing event to the current meeting time.",
   schema: z.object({
     meetingId: z.string().min(1),
   }),
@@ -32,13 +32,11 @@ export default defineAction({
         { statusCode: 403 },
       );
     }
-    if (meeting.calendarEventId) {
-      return {
-        meetingId,
-        calendarEventId: meeting.calendarEventId,
-        meetingLink: meeting.meetingLink,
-        alreadyBooked: true,
-      };
+    if (meeting.status !== "confirmed") {
+      throw Object.assign(
+        new Error("Only confirmed meetings get calendar invites — confirm the meeting first."),
+        { statusCode: 400 },
+      );
     }
     if (!meeting.meetingDatetime) {
       throw Object.assign(
@@ -62,6 +60,7 @@ export default defineAction({
         aeEmail: meeting.aeUserEmail,
         xdrEmail: meeting.xdrUserEmail,
         description: notes?.meetingAgenda ?? "",
+        existingEventId: meeting.calendarEventId,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -80,7 +79,6 @@ export default defineAction({
       meetingId,
       calendarEventId: result.eventId,
       meetingLink: result.meetingLink,
-      alreadyBooked: false,
     };
   },
 });

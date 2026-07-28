@@ -210,8 +210,13 @@ interface EditDraft {
 
 function toLocalDatetimeValue(iso: string | null): string {
   if (!iso) return "";
-  // datetime-local needs "YYYY-MM-DDTHH:mm"
-  return iso.slice(0, 16);
+  // datetime-local needs "YYYY-MM-DDTHH:mm" in LOCAL time. Slicing the UTC
+  // ISO string showed UTC in the form, which save re-interpreted as local —
+  // shifting the meeting by the UTC offset on every edit round-trip.
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function MeetingCard({
@@ -241,8 +246,12 @@ function MeetingCard({
 
   const updateMeeting = useActionMutation("update-meeting") as any;
   const deleteMeeting = useActionMutation("delete-meeting") as any;
+  const bookCalendar = useActionMutation("book-meeting-calendar") as any;
 
-  const saving = updateMeeting.isPending;
+  const saving = updateMeeting.isPending || bookCalendar.isPending;
+  // Saving a confirmed meeting with a date also creates/moves the Google
+  // Calendar invite, so the button says what it will actually do.
+  const willSyncInvite = draft.status === "confirmed" && !!draft.meetingDatetime;
 
   async function handleDelete() {
     try {
@@ -296,12 +305,25 @@ function MeetingCard({
         aeUserEmail: draft.aeUserEmail || undefined,
         status: draft.status,
       });
-      setIsEditing(false);
-      onUpdated();
     } catch (err) {
       console.error("[update-meeting] save failed:", err);
       setSaveError(err instanceof Error ? err.message : String(err));
+      return;
     }
+    if (willSyncInvite) {
+      try {
+        await bookCalendar.mutateAsync({ meetingId: m.id });
+      } catch (err) {
+        console.error("[book-meeting-calendar] failed:", err);
+        setSaveError(
+          `Meeting saved, but the calendar invite failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        onUpdated();
+        return;
+      }
+    }
+    setIsEditing(false);
+    onUpdated();
   }
 
   const statusStyle = STATUS_STYLE[m.status] ?? STATUS_STYLE.cancelled!;
@@ -460,7 +482,7 @@ function MeetingCard({
           <div className="flex gap-2 pt-1">
             <Button type="button" size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs px-3">
               {saving ? <IconLoader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-              Save
+              {willSyncInvite ? "Save & update invite" : "Save"}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={handleCancel} disabled={saving} className="h-7 text-xs px-3">
               Cancel
