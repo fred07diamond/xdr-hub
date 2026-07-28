@@ -35,6 +35,10 @@ export default defineAction({
     "Receive Nooks call-logging webhooks. Auto-initiates the booking workflow when a call's disposition indicates a booked meeting.",
   schema: z.object({}).passthrough(),
   requiresAuth: false,
+  // Same public exposure as li-agent's capture-profile — without this the
+  // workspace auth guard 401s unauthenticated webhook deliveries (Nooks'
+  // save-time test ping included).
+  publicAgent: { expose: true, readOnly: false, requiresAuth: false },
   http: { method: "POST" },
   run: async (payload) => {
     const p = payload as Record<string, unknown>;
