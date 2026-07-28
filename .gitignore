@@ -39,3 +39,5 @@ learnings.md
 # AI coding assistant local config — per-developer, not shared
 .claude/
 CLAUDE.md
+apps/*/.generated/
+apps/*/.react-router/
