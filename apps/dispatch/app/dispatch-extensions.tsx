@@ -1,5 +1,5 @@
 import type { DispatchExtensionConfig } from "@agent-native/dispatch/components";
-import { IconBrain } from "@tabler/icons-react";
+import { IconBrain, IconUsersGroup } from "@tabler/icons-react";
 
 /**
  * Local Dispatch extensions for this generated workspace.
@@ -34,6 +34,13 @@ export const dispatchExtensions = {
       icon: IconBrain,
       section: "operations",
     },
+    {
+      id: "workspace-access",
+      to: "/workspace-access",
+      label: "Team & Access",
+      icon: IconUsersGroup,
+      section: "operations",
+    },
   ],
-  queryKeys: [],
+  queryKeys: ["list-workspace-team"],
 } satisfies DispatchExtensionConfig;

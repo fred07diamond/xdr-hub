@@ -20,7 +20,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // ── Mock modules before importing the action ──────────────────────────────────
 
 vi.mock("../server/helpers/hubspot-client.js", () => ({
-  getHubSpotToken: vi.fn().mockReturnValue("pat-test-token"),
+  getHubSpotToken: vi.fn().mockResolvedValue("pat-test-token"),
   hubspotFetch: vi.fn(),
 }));
 
@@ -310,7 +310,7 @@ describe("HubSpot API errors", () => {
 
   it("returns connected:false when no HubSpot token is configured", async () => {
     const { getHubSpotToken } = await import("../server/helpers/hubspot-client.js");
-    (getHubSpotToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+    (getHubSpotToken as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
     const result = await (action as any).run(
       { profileUrl: "https://linkedin.com/in/simoncorry/", name: "Simon Corry", company: "Ramp" },
       ctx,

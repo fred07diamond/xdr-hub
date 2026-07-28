@@ -78,11 +78,11 @@ function buildInviteHtml({ invitee, inviter, appUrl }: { invitee: string; invite
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fa;margin:0;padding:40px 20px;">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
     <div style="margin-bottom:28px;">
-      <span style="background:#0a66c2;color:#fff;font-size:13px;font-weight:900;letter-spacing:-0.02em;padding:4px 8px;border-radius:4px;">BLI</span>
+      <span style="background:#0a66c2;color:#fff;font-size:13px;font-weight:900;letter-spacing:-0.02em;padding:4px 8px;border-radius:4px;">XDR</span>
     </div>
-    <h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 12px;">You're invited to Builder.LI</h1>
+    <h1 style="font-size:22px;font-weight:600;color:#111;margin:0 0 12px;">You're invited to LinkedIn Agent</h1>
     <p style="color:#555;font-size:15px;line-height:1.5;margin:0 0 24px;">
-      <strong>${inviter}</strong> has invited you to join Builder.LI — a LinkedIn outreach cockpit that scores prospects against your ICP and drafts personalized connection notes.
+      <strong>${inviter}</strong> has invited you to join LinkedIn Agent — an AI-powered LinkedIn outreach cockpit that scores prospects against your ICP and drafts personalized connection notes.
     </p>
     <a href="${appUrl}" style="display:inline-block;background:#0a66c2;color:#fff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 28px;border-radius:8px;margin-bottom:32px;">
       Accept Invitation →

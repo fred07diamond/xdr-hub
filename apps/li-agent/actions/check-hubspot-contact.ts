@@ -20,7 +20,7 @@ export default defineAction({
   http: { method: "GET" },
   publicAgent: { expose: true, readOnly: true, requiresAuth: false },
   run: async ({ profileUrl, name: nameParam, company: companyParam, apiToken, debug }, ctx) => {
-    const token = getHubSpotToken();
+    const token = await getHubSpotToken();
     if (!token) return { connected: false, found: false };
 
     const ownerEmail = await resolveOwner(apiToken, ctx);

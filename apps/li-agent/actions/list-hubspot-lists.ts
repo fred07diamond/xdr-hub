@@ -9,7 +9,7 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async () => {
-    const token = getHubSpotToken();
+    const token = await getHubSpotToken();
     if (!token) return { lists: [], error: "HubSpot not connected" };
     let data: Record<string, unknown>;
     try {

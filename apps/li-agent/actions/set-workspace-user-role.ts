@@ -1,10 +1,10 @@
 import { defineAction } from "@agent-native/core";
 import { z } from "zod";
-import { getSharedDb, workspaceUserRoles } from "../server/db/workspace.js";
-import { requireRole } from "../server/helpers/require-role.js";
+import { getSharedDb, workspaceUserRoles } from "@xdr-hub/shared/server";
+import { requireAdminOrOwner } from "../server/helpers/require-admin-or-owner.js";
 
 export default defineAction({
-  description: "Set the role for a user by email. Admin only.",
+  description: "Set the workspace role for a user by email. Admin only.",
   schema: z.object({
     email: z.string().email(),
     role: z.enum(["xdr", "ae", "admin", "none"]),
@@ -13,7 +13,7 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async ({ email, role, hubspotAccountId }, ctx) => {
-    await requireRole(ctx?.userEmail, ["admin"]);
+    await requireAdminOrOwner(ctx?.userEmail);
     const db = getSharedDb();
     const now = new Date().toISOString();
     await db

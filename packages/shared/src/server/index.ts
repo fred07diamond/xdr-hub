@@ -17,3 +17,6 @@ export function createWorkspaceAgentChatPlugin(
 export const defaultAgentChatPlugin: NitroPluginDef =
   createWorkspaceAgentChatPlugin();
 export { defaultAuthPlugin };
+export const WORKSPACE_SHARED_NAME = "@xdr-hub/shared";
+
+export { getSharedDb, workspaceUserRoles, workspaceAppAccess } from "./db/index.js";

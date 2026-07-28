@@ -1,15 +1,14 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/index.js";
-import { userRoles } from "../db/schema.js";
+import { getSharedDb, workspaceUserRoles } from "../db/workspace.js";
 
 export type UserRole = "xdr" | "ae" | "admin" | "none";
 
 export async function getUserRole(email: string): Promise<UserRole> {
-  const db = getDb();
+  const db = getSharedDb();
   const row = await db
-    .select({ role: userRoles.role })
-    .from(userRoles)
-    .where(eq(userRoles.email, email))
+    .select({ role: workspaceUserRoles.role })
+    .from(workspaceUserRoles)
+    .where(eq(workspaceUserRoles.email, email))
     .limit(1);
   return (row[0]?.role as UserRole) ?? "none";
 }

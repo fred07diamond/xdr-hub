@@ -12,7 +12,8 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { bookedMeetings, generatedNotes, userRoles } from "../server/db/schema.js";
+import { bookedMeetings, generatedNotes } from "../server/db/schema.js";
+import { getSharedDb, workspaceUserRoles } from "../server/db/workspace.js";
 import { generateNotes } from "../server/helpers/generate-notes.js";
 
 const CONNECTED_MEETING_DISPOSITION = "Connected-Meeting";
@@ -48,24 +49,25 @@ export default defineAction({
       };
     }
 
-    // Look up XDR by rep_id (Nooks rep ID must match email in our user_roles table)
+    // Look up XDR by rep_id (Nooks rep ID must match email in workspace_user_roles)
     try {
-      const db = getDb();
-      const xdr = await db
-        .select({ email: userRoles.email })
-        .from(userRoles)
-        .where(eq(userRoles.email, rep_id))
+      const sharedDb = getSharedDb();
+      const xdr = await sharedDb
+        .select({ email: workspaceUserRoles.email })
+        .from(workspaceUserRoles)
+        .where(eq(workspaceUserRoles.email, rep_id))
         .limit(1);
 
       if (!xdr[0]) {
         return {
           received: true,
           workflowInitiated: false,
-          reason: `Rep ${rep_id} not found in user_roles — onboard them first`,
+          reason: `Rep ${rep_id} not found in workspace_user_roles — onboard them first`,
         };
       }
 
       const notes = await generateNotes(transcript);
+      const db = getDb();
 
       // Persist the meeting and generated notes to the DB
       const meetingId = nanoid();

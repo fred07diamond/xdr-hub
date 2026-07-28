@@ -77,6 +77,31 @@ export default runMigrations(
       version: 10,
       sql: `ALTER TABLE generated_notes ADD COLUMN email_subject TEXT NOT NULL DEFAULT ''`,
     },
+    {
+      version: 11,
+      sql: `CREATE TABLE IF NOT EXISTS workspace_user_roles (
+        email TEXT PRIMARY KEY,
+        role TEXT NOT NULL DEFAULT 'none',
+        hubspot_account_id TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 12,
+      sql: `INSERT INTO workspace_user_roles (email, role, hubspot_account_id, updated_at)
+            SELECT email, role, hubspot_account_id, updated_at FROM user_roles
+            WHERE true ON CONFLICT(email) DO NOTHING`,
+    },
+    {
+      version: 13,
+      sql: `CREATE TABLE IF NOT EXISTS workspace_app_access (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        app TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );

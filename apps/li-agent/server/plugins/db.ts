@@ -248,6 +248,25 @@ export default runMigrations(
         `ALTER TABLE post_engagements ADD COLUMN IF NOT EXISTS persona_color TEXT`,
       ].join(";\n"),
     },
+    {
+      version: 40,
+      sql: `CREATE TABLE IF NOT EXISTS workspace_user_roles (
+        email TEXT PRIMARY KEY,
+        role TEXT NOT NULL DEFAULT 'none',
+        hubspot_account_id TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 41,
+      sql: `CREATE TABLE IF NOT EXISTS workspace_app_access (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        app TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "outreach_migrations" },
 );

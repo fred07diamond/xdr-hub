@@ -59,7 +59,7 @@ export default defineAction({
     let hubspotStatus: "found" | "new_opportunity" = "new_opportunity";
     let hubspotContactUrl: string | null = null;
 
-    const token = getHubSpotToken();
+    const token = await getHubSpotToken();
     if (token && row.engagerName) {
       try {
         // Get portal ID for constructing contact URLs (best-effort).
