@@ -1,16 +1,9 @@
-import { eq } from "drizzle-orm";
-import { getSharedDb, workspaceUserRoles } from "../db/workspace.js";
+import { getWorkspaceRole } from "@xdr-hub/shared/server";
 
 export type UserRole = "xdr" | "ae" | "admin" | "none";
 
 export async function getUserRole(email: string): Promise<UserRole> {
-  const db = getSharedDb();
-  const row = await db
-    .select({ role: workspaceUserRoles.role })
-    .from(workspaceUserRoles)
-    .where(eq(workspaceUserRoles.email, email))
-    .limit(1);
-  return (row[0]?.role as UserRole) ?? "none";
+  return getWorkspaceRole(email);
 }
 
 export async function requireRole(

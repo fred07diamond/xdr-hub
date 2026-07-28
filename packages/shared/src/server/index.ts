@@ -20,3 +20,8 @@ export { defaultAuthPlugin };
 export const WORKSPACE_SHARED_NAME = "@xdr-hub/shared";
 
 export { getSharedDb, workspaceUserRoles, workspaceAppAccess } from "./db/index.js";
+export {
+  getWorkspaceRole,
+  requireWorkspaceAdmin,
+  type WorkspaceRole,
+} from "./roles.js";
