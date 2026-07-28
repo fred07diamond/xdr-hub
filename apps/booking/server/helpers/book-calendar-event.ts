@@ -26,10 +26,24 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
   return data.access_token ?? null;
 }
 
-// Creates the booked meeting directly on the XDR's Google Calendar (primary),
-// using their stored Google OAuth connection. Requires the calendar.events
-// scope — users who connected before that scope was added must reconnect in
-// Settings.
+async function getGoogleConnection(email: string) {
+  const accounts = await getOAuthAccounts("google", email);
+  const account = accounts[0];
+  const token = account?.tokens?.access_token as string | undefined;
+  if (!token) return null;
+  return {
+    email,
+    account,
+    token,
+    refreshToken: account?.tokens?.refresh_token as string | undefined,
+  };
+}
+
+// Creates the booked meeting on the AE's Google Calendar when the AE has
+// connected Google in Settings — the AE must be the event owner so Gong
+// (which watches AE calendars) picks the call up. Falls back to the XDR's
+// connection when the AE hasn't connected. Requires the calendar.events
+// scope — users who connected before that scope was added must reconnect.
 export async function bookCalendarEvent({
   title,
   datetime,
@@ -50,22 +64,24 @@ export async function bookCalendarEvent({
   existingEventId?: string | null;
   /** External conferencing link (e.g. Zoom). Skips Google Meet creation. */
   customMeetingLink?: string | null;
-}): Promise<{ eventId: string; meetingLink: string }> {
+}): Promise<{ eventId: string; meetingLink: string; ownerEmail: string }> {
   const start = new Date(datetime);
   if (Number.isNaN(start.getTime())) {
     throw new Error(`Calendar booking failed: invalid meeting datetime "${datetime}"`);
   }
   const end = new Date(start.getTime() + MEETING_DURATION_MIN * 60 * 1000);
 
-  const accounts = await getOAuthAccounts("google", xdrEmail);
-  const account = accounts[0];
-  let token = account?.tokens?.access_token as string | undefined;
-  const refreshToken = account?.tokens?.refresh_token as string | undefined;
-  if (!token) {
+  // AE first: the AE must own the event for Gong to track the call.
+  const connection =
+    (aeEmail ? await getGoogleConnection(aeEmail) : null) ??
+    (await getGoogleConnection(xdrEmail));
+  if (!connection) {
     throw new Error(
       "Calendar booking failed: no Google Calendar connection. Connect Google Calendar in Settings.",
     );
   }
+  const { account, refreshToken, email: ownerEmail } = connection;
+  let token: string | undefined = connection.token;
 
   const attendees = [aeEmail, xdrEmail, ...(prospectEmail ? [prospectEmail] : [])]
     .filter(Boolean)
@@ -131,9 +147,9 @@ export async function bookCalendarEvent({
     if (newToken) {
       await saveOAuthTokens(
         "google",
-        (account!.accountId as string) ?? xdrEmail,
+        (account!.accountId as string) ?? ownerEmail,
         { ...account!.tokens, access_token: newToken },
-        xdrEmail,
+        ownerEmail,
       );
       token = newToken;
       res = await sendEvent(newToken);
@@ -158,5 +174,6 @@ export async function bookCalendarEvent({
   return {
     eventId: data.id ?? "",
     meetingLink: customMeetingLink ?? data.hangoutLink ?? data.htmlLink ?? "",
+    ownerEmail,
   };
 }

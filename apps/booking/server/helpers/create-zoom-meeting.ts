@@ -27,30 +27,41 @@ async function refreshZoomTokens(
   return (await res.json()) as Record<string, unknown>;
 }
 
-// Creates a unique scheduled Zoom meeting on the user's connected Zoom
-// account and returns its join URL.
+// Creates a unique scheduled Zoom meeting and returns its join URL. Host
+// candidates are tried in order — pass the AE first so the AE hosts the
+// meeting and Gong (connected to AE Zoom accounts) records it.
 export async function createZoomMeeting({
-  ownerEmail,
+  hostCandidates,
   topic,
   startIso,
   durationMinutes,
 }: {
-  ownerEmail: string;
+  hostCandidates: string[];
   topic: string;
   startIso: string;
   durationMinutes: number;
-}): Promise<{ joinUrl: string }> {
+}): Promise<{ joinUrl: string; hostEmail: string }> {
   const start = new Date(startIso);
   if (Number.isNaN(start.getTime())) {
     throw new Error(`Zoom meeting failed: invalid start time "${startIso}"`);
   }
 
-  const accounts = await getOAuthAccounts("zoom", ownerEmail);
-  const account = accounts[0];
+  let ownerEmail: string | undefined;
+  let account: Awaited<ReturnType<typeof getOAuthAccounts>>[number] | undefined;
+  for (const candidate of hostCandidates.filter(Boolean)) {
+    const accounts = await getOAuthAccounts("zoom", candidate);
+    if (accounts[0]?.tokens?.access_token) {
+      ownerEmail = candidate;
+      account = accounts[0];
+      break;
+    }
+  }
   let token = account?.tokens?.access_token as string | undefined;
   const refreshToken = account?.tokens?.refresh_token as string | undefined;
-  if (!token) {
-    throw new Error("Zoom is not connected. Connect Zoom in Settings first.");
+  if (!token || !ownerEmail) {
+    throw new Error(
+      "Zoom is not connected for the AE or you. Connect Zoom in Settings first.",
+    );
   }
 
   const body = JSON.stringify({
@@ -103,5 +114,5 @@ export async function createZoomMeeting({
   if (!data.join_url) {
     throw new Error("Zoom meeting created but no join URL was returned.");
   }
-  return { joinUrl: data.join_url };
+  return { joinUrl: data.join_url, hostEmail: ownerEmail };
 }
