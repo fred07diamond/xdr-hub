@@ -458,7 +458,7 @@ function MeetingCard({
       {isEditing && (
         <div className="border-t px-5 py-5 space-y-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Edit Meeting</p>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-x-4 gap-y-3.5 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Prospect Name</Label>
               <Input
@@ -505,6 +505,18 @@ function MeetingCard({
               />
             </div>
             <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Status</Label>
+              <select
+                value={draft.status}
+                onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value as EditDraft["status"] }))}
+                className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="pending">Pending</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Video Conferencing</Label>
               <select
                 value={conferencing}
@@ -546,18 +558,6 @@ function MeetingCard({
                 />
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Status</Label>
-              <select
-                value={draft.status}
-                onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value as EditDraft["status"] }))}
-                className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="pending">Pending</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
           </div>
           <div className="flex gap-2 pt-1">
             <Button type="button" size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs px-3">
