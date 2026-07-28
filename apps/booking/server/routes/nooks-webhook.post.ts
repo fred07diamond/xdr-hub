@@ -59,16 +59,26 @@ interface CallLoggedPayload {
 export default defineEventHandler(async (event) => {
   const raw = (await readRawBody(event, "utf8")) ?? "";
 
+  // Signature policy:
+  //   header present + valid   → verified, full processing
+  //   header present + invalid → 401 (tampered/misconfigured)
+  //   header absent            → acknowledged but NEVER creates data — Nooks'
+  //                              save-time verification ping arrives unsigned
+  //                              and a 401 would make the URL save fail.
   const signingKey = process.env.NOOKS_WEBHOOK_SIGNING_KEY;
-  if (signingKey) {
-    const ok = verifySignature(raw, getHeader(event, "x-webhook-signature"), signingKey);
-    if (!ok) {
+  const sigHeader = getHeader(event, "x-webhook-signature");
+  let verified = false;
+  if (signingKey && sigHeader) {
+    verified = verifySignature(raw, sigHeader, signingKey);
+    if (!verified) {
       console.warn("[nooks-webhook] signature verification failed");
       setResponseStatus(event, 401);
       return { error: "invalid signature" };
     }
+  } else if (!signingKey) {
+    console.warn("[nooks-webhook] NOOKS_WEBHOOK_SIGNING_KEY not set — treating request as unverified");
   } else {
-    console.warn("[nooks-webhook] NOOKS_WEBHOOK_SIGNING_KEY not set — skipping verification");
+    console.log("[nooks-webhook] unsigned request (likely a verification ping) — acknowledging without processing");
   }
 
   let payload: CallLoggedPayload;
@@ -97,6 +107,10 @@ export default defineEventHandler(async (event) => {
   );
 
   if (payload.event !== "call.logged" || !call?.callId) return { received: true };
+  // Data creation requires a verified signature (or no key configured yet).
+  if (signingKey && !verified) {
+    return { received: true, workflowInitiated: false, reason: "unsigned" };
+  }
   if (!dispositionName || !CONNECTED_MEETING_RE.test(dispositionName)) {
     return { received: true, workflowInitiated: false };
   }
