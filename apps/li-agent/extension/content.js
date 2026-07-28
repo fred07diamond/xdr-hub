@@ -485,6 +485,22 @@ function waitForEl(fn, { timeout = 4000, interval = 150 } = {}) {
   });
 }
 
+// Sales Nav's Ember dropdowns (and some React menus) attach handlers to
+// pointer/mouse events, not the click event — a bare el.click() silently does
+// nothing and the menu stays open. Dispatch the full sequence.
+function simulateClick(el) {
+  const opts = { bubbles: true, cancelable: true, view: window };
+  try {
+    el.dispatchEvent(new PointerEvent("pointerdown", opts));
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new PointerEvent("pointerup", opts));
+    el.dispatchEvent(new MouseEvent("mouseup", opts));
+  } catch {
+    // PointerEvent unavailable — fall through to click()
+  }
+  el.click();
+}
+
 // React holds internal state inside the textarea node. Setting .value directly
 // skips React's change tracking; calling the native setter + dispatching input
 // forces React to sync its vDOM state with the DOM value.
@@ -717,6 +733,48 @@ async function sendConnectionRequest(note) {
         }
       }
 
+      // --- Approach 1.25: exact-text item near the opened menu ---
+      // The open dropdown renders an element whose text is EXACTLY "Connect",
+      // positioned just below the "…" button. Exact-match + proximity keeps
+      // decoy Connect buttons in unrelated cards out (their text/context is
+      // longer or they sit far from the trigger).
+      if (candidates.length === 0) {
+        const btnRect = moreBtn.getBoundingClientRect();
+        const exact = deepQueryAll("li, [role='menuitem'], button, a, div, span")
+          .filter((el) => {
+            if (!/^connect$/i.test((el.innerText || el.textContent || "").trim())) return false;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return false;
+            // Must be near the trigger: menus anchor within ~400px below it.
+            return (
+              r.top >= btnRect.top - 10 &&
+              r.top <= btnRect.bottom + 400 &&
+              Math.abs(r.left - btnRect.left) <= 350
+            );
+          });
+        // Innermost matches only, then the one closest to the trigger.
+        const innermost = exact.filter((el) => !exact.some((o) => o !== el && el.contains(o)));
+        innermost.sort((a, b) => {
+          const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+          return (
+            Math.abs(ra.top - btnRect.bottom) + Math.abs(ra.left - btnRect.left) -
+            (Math.abs(rb.top - btnRect.bottom) + Math.abs(rb.left - btnRect.left))
+          );
+        });
+        const item = innermost[0];
+        if (item) {
+          // Click the interactive wrapper when there is one — the handler
+          // usually lives on the li/button, not the inner text span.
+          const clickable = item.closest("button, a, [role='button'], [role='menuitem'], li") || item;
+          candidates = [{
+            index: 0, tag: clickable.tagName,
+            text: (clickable.innerText || clickable.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+            ariaLabel: clickable.getAttribute("aria-label"), contextText: "", _el: clickable,
+          }];
+        }
+        console.log("[BLI] exact-text menu candidates:", innermost.length, "picked:", candidates[0]?.text);
+      }
+
       // --- Approach 1.5: open dropdown containers ---
       // Sales Nav (and some regular-LinkedIn variants) render the open menu in
       // a recognizable container. Scoping to it avoids the decoy Connect
@@ -811,30 +869,53 @@ async function sendConnectionRequest(note) {
     }
   }
 
-  connectBtn.click();
+  simulateClick(connectBtn);
   await new Promise((r) => setTimeout(r, 1000));
 
   // 2. Modal — either goes straight to the note textarea, or asks
   // "Add a note?" first. Race both so we don't waste time waiting on a
   // step LinkedIn may skip, and so a slow-to-render "Add a note" button
   // doesn't time us out when the textarea was reachable all along.
+  const findDialogRoots = () =>
+    deepQueryAll("[role='dialog'], [role='alertdialog'], .artdeco-modal, div[class*='modal']")
+      .filter((d) => d.getBoundingClientRect().width > 0);
+
+  // The loose add-note patterns are DIALOG-SCOPED on purpose: Sales Nav lead
+  // pages have timeline cards reading "<user> added a note about <lead>" —
+  // a document-wide /add.*note/ scan clicked one of those instead of the
+  // invite modal's button.
   const findAddNoteBtn = () => {
-    const btns = deepQueryAll("button, [role='button']");
-    return (
-      btns.find((b) => /^add a note$/i.test((b.getAttribute("aria-label") || "").trim())) ??
-      btns.find((b) => /^add a note$/i.test(b.innerText.trim())) ??
-      btns.find((b) => /personali[sz]e invite/i.test(b.innerText)) ??
-      btns.find((b) => /add.*note|include.*note/i.test(b.innerText))
-    );
+    const allBtns = deepQueryAll("button, [role='button']");
+    const exact =
+      allBtns.find((b) => /^add a note$/i.test((b.getAttribute("aria-label") || "").trim())) ??
+      allBtns.find((b) => /^add a note$/i.test(b.innerText.trim()));
+    if (exact) return exact;
+    for (const dialog of findDialogRoots()) {
+      const btns = Array.from(dialog.querySelectorAll("button, [role='button']"));
+      const loose =
+        btns.find((b) => /personali[sz]e invite/i.test(b.innerText)) ??
+        btns.find((b) => /add.*note|include.*note/i.test(b.innerText));
+      if (loose) return loose;
+    }
+    return null;
   };
   // Regular LinkedIn uses textarea[name="message"]; Sales Nav's connect modal
-  // uses a different name/id, so fall back to any textarea inside an open
-  // dialog/modal.
-  const findTextarea = () =>
-    deepQueryAll('textarea[name="message"]')[0] ??
-    deepQueryAll('textarea[id*="invitation" i]')[0] ??
-    deepQueryAll("[role='dialog'] textarea, .artdeco-modal textarea")[0] ??
-    null;
+  // uses a different name/id, so fall back to textareas inside an open
+  // dialog/modal, then to message/note placeholders.
+  const findTextarea = () => {
+    const direct =
+      deepQueryAll('textarea[name="message"]')[0] ??
+      deepQueryAll('textarea[id*="invitation" i]')[0];
+    if (direct) return direct;
+    for (const dialog of findDialogRoots()) {
+      const ta = dialog.querySelector("textarea");
+      if (ta) return ta;
+    }
+    return (
+      deepQueryAll('textarea[placeholder*="message" i], textarea[placeholder*="note" i]')
+        .find((t) => t.getBoundingClientRect().width > 0) ?? null
+    );
+  };
 
   let textarea = null;
   const waitResult = await waitForEl(() => findAddNoteBtn() ?? findTextarea(), { timeout: 10000 });
@@ -846,7 +927,7 @@ async function sendConnectionRequest(note) {
   if (waitResult.tagName === "TEXTAREA") {
     textarea = waitResult;
   } else {
-    waitResult.click();
+    simulateClick(waitResult);
     await new Promise((r) => setTimeout(r, 400));
     textarea = await waitForEl(findTextarea, { timeout: 6000 });
   }
@@ -873,7 +954,7 @@ async function sendConnectionRequest(note) {
   );
   if (!sendBtn) return { ok: false, error: "Send button not found in modal." };
 
-  sendBtn.click();
+  simulateClick(sendBtn);
   return { ok: true };
 }
 
