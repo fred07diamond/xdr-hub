@@ -29,3 +29,9 @@
   from = "/vault"
   to = "/dispatch/vault"
   status = 302
+
+# Public privacy policy for the Builder.LI Chrome extension listing
+[[redirects]]
+  from = "/privacy"
+  to = "/li-agent/privacy"
+  status = 301
