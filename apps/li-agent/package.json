@@ -1,6 +1,6 @@
 {
-  "name": "outreach",
-  "displayName": "Builder.LI",
+  "name": "li-agent",
+  "displayName": "LinkedIn Agent",
   "private": true,
   "description": "LinkedIn outreach cockpit — score prospects against your ICP and draft personalized connection notes.",
   "type": "module",
