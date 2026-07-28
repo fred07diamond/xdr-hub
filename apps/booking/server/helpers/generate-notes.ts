@@ -148,9 +148,19 @@ export async function generateNotes(transcript: string): Promise<GeneratedNotes>
       maxOutputTokens: 2500,
     });
 
-  const result = ownerCtx
-    ? await runWithRequestContext(ownerCtx, callCompleteText)
-    : await callCompleteText();
+  let result: Awaited<ReturnType<typeof callCompleteText>>;
+  try {
+    result = ownerCtx
+      ? await runWithRequestContext(ownerCtx, callCompleteText)
+      : await callCompleteText();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // statusCode makes the action route surface the real message instead of
+    // masking it as a generic "Internal server error".
+    throw Object.assign(new Error(`AI generation failed: ${msg}`), {
+      statusCode: 502,
+    });
+  }
 
   const raw = result.text
     .replace(/^```(?:json)?\s*/i, "")
@@ -161,8 +171,11 @@ export async function generateNotes(transcript: string): Promise<GeneratedNotes>
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error(
-      `AI generation failed: could not parse response as JSON. Raw response: ${raw.slice(0, 200)}`
+    throw Object.assign(
+      new Error(
+        `AI generation failed: could not parse response as JSON. Raw response: ${raw.slice(0, 200)}`,
+      ),
+      { statusCode: 422 },
     );
   }
 
