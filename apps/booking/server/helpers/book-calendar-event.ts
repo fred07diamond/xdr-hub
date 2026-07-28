@@ -38,6 +38,7 @@ export async function bookCalendarEvent({
   xdrEmail,
   description,
   existingEventId,
+  customMeetingLink,
 }: {
   title: string;
   datetime: string;
@@ -47,6 +48,8 @@ export async function bookCalendarEvent({
   description: string;
   /** When set, updates this event in place instead of creating a new one. */
   existingEventId?: string | null;
+  /** External conferencing link (e.g. Zoom). Skips Google Meet creation. */
+  customMeetingLink?: string | null;
 }): Promise<{ eventId: string; meetingLink: string }> {
   const start = new Date(datetime);
   if (Number.isNaN(start.getTime())) {
@@ -70,20 +73,28 @@ export async function bookCalendarEvent({
 
   const eventFields = {
     summary: title,
-    description,
+    description: customMeetingLink
+      ? `Join: ${customMeetingLink}\n\n${description}`
+      : description,
     start: { dateTime: start.toISOString() },
     end: { dateTime: end.toISOString() },
     attendees,
+    ...(customMeetingLink ? { location: customMeetingLink } : {}),
   };
-  const insertBody = JSON.stringify({
-    ...eventFields,
-    conferenceData: {
-      createRequest: {
-        requestId: `xdr-booking-${start.getTime()}-${xdrEmail.split("@")[0]}`,
-        conferenceSolutionKey: { type: "hangoutsMeet" },
-      },
-    },
-  });
+  // With a custom link (Zoom, etc.) the link IS the conference — no Meet.
+  const insertBody = JSON.stringify(
+    customMeetingLink
+      ? eventFields
+      : {
+          ...eventFields,
+          conferenceData: {
+            createRequest: {
+              requestId: `xdr-booking-${start.getTime()}-${xdrEmail.split("@")[0]}`,
+              conferenceSolutionKey: { type: "hangoutsMeet" },
+            },
+          },
+        },
+  );
   // Patch keeps the existing Meet link; sendUpdates notifies attendees of the change.
   const patchBody = JSON.stringify(eventFields);
 
@@ -136,6 +147,6 @@ export async function bookCalendarEvent({
   };
   return {
     eventId: data.id ?? "",
-    meetingLink: data.hangoutLink ?? data.htmlLink ?? "",
+    meetingLink: customMeetingLink ?? data.hangoutLink ?? data.htmlLink ?? "",
   };
 }

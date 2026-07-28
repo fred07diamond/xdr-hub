@@ -14,6 +14,7 @@ export default defineAction({
     prospectEmail: z.string().email().nullable().optional(),
     meetingDatetime: z.string().nullable().optional(),
     aeUserEmail: z.string().email().optional(),
+    meetingLink: z.string().url().nullable().optional(),
     status: z.enum(["pending", "confirmed", "cancelled"]).optional(),
   }),
   requiresAuth: true,
@@ -42,6 +43,7 @@ export default defineAction({
     if (patch.prospectEmail !== undefined) updates.prospectEmail = patch.prospectEmail;
     if (patch.meetingDatetime !== undefined) updates.meetingDatetime = patch.meetingDatetime;
     if (patch.aeUserEmail !== undefined) updates.aeUserEmail = patch.aeUserEmail;
+    if (patch.meetingLink !== undefined) updates.meetingLink = patch.meetingLink;
     if (patch.status !== undefined) updates.status = patch.status;
 
     if (Object.keys(updates).length === 0) {

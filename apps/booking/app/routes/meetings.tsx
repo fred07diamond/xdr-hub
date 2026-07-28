@@ -205,6 +205,7 @@ interface EditDraft {
   prospectEmail: string;
   meetingDatetime: string;
   aeUserEmail: string;
+  meetingLink: string;
   status: "pending" | "confirmed" | "cancelled";
 }
 
@@ -241,6 +242,7 @@ function MeetingCard({
     prospectEmail: m.prospectEmail ?? "",
     meetingDatetime: toLocalDatetimeValue(m.meetingDatetime),
     aeUserEmail: m.aeUserEmail,
+    meetingLink: m.meetingLink ?? "",
     status: (m.status as EditDraft["status"]) ?? "pending",
   });
 
@@ -280,6 +282,7 @@ function MeetingCard({
       prospectEmail: m.prospectEmail ?? "",
       meetingDatetime: toLocalDatetimeValue(m.meetingDatetime),
       aeUserEmail: m.aeUserEmail,
+      meetingLink: m.meetingLink ?? "",
       status: (m.status as EditDraft["status"]) ?? "pending",
     });
     setIsEditing(true);
@@ -303,6 +306,7 @@ function MeetingCard({
           ? new Date(draft.meetingDatetime).toISOString()
           : null,
         aeUserEmail: draft.aeUserEmail || undefined,
+        meetingLink: draft.meetingLink.trim() || null,
         status: draft.status,
       });
     } catch (err) {
@@ -467,6 +471,16 @@ function MeetingCard({
               />
             </div>
             <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Meeting Link (Zoom, etc.)</Label>
+              <Input
+                type="url"
+                value={draft.meetingLink}
+                onChange={(e) => setDraft((d) => ({ ...d, meetingLink: e.target.value }))}
+                className="h-8 text-sm"
+                placeholder="https://builder.zoom.us/j/… — blank auto-creates Google Meet"
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Status</Label>
               <select
                 value={draft.status}
@@ -497,10 +511,26 @@ function MeetingCard({
       {/* Expanded detail */}
       {isExpanded && !isEditing && (
         <div className="border-t px-5 py-5 space-y-6">
-          {isLoading || !notes ? (
+          {isLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <IconLoader2 className="h-4 w-4 animate-spin" />
               Loading meeting data...
+            </div>
+          ) : !notes ? (
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              {m.prospectEmail && (
+                <>
+                  <span className="text-muted-foreground">Prospect Email</span>
+                  <span>{m.prospectEmail}</span>
+                </>
+              )}
+              <span className="text-muted-foreground">AE</span>
+              <span>{names[m.aeUserEmail] ?? (m.aeUserEmail || "--")}</span>
+              <span className="text-muted-foreground">XDR</span>
+              <span>{names[m.xdrUserEmail] ?? m.xdrUserEmail}</span>
+              <span className="col-span-2 pt-2 text-xs text-muted-foreground">
+                No generated notes for this meeting.
+              </span>
             </div>
           ) : (
             <>
@@ -902,8 +932,8 @@ function WeekCalendar({
                     onClick={() => onMeetingClick?.(ev.id)}
                     className={`absolute left-1 right-1 z-20 rounded-md px-1.5 py-1 text-xs font-medium overflow-hidden transition-opacity cursor-pointer hover:brightness-110 active:scale-[0.98] ${
                       ev.isPast
-                        ? "bg-primary/40 text-primary-foreground/70 border border-primary/30"
-                        : "bg-primary text-primary-foreground shadow-sm"
+                        ? "bg-violet-400/50 text-white/80 border border-violet-400/40"
+                        : "bg-violet-600 text-white shadow-sm border border-violet-500"
                     }`}
                     style={{ top: `${ev.top}px`, height: `${ev.height}px` }}
                     title={ev.title}

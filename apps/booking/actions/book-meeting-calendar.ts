@@ -51,6 +51,14 @@ export default defineAction({
       .where(eq(generatedNotes.meetingId, meetingId))
       .limit(1);
 
+    // A stored Meet/Calendar link came from a previous auto-booking — only an
+    // external link (Zoom, etc.) counts as a user-provided conference link.
+    const customMeetingLink =
+      meeting.meetingLink &&
+      !/meet\.google\.com|calendar\.google\.com/.test(meeting.meetingLink)
+        ? meeting.meetingLink
+        : null;
+
     let result: { eventId: string; meetingLink: string };
     try {
       result = await bookCalendarEvent({
@@ -61,6 +69,7 @@ export default defineAction({
         xdrEmail: meeting.xdrUserEmail,
         description: notes?.meetingAgenda ?? "",
         existingEventId: meeting.calendarEventId,
+        customMeetingLink,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
