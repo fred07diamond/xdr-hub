@@ -15,24 +15,27 @@
   "dependencies": {
     "@agent-native/core": "latest",
     "@agent-native/dispatch": "latest",
+    "@builder-li/shared": "workspace:*",
     "@fontsource-variable/inter": "^5.2.8",
     "@libsql/client": "^0.15.8",
     "@radix-ui/react-tooltip": "^1.2.7",
+    "@react-router/dev": "^8.1.0",
+    "@react-router/fs-routes": "^8.1.0",
     "@tabler/icons-react": "catalog:",
     "@tanstack/react-query": "^5.99.2",
+    "@tiptap/pm": "3.28.0",
     "h3": "catalog:",
     "isbot": "^5",
     "next-themes": "^0.4.6",
-    "sonner": "^2.0.7",
-    "zod": "^4.3.6",
-    "@builder-li/shared": "workspace:*",
     "postgres": "^3.4.9",
-    "@react-router/dev": "^8.1.0",
-    "@react-router/fs-routes": "^8.1.0",
     "react-router": "^8.1.0",
-    "vite": "catalog:"
+    "sonner": "^2.0.7",
+    "vite": "catalog:",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@assistant-ui/store": ">=0.2.9 <0.2.14",
+    "@assistant-ui/tap": "^0.5.14",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "^24.2.1",
@@ -44,9 +47,7 @@
     "tailwindcss": "catalog:",
     "tsx": "^4.20.3",
     "typescript-7": "catalog:",
-    "vitest": "catalog:",
-    "@assistant-ui/store": ">=0.2.9 <0.2.14",
-    "@assistant-ui/tap": "^0.5.14"
+    "vitest": "catalog:"
   },
   "description": "Workspace app for Dispatch."
 }
