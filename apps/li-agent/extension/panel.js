@@ -279,6 +279,9 @@ function resetPanel() {
   autoConnectBtn.disabled = false;
   autoConnectBtn.textContent = "Connect & send";
   autoConnectBtn.classList.remove("success");
+  markSentBtn.disabled = false;
+  markSentBtn.textContent = "Mark as sent manually";
+  markSentBtn.classList.remove("sent");
 
   resetFeedbackSection();
   feedbackSection.style.display = "none";
