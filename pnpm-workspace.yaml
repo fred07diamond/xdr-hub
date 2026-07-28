@@ -7,6 +7,8 @@ overrides:
   "@assistant-ui/tap": "^0.5.14"
   better-auth: "1.6.0"
   nf3: "0.3.17"
+  "@tiptap/pm": "3.28.0"
+  "@tiptap/extension-floating-menu": "3.28.0"
 
 onlyBuiltDependencies:
   - "@swc/core"
