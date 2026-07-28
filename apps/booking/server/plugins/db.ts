@@ -106,6 +106,16 @@ export default runMigrations(
         granted_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 14,
+      name: "booked-meetings-nooks-call-id",
+      sql: `ALTER TABLE booked_meetings ADD COLUMN IF NOT EXISTS nooks_call_id TEXT`,
+    },
+    {
+      version: 15,
+      name: "booked-meetings-nooks-call-id-unique",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_booked_meetings_nooks_call_id ON booked_meetings(nooks_call_id)`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );

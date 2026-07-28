@@ -13,6 +13,8 @@ export const userRoles = table("user_roles", {
 // One row per workflow initiated by an XDR.
 export const bookedMeetings = table("booked_meetings", {
   id: text("id").primaryKey(),
+  // Nooks call that auto-created this meeting via webhook — idempotency key.
+  nooksCallId: text("nooks_call_id"),
   prospectName: text("prospect_name").notNull(),
   company: text("company").notNull(),
   meetingDatetime: text("meeting_datetime"),
