@@ -160,9 +160,9 @@ function DailyLimitCard() {
 
 function buildSlackMessage(email: string) {
   const url = typeof window !== "undefined"
-    ? `${window.location.origin}/outreach`
-    : "https://builder-li.netlify.app/outreach";
-  return `Hey! I've added you to our Builder.LI workspace. Sign in at ${url} with your Google account (${email}) to accept your invitation.`;
+    ? `${window.location.origin}/li-agent`
+    : "https://xdr-hub.netlify.app/li-agent";
+  return `Hey! I've added you to our LinkedIn Agent workspace. Sign in at ${url} with your Google account (${email}) to accept your invitation.`;
 }
 
 const AVATAR_COLORS = [

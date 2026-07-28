@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/index.js";
-import { userRoles } from "../db/schema.js";
+import { getSharedDb, workspaceUserRoles } from "../db/workspace.js";
 import { hubspotFetch } from "./hubspot-client.js";
 
 // Returns the email of the AE who owns the account for the given company name.
@@ -31,12 +30,12 @@ export async function lookupAeByCompany(company: string): Promise<string | null>
     const aeEmail = owner.email ?? null;
     if (!aeEmail) return null;
 
-    // Verify the AE has a record in our user_roles table
-    const db = getDb();
+    // Verify the AE has a record in workspace_user_roles
+    const db = getSharedDb();
     const row = await db
-      .select({ email: userRoles.email })
-      .from(userRoles)
-      .where(eq(userRoles.email, aeEmail))
+      .select({ email: workspaceUserRoles.email })
+      .from(workspaceUserRoles)
+      .where(eq(workspaceUserRoles.email, aeEmail))
       .limit(1);
 
     return row[0]?.email ?? null;

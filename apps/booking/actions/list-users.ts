@@ -1,7 +1,6 @@
 import { defineAction } from "@agent-native/core";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { userRoles } from "../server/db/schema.js";
+import { getSharedDb, workspaceUserRoles } from "../server/db/workspace.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -12,16 +11,16 @@ export default defineAction({
   http: { method: "GET" },
   run: async (_args, ctx) => {
     await requireRole(ctx?.userEmail, ["admin"]);
-    const db = getDb();
+    const db = getSharedDb();
     const rows = await db
       .select({
-        email: userRoles.email,
-        role: userRoles.role,
-        hubspotAccountId: userRoles.hubspotAccountId,
-        updatedAt: userRoles.updatedAt,
+        email: workspaceUserRoles.email,
+        role: workspaceUserRoles.role,
+        hubspotAccountId: workspaceUserRoles.hubspotAccountId,
+        updatedAt: workspaceUserRoles.updatedAt,
       })
-      .from(userRoles)
-      .orderBy(userRoles.email);
+      .from(workspaceUserRoles)
+      .orderBy(workspaceUserRoles.email);
     return { users: rows };
   },
 });

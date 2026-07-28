@@ -9,7 +9,7 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async () => {
-    const token = getHubSpotToken();
+    const token = await getHubSpotToken();
     if (!token) return { connected: false };
     try {
       await hubspotFetch("/crm/v3/owners?limit=1");

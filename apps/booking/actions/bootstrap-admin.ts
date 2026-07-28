@@ -1,8 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { userRoles } from "../server/db/schema.js";
+import { getSharedDb, workspaceUserRoles } from "../server/db/workspace.js";
 
 export default defineAction({
   description: "Bootstrap: assign admin role to an email. Only callable by WORKSPACE_OWNER_EMAIL.",
@@ -19,12 +18,12 @@ export default defineAction({
     if (!ownerEmail || ctx?.userEmail !== ownerEmail) {
       throw Object.assign(new Error("Only the workspace owner can bootstrap roles."), { statusCode: 403 });
     }
-    const db = getDb();
+    const db = getSharedDb();
     const now = new Date().toISOString();
     await db
-      .insert(userRoles)
+      .insert(workspaceUserRoles)
       .values({ email, role, updatedAt: now })
-      .onConflictDoUpdate({ target: userRoles.email, set: { role, updatedAt: now } });
+      .onConflictDoUpdate({ target: workspaceUserRoles.email, set: { role, updatedAt: now } });
     return { ok: true, email, role };
   },
 });
