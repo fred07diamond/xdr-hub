@@ -67,22 +67,30 @@ export default defineAction({
         ? meeting.meetingLink
         : null;
 
+    const warnings: string[] = [];
+
     if (generateZoom) {
       try {
         const zoom = await createZoomMeeting({
-          ownerEmail: meeting.xdrUserEmail,
+          // AE first — the AE should host so Gong records the call.
+          hostCandidates: [meeting.aeUserEmail, meeting.xdrUserEmail],
           topic: title,
           startIso: meeting.meetingDatetime,
           durationMinutes: MEETING_DURATION_MIN,
         });
         customMeetingLink = zoom.joinUrl;
+        if (meeting.aeUserEmail && zoom.hostEmail !== meeting.aeUserEmail) {
+          warnings.push(
+            `Zoom meeting is hosted by ${zoom.hostEmail} — ${meeting.aeUserEmail} hasn't connected Zoom, so Gong may not record it.`,
+          );
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         throw Object.assign(new Error(msg), { statusCode: 502 });
       }
     }
 
-    let result: { eventId: string; meetingLink: string };
+    let result: { eventId: string; meetingLink: string; ownerEmail: string };
     try {
       result = await bookCalendarEvent({
         title,
@@ -99,6 +107,12 @@ export default defineAction({
       throw Object.assign(new Error(msg), { statusCode: 502 });
     }
 
+    if (meeting.aeUserEmail && result.ownerEmail !== meeting.aeUserEmail) {
+      warnings.push(
+        `Calendar invite was created from ${result.ownerEmail}'s calendar — ${meeting.aeUserEmail} hasn't connected Google Calendar, so they aren't the meeting owner.`,
+      );
+    }
+
     await db
       .update(bookedMeetings)
       .set({
@@ -111,6 +125,8 @@ export default defineAction({
       meetingId,
       calendarEventId: result.eventId,
       meetingLink: result.meetingLink,
+      calendarOwner: result.ownerEmail,
+      warnings,
     };
   },
 });

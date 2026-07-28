@@ -15,6 +15,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -343,10 +344,13 @@ function MeetingCard({
     }
     if (willSyncInvite) {
       try {
-        await bookCalendar.mutateAsync({
+        const res = await bookCalendar.mutateAsync({
           meetingId: m.id,
           ...(conferencing === "zoom-auto" ? { generateZoom: true } : {}),
         });
+        for (const w of (res?.warnings as string[] | undefined) ?? []) {
+          toast.warning(w, { duration: 10_000 });
+        }
       } catch (err) {
         console.error("[book-meeting-calendar] failed:", err);
         setSaveError(
