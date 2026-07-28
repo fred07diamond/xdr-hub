@@ -3,7 +3,7 @@ import {
   loadActionsFromStaticRegistry,
   type AgentChatPluginOptions,
 } from "@agent-native/core/server";
-import * as workspaceServer from "@builder-li/shared/server";
+import * as workspaceServer from "@xdr-hub/shared/server";
 import actionsRegistry from "../../.generated/actions-registry.js";
 
 const createWorkspaceAgentChatPlugin = (workspaceServer as Record<string, unknown>).createWorkspaceAgentChatPlugin;
