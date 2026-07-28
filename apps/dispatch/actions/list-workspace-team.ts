@@ -1,6 +1,11 @@
 import { defineAction } from "@agent-native/core";
 import { z } from "zod";
-import { getSharedDb, workspaceUserRoles, workspaceAppAccess } from "@xdr-hub/shared/server";
+import {
+  getSharedDb,
+  requireWorkspaceAdmin,
+  workspaceUserRoles,
+  workspaceAppAccess,
+} from "@xdr-hub/shared/server";
 import { getRequestUserEmail } from "@agent-native/core/server";
 
 export default defineAction({
@@ -11,7 +16,7 @@ export default defineAction({
   http: { method: "GET" },
   run: async () => {
     const email = await getRequestUserEmail();
-    if (!email) throw Object.assign(new Error("Authentication required"), { statusCode: 401 });
+    await requireWorkspaceAdmin(email);
     const db = getSharedDb();
     const [roles, access] = await Promise.all([
       db.select().from(workspaceUserRoles).orderBy(workspaceUserRoles.email),

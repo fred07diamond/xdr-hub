@@ -1,7 +1,12 @@
 import { defineAction } from "@agent-native/core";
 import { z } from "zod";
 import { eq } from "@agent-native/core/db/schema";
-import { getSharedDb, workspaceUserRoles, workspaceAppAccess } from "@xdr-hub/shared/server";
+import {
+  getSharedDb,
+  requireWorkspaceAdmin,
+  workspaceUserRoles,
+  workspaceAppAccess,
+} from "@xdr-hub/shared/server";
 import { getRequestUserEmail } from "@agent-native/core/server";
 
 export default defineAction({
@@ -17,7 +22,7 @@ export default defineAction({
   http: { method: "POST" },
   run: async ({ email, role, hubspotAccountId, grantApps, revokeApps }, ctx) => {
     const callerEmail = await getRequestUserEmail();
-    if (!callerEmail) throw Object.assign(new Error("Authentication required"), { statusCode: 401 });
+    await requireWorkspaceAdmin(callerEmail);
     const db = getSharedDb();
     const now = new Date().toISOString();
 

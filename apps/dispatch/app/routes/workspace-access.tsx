@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@agent-native/dispatch/components/ui/select";
+import { Input } from "@agent-native/dispatch/components/ui/input";
 import { TeamPage } from "@agent-native/core/client/org";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -90,6 +91,31 @@ export default function WorkspaceAccessRoute() {
   const teamQuery = useActionQuery<{ users: WorkspaceMember[] }>("list-workspace-team", {});
   const updateMember = useActionMutation("update-workspace-member");
   const [saving, setSaving] = useState<string | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState<Role>("xdr");
+
+  async function handleAddMember() {
+    const email = newEmail.trim().toLowerCase();
+    if (!email.includes("@")) {
+      toast.error("Enter a valid email address");
+      return;
+    }
+    setSaving(email);
+    try {
+      await updateMember.mutateAsync({
+        email,
+        role: newRole,
+        grantApps: ["li-agent", "booking"],
+      });
+      await qc.invalidateQueries({ queryKey: ["action", "list-workspace-team"] });
+      setNewEmail("");
+      toast.success(`Added ${email} as ${newRole}`);
+    } catch {
+      toast.error("Failed to add member — try again");
+    } finally {
+      setSaving(null);
+    }
+  }
 
   async function handleUpdate(
     email: string,
@@ -146,10 +172,35 @@ export default function WorkspaceAccessRoute() {
               </p>
             )}
             {teamQuery.data?.users?.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                No users found. Roles are populated once someone signs in or is
-                bootstrapped.
+              <p className="mb-3 text-sm text-muted-foreground">
+                No members have roles yet. Add yourself and your teammates
+                below — new members get access to both apps by default.
               </p>
+            )}
+            {teamQuery.data && (
+              <div className="mb-4 flex items-center gap-2">
+                <Input
+                  type="email"
+                  placeholder="teammate@builder.io"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
+                  className="max-w-xs"
+                />
+                <Select value={newRole} onValueChange={(v) => setNewRole(v as Role)}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="ae">AE</SelectItem>
+                    <SelectItem value="xdr">XDR</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" onClick={handleAddMember} disabled={!newEmail.trim()}>
+                  Add member
+                </Button>
+              </div>
             )}
             <div className="space-y-2">
               {(teamQuery.data?.users ?? []).map((member) => (
