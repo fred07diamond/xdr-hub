@@ -53,29 +53,33 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    // v5-v10 use ADD COLUMN IF NOT EXISTS: prod once crashed between applying
+    // v5 and recording it, so re-runs hit "column already exists" and halted
+    // the whole list (v11+ never applied). IF NOT EXISTS makes re-runs
+    // converge; the framework adapts the clause for SQLite too.
     {
       version: 5,
-      sql: `ALTER TABLE booked_meetings ADD COLUMN prospect_email TEXT`,
+      sql: `ALTER TABLE booked_meetings ADD COLUMN IF NOT EXISTS prospect_email TEXT`,
     },
     {
       version: 6,
-      sql: `ALTER TABLE generated_notes ADD COLUMN xdr_pain TEXT NOT NULL DEFAULT ''`,
+      sql: `ALTER TABLE generated_notes ADD COLUMN IF NOT EXISTS xdr_pain TEXT NOT NULL DEFAULT ''`,
     },
     {
       version: 7,
-      sql: `ALTER TABLE generated_notes ADD COLUMN xdr_enterprise_need TEXT NOT NULL DEFAULT ''`,
+      sql: `ALTER TABLE generated_notes ADD COLUMN IF NOT EXISTS xdr_enterprise_need TEXT NOT NULL DEFAULT ''`,
     },
     {
       version: 8,
-      sql: `ALTER TABLE generated_notes ADD COLUMN xdr_contact_qualification TEXT NOT NULL DEFAULT ''`,
+      sql: `ALTER TABLE generated_notes ADD COLUMN IF NOT EXISTS xdr_contact_qualification TEXT NOT NULL DEFAULT ''`,
     },
     {
       version: 9,
-      sql: `ALTER TABLE generated_notes ADD COLUMN xdr_notes TEXT NOT NULL DEFAULT ''`,
+      sql: `ALTER TABLE generated_notes ADD COLUMN IF NOT EXISTS xdr_notes TEXT NOT NULL DEFAULT ''`,
     },
     {
       version: 10,
-      sql: `ALTER TABLE generated_notes ADD COLUMN email_subject TEXT NOT NULL DEFAULT ''`,
+      sql: `ALTER TABLE generated_notes ADD COLUMN IF NOT EXISTS email_subject TEXT NOT NULL DEFAULT ''`,
     },
     {
       version: 11,
