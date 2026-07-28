@@ -243,7 +243,7 @@ function MeetingCard({
   const [isEditing, setIsEditing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [conferencing, setConferencing] = useState<"meet" | "zoom">(
+  const [conferencing, setConferencing] = useState<"meet" | "zoom" | "zoom-auto">(
     isCustomConferenceLink(m.meetingLink) ? "zoom" : "meet",
   );
   const [draft, setDraft] = useState<EditDraft>({
@@ -329,7 +329,11 @@ function MeetingCard({
           ? new Date(draft.meetingDatetime).toISOString()
           : null,
         aeUserEmail: draft.aeUserEmail || undefined,
-        meetingLink: conferencing === "zoom" ? zoomLink : null,
+        // zoom-auto: leave the stored link alone — the booking action
+        // overwrites it with the freshly generated Zoom join link.
+        ...(conferencing !== "zoom-auto"
+          ? { meetingLink: conferencing === "zoom" ? zoomLink : null }
+          : {}),
         status: draft.status,
       });
     } catch (err) {
@@ -339,7 +343,10 @@ function MeetingCard({
     }
     if (willSyncInvite) {
       try {
-        await bookCalendar.mutateAsync({ meetingId: m.id });
+        await bookCalendar.mutateAsync({
+          meetingId: m.id,
+          ...(conferencing === "zoom-auto" ? { generateZoom: true } : {}),
+        });
       } catch (err) {
         console.error("[book-meeting-calendar] failed:", err);
         setSaveError(
@@ -498,7 +505,7 @@ function MeetingCard({
               <select
                 value={conferencing}
                 onChange={(e) => {
-                  const next = e.target.value as "meet" | "zoom";
+                  const next = e.target.value as "meet" | "zoom" | "zoom-auto";
                   setConferencing(next);
                   if (next === "zoom" && !draft.meetingLink) {
                     let remembered = "";
@@ -513,8 +520,15 @@ function MeetingCard({
                 className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="meet">Google Meet</option>
-                <option value="zoom">Zoom</option>
+                <option value="zoom">Zoom — personal link</option>
+                <option value="zoom-auto">Zoom — generate unique meeting</option>
               </select>
+              {conferencing === "zoom-auto" && (
+                <p className="text-xs text-muted-foreground">
+                  Requires Zoom connected in Settings. A new Zoom meeting is
+                  created each time you save.
+                </p>
+              )}
             </div>
             {conferencing === "zoom" && (
               <div className="space-y-1.5">
