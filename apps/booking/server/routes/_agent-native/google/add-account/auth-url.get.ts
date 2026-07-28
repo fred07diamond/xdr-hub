@@ -1,8 +1,8 @@
 import { defineEventHandler, getQuery, setResponseStatus } from "h3";
 import {
   encodeOAuthState,
+  getAppUrl,
   getSession,
-  resolveOAuthRedirectUri,
 } from "@agent-native/core/server";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -26,21 +26,24 @@ export default defineEventHandler(async (event) => {
     return { error: "Google OAuth is not configured on this server." };
   }
 
-  const redirectUri = resolveOAuthRedirectUri(
+  // Use the app-mounted callback URL (with the /booking base path) instead of
+  // resolveOAuthRedirectUri: the workspace OAuth relay would strip the base
+  // path, and only the /booking-prefixed URI is registered on the Google
+  // OAuth client. The callback route is served directly by this app, so no
+  // relay hop is needed.
+  const redirectUri = getAppUrl(
     event,
     "/_agent-native/google/add-account/callback",
   );
-  if (!redirectUri) {
-    setResponseStatus(event, 400);
-    return { error: "Invalid redirect_uri" };
-  }
 
   const q = getQuery(event);
   const state = encodeOAuthState({
     redirectUri,
     owner: session.email,
     addAccount: true,
-    app: "booking-agent",
+    // Must match the workspace app id (apps/booking) — the workspace OAuth
+    // callback relay 302s root callbacks to `/<app>` based on this value.
+    app: "booking",
   });
 
   const params = new URLSearchParams({
