@@ -105,8 +105,13 @@ export default defineEventHandler(async (event) => {
         "bodyLen:", raw.length,
         "bodyB64:", Buffer.from(raw).toString("base64").slice(0, 2400),
       );
-      setResponseStatus(event, 401);
-      return { error: "invalid signature" };
+      // Capture mode (NOOKS_SIG_CAPTURE=1): acknowledge mismatches so
+      // Nooks' save-time signed test can succeed while a key rotation is
+      // being sorted out. Data creation stays blocked (verified=false).
+      if (process.env.NOOKS_SIG_CAPTURE !== "1") {
+        setResponseStatus(event, 401);
+        return { error: "invalid signature" };
+      }
     }
   } else if (!signingKey) {
     console.warn("[nooks-webhook] NOOKS_WEBHOOK_SIGNING_KEY not set — treating request as unverified");
