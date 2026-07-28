@@ -47,7 +47,8 @@ const feedbackSkipBtn = document.getElementById("feedback-skip-btn");
 const feedbackSubmitBtn = document.getElementById("feedback-submit-btn");
 const feedbackThanks = document.getElementById("feedback-thanks");
 
-let currentProfileUrl = null;
+let currentProfileUrl = null; // canonical identity for API calls (public /in/ URL when known)
+let currentTabUrl = null; // raw tab URL — used only to detect SPA navigation
 let feedbackSentiment = null;
 let cachedScrape = null; // reuse in draftBtn click
 let activeTabId = null;
@@ -248,6 +249,7 @@ async function startEnrichment() {
 
 function resetPanel() {
   currentProfileUrl = null;
+  currentTabUrl = null;
   cachedScrape = null;
 
   // Restore the on-LinkedIn view (may have been hidden when navigating away).
@@ -324,7 +326,8 @@ async function init({ navTriggered = false } = {}) {
     return;
   }
 
-  currentProfileUrl = url.split("?")[0];
+  currentTabUrl = url.split("?")[0];
+  currentProfileUrl = currentTabUrl;
   activeTabId = tab.id;
 
   // navTriggered: wait 800 ms before the first scrape so LinkedIn finishes loading
@@ -337,6 +340,10 @@ async function init({ navTriggered = false } = {}) {
   });
   if (scrapeResult?.ok && scrapeResult.data) {
     cachedScrape = scrapeResult.data;
+    // Adopt the scraper's canonical URL (on Sales Nav this is the public /in/
+    // URL when the page exposes one) so drafts, mark-sent, and HubSpot checks
+    // share one identity with captures from regular LinkedIn.
+    if (scrapeResult.data.profileUrl) currentProfileUrl = scrapeResult.data.profileUrl;
     renderProfileCard(scrapeResult.data);
     if (!scrapeResult.data.role) startEnrichment();
   } else {
@@ -512,6 +519,7 @@ draftBtn.addEventListener("click", async () => {
       const scrapeResult = await scrapeTab(tab.id, { retryMs: 600, maxRetries: 4 });
       if (!scrapeResult?.ok) throw new Error("Could not read the profile. Make sure you're on a LinkedIn profile page.");
       scrapeData = scrapeResult.data;
+      if (scrapeData.profileUrl) currentProfileUrl = scrapeData.profileUrl;
       renderProfileCard(scrapeData);
     }
 
@@ -574,13 +582,17 @@ function startUrlPolling() {
     }
     if (!tab) return;
     const url = tab.url || "";
-    const newProfileUrl = url.split("?")[0];
-    if (isProfileUrl(url) && newProfileUrl !== currentProfileUrl) {
+    // Compare against the raw tab URL — currentProfileUrl may hold the
+    // canonical /in/ identity for a Sales Nav page, which never equals the
+    // tab's /sales/lead/ URL and would otherwise re-init forever.
+    const newTabUrl = url.split("?")[0];
+    if (isProfileUrl(url) && newTabUrl !== currentTabUrl) {
       isInitializing = true;
       resetPanel();
       init({ navTriggered: true }).finally(() => { isInitializing = false; });
     } else if (!isProfileUrl(url) && currentProfileUrl) {
       currentProfileUrl = null;
+      currentTabUrl = null;
       notLinkedin.style.display = "block";
       mainContent.style.display = "none";
     }
@@ -948,7 +960,8 @@ function startUrlPollingWithEngagers() {
     if (isProfileUrl(url)) {
       // Show Profile tab; hide Engagers tab from switcher focus but keep switcher visible
       tabSwitcher.style.display = "flex";
-      if (cleanUrl !== currentProfileUrl) {
+      // Raw-tab-URL comparison — see startUrlPolling for why.
+      if (cleanUrl !== currentTabUrl) {
         isInitializing = true;
         resetPanel();
         switchTab("profile");
@@ -966,6 +979,7 @@ function startUrlPollingWithEngagers() {
         }
         currentPostUrl = cleanUrl;
         currentProfileUrl = cleanUrl;
+        currentTabUrl = cleanUrl;
         notLinkedin.style.display = "none";
         mainContent.style.display = "none";
         switchTab("engagers");
@@ -984,6 +998,7 @@ function startUrlPollingWithEngagers() {
       switchTab("profile");
       if (currentProfileUrl) {
         currentProfileUrl = null;
+        currentTabUrl = null;
         notLinkedin.style.display = "block";
         mainContent.style.display = "none";
       }

@@ -181,15 +181,51 @@ function scrapeBodyText(knownName) {
 // ── Sales Navigator top-card scraper ─────────────────────────────────────────
 // data-anonymize attributes are stable across Sales Nav deploys — LinkedIn's own
 // GDPR anonymisation pipeline keeps them consistent regardless of class rotation.
+// LinkedIn has used several attribute values over time (e.g. "headline" vs
+// "person-tagline", "summary" vs "person-blurb"), so each field tries the known
+// variants. Matches inside the lead top card (the section containing the
+// person-name element) win over document-wide matches, because the experience
+// list further down the page carries job-title/company-name attributes too.
+function snField(names, scope) {
+  for (const n of names) {
+    const el = (scope || document).querySelector(`[data-anonymize="${n}"]`);
+    const t = el?.innerText?.trim();
+    if (t) return t;
+  }
+  return null;
+}
+
 function scrapeSalesNavTopCard() {
+  const nameEl = document.querySelector('[data-anonymize="person-name"]');
+  const topCard =
+    nameEl?.closest("section") ||
+    nameEl?.parentElement?.parentElement?.parentElement ||
+    null;
+  const scoped = (names) =>
+    (topCard ? snField(names, topCard) : null) || snField(names);
+
   return {
-    name:     document.querySelector('[data-anonymize="person-name"]')?.innerText?.trim()    || null,
-    headline: document.querySelector('[data-anonymize="person-tagline"]')?.innerText?.trim() || null,
-    location: document.querySelector('[data-anonymize="location"]')?.innerText?.trim()       || null,
-    role:     document.querySelector('[data-anonymize="job-title"]')?.innerText?.trim()      || null,
-    company:  document.querySelector('[data-anonymize="company-name"]')?.innerText?.trim()   || null,
-    about:    document.querySelector('[data-anonymize="summary"]')?.innerText?.trim()        || null,
+    name:     nameEl?.innerText?.trim() || null,
+    headline: scoped(["headline", "person-tagline", "person-headline"]),
+    location: scoped(["location", "person-location"]),
+    role:     scoped(["job-title", "person-title", "title"]),
+    company:  scoped(["company-name", "person-company", "company"]),
+    about:    snField(["person-blurb", "summary", "person-summary"]),
   };
+}
+
+// Sales Nav lead pages usually link to the person's public LinkedIn profile
+// somewhere on the page (top-card links, overflow menu, embedded cards).
+// Capturing it lets the platform key the prospect by the same /in/ URL as
+// captures from regular LinkedIn — no duplicate rows, shared draft history.
+function findPublicProfileUrl() {
+  const anchors = Array.from(document.querySelectorAll("a[href]"));
+  for (const a of anchors) {
+    const href = a.getAttribute("href") || "";
+    const m = href.match(/^(?:https?:\/\/(?:www\.)?linkedin\.com)?(\/in\/[^/?#]+)/i);
+    if (m) return `https://www.linkedin.com${m[1]}`;
+  }
+  return null;
 }
 
 function scrapeProfile() {
@@ -221,6 +257,10 @@ function scrapeProfile() {
         company = company || atMatch[2].trim();
       }
     }
+    // Experience-list fallback: the first job-title/company-name pair in the
+    // Sales Nav experience section is the current position.
+    if (!role)    role    = snField(["job-title"]) || bodyData.expRole || null;
+    if (!company) company = snField(["company-name"]) || bodyData.expCompany || null;
     // Fallback about for Sales Nav: body text scan (same strategy as regular path)
     if (!about) {
       const NOISE = /^(About|Show more|Show less|Show all|See more|See less|\d+\s*(connections?|followers?|reactions?))$/i;
@@ -242,8 +282,13 @@ function scrapeProfile() {
       if (best.length > 0) about = best;
     }
 
+    // Prefer the public /in/ URL when the page exposes one — keys the prospect
+    // identically to captures from regular LinkedIn (dedupe, shared drafts).
+    const publicUrl = findPublicProfileUrl();
+    const salesNavUrl = window.location.href.split("?")[0];
     return {
-      profileUrl: window.location.href.split("?")[0],
+      profileUrl: publicUrl || salesNavUrl,
+      salesNavUrl,
       name, headline, location, role, company,
       tenure: null, about,
       recentActivity: getAll(SELECTORS.recentActivity, 4) || null,
@@ -503,16 +548,34 @@ function gatherConnectCandidates() {
 // broke the profile-name filter for a profile that had a perfectly normal,
 // directly-visible Connect button.
 function getProfileNameEl() {
-  return (document.querySelector("main, [role='main']") || document.body).querySelector("h1, h2");
+  // Sales Nav marks the lead name with a stable data-anonymize attribute; the
+  // h1/h2 heuristic below is for regular LinkedIn profile pages.
+  return (
+    document.querySelector('[data-anonymize="person-name"]') ||
+    (document.querySelector("main, [role='main']") || document.body).querySelector("h1, h2")
+  );
 }
 
 function findMoreActionsButton() {
   const nameEl = getProfileNameEl();
   const cardEl = nameEl?.closest("section") ?? nameEl?.parentElement ?? document;
-  return Array.from(cardEl.querySelectorAll("button, [role='button']")).find((el) => {
-    const label = (el.getAttribute("aria-label") || "").trim();
-    return /^more(\s+actions?)?$/i.test(label) && el.offsetParent !== null;
-  });
+  // Regular LinkedIn: aria-label "More" / "More actions".
+  // Sales Nav: aria-label like "Open actions overflow menu" (wording drifts,
+  // so match on "overflow" too), or an unlabeled "…" button next to Message.
+  const search = (root, labelTest) =>
+    Array.from(root.querySelectorAll("button, [role='button']")).find((el) => {
+      const label = (el.getAttribute("aria-label") || "").trim();
+      return labelTest(label) && el.offsetParent !== null;
+    });
+  const anyOverflow = (label) =>
+    /^more(\s+actions?)?$/i.test(label) || /overflow/i.test(label) || /open actions/i.test(label);
+  // Document-wide fallback matches ONLY explicit overflow labels — a bare
+  // "More" outside the top card is LinkedIn's global-nav collapse button.
+  const strictOverflow = (label) => /overflow/i.test(label) || /open actions/i.test(label);
+  return (
+    search(cardEl, anyOverflow) ||
+    (cardEl !== document ? search(document, strictOverflow) : undefined)
+  );
 }
 
 async function sendConnectionRequest(note) {
@@ -654,6 +717,34 @@ async function sendConnectionRequest(note) {
         }
       }
 
+      // --- Approach 1.5: open dropdown containers ---
+      // Sales Nav (and some regular-LinkedIn variants) render the open menu in
+      // a recognizable container. Scoping to it avoids the decoy Connect
+      // buttons in "People similar to" cards elsewhere on the page.
+      if (candidates.length === 0) {
+        const menus = deepQueryAll(
+          "[role='menu'], .artdeco-dropdown__content, ul[class*='dropdown'], div[class*='dropdown-options']",
+        );
+        for (const menu of menus) {
+          if (menu.offsetParent === null) continue;
+          const connectEl = Array.from(
+            menu.querySelectorAll("button, a, [role='button'], [role='menuitem'], li, div"),
+          ).find((el) => {
+            const text = (el.innerText || el.textContent || "").trim();
+            return connectRe.test(text) && text.length < 40;
+          });
+          if (connectEl) {
+            candidates = [{
+              index: 0, tag: connectEl.tagName,
+              text: (connectEl.innerText || connectEl.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60),
+              ariaLabel: connectEl.getAttribute("aria-label"), contextText: "", _el: connectEl,
+            }];
+            break;
+          }
+        }
+        console.log("[BLI] dropdown-container candidates:", candidates.length);
+      }
+
       // --- Approach 2: elementFromPoint grid ---
       if (candidates.length === 0) {
         const btnRect = moreBtn.getBoundingClientRect();
@@ -736,7 +827,14 @@ async function sendConnectionRequest(note) {
       btns.find((b) => /add.*note|include.*note/i.test(b.innerText))
     );
   };
-  const findTextarea = () => deepQueryAll('textarea[name="message"]')[0] ?? null;
+  // Regular LinkedIn uses textarea[name="message"]; Sales Nav's connect modal
+  // uses a different name/id, so fall back to any textarea inside an open
+  // dialog/modal.
+  const findTextarea = () =>
+    deepQueryAll('textarea[name="message"]')[0] ??
+    deepQueryAll('textarea[id*="invitation" i]')[0] ??
+    deepQueryAll("[role='dialog'] textarea, .artdeco-modal textarea")[0] ??
+    null;
 
   let textarea = null;
   const waitResult = await waitForEl(() => findAddNoteBtn() ?? findTextarea(), { timeout: 10000 });
@@ -760,18 +858,39 @@ async function sendConnectionRequest(note) {
   fillReactTextarea(textarea, note.slice(0, 300));
   await new Promise((r) => setTimeout(r, 200));
 
-  // 4. Send — scoped to the dialog
-  const dialog = textarea.closest('[role="dialog"]') ?? document;
+  // 4. Send — scoped to the dialog. Regular LinkedIn: "Send"; Sales Nav:
+  // "Send invitation". Never match "Send without a note" — that would drop
+  // the note we just filled in.
+  const dialog =
+    textarea.closest('[role="dialog"]') ??
+    textarea.closest(".artdeco-modal") ??
+    document;
   const sendBtn = await waitForEl(() =>
-    deepQueryAll("button", dialog).find(
-      (b) => b.innerText.trim() === "Send" && !b.disabled
-    )
+    deepQueryAll("button", dialog).find((b) => {
+      const t = b.innerText.trim();
+      return /^send(\s+invitation|\s+now)?$/i.test(t) && !b.disabled;
+    })
   );
   if (!sendBtn) return { ok: false, error: "Send button not found in modal." };
 
   sendBtn.click();
   return { ok: true };
 }
+
+// Sales Nav diagnostic — call window.__bliDiagnoseSalesNav() in the tab console
+// on a lead page and paste the output when scraping misses fields.
+window.__bliDiagnoseSalesNav = function () {
+  const inventory = Array.from(document.querySelectorAll("[data-anonymize]"))
+    .slice(0, 80)
+    .map((el) => `${el.getAttribute("data-anonymize")} → "${(el.innerText || "").trim().replace(/\s+/g, " ").slice(0, 70)}"`);
+  console.log("[BLI SN] data-anonymize inventory:\n" + inventory.join("\n"));
+  console.log("[BLI SN] scrape result:", scrapeProfile());
+  const buttons = Array.from(document.querySelectorAll("button, [role='button']"))
+    .filter((b) => b.offsetParent !== null)
+    .slice(0, 60)
+    .map((b) => `"${(b.innerText || "").trim().replace(/\s+/g, " ").slice(0, 30)}" aria="${b.getAttribute("aria-label") || ""}"`);
+  console.log("[BLI SN] visible buttons:\n" + buttons.join("\n"));
+};
 
 // Diagnostic helper — call window.__bliDiagnose() in the LinkedIn tab console
 window.__bliDiagnose = function () {
