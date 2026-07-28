@@ -52,6 +52,26 @@ function useGoogleStatus() {
   });
 }
 
+type ZoomStatus = {
+  connected: boolean;
+  accounts: { email: string }[];
+  configured: boolean;
+};
+
+function useZoomStatus() {
+  return useQuery<ZoomStatus>({
+    queryKey: ["zoom-status"],
+    queryFn: async () => {
+      const res = await fetch(agentNativePath("/_agent-native/zoom/status"), {
+        credentials: "include",
+      });
+      if (!res.ok) return { connected: false, accounts: [], configured: false };
+      return res.json() as Promise<ZoomStatus>;
+    },
+    staleTime: 15_000,
+  });
+}
+
 export default function SettingsRoute() {
   const t = useT();
   const agentSettingsTabs = useAgentSettingsTabs();
@@ -106,6 +126,51 @@ export default function SettingsRoute() {
       setWantUrl(false);
     }
   }, [authUrl.error]);
+
+  const zoomStatus = useZoomStatus();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const disconnectZoom = useActionMutation("disconnect-zoom") as any;
+  const [wantZoomUrl, setWantZoomUrl] = useState(false);
+  const zoomAuthUrl = useQuery<{ url: string }>({
+    queryKey: ["zoom-auth-url"],
+    queryFn: async () => {
+      const res = await fetch(
+        agentNativePath("/_agent-native/zoom/auth-url"),
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error((body.error as string) || "Failed to get Zoom auth URL");
+      }
+      return res.json() as Promise<{ url: string }>;
+    },
+    enabled: wantZoomUrl,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!wantZoomUrl || !zoomAuthUrl.data?.url) return;
+    setWantZoomUrl(false);
+    const popup = window.open(zoomAuthUrl.data.url, "_blank");
+    toast("Complete the Zoom sign-in in the new tab — this page will update automatically.");
+    const timer = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(timer);
+        void queryClient.invalidateQueries({ queryKey: ["zoom-status"] });
+      }
+    }, 800);
+  }, [wantZoomUrl, zoomAuthUrl.data, queryClient]);
+
+  useEffect(() => {
+    if (zoomAuthUrl.error) {
+      toast.error(
+        zoomAuthUrl.error instanceof Error
+          ? zoomAuthUrl.error.message
+          : "Failed to connect Zoom",
+      );
+      setWantZoomUrl(false);
+    }
+  }, [zoomAuthUrl.error]);
 
   const generalSearchEntries = useMemo<SettingsSearchEntry[]>(
     () => [
@@ -192,6 +257,79 @@ export default function SettingsRoute() {
                     size="sm"
                     onClick={() => setWantUrl(true)}
                     disabled={authUrl.isLoading || authUrl.isFetching}
+                  >
+                    <IconExternalLink className="me-1.5 h-3.5 w-3.5" />
+                    Connect
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="zoom" className="scroll-mt-16">
+            <CardHeader>
+              <CardTitle className="text-base">Zoom</CardTitle>
+              <CardDescription>
+                Connect your Zoom account so booked meetings can generate a
+                unique Zoom link automatically.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  {zoomStatus.data?.connected ? (
+                    <>
+                      <IconCircleCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      <div>
+                        <p className="text-sm font-medium">Connected</p>
+                        {(zoomStatus.data.accounts?.length ?? 0) > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {zoomStatus.data.accounts.map((a) => a.email).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <IconCircleX className="h-5 w-5 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        {zoomStatus.data && !zoomStatus.data.configured
+                          ? "Not configured — a workspace admin must set ZOOM_CLIENT_ID and ZOOM_CLIENT_SECRET."
+                          : "Not connected"}
+                      </p>
+                    </>
+                  )}
+                </div>
+                {zoomStatus.data?.connected ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+                      disconnectZoom.mutate(
+                        {},
+                        {
+                          onSuccess: () => {
+                            void queryClient.invalidateQueries({ queryKey: ["zoom-status"] });
+                            toast.success("Zoom disconnected.");
+                          },
+                          onError: () => toast.error("Failed to disconnect."),
+                        },
+                      );
+                    }}
+                    disabled={disconnectZoom.isPending}
+                  >
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => setWantZoomUrl(true)}
+                    disabled={
+                      zoomAuthUrl.isLoading ||
+                      zoomAuthUrl.isFetching ||
+                      zoomStatus.data?.configured === false
+                    }
                   >
                     <IconExternalLink className="me-1.5 h-3.5 w-3.5" />
                     Connect

@@ -4,17 +4,23 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { bookedMeetings, generatedNotes } from "../server/db/schema.js";
 import { bookCalendarEvent } from "../server/helpers/book-calendar-event.js";
+import { createZoomMeeting } from "../server/helpers/create-zoom-meeting.js";
 import { requireRole } from "../server/helpers/require-role.js";
+
+const MEETING_DURATION_MIN = 45;
 
 export default defineAction({
   description:
     "Create or update the Google Calendar event for a confirmed meeting — books on the XDR's connected Google Calendar with the AE and prospect as attendees, or moves the existing event to the current meeting time.",
   schema: z.object({
     meetingId: z.string().min(1),
+    // Generate a unique Zoom meeting on the XDR's connected Zoom account and
+    // use its join link as the event's conference.
+    generateZoom: z.boolean().optional(),
   }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ meetingId }, ctx) => {
+  run: async ({ meetingId, generateZoom }, ctx) => {
     const role = await requireRole(ctx?.userEmail, ["xdr", "admin"]);
     const db = getDb();
 
@@ -51,18 +57,35 @@ export default defineAction({
       .where(eq(generatedNotes.meetingId, meetingId))
       .limit(1);
 
+    const title = `Builder.io Discovery — ${meeting.prospectName} (${meeting.company})`;
+
     // A stored Meet/Calendar link came from a previous auto-booking — only an
     // external link (Zoom, etc.) counts as a user-provided conference link.
-    const customMeetingLink =
+    let customMeetingLink =
       meeting.meetingLink &&
       !/meet\.google\.com|calendar\.google\.com/.test(meeting.meetingLink)
         ? meeting.meetingLink
         : null;
 
+    if (generateZoom) {
+      try {
+        const zoom = await createZoomMeeting({
+          ownerEmail: meeting.xdrUserEmail,
+          topic: title,
+          startIso: meeting.meetingDatetime,
+          durationMinutes: MEETING_DURATION_MIN,
+        });
+        customMeetingLink = zoom.joinUrl;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw Object.assign(new Error(msg), { statusCode: 502 });
+      }
+    }
+
     let result: { eventId: string; meetingLink: string };
     try {
       result = await bookCalendarEvent({
-        title: `Builder.io Discovery — ${meeting.prospectName} (${meeting.company})`,
+        title,
         datetime: meeting.meetingDatetime,
         prospectEmail: meeting.prospectEmail ?? undefined,
         aeEmail: meeting.aeUserEmail,
