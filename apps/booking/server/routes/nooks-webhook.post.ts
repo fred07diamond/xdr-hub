@@ -103,6 +103,7 @@ export default defineEventHandler(async (event) => {
         "[nooks-webhook] signature verification failed — header:",
         sigHeader.slice(0, 120),
         "bodyLen:", raw.length,
+        "bodyB64:", Buffer.from(raw).toString("base64").slice(0, 2400),
       );
       setResponseStatus(event, 401);
       return { error: "invalid signature" };
