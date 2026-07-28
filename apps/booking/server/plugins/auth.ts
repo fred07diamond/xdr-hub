@@ -5,6 +5,10 @@ import { createAuthPlugin } from "@agent-native/core/server";
 // googleScopes requests calendar access — requires GOOGLE_CLIENT_ID/SECRET in .env
 // and http://localhost:8080/_agent-native/google/callback in authorized redirect URIs.
 export default createAuthPlugin({
+  // Nooks delivers call-logging webhooks (and its save-time test ping)
+  // without a session — the global auth guard must let the path through
+  // before the action's own requiresAuth: false applies.
+  publicPaths: ["/_agent-native/actions/receive-nooks-webhook"],
   googleScopes: [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events.readonly",
