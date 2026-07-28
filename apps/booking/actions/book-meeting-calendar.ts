@@ -77,6 +77,9 @@ export default defineAction({
           topic: title,
           startIso: meeting.meetingDatetime,
           durationMinutes: MEETING_DURATION_MIN,
+          // Reuse the meeting's existing Zoom link when there is one — patch
+          // its time/topic instead of minting a new link on every save.
+          existingJoinUrl: customMeetingLink,
         });
         customMeetingLink = zoom.joinUrl;
         if (meeting.aeUserEmail && zoom.hostEmail !== meeting.aeUserEmail) {

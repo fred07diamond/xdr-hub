@@ -206,16 +206,13 @@ interface EditDraft {
   prospectEmail: string;
   meetingDatetime: string;
   aeUserEmail: string;
-  meetingLink: string;
   status: "pending" | "confirmed" | "cancelled";
 }
 
-// A stored link that isn't Google Meet/Calendar means Zoom (or similar) was chosen.
+// A stored link that isn't Google Meet/Calendar means Zoom was chosen.
 function isCustomConferenceLink(link: string | null | undefined): boolean {
   return !!link && !/meet\.google\.com|calendar\.google\.com/.test(link);
 }
-
-const ZOOM_LINK_STORAGE_KEY = "booking-zoom-link";
 
 function toLocalDatetimeValue(iso: string | null): string {
   if (!iso) return "";
@@ -244,7 +241,7 @@ function MeetingCard({
   const [isEditing, setIsEditing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [conferencing, setConferencing] = useState<"meet" | "zoom" | "zoom-auto">(
+  const [conferencing, setConferencing] = useState<"meet" | "zoom">(
     isCustomConferenceLink(m.meetingLink) ? "zoom" : "meet",
   );
   const [draft, setDraft] = useState<EditDraft>({
@@ -253,7 +250,6 @@ function MeetingCard({
     prospectEmail: m.prospectEmail ?? "",
     meetingDatetime: toLocalDatetimeValue(m.meetingDatetime),
     aeUserEmail: m.aeUserEmail,
-    meetingLink: isCustomConferenceLink(m.meetingLink) ? m.meetingLink! : "",
     status: (m.status as EditDraft["status"]) ?? "pending",
   });
 
@@ -294,7 +290,6 @@ function MeetingCard({
       prospectEmail: m.prospectEmail ?? "",
       meetingDatetime: toLocalDatetimeValue(m.meetingDatetime),
       aeUserEmail: m.aeUserEmail,
-      meetingLink: isCustomConferenceLink(m.meetingLink) ? m.meetingLink! : "",
       status: (m.status as EditDraft["status"]) ?? "pending",
     });
     setIsEditing(true);
@@ -308,18 +303,6 @@ function MeetingCard({
 
   async function handleSave() {
     setSaveError(null);
-    const zoomLink = draft.meetingLink.trim();
-    if (conferencing === "zoom" && !zoomLink) {
-      setSaveError("Enter your Zoom link, or switch conferencing to Google Meet.");
-      return;
-    }
-    if (conferencing === "zoom") {
-      try {
-        localStorage.setItem(ZOOM_LINK_STORAGE_KEY, zoomLink);
-      } catch {
-        // remembering the link is best-effort
-      }
-    }
     try {
       await updateMeeting.mutateAsync({
         meetingId: m.id,
@@ -330,11 +313,10 @@ function MeetingCard({
           ? new Date(draft.meetingDatetime).toISOString()
           : null,
         aeUserEmail: draft.aeUserEmail || undefined,
-        // zoom-auto: leave the stored link alone — the booking action
-        // overwrites it with the freshly generated Zoom join link.
-        ...(conferencing !== "zoom-auto"
-          ? { meetingLink: conferencing === "zoom" ? zoomLink : null }
-          : {}),
+        // Zoom: leave the stored link alone — the booking action creates or
+        // patches the Zoom meeting and saves its join link. Meet: clear it so
+        // the calendar event switches back to a Meet conference.
+        ...(conferencing === "meet" ? { meetingLink: null } : {}),
         status: draft.status,
       });
     } catch (err) {
@@ -346,7 +328,7 @@ function MeetingCard({
       try {
         const res = await bookCalendar.mutateAsync({
           meetingId: m.id,
-          ...(conferencing === "zoom-auto" ? { generateZoom: true } : {}),
+          ...(conferencing === "zoom" ? { generateZoom: true } : {}),
         });
         for (const w of (res?.warnings as string[] | undefined) ?? []) {
           toast.warning(w, { duration: 10_000 });
@@ -520,44 +502,13 @@ function MeetingCard({
               <Label className="text-xs text-muted-foreground">Video Conferencing</Label>
               <select
                 value={conferencing}
-                onChange={(e) => {
-                  const next = e.target.value as "meet" | "zoom" | "zoom-auto";
-                  setConferencing(next);
-                  if (next === "zoom" && !draft.meetingLink) {
-                    let remembered = "";
-                    try {
-                      remembered = localStorage.getItem(ZOOM_LINK_STORAGE_KEY) ?? "";
-                    } catch {
-                      // localStorage unavailable — start blank
-                    }
-                    if (remembered) setDraft((d) => ({ ...d, meetingLink: remembered }));
-                  }
-                }}
+                onChange={(e) => setConferencing(e.target.value as "meet" | "zoom")}
                 className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               >
+                <option value="zoom">Zoom</option>
                 <option value="meet">Google Meet</option>
-                <option value="zoom">Zoom — personal link</option>
-                <option value="zoom-auto">Zoom — generate unique meeting</option>
               </select>
-              {conferencing === "zoom-auto" && (
-                <p className="text-xs text-muted-foreground">
-                  Requires Zoom connected in Settings. A new Zoom meeting is
-                  created each time you save.
-                </p>
-              )}
             </div>
-            {conferencing === "zoom" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Zoom Link</Label>
-                <Input
-                  type="url"
-                  value={draft.meetingLink}
-                  onChange={(e) => setDraft((d) => ({ ...d, meetingLink: e.target.value }))}
-                  className="h-8 text-sm"
-                  placeholder="https://builder.zoom.us/j/…"
-                />
-              </div>
-            )}
           </div>
           <div className="flex gap-2 pt-1">
             <Button type="button" size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs px-3">
