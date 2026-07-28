@@ -72,6 +72,20 @@ function useZoomStatus() {
   });
 }
 
+function useNooksStatus() {
+  return useQuery<ZoomStatus>({
+    queryKey: ["nooks-status"],
+    queryFn: async () => {
+      const res = await fetch(agentNativePath("/_agent-native/nooks/status"), {
+        credentials: "include",
+      });
+      if (!res.ok) return { connected: false, accounts: [], configured: false };
+      return res.json() as Promise<ZoomStatus>;
+    },
+    staleTime: 15_000,
+  });
+}
+
 export default function SettingsRoute() {
   const t = useT();
   const agentSettingsTabs = useAgentSettingsTabs();
@@ -171,6 +185,51 @@ export default function SettingsRoute() {
       setWantZoomUrl(false);
     }
   }, [zoomAuthUrl.error]);
+
+  const nooksStatus = useNooksStatus();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const disconnectNooks = useActionMutation("disconnect-nooks") as any;
+  const [wantNooksUrl, setWantNooksUrl] = useState(false);
+  const nooksAuthUrl = useQuery<{ url: string }>({
+    queryKey: ["nooks-auth-url"],
+    queryFn: async () => {
+      const res = await fetch(
+        agentNativePath("/_agent-native/nooks/auth-url"),
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error((body.error as string) || "Failed to get Nooks auth URL");
+      }
+      return res.json() as Promise<{ url: string }>;
+    },
+    enabled: wantNooksUrl,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!wantNooksUrl || !nooksAuthUrl.data?.url) return;
+    setWantNooksUrl(false);
+    const popup = window.open(nooksAuthUrl.data.url, "_blank");
+    toast("Complete the Nooks sign-in in the new tab — this page will update automatically.");
+    const timer = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(timer);
+        void queryClient.invalidateQueries({ queryKey: ["nooks-status"] });
+      }
+    }, 800);
+  }, [wantNooksUrl, nooksAuthUrl.data, queryClient]);
+
+  useEffect(() => {
+    if (nooksAuthUrl.error) {
+      toast.error(
+        nooksAuthUrl.error instanceof Error
+          ? nooksAuthUrl.error.message
+          : "Failed to connect Nooks",
+      );
+      setWantNooksUrl(false);
+    }
+  }, [nooksAuthUrl.error]);
 
   const generalSearchEntries = useMemo<SettingsSearchEntry[]>(
     () => [
@@ -329,6 +388,79 @@ export default function SettingsRoute() {
                       zoomAuthUrl.isLoading ||
                       zoomAuthUrl.isFetching ||
                       zoomStatus.data?.configured === false
+                    }
+                  >
+                    <IconExternalLink className="me-1.5 h-3.5 w-3.5" />
+                    Connect
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="nooks" className="scroll-mt-16">
+            <CardHeader>
+              <CardTitle className="text-base">Nooks</CardTitle>
+              <CardDescription>
+                Connect your Nooks account so your booked-meeting calls can
+                flow into the workflow automatically.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  {nooksStatus.data?.connected ? (
+                    <>
+                      <IconCircleCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      <div>
+                        <p className="text-sm font-medium">Connected</p>
+                        {(nooksStatus.data.accounts?.length ?? 0) > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {nooksStatus.data.accounts.map((a) => a.email).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <IconCircleX className="h-5 w-5 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        {nooksStatus.data && !nooksStatus.data.configured
+                          ? "Not configured — a workspace admin must set NOOKS_CLIENT_ID and NOOKS_CLIENT_SECRET."
+                          : "Not connected"}
+                      </p>
+                    </>
+                  )}
+                </div>
+                {nooksStatus.data?.connected ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+                      disconnectNooks.mutate(
+                        {},
+                        {
+                          onSuccess: () => {
+                            void queryClient.invalidateQueries({ queryKey: ["nooks-status"] });
+                            toast.success("Nooks disconnected.");
+                          },
+                          onError: () => toast.error("Failed to disconnect."),
+                        },
+                      );
+                    }}
+                    disabled={disconnectNooks.isPending}
+                  >
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => setWantNooksUrl(true)}
+                    disabled={
+                      nooksAuthUrl.isLoading ||
+                      nooksAuthUrl.isFetching ||
+                      nooksStatus.data?.configured === false
                     }
                   >
                     <IconExternalLink className="me-1.5 h-3.5 w-3.5" />

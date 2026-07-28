@@ -6,9 +6,9 @@ import { createAuthPlugin } from "@agent-native/core/server";
 // and http://localhost:8080/_agent-native/google/callback in authorized redirect URIs.
 export default createAuthPlugin({
   // Nooks delivers call-logging webhooks (and its save-time test ping)
-  // without a session — the global auth guard must let the path through
-  // before the action's own requiresAuth: false applies.
-  publicPaths: ["/_agent-native/actions/receive-nooks-webhook"],
+  // without a session — the global auth guard must let the path through.
+  // Authenticity is enforced inside the route via the HMAC signing key.
+  publicPaths: ["/nooks-webhook"],
   googleScopes: [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events.readonly",
