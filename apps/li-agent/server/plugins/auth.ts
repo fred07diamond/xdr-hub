@@ -5,6 +5,7 @@ import { createAuthPlugin } from "@agent-native/core/server";
 // through before the action route's requiresAuth: false check can fire.
 export default createAuthPlugin({
   publicPaths: [
+    "/privacy",
     "/_agent-native/actions/capture-profile",
     "/_agent-native/actions/get-draft",
     "/_agent-native/actions/mark-sent",
