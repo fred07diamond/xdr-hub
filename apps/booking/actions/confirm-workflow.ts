@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { bookedMeetings, deals, generatedNotes } from "../server/db/schema.js";
+import { fillAePlaceholders, getOwnerName } from "../server/helpers/ae-name.js";
 import { bookCalendarEvent } from "../server/helpers/book-calendar-event.js";
 import { createHubspotDeal } from "../server/helpers/create-hubspot-deal.js";
 import { requireRole } from "../server/helpers/require-role.js";
@@ -74,6 +75,16 @@ export default defineAction({
     if (claimed.length === 0) {
       // Meeting exists (we read it above) but was not in pending state
       throw Object.assign(new Error("Meeting already confirmed"), { statusCode: 409 });
+    }
+
+    // The AE may have been corrected during review — fill any placeholders
+    // still present with the final AE's name before sending anything.
+    const aeName = await getOwnerName(meetingDetails.aeEmail);
+    if (aeName) {
+      notes.followUpEmail = fillAePlaceholders(notes.followUpEmail, aeName);
+      if (meetingDetails.emailSubject) {
+        meetingDetails.emailSubject = fillAePlaceholders(meetingDetails.emailSubject, aeName);
+      }
     }
 
     const subject =

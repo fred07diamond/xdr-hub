@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { bookedMeetings, generatedNotes } from "../server/db/schema.js";
+import { fillAePlaceholders, getOwnerName } from "../server/helpers/ae-name.js";
 import { generateNotes } from "../server/helpers/generate-notes.js";
 import { lookupContactByName } from "../server/helpers/lookup-contact.js";
 import { requireRole } from "../server/helpers/require-role.js";
@@ -28,6 +29,16 @@ export default defineAction({
     const company = hubspot.company ?? notes.company;
     const resolvedAeEmail = hubspot.companyOwnerEmail ?? null;
     const xdrOwnerEmail = hubspot.contactOwnerEmail ?? null;
+
+    // The AI writes [AE First Name]/[AE Full Name] placeholders because the
+    // transcript never names the AE — fill them now that HubSpot resolved one.
+    if (resolvedAeEmail) {
+      const aeName = await getOwnerName(resolvedAeEmail);
+      if (aeName) {
+        notes.followUpEmail = fillAePlaceholders(notes.followUpEmail, aeName);
+        notes.emailSubject = fillAePlaceholders(notes.emailSubject, aeName);
+      }
+    }
 
     const db = getDb();
     const meetingId = nanoid();
