@@ -2,8 +2,9 @@ import { getOAuthAccounts } from "@agent-native/core/server";
 import { saveOAuthTokens } from "@agent-native/core/oauth-tokens";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+// sendUpdates=all makes Google email the invite to attendees on create/change.
 const CALENDAR_EVENTS_URL =
-  "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1";
+  "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all";
 const MEETING_DURATION_MIN = 45;
 
 async function refreshAccessToken(refreshToken: string): Promise<string | null> {
@@ -36,6 +37,7 @@ export async function bookCalendarEvent({
   aeEmail,
   xdrEmail,
   description,
+  existingEventId,
 }: {
   title: string;
   datetime: string;
@@ -43,6 +45,8 @@ export async function bookCalendarEvent({
   aeEmail: string;
   xdrEmail: string;
   description: string;
+  /** When set, updates this event in place instead of creating a new one. */
+  existingEventId?: string | null;
 }): Promise<{ eventId: string; meetingLink: string }> {
   const start = new Date(datetime);
   if (Number.isNaN(start.getTime())) {
@@ -64,12 +68,15 @@ export async function bookCalendarEvent({
     .filter(Boolean)
     .map((email) => ({ email }));
 
-  const body = JSON.stringify({
+  const eventFields = {
     summary: title,
     description,
     start: { dateTime: start.toISOString() },
     end: { dateTime: end.toISOString() },
     attendees,
+  };
+  const insertBody = JSON.stringify({
+    ...eventFields,
     conferenceData: {
       createRequest: {
         requestId: `xdr-booking-${start.getTime()}-${xdrEmail.split("@")[0]}`,
@@ -77,18 +84,26 @@ export async function bookCalendarEvent({
       },
     },
   });
+  // Patch keeps the existing Meet link; sendUpdates notifies attendees of the change.
+  const patchBody = JSON.stringify(eventFields);
 
-  const createEvent = (accessToken: string) =>
-    fetch(CALENDAR_EVENTS_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body,
-    });
+  const sendEvent = async (accessToken: string) => {
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+    if (existingEventId) {
+      const patchRes = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(existingEventId)}?sendUpdates=all`,
+        { method: "PATCH", headers, body: patchBody },
+      );
+      // Event was deleted in Google — fall through to creating a fresh one.
+      if (patchRes.status !== 404 && patchRes.status !== 410) return patchRes;
+    }
+    return fetch(CALENDAR_EVENTS_URL, { method: "POST", headers, body: insertBody });
+  };
 
-  let res = await createEvent(token);
+  let res = await sendEvent(token);
 
   if (res.status === 401 && refreshToken) {
     const newToken = await refreshAccessToken(refreshToken);
@@ -100,7 +115,7 @@ export async function bookCalendarEvent({
         xdrEmail,
       );
       token = newToken;
-      res = await createEvent(newToken);
+      res = await sendEvent(newToken);
     }
   }
 
