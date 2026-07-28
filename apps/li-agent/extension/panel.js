@@ -706,6 +706,7 @@ const engagersList = document.getElementById("engagers-list");
 const engagersEmpty = document.getElementById("engagers-empty");
 const selectAllBtn = document.getElementById("select-all-btn");
 const loadSelectedBtn = document.getElementById("load-selected-btn");
+const refreshEngagersBtn = document.getElementById("refresh-engagers-btn");
 
 let engagerData = []; // { name, company, profileUrl, commentText, postUrl, postTitle }
 let loadedIds = {};   // profileUrl → { id, status, enriched }
@@ -749,6 +750,15 @@ function switchTab(tab) {
 
 tabProfileBtn.addEventListener("click", () => switchTab("profile"));
 tabEngagersBtn.addEventListener("click", () => switchTab("engagers"));
+
+refreshEngagersBtn.addEventListener("click", async () => {
+  refreshEngagersBtn.textContent = "↻ Scanning…";
+  refreshEngagersBtn.disabled = true;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id) await loadEngagersTab(tab.id);
+  refreshEngagersBtn.textContent = "↻ Refresh";
+  refreshEngagersBtn.disabled = false;
+});
 
 function updateLoadSelectedBtn() {
   const checked = document.querySelectorAll(".engager-check:checked");

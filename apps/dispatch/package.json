@@ -1,6 +1,6 @@
 {
   "name": "dispatch",
-  "displayName": "Agent-Native Dispatch",
+  "displayName": "XDR Hub Dispatch",
   "private": true,
   "type": "module",
   "scripts": {

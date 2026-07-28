@@ -1,137 +1,142 @@
-# Builder Li — Agent-Native Workspace
+# XDR Hub — AI Agent Platform
 
-A monorepo hosting multiple agent-native apps that all inherit from a single
-private **shared** package. The framework provides the defaults; this package
-is only for code, instructions, and policies that are genuinely shared by more
-than one app.
+XDR Hub is a unified AI agent platform for Builder.io's XDR team. It bundles three purpose-built apps — a LinkedIn outreach cockpit, a meeting booking agent, and a workspace dispatch layer — into a single monorepo deployed at [xdr-hub.netlify.app](https://xdr-hub.netlify.app).
 
-## Layout
+---
+
+## Apps
+
+### LinkedIn Agent — `/li-agent`
+
+A full-stack AI outreach cockpit for LinkedIn prospecting.
+
+- **Prospect pipeline**: captures LinkedIn profiles via the Chrome extension, scores each against your ICP, and drafts personalized connection notes
+- **ICP management**: define multiple personas; prospects are matched and tagged at capture time
+- **Queue**: tracks outreach status (captured → drafted → sent) across the team
+- **HubSpot integration**: links prospects to HubSpot contacts and deals
+- **Messaging canvas**: node-based messaging workflow builder
+- **Post Engagement scraper**: surfaces commenters from LinkedIn posts as warm prospects
+- **Chrome extension** (Builder.LI): Manifest V3 side panel extension; reads LinkedIn profiles and post commenters, displays scored drafts, marks sends
+
+### XDR Booking Agent — `/booking`
+
+An AI agent for managing meeting bookings and post-meeting workflows.
+
+- Captures and tracks booked meetings
+- Generates meeting notes and CRM updates
+- Integrates with Google Calendar for availability
+
+### XDR Hub Dispatch — `/dispatch`
+
+The workspace hub and orchestration layer. Manages cross-app navigation, shared authentication, vault keys, and workspace resources. All team members log in through Dispatch.
+
+---
+
+## Repository Layout
 
 ```
-builder-li/
+xdr-hub/
 ├── packages/
-│   └── shared/               # @builder-li/shared — optional shared code
-│       ├── src/server/       # Add plugin overrides only when needed
-│       ├── src/client/       # Add shared React code only when needed
+│   └── shared/               # @xdr-hub/shared — cross-app code and skills
+│       ├── src/server/       # Shared server plugins
+│       ├── src/client/       # Shared React components
 │       └── AGENTS.md         # Workspace-wide agent instructions
-└── apps/
-    └── example/              # App-specific routes, actions, and state
+├── apps/
+│   ├── dispatch/             # XDR Hub Dispatch (workspace hub)
+│   ├── li-agent/             # LinkedIn Agent
+│   │   └── extension/        # Builder.LI Chrome extension (MV3)
+│   └── booking/              # XDR Booking Agent
+├── netlify.toml              # Deploys all apps to xdr-hub.netlify.app
+└── package.json              # Workspace root (pnpm workspaces)
 ```
 
-## Three-layer inheritance
+---
 
-Every app in this workspace inherits cross-cutting behavior automatically:
-
-1. **App local** (highest priority) — anything under `apps/<name>/server/plugins/`,
-   `apps/<name>/actions/`, `apps/<name>/.agents/skills/`, `apps/<name>/AGENTS.md`.
-2. **Workspace shared** (middle) — `packages/shared/src/server/`,
-   `packages/shared/src/client/`, `packages/shared/actions/`,
-   `packages/shared/.agents/skills/`, `packages/shared/AGENTS.md`.
-3. **Framework** (lowest) — `@agent-native/core` defaults.
-
-Apps don't need any configuration to opt in. Discovery happens via the
-`agent-native.workspaceCore` field in this root `package.json`, which names
-the shared package (`@builder-li/shared`).
-
-The workspace root also links `.agents/skills` to the shared package so coding
-agents launched from the root can discover the same workspace-wide skills.
-Run `pnpm skills:update` (or
-`npx @agent-native/core@latest skills update scaffold --project`) after updating
-`@agent-native/core` to refresh framework-provided shared skills and repair
-Claude compatibility links.
-
-Runtime-editable global resources live in Dispatch, not in `packages/shared`.
-Use Dispatch **Resources** for company context and guardrails that admins should
-change without a code deploy:
-
-- `AGENTS.md` or `instructions/<slug>.md` for instructions every app agent loads
-- `skills/<slug>/SKILL.md` for workspace skills
-- `context/<slug>.md` for personas, positioning, messaging, company facts, and brand guidelines
-- `agents/<slug>.md` for reusable custom agent profiles
-
-Set those resources to **All apps** when every workspace app should receive
-them; use selected-app grants for app-specific packs.
-
-Starter global resources:
-
-```text
-context/company.md              # company overview, ICP, products, canonical links
-context/brand.md                # brand voice, visual identity, spelling, terms to avoid
-context/messaging.md            # positioning, value props, proof points, objections
-instructions/guardrails.md      # compliance, escalation, and approval rules
-skills/company-voice/SKILL.md   # copywriting/review guidance for customer-facing work
-```
-
-## Getting started
+## Getting Started (Local Dev)
 
 ```bash
 pnpm install
-cp .env.example .env   # fill in DATABASE_URL, BETTER_AUTH_SECRET, and an LLM provider key
-pnpm repair:workspace-org -- --name "Example Co" --domain example.com --owner-email owner@example.com
-pnpm dev               # starts the workspace gateway; opens Dispatch when present
+cp .env.example .env   # fill in DATABASE_URL, BETTER_AUTH_SECRET, ANTHROPIC_API_KEY
+pnpm dev               # starts workspace gateway at localhost:3000
 ```
 
-The dev gateway serves Dispatch at `/dispatch` when you keep the recommended
-Dispatch app selected, and every app at its own path such as `/chat`. It
-watches `apps/`, so newly-created apps are detected without restarting
-`pnpm dev`. App servers start lazily the first time you visit their path. App
-links should stay relative, such as `/chat` or `/<app-id>`; do not hardcode
-localhost or dev ports because the active gateway origin owns the port.
+Apps are served at:
+- `localhost:3000/dispatch` — Dispatch hub
+- `localhost:3000/li-agent` — LinkedIn Agent
+- `localhost:3000/booking` — Booking Agent
 
-Dispatch vault keys are workspace-wide by default: every saved vault key is
-available to every workspace app and can be synced from Dispatch. Switch the
-Vault page to manual access only when you need explicit per-app key grants.
-Dispatch resources are inherited rather than synced: All-app resources live
-once at workspace scope and every app agent reads them at runtime. Use selected
-resource grants only for genuinely app-specific context.
+Auth is restricted to `@builder.io` Google accounts.
 
-## Workspace org identity
+---
 
-Set these root `.env` values before production deploys or when repairing
-cross-app trust:
+## Deployment
 
-- `WORKSPACE_ORG_NAME` — the organization name users should see.
-- `WORKSPACE_ORG_DOMAIN` — the bare email/domain claim used for org matching.
-- `WORKSPACE_OWNER_EMAIL` — the owner/admin email to use for bootstrap or
-  integration fallback.
-- `A2A_SECRET` — shared signing secret for cross-app A2A calls.
+Deployed as a Netlify workspace to **[xdr-hub.netlify.app](https://xdr-hub.netlify.app)**.
 
-Run `pnpm repair:workspace-org -- --name "<org>" --domain example.com --owner-email owner@example.com`
-to validate those values without writing env files. Existing
-organization rows should still be repaired through the app's org settings UI or
-authenticated org routes whenever possible.
+Required Netlify environment variables:
 
-## Adding a new app
+| Variable | Purpose |
+|---|---|
+| `BETTER_AUTH_URL` | `https://xdr-hub.netlify.app` |
+| `BETTER_AUTH_SECRET` | Shared auth secret (same across all apps) |
+| `DATABASE_URL` | Primary Neon PostgreSQL connection (pooled) |
+| `BOOKING_DATABASE_URL` | Booking app Neon connection (pooled) |
+| `BOOKING_DATABASE_URL_UNPOOLED` | Booking app Neon connection (direct, for migrations) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth |
+| `GOOGLE_SIGN_IN_CLIENT_ID` / `GOOGLE_SIGN_IN_CLIENT_SECRET` | Google sign-in |
+| `WORKSPACE_ORG_DOMAIN` | `builder.io` |
+| `ANTHROPIC_API_KEY` | LLM provider |
+
+---
+
+## Architecture
+
+### Three-layer inheritance
+
+Every app inherits behavior automatically — no opt-in config needed:
+
+1. **App local** (highest priority) — `apps/<name>/server/plugins/`, `apps/<name>/actions/`, `apps/<name>/AGENTS.md`
+2. **Workspace shared** (middle) — `packages/shared/src/`, `packages/shared/AGENTS.md`
+3. **Framework** (lowest) — `@agent-native/core` defaults
+
+The workspace root `package.json` links everything via `agent-native.workspaceCore: "@xdr-hub/shared"`.
+
+### Auth
+
+Single sign-on via Google OAuth restricted to `@builder.io` domain. Auth flows through Dispatch (`/_agent-native/auth`); all sub-apps share the session cookie.
+
+### Database
+
+- `DATABASE_URL` — shared Neon PostgreSQL (li-agent tables + dispatch)
+- `BOOKING_DATABASE_URL` — separate Neon database for the booking app
+
+---
+
+## Chrome Extension
+
+The **Builder.LI** extension is distributed via the [Chrome Web Store](https://chrome.google.com/webstore). Source lives at `apps/li-agent/extension/`.
+
+To publish a new version:
+1. Update `manifest.json` version
+2. Zip the extension directory: `zip -r builder-li-<version>.zip apps/li-agent/extension/`
+3. Upload to Chrome Web Store Developer Dashboard
+
+---
+
+## Adding a New App
 
 ```bash
-pnpm exec agent-native create crm --template=chat
+pnpm exec agent-native create <app-id> --template=chat
 ```
 
-The CLI detects the workspace root and scaffolds a minimal starter app that already
-depends on `@builder-li/shared`. Edit only the routes you care about;
-auth, org switching, skills, and instructions come from the shared package.
-The source template is only a scaffold: the finished app should use its own name,
-home screen, navigation, package metadata, and manifest rather than leaving
-starter or new-app UI in place.
-If the request starts from Dispatch in production, Dispatch sends it to Builder
-branch creation; that branch should still add a new `apps/<app-id>` workspace
-app rather than editing an existing app directory.
-Dispatch discovers ready apps from `apps/<app-id>/package.json`; there is no
-separate workspace app registry to edit. React Router apps must preserve
-`APP_BASE_PATH` / `VITE_APP_BASE_PATH` in `app/entry.client.tsx` via
-`appBasePath()` so `/<app-id>` hydrates correctly.
-For requests phrased as creating an "agent", classify the scope first: simple
-recurring Dispatch behavior can stay in Dispatch, while a robust app-like
-teammate should become a real workspace app listed with the rest of the apps.
-First-party apps such as Mail, Calendar, Analytics, Brain, Assets, and Dispatch should be
-treated as existing hosted or connected neighbors. If a new app needs access to
-their data or agents, link/delegate to those apps through the workspace/A2A
-path rather than creating wrapper apps, child apps, or cloned template copies
-inside the new app. Only fork one of those apps when the user explicitly asks
-for a customized copy.
+Dispatch auto-discovers new apps from `apps/<app-id>/package.json`. No registry to update.
 
-## Editing shared behavior
+---
 
-Put cross-cutting code in `packages/shared/` when more than one app needs it.
-For example, exporting an `authPlugin` from `packages/shared/src/server/index.ts`
-lets every app use the same auth customization on the next dev reload.
+## Workspace Maintenance
+
+```bash
+pnpm upgrade:agent-native   # bump @agent-native/* deps and refresh skills
+pnpm skills:update          # refresh framework skills only (after manual core bump)
+pnpm typecheck              # type-check all apps
+```
