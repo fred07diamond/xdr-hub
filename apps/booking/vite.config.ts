@@ -8,6 +8,10 @@ const agentNativePlugins = agentNative as unknown as (
 ) => any[];
 
 export default defineConfig({
+  server: {
+    port: 8084,
+    strictPort: true,
+  },
   plugins: [
     ...reactRouterPlugins(),
     ...agentNativePlugins({
