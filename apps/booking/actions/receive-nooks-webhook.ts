@@ -1,12 +1,9 @@
 // actions/receive-nooks-webhook.ts
-// Should Have — wired up in v1 but not yet activated.
-// The webhook trigger is inactive until the Nooks CSM confirms:
-//  1. The exact payload schema (field names for call_id, disposition, transcript, rep_id)
-//  2. The exact disposition string for "Connected-Meeting"
-//  3. Whether webhook delivery requires activation by Nooks support
-//
-// To activate: update CONNECTED_MEETING_DISPOSITION to the confirmed string,
-// then remove this comment block.
+// Nooks' "Call Logging Webhooks" setting (Settings → Integrations → Webhooks)
+// takes a single URL with no payload documentation, event picker, or signing
+// secret. This receiver is therefore tolerant: it accepts any JSON body, logs
+// a truncated copy (read it with the Netlify function logs to refine field
+// mappings), and tries the common field-name variants before acting.
 import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -16,31 +13,64 @@ import { bookedMeetings, generatedNotes } from "../server/db/schema.js";
 import { getSharedDb, workspaceUserRoles } from "../server/db/workspace.js";
 import { generateNotes } from "../server/helpers/generate-notes.js";
 
-const CONNECTED_MEETING_DISPOSITION = "Connected-Meeting";
+// Dispositions that mean "a meeting got booked on this call".
+const CONNECTED_MEETING_RE = /connected[\s_-]*meeting|meeting[\s_-]*(booked|set|scheduled)/i;
+
+function pick(
+  sources: Array<Record<string, unknown> | null>,
+  keys: string[],
+): string | null {
+  for (const src of sources) {
+    if (!src) continue;
+    for (const k of keys) {
+      const v = src[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+  }
+  return null;
+}
 
 export default defineAction({
   description:
-    "Receive Nooks call disposition webhooks. Initiates workflow automatically for Connected-Meeting dispositions.",
-  schema: z.object({
-    call_id: z.string(),
-    disposition: z.string(),
-    transcript: z.string().optional(),
-    rep_id: z.string(),
-    secret: z.string().optional(),
-  }),
+    "Receive Nooks call-logging webhooks. Auto-initiates the booking workflow when a call's disposition indicates a booked meeting.",
+  schema: z.object({}).passthrough(),
   requiresAuth: false,
   http: { method: "POST" },
-  run: async ({ call_id, disposition, transcript, rep_id, secret }) => {
-    // Validate webhook secret when NOOKS_WEBHOOK_SECRET is configured
-    const expectedSecret = process.env.NOOKS_WEBHOOK_SECRET;
-    if (expectedSecret && secret !== expectedSecret) {
-      throw Object.assign(new Error("Invalid webhook secret"), { statusCode: 401 });
-    }
+  run: async (payload) => {
+    const p = payload as Record<string, unknown>;
+    const call =
+      typeof p.call === "object" && p.call !== null
+        ? (p.call as Record<string, unknown>)
+        : null;
+    const data =
+      typeof p.data === "object" && p.data !== null
+        ? (p.data as Record<string, unknown>)
+        : null;
+    const sources = [p, call, data];
 
-    if (disposition !== CONNECTED_MEETING_DISPOSITION) {
-      return { received: true, workflowInitiated: false };
-    }
+    console.log("[nooks-webhook] payload:", JSON.stringify(payload).slice(0, 3000));
 
+    const disposition = pick(sources, [
+      "disposition", "call_disposition", "callDisposition",
+      "dispositionName", "disposition_name", "outcome",
+    ]);
+    const transcript = pick(sources, [
+      "transcript", "call_transcript", "callTranscript",
+      "transcription", "transcript_text", "transcriptText",
+    ]);
+    const repEmail = pick(sources, [
+      "rep_email", "repEmail", "user_email", "userEmail",
+      "caller_email", "callerEmail", "agent_email", "rep_id", "repId", "email",
+    ]);
+
+    console.log(
+      "[nooks-webhook] extracted:",
+      JSON.stringify({ disposition, repEmail, transcriptChars: transcript?.length ?? 0 }),
+    );
+
+    if (!disposition || !CONNECTED_MEETING_RE.test(disposition)) {
+      return { received: true, workflowInitiated: false, disposition };
+    }
     if (!transcript) {
       return {
         received: true,
@@ -48,28 +78,32 @@ export default defineAction({
         reason: "No transcript in payload — XDR must paste manually",
       };
     }
+    if (!repEmail || !repEmail.includes("@")) {
+      return {
+        received: true,
+        workflowInitiated: false,
+        reason: "No rep email in payload — cannot attribute the meeting",
+      };
+    }
 
-    // Look up XDR by rep_id (Nooks rep ID must match email in workspace_user_roles)
     try {
       const sharedDb = getSharedDb();
       const xdr = await sharedDb
         .select({ email: workspaceUserRoles.email })
         .from(workspaceUserRoles)
-        .where(eq(workspaceUserRoles.email, rep_id))
+        .where(eq(workspaceUserRoles.email, repEmail.toLowerCase()))
         .limit(1);
 
       if (!xdr[0]) {
         return {
           received: true,
           workflowInitiated: false,
-          reason: `Rep ${rep_id} not found in workspace_user_roles — onboard them first`,
+          reason: `Rep ${repEmail} not found in workspace_user_roles — onboard them first`,
         };
       }
 
       const notes = await generateNotes(transcript);
       const db = getDb();
-
-      // Persist the meeting and generated notes to the DB
       const meetingId = nanoid();
       const now = new Date().toISOString();
 
@@ -84,14 +118,18 @@ export default defineAction({
         createdAt: now,
       });
 
-      const notesId = nanoid();
       await db.insert(generatedNotes).values({
-        id: notesId,
+        id: nanoid(),
         meetingId,
         xdrUserEmail: xdr[0].email,
         meetingAgenda: notes.meetingAgenda,
-        crmNotes: notes.crmNotes,
+        crmNotes: "",
+        xdrPain: notes.xdrPain,
+        xdrEnterpriseNeed: notes.xdrEnterpriseNeed,
+        xdrContactQualification: notes.xdrContactQualification,
+        xdrNotes: notes.xdrNotes,
         followUpEmail: notes.followUpEmail,
+        emailSubject: notes.emailSubject,
         status: "draft",
         createdAt: now,
       });
@@ -108,11 +146,8 @@ export default defineAction({
         },
       };
     } catch (err) {
-      return {
-        received: true,
-        workflowInitiated: false,
-        reason: "internal error",
-      };
+      console.error("[nooks-webhook] workflow error:", err instanceof Error ? err.message : err);
+      return { received: true, workflowInitiated: false, reason: "internal error" };
     }
   },
 });
