@@ -86,9 +86,6 @@ importers:
       '@agent-native/toolkit':
         specifier: latest
         version: 0.10.8(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
-      '@builder-li/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
@@ -104,6 +101,9 @@ importers:
       '@tabler/icons-react':
         specifier: 'catalog:'
         version: 3.45.0(react@19.2.7)
+      '@xdr-hub/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@libsql/client@0.15.15)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(better-sqlite3@12.11.1)(kysely@0.28.17)(postgres@3.4.9)
@@ -309,9 +309,6 @@ importers:
       '@agent-native/dispatch':
         specifier: latest
         version: 0.15.25(@agent-native/core@0.124.6(eee62c3f2f57e73fd102aee98b3369ce))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
-      '@builder-li/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
@@ -336,6 +333,9 @@ importers:
       '@tiptap/pm':
         specifier: 3.28.0
         version: 3.28.0
+      '@xdr-hub/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       h3:
         specifier: 'catalog:'
         version: 2.0.1-rc.25(crossws@0.4.10(srvx@0.11.22))
@@ -412,9 +412,6 @@ importers:
       '@agent-native/toolkit':
         specifier: latest
         version: 0.10.8(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
-      '@builder-li/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
@@ -430,6 +427,9 @@ importers:
       '@tabler/icons-react':
         specifier: 'catalog:'
         version: 3.45.0(react@19.2.7)
+      '@xdr-hub/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@xyflow/react':
         specifier: ^12.8.1
         version: 12.11.2(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)

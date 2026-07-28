@@ -1,5 +1,5 @@
 {
-  "name": "builder-li",
+  "name": "xdr-hub",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -28,6 +28,6 @@
     "@tiptap/extension-floating-menu": "3.28.0"
   },
   "agent-native": {
-    "workspaceCore": "@builder-li/shared"
+    "workspaceCore": "@xdr-hub/shared"
   }
 }

@@ -1,7 +1,7 @@
 // Service worker — all cross-origin fetch calls live here to avoid CORS.
 // The panel sends messages here; we call the outreach app and reply.
 
-const APP_URL = "https://builder-li.netlify.app/outreach";
+const APP_URL = "https://xdr-hub.netlify.app/li-agent";
 const POLL_INITIAL_MS = 3000;  // first poll after 3s
 const POLL_MAX_MS = 15000;     // cap each interval at 15s
 const POLL_TIMEOUT_MS = 60000; // give up after 60s

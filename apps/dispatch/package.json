@@ -15,7 +15,7 @@
   "dependencies": {
     "@agent-native/core": "latest",
     "@agent-native/dispatch": "latest",
-    "@builder-li/shared": "workspace:*",
+    "@xdr-hub/shared": "workspace:*",
     "@fontsource-variable/inter": "^5.2.8",
     "@libsql/client": "^0.15.8",
     "@radix-ui/react-tooltip": "^1.2.7",

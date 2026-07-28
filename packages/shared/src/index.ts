@@ -1,1 +1,1 @@
-export const WORKSPACE_SHARED_NAME = "@builder-li/shared";
+export const WORKSPACE_SHARED_NAME = "@xdr-hub/shared";
