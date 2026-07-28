@@ -18,20 +18,45 @@ import { getSharedDb, workspaceUserRoles } from "../db/workspace.js";
 const CONNECTED_MEETING_RE = /connected[\s_-]*meeting|meeting[\s_-]*(booked|set|scheduled)/i;
 const MAX_SIGNATURE_AGE_MS = 5 * 60 * 1000;
 
-function verifySignature(rawBody: string, header: string | undefined, key: string): boolean {
-  if (!header) return false;
+function timingSafeEq(a: string, b: string): boolean {
+  return a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+// Nooks docs: s = base64(HMAC-SHA256(signingKey, t + "." + raw_body)) with
+// t in unix-ms — but they don't pin down whether the HMAC key is the full
+// "nooks-webhook-signing-key-<hex>" string, the hex suffix, or the decoded
+// hex bytes, nor base64 vs base64url. Try each sane variant and log which
+// one matched so the accepted set can be narrowed once known.
+function verifySignature(rawBody: string, header: string | undefined, key: string): string | null {
+  if (!header) return null;
   const tMatch = header.match(/t=(\d+)/);
-  const sMatch = header.match(/s=([^,]+)/);
-  if (!tMatch || !sMatch) return false;
-  const t = Number(tMatch[1]);
-  if (!Number.isFinite(t) || Math.abs(Date.now() - t) > MAX_SIGNATURE_AGE_MS) return false;
-  const expected = crypto
-    .createHmac("sha256", key)
-    .update(`${tMatch[1]}.${rawBody}`)
-    .digest("base64");
+  const sMatch = header.match(/s=([^,\s]+)/);
+  if (!tMatch || !sMatch) return null;
+  const tRaw = tMatch[1];
+  let t = Number(tRaw);
+  if (!Number.isFinite(t)) return null;
+  if (tRaw.length <= 10) t *= 1000; // seconds → ms
+  if (Math.abs(Date.now() - t) > MAX_SIGNATURE_AGE_MS) return null;
+
+  const hexPart = key.replace(/^nooks-webhook-signing-key-/, "");
+  const keyVariants: Array<[string, crypto.BinaryLike]> = [
+    ["full-key", key],
+    ["hex-suffix", hexPart],
+    ["hex-bytes", Buffer.from(hexPart, "hex")],
+  ];
   const provided = sMatch[1];
-  if (provided.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+  for (const [keyName, keyMaterial] of keyVariants) {
+    const mac = crypto.createHmac("sha256", keyMaterial).update(`${tRaw}.${rawBody}`);
+    const digest = mac.digest();
+    for (const [encName, encoded] of [
+      ["base64", digest.toString("base64")],
+      ["base64url", digest.toString("base64url")],
+      ["hex", digest.toString("hex")],
+    ] as const) {
+      if (timingSafeEq(provided, encoded)) return `${keyName}/${encName}`;
+    }
+  }
+  return null;
 }
 
 interface CallLoggedPayload {
@@ -69,9 +94,16 @@ export default defineEventHandler(async (event) => {
   const sigHeader = getHeader(event, "x-webhook-signature");
   let verified = false;
   if (signingKey && sigHeader) {
-    verified = verifySignature(raw, sigHeader, signingKey);
-    if (!verified) {
-      console.warn("[nooks-webhook] signature verification failed");
+    const variant = verifySignature(raw, sigHeader, signingKey);
+    verified = variant !== null;
+    if (verified) {
+      console.log(`[nooks-webhook] signature verified (${variant})`);
+    } else {
+      console.warn(
+        "[nooks-webhook] signature verification failed — header:",
+        sigHeader.slice(0, 120),
+        "bodyLen:", raw.length,
+      );
       setResponseStatus(event, 401);
       return { error: "invalid signature" };
     }
