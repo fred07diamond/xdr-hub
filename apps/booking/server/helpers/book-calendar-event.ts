@@ -71,6 +71,10 @@ export async function bookCalendarEvent({
     .filter(Boolean)
     .map((email) => ({ email }));
 
+  const meetCreateRequest = {
+    requestId: `xdr-booking-${start.getTime()}-${Date.now()}`,
+    conferenceSolutionKey: { type: "hangoutsMeet" as const },
+  };
   const eventFields = {
     summary: title,
     description: customMeetingLink
@@ -79,24 +83,15 @@ export async function bookCalendarEvent({
     start: { dateTime: start.toISOString() },
     end: { dateTime: end.toISOString() },
     attendees,
-    ...(customMeetingLink ? { location: customMeetingLink } : {}),
+    // Custom link (Zoom, etc.) lives in location; cleared when back on Meet.
+    location: customMeetingLink ?? "",
   };
-  // With a custom link (Zoom, etc.) the link IS the conference — no Meet.
+  // With a custom link the link IS the conference — no Meet.
   const insertBody = JSON.stringify(
     customMeetingLink
       ? eventFields
-      : {
-          ...eventFields,
-          conferenceData: {
-            createRequest: {
-              requestId: `xdr-booking-${start.getTime()}-${xdrEmail.split("@")[0]}`,
-              conferenceSolutionKey: { type: "hangoutsMeet" },
-            },
-          },
-        },
+      : { ...eventFields, conferenceData: { createRequest: meetCreateRequest } },
   );
-  // Patch keeps the existing Meet link; sendUpdates notifies attendees of the change.
-  const patchBody = JSON.stringify(eventFields);
 
   const sendEvent = async (accessToken: string) => {
     const headers = {
@@ -104,9 +99,24 @@ export async function bookCalendarEvent({
       "Content-Type": "application/json",
     };
     if (existingEventId) {
+      const eventUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(existingEventId)}`;
+      // Conferencing on patch: Zoom → strip any Meet; Meet → create one only
+      // if the event doesn't already have a conference.
+      const patch: Record<string, unknown> = { ...eventFields };
+      if (customMeetingLink) {
+        patch.conferenceData = null;
+      } else {
+        const getRes = await fetch(eventUrl, { headers });
+        if (getRes.ok) {
+          const existing = (await getRes.json()) as { conferenceData?: unknown };
+          if (!existing.conferenceData) {
+            patch.conferenceData = { createRequest: meetCreateRequest };
+          }
+        }
+      }
       const patchRes = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(existingEventId)}?sendUpdates=all`,
-        { method: "PATCH", headers, body: patchBody },
+        `${eventUrl}?conferenceDataVersion=1&sendUpdates=all`,
+        { method: "PATCH", headers, body: JSON.stringify(patch) },
       );
       // Event was deleted in Google — fall through to creating a fresh one.
       if (patchRes.status !== 404 && patchRes.status !== 410) return patchRes;
