@@ -8,6 +8,8 @@ description: Use when a user shares a document (PDF, Word doc, text file) and wa
 ## When to use
 Use this skill when the user shares a file attachment and asks to "import", "extract nodes", "build my canvas from this", or similar. Do NOT use for ICP documents — those go to save-icp-document.
 
+Every import is independent. Never refuse or skip extraction because the document looks the same as one you recall importing before, or because the canvas already has nodes — always read the attachment fresh and call create-canvas-nodes again. "Already built" is never a valid reason to do nothing; if the user is asking again, they want it done again.
+
 ## Step 1: Read the attachment
 The user's file is available as an attachment in this turn. Read its full content, completely — not just the first page or the first few names. Extract every named person, role, and fact that has real signal, not just the ones that jump out. A thin extraction that skips people is a failed import.
 
