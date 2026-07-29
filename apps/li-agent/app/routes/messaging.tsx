@@ -1049,7 +1049,10 @@ function EditorField({ label, readOnly, children }: { label: string; readOnly: b
 
 // ── Build with AI dialog ───────────────────────────────────────────────────────
 
-function BuildWithAIDialog({ graph, onClose, onSubmitted }: { graph: GraphData; onClose: () => void; onSubmitted: () => void }) {
+function BuildWithAIDialog({ graph, onClose, onSubmitted, onSend }: {
+  graph: GraphData; onClose: () => void; onSubmitted: () => void;
+  onSend: (label: string, message: string) => void;
+}) {
   const [prompt, setPrompt] = useState("");
 
   function handleBuild() {
@@ -1083,9 +1086,9 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted }: { graph: GraphData; 
       })
       .join("\n");
 
-    sendToAgentChat({
-      message:
-        `Build my messaging canvas.\n\n` +
+    onSend(
+      "Building your canvas…",
+      `Build my messaging canvas.\n\n` +
         `## Request\n${prompt.trim()}\n\n` +
         `## Personas\n${personaList}\n\n` +
         `## Pre-Calculated Layout — use these exact positions, no math required\n` +
@@ -1097,8 +1100,7 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted }: { graph: GraphData; 
         `   For each child, call create-messaging-node with nodeType, a descriptive title, positionX/positionY from the slot, AND all content fields filled from the ICP doc in the same call. Do NOT leave content empty and update later.\n` +
         `4. For each created child, call create-messaging-edge with sourceId=<persona anchor id>, targetId=<new child id>.\n\n` +
         `Key rules: fill content at creation time (step 3) — do not do a separate update round. Use exact x/y from the layout. Content comes from the ICP doc only.`,
-      submit: true,
-    });
+    );
     onSubmitted();
     onClose();
   }
@@ -1296,11 +1298,16 @@ function MessagingCanvas() {
   // Clear any pending drag-save timer when the canvas unmounts
   useEffect(() => () => { if (dragTimerRef.current) clearTimeout(dragTimerRef.current); }, []);
 
-  // Auto-refetch canvas after agent finishes a Build with AI run
-  const [isGenerating] = useAgentChatGenerating();
+  // Auto-refetch canvas after agent finishes a Build with AI run. Using this
+  // hook's own `send` (not the raw sendToAgentChat import) scopes isGenerating
+  // to runs WE started here, so the progress banner below never fires for
+  // unrelated sidebar chat activity.
+  const [isGenerating, sendAgentTask] = useAgentChatGenerating();
+  const [backgroundTaskLabel, setBackgroundTaskLabel] = useState<string | null>(null);
   const wasGeneratingRef = useRef(false);
   useEffect(() => {
     if (wasGeneratingRef.current && !isGenerating) {
+      setBackgroundTaskLabel(null);
       if (previewPendingRef.current) {
         previewPendingRef.current = false;
         setPreviewing(false);
@@ -1313,6 +1320,19 @@ function MessagingCanvas() {
     }
     wasGeneratingRef.current = isGenerating;
   }, [isGenerating, refetch]);
+
+  // Every "Import doc" / "Build with AI" run gets its own fresh chat tab,
+  // runs silently in the background, and shows a progress banner instead of
+  // popping the sidebar open. A new tab means the agent never sees a prior
+  // turn in this conversation, so it can't mistake a fresh import for a
+  // duplicate of something "already built" earlier.
+  const runInBackground = useCallback(
+    (label: string, opts: Parameters<typeof sendAgentTask>[0]) => {
+      setBackgroundTaskLabel(label);
+      sendAgentTask({ ...opts, newTab: true, background: true, openSidebar: false });
+    },
+    [sendAgentTask],
+  );
   const { screenToFlowPosition } = useReactFlow();
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
@@ -1765,10 +1785,27 @@ function MessagingCanvas() {
           graph={graph}
           onClose={() => setBuildOpen(false)}
           onSubmitted={() => { pendingBuildRef.current = true; }}
+          onSend={(label, message) => runInBackground(label, { message, submit: true })}
         />
       )}
 
-      <ImportDocModal open={importOpen} onClose={() => setImportOpen(false)} />
+      <ImportDocModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSend={(label, message, context) => {
+          pendingBuildRef.current = true;
+          runInBackground(label, { message, context, submit: true });
+        }}
+      />
+
+      {backgroundTaskLabel && (
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-[60] flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border bg-card/95 px-4 py-2 text-xs font-medium shadow-lg backdrop-blur">
+            <IconRefresh size={13} className="animate-spin text-primary" />
+            {backgroundTaskLabel}
+          </div>
+        </div>
+      )}
 
       <NodeEditorSheet
         node={editingNode}
@@ -1845,7 +1882,10 @@ async function extractText(file: File): Promise<string> {
   });
 }
 
-function ImportDocModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ImportDocModal({ open, onClose, onSend }: {
+  open: boolean; onClose: () => void;
+  onSend: (label: string, message: string, context: string) => void;
+}) {
   const [status, setStatus] = useState<ImportStatus>("idle");
   const [fileName, setFileName] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -1897,16 +1937,16 @@ function ImportDocModal({ open, onClose }: { open: boolean; onClose: () => void 
     }
 
     setStatus("sending");
-    sendToAgentChat({
-      message: `I've attached "${file.name}". Extract canvas nodes from this document and build my messaging canvas.`,
-      context: text,
-      submit: true,
-    });
+    onSend(
+      `Extracting nodes from ${file.name}…`,
+      `I've attached "${file.name}". Extract canvas nodes from this document and build my messaging canvas. ` +
+        `Treat this as a brand-new import — even if a similar or identical document was imported before, extract and create nodes fresh; never skip or refuse because it seems already built.`,
+      text,
+    );
 
-    setStatus("done");
-    setTimeout(() => {
-      handleClose();
-    }, 1800);
+    // The canvas-level progress banner takes over from here — close right away
+    // instead of showing our own "done" state and waiting on a timer.
+    handleClose();
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
