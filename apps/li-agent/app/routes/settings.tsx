@@ -18,7 +18,7 @@ import {
   useRemoveMember,
 } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconBrain, IconPlugConnected, IconCheck, IconCircleCheck, IconCircleX, IconClipboard, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
+import { IconBrain, IconPlugConnected, IconCheck, IconCircleCheck, IconCircleX, IconClipboard, IconExternalLink, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -33,6 +33,9 @@ import { Label } from "@/components/ui/label";
 import { APP_TITLE } from "@/lib/app-config";
 
 import changelog from "../../CHANGELOG.md?raw";
+
+const CHROME_EXTENSION_URL =
+  "https://chromewebstore.google.com/detail/builderli/pnfejojajcalkmlaclnpklgijajjeoak";
 
 function ApiTokenCard() {
   const { data, isLoading } = useActionQuery("get-api-token", {});
@@ -81,10 +84,30 @@ function ApiTokenCard() {
         ) : (
           <p className="text-sm text-muted-foreground">Failed to load token.</p>
         )}
+        <a
+          href={CHROME_EXTENSION_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          <IconExternalLink size={13} />
+          Get the Builder.LI Chrome extension
+        </a>
         <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
           <p className="font-medium text-foreground">Extension setup</p>
           <ol className="list-decimal ps-4 space-y-0.5">
-            <li>Install the Builder.LI Chrome extension.</li>
+            <li>
+              Install the{" "}
+              <a
+                href={CHROME_EXTENSION_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline underline-offset-2 hover:text-primary/80"
+              >
+                Builder.LI Chrome extension
+              </a>
+              .
+            </li>
             <li>Click the extension icon → Options.</li>
             <li>Paste your app URL and this token, then save.</li>
           </ol>
