@@ -38,7 +38,6 @@ import {
   IconPlus,
   IconRefresh,
   IconRoute,
-  IconSearch,
   IconSparkles,
   IconStar,
   IconSword,
@@ -536,18 +535,11 @@ function HubspotReferenceNode({ data }: NodeProps) {
         </div>
         <div className="px-3 py-2">
           {hasContact ? (
-            <>
-              {d.dbNode.notes && (
-                <p className="text-[10px] text-zinc-500 truncate">{d.dbNode.notes}</p>
-              )}
-              {d.dbNode.exampleNotes ? (
-                <p className="text-[10px] text-zinc-500 line-clamp-2 mt-0.5">{d.dbNode.exampleNotes}</p>
-              ) : (
-                <p className="text-[10px] text-zinc-400 italic mt-0.5">Click to pull correspondence →</p>
-              )}
-            </>
+            <p className="text-[10px] text-zinc-500 truncate">
+              {[d.dbNode.notes, d.dbNode.exampleNotes].filter(Boolean).join(" at ") || "No role/company set"}
+            </p>
           ) : (
-            <p className="text-[10px] text-zinc-400 italic">Click to search HubSpot →</p>
+            <p className="text-[10px] text-zinc-400 italic">Click to paste a HubSpot link →</p>
           )}
         </div>
       </div>
@@ -699,7 +691,7 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
   const updateNode = useActionMutation("update-messaging-node");
   const deleteNode = useActionMutation("delete-messaging-node");
   const researchCompany = useActionMutation("research-company");
-  const summarizeCorrespondence = useActionMutation("summarize-hubspot-correspondence");
+  const fetchHubspotContact = useActionMutation("fetch-hubspot-contact");
 
   const isCompany = node?.type === "company";
   const isPersona = node?.type === "persona";
@@ -716,19 +708,7 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
   const [exampleNotes, setExampleNotes] = useState("");
   const [notes, setNotes] = useState("");
   const [hubspotContactId, setHubspotContactId] = useState<string | null>(null);
-  const [hsQuery, setHsQuery] = useState("");
-  const [hsSearchTerm, setHsSearchTerm] = useState("");
   const [hsLink, setHsLink] = useState("");
-
-  const hsSearch = useActionQuery(
-    "search-hubspot-contacts",
-    { query: hsSearchTerm },
-    { enabled: hsSearchTerm.length > 0 },
-  ) as {
-    data?: { contacts: Array<{ id: string; name: string; title: string | null; company: string | null; email: string | null }> };
-    isFetching: boolean;
-  };
-  const hsResults = hsSearch.data?.contacts ?? [];
 
   useEffect(() => {
     if (!node) return;
@@ -740,8 +720,6 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     setExampleNotes(node.exampleNotes ?? "");
     setNotes(node.notes ?? "");
     setHubspotContactId(node.hubspotContactId ?? null);
-    setHsQuery("");
-    setHsSearchTerm("");
     setHsLink("");
   }, [node?.id]);
 
@@ -783,37 +761,26 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     }
   }
 
-  function handleSearchHubspot() {
-    if (!hsQuery.trim()) return;
-    setHsSearchTerm(hsQuery.trim());
-  }
-
-  function handleUseLink() {
+  async function handleUseLink() {
+    if (!node) return;
     const contactId = extractHubspotContactId(hsLink);
     if (!contactId) {
       toast.error("Couldn't find a contact ID in that link — paste the full HubSpot contact record URL.");
       return;
     }
-    handlePullCorrespondence(contactId);
-  }
-
-  async function handlePullCorrespondence(contactId: string) {
-    if (!node) return;
     setHubspotContactId(contactId);
-    setHsSearchTerm("");
     setHsLink("");
     try {
-      const result = await summarizeCorrespondence.mutateAsync({ nodeId: node.id, contactId }) as {
-        name: string; notes: string | null; exampleNotes: string | null; warning?: string;
+      const result = await fetchHubspotContact.mutateAsync({ nodeId: node.id, contactId }) as {
+        name: string; role: string | null; company: string | null;
       };
       setTitle(result.name);
-      setNotes(result.notes ?? "");
-      setExampleNotes(result.exampleNotes ?? "");
-      onSaved({ title: result.name, notes: result.notes, exampleNotes: result.exampleNotes });
-      if (result.warning) toast.warning(result.warning);
-      else toast.success("Pulled correspondence from HubSpot");
+      setNotes(result.role ?? "");
+      setExampleNotes(result.company ?? "");
+      onSaved({ title: result.name, notes: result.role, exampleNotes: result.company });
+      toast.success("Pulled from HubSpot");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not pull correspondence — try again.");
+      toast.error(err instanceof Error ? err.message : "Could not fetch that contact — try again.");
     }
   }
 
@@ -822,12 +789,12 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     "paper_process", "identify_pain", "champion", "competition", "persona_ref",
     "company",
   ]);
-  const showNotes = isGlobal || isPersona || node?.type === "role" || NOTES_ONLY_TYPES.has(node?.type ?? "") || isHubspotReference;
+  const showNotes = isGlobal || isPersona || node?.type === "role" || NOTES_ONLY_TYPES.has(node?.type ?? "");
   const showTone = isGlobal || isPersona || node?.type === "tone" || node?.type === "role";
   const showValueProps = isGlobal || node?.type === "tone";
   const showUse = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
   const showAvoid = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
-  const showExample = isGlobal || node?.type === "example" || isHubspotReference;
+  const showExample = isGlobal || node?.type === "example";
 
   return (
     <Sheet open={!!node} onOpenChange={(o) => !o && onClose()}>
@@ -851,35 +818,8 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
           </EditorField>
 
           {isHubspotReference && (
-            <EditorField label="Search HubSpot" readOnly={false}>
+            <EditorField label="HubSpot Contact Link" readOnly={false}>
               <div className="flex gap-1.5">
-                <Input
-                  value={hsQuery}
-                  onChange={(e) => setHsQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearchHubspot()}
-                  placeholder="Contact or company name…"
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSearchHubspot}
-                  disabled={hsSearch.isFetching || !hsQuery.trim()}
-                >
-                  {hsSearch.isFetching
-                    ? <IconRefresh className="animate-spin" size={13} />
-                    : <IconSearch size={13} />}
-                </Button>
-              </div>
-              {hsSearchTerm.length > 0 && !hsSearch.isFetching && hsResults.length === 0 && (
-                <p className="text-[10px] text-zinc-400 mt-1">No matching HubSpot contacts found.</p>
-              )}
-              <div className="mt-2 flex items-center gap-1.5">
-                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
-                <span className="text-[10px] text-zinc-400">or</span>
-                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
-              </div>
-              <div className="mt-2 flex gap-1.5">
                 <Input
                   value={hsLink}
                   onChange={(e) => setHsLink(e.target.value)}
@@ -891,47 +831,46 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
                   variant="outline"
                   size="sm"
                   onClick={handleUseLink}
-                  disabled={summarizeCorrespondence.isPending || !hsLink.trim()}
+                  disabled={fetchHubspotContact.isPending || !hsLink.trim()}
                 >
-                  Use link
+                  {fetchHubspotContact.isPending
+                    ? <IconRefresh className="animate-spin" size={13} />
+                    : "Use link"}
                 </Button>
               </div>
-              {hsResults.length > 0 && (
-                <div className="mt-1.5 max-h-48 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-700">
-                  {hsResults.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="flex w-full flex-col items-start gap-0.5 px-2.5 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-800 last:border-0"
-                      onClick={() => handlePullCorrespondence(c.id)}
-                      disabled={summarizeCorrespondence.isPending}
-                    >
-                      <span className="text-xs font-medium">{c.name}</span>
-                      <span className="text-[10px] text-zinc-500">
-                        {[c.title, c.company].filter(Boolean).join(" · ") || c.email || "No details"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {summarizeCorrespondence.isPending && (
-                <p className="text-[11px] text-orange-600 italic animate-pulse flex items-center gap-1 mt-1">
-                  <IconRefresh size={11} className="animate-spin" /> Pulling correspondence…
-                </p>
-              )}
-              {hubspotContactId && !summarizeCorrespondence.isPending && (
+              {hubspotContactId && !fetchHubspotContact.isPending && (
                 <p className="text-[10px] text-zinc-400 mt-1">
-                  Linked to HubSpot contact {hubspotContactId} — search again to switch.
+                  Linked to HubSpot contact {hubspotContactId} — paste another link to switch.
                 </p>
               )}
             </EditorField>
+          )}
+
+          {isHubspotReference && (
+            <div className="grid grid-cols-2 gap-3">
+              <EditorField label="Role" readOnly={readOnly}>
+                <Input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={readOnly || fetchHubspotContact.isPending}
+                  placeholder="Senior Product Manager"
+                />
+              </EditorField>
+              <EditorField label="Company" readOnly={readOnly}>
+                <Input
+                  value={exampleNotes}
+                  onChange={(e) => setExampleNotes(e.target.value)}
+                  disabled={readOnly || fetchHubspotContact.isPending}
+                  placeholder="Rotten Tomatoes"
+                />
+              </EditorField>
+            </div>
           )}
 
           {showNotes && (
             <EditorField
               label={
                 isCompany ? "Research Notes"
-                : isHubspotReference ? "Role & Company"
                 : node?.type === "role" ? "Role description"
                 : "Notes"
               }
@@ -946,8 +885,6 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
                 placeholder={
                   isCompany
                     ? "Research results will appear here after you click Add Research…"
-                    : isHubspotReference
-                    ? "e.g. Senior Product Manager at Rotten Tomatoes"
                     : node?.type === "role"
                     ? "e.g. When messaging VPs of Engineering, lead with reliability and team impact..."
                     : "Any other instructions for the AI..."
@@ -1014,18 +951,14 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
           )}
 
           {showExample && (
-            <EditorField label={isHubspotReference ? "Why This Worked" : "Example Notes"} readOnly={readOnly}>
+            <EditorField label="Example Notes" readOnly={readOnly}>
               <textarea
                 className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                 rows={5}
                 value={exampleNotes}
                 onChange={(e) => setExampleNotes(e.target.value)}
-                disabled={readOnly || summarizeCorrespondence.isPending}
-                placeholder={
-                  isHubspotReference
-                    ? "Search HubSpot above and pull correspondence to auto-fill this — or write it yourself."
-                    : "Write 2-3 example notes in your voice:\n\"Hi Sarah, love what you're doing with design systems at IKEA...\"\n\"Hi John, saw you just launched — quick question about...\""
-                }
+                disabled={readOnly}
+                placeholder={"Write 2-3 example notes in your voice:\n\"Hi Sarah, love what you're doing with design systems at IKEA...\"\n\"Hi John, saw you just launched — quick question about...\""}
               />
             </EditorField>
           )}

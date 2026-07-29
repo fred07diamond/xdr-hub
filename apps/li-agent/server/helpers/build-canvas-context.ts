@@ -48,9 +48,8 @@ export async function buildCanvasContext(
       lines.push(`\n[Company Context: ${n.title}]`);
       if (n.notes) lines.push(n.notes);
     } else if (t === "hubspot_reference") {
-      lines.push(`\n[Real Example: ${n.title}]`);
-      if (n.notes) lines.push(n.notes);
-      if (n.exampleNotes) lines.push(`Why this worked:\n${n.exampleNotes}`);
+      const roleCompany = [n.notes, n.exampleNotes].filter(Boolean).join(" at ");
+      lines.push(`\n[Real Example: ${n.title}${roleCompany ? ` — ${roleCompany}` : ""}]`);
     }
   }
 
