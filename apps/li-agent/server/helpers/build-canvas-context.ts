@@ -47,6 +47,10 @@ export async function buildCanvasContext(
     } else if (t === "company") {
       lines.push(`\n[Company Context: ${n.title}]`);
       if (n.notes) lines.push(n.notes);
+    } else if (t === "hubspot_reference") {
+      lines.push(`\n[Real Example: ${n.title}]`);
+      if (n.notes) lines.push(n.notes);
+      if (n.exampleNotes) lines.push(`Why this worked:\n${n.exampleNotes}`);
     }
   }
 

@@ -267,6 +267,11 @@ export default runMigrations(
         granted_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 42,
+      name: "messaging-nodes-hubspot-contact-id",
+      sql: `ALTER TABLE messaging_nodes ADD COLUMN IF NOT EXISTS hubspot_contact_id TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

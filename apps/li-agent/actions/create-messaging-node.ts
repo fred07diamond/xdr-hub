@@ -19,6 +19,7 @@ const DEFAULT_TITLES: Record<string, string> = {
   champion: "Champion",
   competition: "Competition",
   persona_ref: "Persona",
+  hubspot_reference: "HubSpot Reference",
 };
 
 export default defineAction({
@@ -29,6 +30,7 @@ export default defineAction({
       "tone", "phrase_rule", "example", "role", "company",
       "metrics", "economic_buyer", "decision_criteria", "decision_process",
       "paper_process", "identify_pain", "champion", "competition", "persona_ref",
+      "hubspot_reference",
     ]).default("tone"),
     title: z.string().min(1).max(120).optional(),
     positionX: z.number().int().default(300),
@@ -80,6 +82,7 @@ export default defineAction({
       phrasesToAvoid: phrasesToAvoid ?? null,
       exampleNotes: exampleNotes ?? null,
       notes: notes ?? null,
+      hubspotContactId: null,
       positionX,
       positionY,
       createdAt: now,
