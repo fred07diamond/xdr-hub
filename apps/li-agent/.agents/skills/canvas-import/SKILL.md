@@ -14,7 +14,11 @@ Every import is independent. Never refuse or skip extraction because the documen
 The user's file is available as an attachment in this turn. Read its full content, completely — not just the first page or the first few names. Extract every named person, role, and fact that has real signal, not just the ones that jump out. A thin extraction that skips people is a failed import.
 
 ## Step 2: Determine the target canvas and its existing personas
-Call `list-canvases` and pick the most recently updated canvas, or ask the user if several have meaningful names. Then call `get-messaging-graph` with that `canvasId` and read the `nodes` it returns for every node with `type: "persona"` — that is the exact, closed list of personas you are allowed to attach anything to. Write down each persona's `title` and `id` before you extract anything. If `get-messaging-graph` returns zero persona nodes, skip persona-matching entirely for this import (every node you create will fall back to the company anchor — that's expected, not an error).
+If the request already states a target canvas ID (e.g. "Target canvas ID: ..." — this is the tab the user currently has open in their browser), use that ID directly. Do not call `list-canvases` and do not second-guess it against "which canvas looks like the real target" — the user's open tab is correct by definition, even if another canvas has more content or a more on-the-nose name.
+
+Only when NO canvas ID is given in the request: call `list-canvases` and pick the most recently updated canvas, or ask the user if several have meaningful names.
+
+Either way, once you have the target `canvasId`, call `get-messaging-graph` with it and read the `nodes` it returns for every node with `type: "persona"` — that is the exact, closed list of personas you are allowed to attach anything to. Write down each persona's `title` and `id` before you extract anything. If `get-messaging-graph` returns zero persona nodes, skip persona-matching entirely for this import (every node you create will fall back to the company anchor — that's expected, not an error).
 
 ## Step 3: Build the tree, not a flat list
 

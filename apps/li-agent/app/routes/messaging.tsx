@@ -1089,6 +1089,8 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted, onSend }: {
     onSend(
       "Building your canvas…",
       `Build my messaging canvas.\n\n` +
+        `## Target canvas\nUse canvasId="${graph.activeCanvasId}" for every call below. ` +
+        `This is the canvas the user currently has open — do not call list-canvases or pick a different one.\n\n` +
         `## Request\n${prompt.trim()}\n\n` +
         `## Personas\n${personaList}\n\n` +
         `## Pre-Calculated Layout — use these exact positions, no math required\n` +
@@ -1792,6 +1794,7 @@ function MessagingCanvas() {
       <ImportDocModal
         open={importOpen}
         onClose={() => setImportOpen(false)}
+        activeCanvasId={activeCanvasId}
         onSend={(label, message, context) => {
           pendingBuildRef.current = true;
           runInBackground(label, { message, context, submit: true });
@@ -1882,8 +1885,8 @@ async function extractText(file: File): Promise<string> {
   });
 }
 
-function ImportDocModal({ open, onClose, onSend }: {
-  open: boolean; onClose: () => void;
+function ImportDocModal({ open, onClose, activeCanvasId, onSend }: {
+  open: boolean; onClose: () => void; activeCanvasId: string | null;
   onSend: (label: string, message: string, context: string) => void;
 }) {
   const [status, setStatus] = useState<ImportStatus>("idle");
@@ -1939,7 +1942,10 @@ function ImportDocModal({ open, onClose, onSend }: {
     setStatus("sending");
     onSend(
       `Extracting nodes from ${file.name}…`,
-      `I've attached "${file.name}". Extract canvas nodes from this document and build my messaging canvas. ` +
+      `I've attached "${file.name}". Extract canvas nodes from this document and build my messaging canvas.\n\n` +
+        (activeCanvasId
+          ? `Target canvas ID: "${activeCanvasId}" — this is the tab I currently have open. Use this exact canvas for every action; do not call list-canvases or pick a different one.\n\n`
+          : "") +
         `Treat this as a brand-new import — even if a similar or identical document was imported before, extract and create nodes fresh; never skip or refuse because it seems already built.`,
       text,
     );
