@@ -89,6 +89,8 @@ export const messagingNodes = table("messaging_nodes", {
   phrasesToAvoid: text("phrases_to_avoid"),
   exampleNotes: text("example_notes"),
   notes: text("notes"),
+  // Set on hubspot_reference nodes so a future "Refresh" can re-pull without re-searching.
+  hubspotContactId: text("hubspot_contact_id"),
   positionX: integer("position_x").notNull().default(100),
   positionY: integer("position_y").notNull().default(100),
   createdAt: text("created_at").default(now()),
