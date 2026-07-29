@@ -31,6 +31,9 @@ const NODE_INPUT = z.object({
   notes: z.string().nullable().optional(),
 });
 
+const ROW_H = 130;
+const LANE_GAP = 100;
+
 export default defineAction({
   description:
     "Bulk-create typed canvas nodes from extracted document intelligence, wiring a proper tree: " +
@@ -69,66 +72,81 @@ export default defineAction({
       b.type === "company" && a.type !== "company" ? 1 : 0
     );
 
-    let accountAnchorId: string | null = null;
-    const createdIds: string[] = [];
-    const refToNodeId = new Map<string, string>();
-    const nonCompanyCount = sorted.filter((n) => n.type !== "company").length;
-    const companyY = 200 + (nonCompanyCount * 110) / 2;
-
-    // Each distinct parent ("company", "persona:<id>", "ref:<parentRef>") gets
-    // its own vertical band, assigned the first time it's seen, so siblings
-    // under different parents stack independently instead of colliding —
-    // this is what makes deeper nesting actually read as a tree rather than
-    // an overlapping pile.
-    const laneBaseline = new Map<string, number>();
-    const yCursorByLane = new Map<string, number>();
-    let laneCount = 0;
-    function yFor(parentKey: string): number {
-      if (!laneBaseline.has(parentKey)) {
-        laneBaseline.set(parentKey, 40 + laneCount * 260);
-        laneCount++;
+    // ── Pass 1: resolve each node's lane key WITHOUT touching the DB ──────────
+    // parentRef only needs another node's `ref` string (known up front) and
+    // persona-anchor matching only needs existingNodes/personaMap (already
+    // fetched) — neither depends on the ids we're about to create. Resolving
+    // lane keys first lets us size each lane by its REAL child count instead
+    // of assuming every lane is the same size, which is what caused a role
+    // with 14 people and a role with 3 to overlap into one solid column.
+    const laneKeyByIndex: (string | null)[] = sorted.map((node) => {
+      if (node.type === "company") return null;
+      if (node.parentRef) return `ref:${node.parentRef}`;
+      if (PERSONA_AFFILIATED.has(node.type) && node.personaName) {
+        const personaId = personaMap.get(node.personaName.toLowerCase()) ?? null;
+        const anchor = personaId !== null
+          ? existingNodes.find((n) => n.type === "persona" && n.personaId === personaId)
+          : null;
+        if (anchor) return `persona:${anchor.id}`;
       }
-      const cur = yCursorByLane.get(parentKey) ?? laneBaseline.get(parentKey)!;
-      yCursorByLane.set(parentKey, cur + 130);
+      return "company";
+    });
+
+    const laneOrder: string[] = [];
+    const laneCounts = new Map<string, number>();
+    for (const key of laneKeyByIndex) {
+      if (!key) continue;
+      if (!laneCounts.has(key)) laneOrder.push(key);
+      laneCounts.set(key, (laneCounts.get(key) ?? 0) + 1);
+    }
+
+    // Stack lanes vertically, each sized to its own child count — no two
+    // lanes' rows can ever overlap regardless of how unevenly sized they are.
+    const laneBaseline = new Map<string, number>();
+    let cursor = 40;
+    for (const key of laneOrder) {
+      laneBaseline.set(key, cursor);
+      cursor += laneCounts.get(key)! * ROW_H + LANE_GAP;
+    }
+    const yCursorByLane = new Map<string, number>();
+    function yFor(key: string): number {
+      const cur = yCursorByLane.get(key) ?? laneBaseline.get(key)!;
+      yCursorByLane.set(key, cur + ROW_H);
       return cur;
     }
 
-    for (const node of sorted) {
+    // ── Pass 2: actually create rows + edges, using the precomputed lanes ────
+    let accountAnchorId: string | null = null;
+    const createdIds: string[] = [];
+    const refToNodeId = new Map<string, string>();
+    const companyY = 200 + (cursor / 2);
+
+    for (let i = 0; i < sorted.length; i++) {
+      const node = sorted[i];
+      const laneKey = laneKeyByIndex[i];
       const isPersonaAffiliated = PERSONA_AFFILIATED.has(node.type);
       const personaId = isPersonaAffiliated && node.personaName
         ? (personaMap.get(node.personaName.toLowerCase()) ?? null)
         : null;
-      const personaAnchorNode = personaId !== null
-        ? existingNodes.find((n) => n.type === "persona" && n.personaId === personaId)
-        : null;
 
-      // Parent resolution priority: explicit parentRef (a node earlier in
-      // THIS batch) > matched persona anchor > company anchor. A node is
-      // never left with zero edges as long as a company node exists.
       const parentRefNodeId = node.parentRef ? refToNodeId.get(node.parentRef) ?? null : null;
-      const resolvedParentId = parentRefNodeId ?? personaAnchorNode?.id ?? null;
+      const personaAnchorId = laneKey?.startsWith("persona:") ? laneKey.slice("persona:".length) : null;
+      const resolvedParentId = parentRefNodeId ?? personaAnchorId ?? null;
       const wireToCompanyFallback = resolvedParentId === null && node.type !== "company";
       const edgeParentId = resolvedParentId ?? (wireToCompanyFallback ? accountAnchorId : null);
 
       const nodeId = nanoid();
       let x: number;
       let y: number;
-
       if (node.type === "company") {
         x = 200;
         y = companyY;
       } else if (parentRefNodeId) {
-        // True nested child (e.g. a named person under their role) — second ring.
-        x = 840;
-        y = yFor(`ref:${node.parentRef}`);
-      } else if (personaAnchorNode) {
-        // First ring, grouped under whichever persona anchor it matched.
-        x = 520;
-        y = yFor(`persona:${personaAnchorNode.id}`);
+        x = 840; // true nested child — second ring
+        y = yFor(laneKey!);
       } else {
-        // First ring, no persona match — falls back to the company lane.
-        x = 520;
-        y = yFor("company");
+        x = 520; // first ring — persona-matched or company fallback
+        y = yFor(laneKey!);
       }
 
       await db.insert(messagingNodes).values({
