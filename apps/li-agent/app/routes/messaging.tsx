@@ -500,6 +500,14 @@ function PersonaRefNode({ data }: NodeProps) {
   );
 }
 
+// HubSpot contact record URLs carry the numeric contact ID in the path —
+// either the legacy `/contact/{id}` form or the current `/record/0-1/{id}`
+// form (0-1 is the built-in Contact object type). Matches either.
+function extractHubspotContactId(input: string): string | null {
+  const match = input.trim().match(/(?:contact|0-1)\/(\d+)/);
+  return match ? match[1] : null;
+}
+
 function HubspotReferenceNode({ data }: NodeProps) {
   const d = data as NodeData;
   const hasContact = d.dbNode.title && d.dbNode.title !== "HubSpot Reference";
@@ -710,6 +718,7 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
   const [hubspotContactId, setHubspotContactId] = useState<string | null>(null);
   const [hsQuery, setHsQuery] = useState("");
   const [hsSearchTerm, setHsSearchTerm] = useState("");
+  const [hsLink, setHsLink] = useState("");
 
   const hsSearch = useActionQuery(
     "search-hubspot-contacts",
@@ -733,6 +742,7 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     setHubspotContactId(node.hubspotContactId ?? null);
     setHsQuery("");
     setHsSearchTerm("");
+    setHsLink("");
   }, [node?.id]);
 
   async function handleSave() {
@@ -778,10 +788,20 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     setHsSearchTerm(hsQuery.trim());
   }
 
+  function handleUseLink() {
+    const contactId = extractHubspotContactId(hsLink);
+    if (!contactId) {
+      toast.error("Couldn't find a contact ID in that link — paste the full HubSpot contact record URL.");
+      return;
+    }
+    handlePullCorrespondence(contactId);
+  }
+
   async function handlePullCorrespondence(contactId: string) {
     if (!node) return;
     setHubspotContactId(contactId);
     setHsSearchTerm("");
+    setHsLink("");
     try {
       const result = await summarizeCorrespondence.mutateAsync({ nodeId: node.id, contactId }) as {
         name: string; notes: string | null; exampleNotes: string | null; warning?: string;
@@ -854,6 +874,28 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
               {hsSearchTerm.length > 0 && !hsSearch.isFetching && hsResults.length === 0 && (
                 <p className="text-[10px] text-zinc-400 mt-1">No matching HubSpot contacts found.</p>
               )}
+              <div className="mt-2 flex items-center gap-1.5">
+                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
+                <span className="text-[10px] text-zinc-400">or</span>
+                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
+              </div>
+              <div className="mt-2 flex gap-1.5">
+                <Input
+                  value={hsLink}
+                  onChange={(e) => setHsLink(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleUseLink()}
+                  placeholder="Paste a HubSpot contact link…"
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUseLink}
+                  disabled={summarizeCorrespondence.isPending || !hsLink.trim()}
+                >
+                  Use link
+                </Button>
+              </div>
               {hsResults.length > 0 && (
                 <div className="mt-1.5 max-h-48 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-700">
                   {hsResults.map((c) => (
