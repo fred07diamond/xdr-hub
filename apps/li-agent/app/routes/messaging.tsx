@@ -233,7 +233,7 @@ const NODE_CONFIG: Record<NodeKind, {
     color: "#ff7a59",
     Icon: IconAward,
     description: "A real contact + correspondence pulled from HubSpot as a proof example",
-    previewFields: ["notes", "exampleNotes"],
+    previewFields: ["notes", "valueProps", "exampleNotes"],
   },
 };
 
@@ -535,9 +535,14 @@ function HubspotReferenceNode({ data }: NodeProps) {
         </div>
         <div className="px-3 py-2">
           {hasContact ? (
-            <p className="text-[10px] text-zinc-500 truncate">
-              {[d.dbNode.notes, d.dbNode.exampleNotes].filter(Boolean).join(" at ") || "No role/company set"}
-            </p>
+            <>
+              <p className="text-[10px] text-zinc-500 truncate">
+                {[d.dbNode.notes, d.dbNode.valueProps].filter(Boolean).join(" at ") || "No role/company set"}
+              </p>
+              {d.dbNode.exampleNotes && (
+                <p className="text-[10px] text-zinc-500 line-clamp-2 mt-0.5">{d.dbNode.exampleNotes}</p>
+              )}
+            </>
           ) : (
             <p className="text-[10px] text-zinc-400 italic">Click to paste a HubSpot link →</p>
           )}
@@ -723,8 +728,42 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
     setHsLink("");
   }, [node?.id]);
 
+  // For hubspot_reference: a pasted link means "Save" should fetch from
+  // HubSpot (contact + correspondence + AI summary) instead of just
+  // persisting whatever's currently in the text fields.
+  const pendingHubspotContactId = isHubspotReference ? extractHubspotContactId(hsLink) : null;
+
   async function handleSave() {
     if (!node) return;
+
+    if (isHubspotReference && pendingHubspotContactId) {
+      setHubspotContactId(pendingHubspotContactId);
+      setHsLink("");
+      try {
+        const result = await fetchHubspotContact.mutateAsync({
+          nodeId: node.id,
+          contactId: pendingHubspotContactId,
+        }) as {
+          name: string; role: string | null; company: string | null; summary: string | null; warning?: string;
+        };
+        setTitle(result.name);
+        setNotes(result.role ?? "");
+        setValueProps(result.company ?? "");
+        setExampleNotes(result.summary ?? "");
+        onSaved({ title: result.name, notes: result.role, valueProps: result.company, exampleNotes: result.summary });
+        if (result.warning) toast.warning(result.warning);
+        else toast.success("Pulled from HubSpot");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not fetch that contact — try again.");
+      }
+      return;
+    }
+
+    if (isHubspotReference && hsLink.trim() && !pendingHubspotContactId) {
+      toast.error("Couldn't find a contact ID in that link — paste the full HubSpot contact record URL.");
+      return;
+    }
+
     const patch: Partial<MessagingNode> = {
       title: title || undefined,
       tone: tone || null,
@@ -758,29 +797,6 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
       toast.success("Research complete");
     } catch {
       toast.error("Research failed — try again.");
-    }
-  }
-
-  async function handleUseLink() {
-    if (!node) return;
-    const contactId = extractHubspotContactId(hsLink);
-    if (!contactId) {
-      toast.error("Couldn't find a contact ID in that link — paste the full HubSpot contact record URL.");
-      return;
-    }
-    setHubspotContactId(contactId);
-    setHsLink("");
-    try {
-      const result = await fetchHubspotContact.mutateAsync({ nodeId: node.id, contactId }) as {
-        name: string; role: string | null; company: string | null;
-      };
-      setTitle(result.name);
-      setNotes(result.role ?? "");
-      setExampleNotes(result.company ?? "");
-      onSaved({ title: result.name, notes: result.role, exampleNotes: result.company });
-      toast.success("Pulled from HubSpot");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not fetch that contact — try again.");
     }
   }
 
@@ -819,28 +835,15 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
 
           {isHubspotReference && (
             <EditorField label="HubSpot Contact Link" readOnly={false}>
-              <div className="flex gap-1.5">
-                <Input
-                  value={hsLink}
-                  onChange={(e) => setHsLink(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleUseLink()}
-                  placeholder="Paste a HubSpot contact link…"
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleUseLink}
-                  disabled={fetchHubspotContact.isPending || !hsLink.trim()}
-                >
-                  {fetchHubspotContact.isPending
-                    ? <IconRefresh className="animate-spin" size={13} />
-                    : "Use link"}
-                </Button>
-              </div>
-              {hubspotContactId && !fetchHubspotContact.isPending && (
+              <Input
+                value={hsLink}
+                onChange={(e) => setHsLink(e.target.value)}
+                disabled={fetchHubspotContact.isPending}
+                placeholder="Paste a HubSpot contact link, then Save…"
+              />
+              {hubspotContactId && !hsLink && !fetchHubspotContact.isPending && (
                 <p className="text-[10px] text-zinc-400 mt-1">
-                  Linked to HubSpot contact {hubspotContactId} — paste another link to switch.
+                  Linked to HubSpot contact {hubspotContactId} — paste another link and Save to switch.
                 </p>
               )}
             </EditorField>
@@ -858,13 +861,31 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
               </EditorField>
               <EditorField label="Company" readOnly={readOnly}>
                 <Input
-                  value={exampleNotes}
-                  onChange={(e) => setExampleNotes(e.target.value)}
+                  value={valueProps}
+                  onChange={(e) => setValueProps(e.target.value)}
                   disabled={readOnly || fetchHubspotContact.isPending}
                   placeholder="Rotten Tomatoes"
                 />
               </EditorField>
             </div>
+          )}
+
+          {isHubspotReference && (
+            <EditorField label="Why This Worked" readOnly={readOnly}>
+              <textarea
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                rows={5}
+                value={exampleNotes}
+                onChange={(e) => setExampleNotes(e.target.value)}
+                disabled={readOnly || fetchHubspotContact.isPending}
+                placeholder="Paste a HubSpot contact link above and Save — this fills in automatically from their email correspondence. You can edit it after."
+              />
+              {fetchHubspotContact.isPending && (
+                <p className="text-[11px] text-orange-600 italic animate-pulse flex items-center gap-1 mt-1">
+                  <IconRefresh size={11} className="animate-spin" /> Pulling from HubSpot…
+                </p>
+              )}
+            </EditorField>
           )}
 
           {showNotes && (
@@ -986,9 +1007,15 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
                 </>
               ) : (
                 <>
-                  <Button onClick={handleSave} disabled={updateNode.isPending} className="flex-1">
-                    {updateNode.isPending && <IconRefresh className="animate-spin mr-1" size={13} />}
-                    Save
+                  <Button
+                    onClick={handleSave}
+                    disabled={updateNode.isPending || fetchHubspotContact.isPending}
+                    className="flex-1 gap-1.5"
+                  >
+                    {(updateNode.isPending || fetchHubspotContact.isPending) && (
+                      <IconRefresh className="animate-spin" size={13} />
+                    )}
+                    {pendingHubspotContactId ? "Save & Pull from HubSpot" : "Save"}
                   </Button>
                   {!isGlobal && !isPersona && (
                     <Button variant="destructive" onClick={handleDelete} disabled={deleteNode.isPending}>
