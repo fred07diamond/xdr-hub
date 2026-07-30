@@ -1111,6 +1111,17 @@ function scrapeCommenters() {
     const profileUrl = raw.split("?")[0].replace(/\/$/, "");
     if (!profileUrl.includes("/in/") || seen.has(profileUrl)) continue;
 
+    // Only accept links that actually resolve to a linkedin.com profile —
+    // matches the same hostname anchoring findPublicProfileUrl() already
+    // does, so a crafted /in/-shaped link on a non-LinkedIn host can't be
+    // picked up as a commenter's profile.
+    try {
+      const host = new URL(profileUrl).hostname.toLowerCase();
+      if (host !== "linkedin.com" && !host.endsWith(".linkedin.com")) continue;
+    } catch {
+      continue;
+    }
+
     // Secondary author guard: LinkedIn adds an "Author" badge span to the post
     // author's comment. Skip any commenter whose nearby spans contain exactly "Author".
     const nearSpanTexts = Array.from(

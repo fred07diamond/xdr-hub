@@ -145,12 +145,19 @@ function renderProfileCard(data) {
   profileHeadlineText.textContent = data.headline || "";
 
   profileMeta.innerHTML = "";
+  function addMetaChip(text, className) {
+    const chip = document.createElement("span");
+    chip.className = `meta-chip ${className}`;
+    chip.textContent = text;
+    profileMeta.appendChild(chip);
+  }
   if (data.role && data.company && data.role !== data.company) {
-    profileMeta.innerHTML = `<span class="meta-chip role-chip">${data.role}</span><span class="meta-chip company-chip">${data.company}</span>`;
+    addMetaChip(data.role, "role-chip");
+    addMetaChip(data.company, "company-chip");
   } else if (data.company) {
-    profileMeta.innerHTML = `<span class="meta-chip company-chip">${data.company}</span>`;
+    addMetaChip(data.company, "company-chip");
   } else if (data.role) {
-    profileMeta.innerHTML = `<span class="meta-chip role-chip">${data.role}</span>`;
+    addMetaChip(data.role, "role-chip");
   }
 
   if (data.location) {

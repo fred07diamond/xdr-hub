@@ -170,7 +170,7 @@ async function checkHubspot(profileUrl, name, company) {
     if (company) params.set("company", company);
     if (apiToken) params.set("apiToken", apiToken);
     const url = `${appUrl}/_agent-native/actions/check-hubspot-contact?${params.toString()}`;
-    console.log("[BLI] HubSpot lookup →", { profileUrl, name, company, url });
+    console.log("[BLI] HubSpot lookup →", { profileUrl, name, company });
     const res = await fetch(url);
     if (!res.ok) {
       console.warn("[BLI] HubSpot lookup failed", res.status, await res.text().catch(() => ""));
