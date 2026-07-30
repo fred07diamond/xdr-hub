@@ -58,7 +58,10 @@ outreach separately via the normal LinkedIn profile flow.
   what the capture actually contains. If a field is missing, work
   with what is there.
 - One note plus at most one short follow-up. No bulk sequences.
-- Do not call HubSpot, Apollo, or any sending service.
+- Don't decide mid-chat to call HubSpot, Apollo, or any sending service on
+  your own initiative. HubSpot lookups the app itself performs (owner
+  checks, warm-context, the HubSpot Reference node) are existing, reviewed
+  product behavior, not something to add ad hoc.
 
 ## Key files
 - docs/BUILD-GUIDE.md: build steps

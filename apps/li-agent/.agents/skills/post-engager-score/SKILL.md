@@ -1,47 +1,48 @@
 ---
 name: post-engager-score
-description: Use when a LinkedIn post commenter has been loaded into the Engagement tab and needs a HubSpot owner lookup, ICP fit verdict, persona assignment, and a drafted connection note.
+description: Reference for how Builder.LI actually scores and drafts for a LinkedIn post commenter. This runs synchronously in code via enrich-post-engager.ts, not as an agent-orchestrated skill — read this to understand or extend that code path, not to execute it as a chat workflow.
 ---
 
-# Post engager scoring workflow
+# How post-engager enrichment actually works
 
-Runs after the extension loads a commenter from a LinkedIn post. Produces
-a fit verdict, persona assignment, and a drafted connection note.
+Runs synchronously inside `actions/enrich-post-engager.ts` when the extension
+sends full profile data for a commenter that `ingest-post-engager.ts` already
+created a bare row for. No agent turn is involved in a normal enrichment.
 
-## What is available
-Fields from the engager record: engager_name, engager_company,
-engager_headline, engager_role, engager_about, engager_recent_activity,
-comment_text, post_url. Some may be null if enrichment hasn't run yet.
+## The real flow (`actions/enrich-post-engager.ts`)
 
-## Step 1: Check HubSpot owner
-Call check-hubspot-contact with the engager's profile URL or name/company.
-Record xdr_owner (XDR Owner custom field) as primary owner.
-Fall back to contact owner, then company owner.
-If HubSpot returns found=false, hubspot_status = "new_opportunity".
+1. Save the enriched profile fields onto the `post_engagements` row, status
+   `enriching`.
+2. HubSpot lookup — a direct contact search (same filter strategy as
+   `check-hubspot-contact.ts`, but implemented inline here, not by calling
+   that action). Owner resolution order: `xdr_owner` custom field first,
+   then the contact's HubSpot owner, then the associated company's owner as
+   a last resort. No match → `hubspotStatus = "new_opportunity"`.
+3. `selectPersona()` (`server/helpers/select-persona.ts`) — the same
+   persona-matching logic `capture-profile.ts` uses: single persona with a
+   doc wins outright, multiple personas get an AI classification pick, none
+   falls back to the legacy single ICP document.
+4. `scoreEngager()` (`server/helpers/score-engager.ts`) — one `completeText()`
+   call. The comment text is passed as extra evidence: a substantive,
+   on-topic comment counts for more than a generic profile.
+5. Draft a connection note (same drafting call path as a normal capture) and
+   write everything back, status `drafted`.
 
-## Step 2: Load ICP context
-Call get-icp-sources. Use icpText field as the ICP document.
-If icpText is null or empty, return verdict = "inconclusive" with the
-standard "No ICP document uploaded" reason.
+## Scoring rubric currently in `score-engager.ts`
 
-## Step 3: Assign persona
-Match the engager's profile against available ICP personas to select the
-best-fitting one. Record persona_id, persona_name, persona_color.
+- **strong**: title/seniority matches the ICP, OR the comment itself shows
+  clear relevant intent/interest.
+- **possible**: adjacent title or seniority, no behavioral signal.
+- **weak**: clear mismatch.
+- **inconclusive**: no ICP document uploaded — never guessed.
 
-## Step 4: Score fit
-Compare the engager's profile fields against the ICP. Weight the comment
-text as an extra engagement signal — a substantive comment about the topic
-is stronger evidence than years of experience. Return:
-- strong: title/seniority match OR clear comment engagement signal
-- possible: adjacent title/seniority, no behavioral signals
-- weak: clear mismatch
-- inconclusive: no ICP uploaded
+## Hard rules (still true, still enforced in the prompt)
 
-## Step 5: Draft connection note
-Draft a personalized LinkedIn connection note (under 280 characters)
-regardless of fit verdict. Reference something specific and real about the
-engager's work or their comment. Never fabricate facts.
+- Never fabricate anything about the engager. Score and draft only from
+  what the capture and comment actually contain.
+- Draft note under ~280 characters, referencing something specific and real.
+- Nothing sends automatically.
 
-## Hard rules
-- Never fabricate facts. Score and draft only from what the capture contains.
-- Write fit_reason in one sentence citing the strongest specific evidence.
+If you're extending this, the place to do it is `score-engager.ts`'s
+`systemPrompt` (or the shared drafting helper), not this doc — keep this file
+in sync with whatever the code actually does after that change.

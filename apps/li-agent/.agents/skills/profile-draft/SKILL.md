@@ -1,128 +1,65 @@
 ---
 name: profile-draft
-description: Use when a LinkedIn profile has been captured by the Builder.LI extension and needs a fit score and a drafted connection note. Covers reading the captured fields, checking HubSpot warm context, loading the selected Notion ICP docs live, scoring fit, and drafting a personalized note.
+description: Reference for how Builder.LI actually scores and drafts a captured LinkedIn profile. This runs synchronously in code, not as an agent-orchestrated skill — read this to understand or extend that code path, not to execute it as a chat workflow.
 ---
 
-# Profile draft workflow
+# How profile capture, scoring, and drafting actually work
 
-Runs when the extension sends a captured profile to the
-capture-profile action. Produce a fit verdict and one drafted
-connection note. Never send anything; the user sends by hand.
+This used to describe an agent-driven, multi-step chat workflow. It doesn't
+work that way today: `capture-profile.ts` runs the whole thing synchronously,
+in code, in a single action call. There is no agent turn in the loop for a
+normal capture. This doc now describes the real code path so it stays useful
+as a reference instead of describing behavior that no longer exists.
 
-## Step 1: Read the capture
-Fields available: name, headline, current role, company, about
-text, recent activity/posts, and the profile URL. Some may be
-empty depending on what the page exposed.
+## The real flow (`actions/capture-profile.ts`)
 
-## Step 1.5: Check HubSpot warm context (best-effort)
-Call check-hubspot-contact with the profile URL. If the call fails
-or returns found=false, skip this step and continue with the cold
-path in Step 4.
+1. Upsert the `prospects` row from the captured fields (name, headline, role,
+   company, about, recent activity), status `captured`.
+2. Call `selectPersona()` (`server/helpers/select-persona.ts`):
+   - If exactly one ICP persona has an uploaded document, use it directly.
+   - If multiple personas have documents, a small `completeText()` call
+     classifies the profile against short persona summaries and picks the
+     best match.
+   - If none have a document, fall back to the older single "ICP document"
+     (`icp_sources` table, pre-dates personas).
+   - If nothing is available at all, `icpText` is null.
+3. Build messaging context: `buildCanvasContext()` if a `canvasId` was given
+   (and passes ownership checks), otherwise `buildMessagingContext()` walks
+   the persona's node tree on the Messaging Canvas.
+4. Call `draftProfile()` (`server/helpers/draft-profile.ts`) — one
+   `completeText()` call that scores fit and drafts the note together. No
+   ICP → verdict is forced to `"inconclusive"` with a fixed reason; the
+   model never invents a score. Untrusted profile text is passed as the
+   `input`, never concatenated into the `systemPrompt`.
+5. Write `fitVerdict`, `fitReason`, `draftNote`, `draftFollowUp` back to the
+   prospect row, status `drafted`.
 
-If found=true, note these warm-outreach signals for Step 4:
-- ownerName: the AE or rep already working this contact
-- formMessage: their own words about their problem or company,
-  captured from a form submission
-- firstPageSeen / lastPageSeen: which pages they visited on the
-  Builder.io site — signals what they were researching
-- isInSequence: they are currently in an active email sequence
+## HubSpot warm context
 
-These signals mean this is a warm account. LinkedIn should be
-a personal, supplemental touchpoint — not a cold intro.
+Not part of `capture-profile.ts`'s own flow. `check-hubspot-contact.ts` is a
+separate action the extension calls itself to show a "already in HubSpot"
+badge — it does not feed into the draft prompt. If you want warm-context
+(sequence status, past form messages) to actually shape the drafted note,
+that's a real gap to close in `draft-profile.ts`, not something already
+wired up.
 
-## Step 2: Load the active ICP context
-Call get-icp-sources. Check the `icpText` field first — it holds
-a directly uploaded ICP document and takes priority.
+## Scoring rubric currently in `draft-profile.ts`
 
-If icpText is null or empty AND sources is empty:
-- Set verdict = "inconclusive"
-- Set fit_reason = "No ICP document uploaded — go to the ICP
-  tab and upload your ICP criteria to enable fit scoring."
-- Do not guess or invent ICP criteria. Do not return "strong",
-  "possible", or "weak" without a real ICP.
-- Continue to Step 4 and draft a generic note from the profile
-  alone (no ICP voice or targeting — just a polite, professional
-  intro based on what the profile shows).
+- **strong**: title/seniority matches the ICP, or a specific behavioral
+  signal in recent activity (engaging with a relevant tool/vendor/theme).
+- **possible**: genuine uncertainty only — adjacent title or one seniority
+  level off, with no behavioral signal either way.
+- **weak**: clear mismatch, explicit counter-evidence, or too junior.
+- **inconclusive**: no ICP document available — never guessed.
 
-If icpText has content, use it as the ICP.
-If icpText is null but sources has Notion page IDs, call
-mcp__notion__fetch for each and combine into ICP context.
-If a Notion fetch fails, fall back to icpText if available,
-otherwise use the no-ICP path above.
+## Hard rules (still true, still enforced in the prompt)
 
-## Step 3: Score fit
-Compare the profile against the combined ICP context. Return a
-short verdict (strong / possible / weak) with one line of
-reasoning. If the person is a clear disqualifier per the ICP
-docs, say so plainly so the user can skip them.
+- Never fabricate anything about the prospect. Only reference what the
+  capture, HubSpot data (when actually wired in), or ICP docs contain.
+- Draft note max ~200 characters plus an optional short follow-up.
+- Nothing sends automatically — the human always sends by hand.
 
-## Step 4: Draft the note
-
-**If HubSpot data is present (warm path):**
-LinkedIn is a warm, personal channel — the goal is to close
-the loop on existing outreach, not pitch from scratch.
-
-The note should feel like a thoughtful human checking in, not
-a sequence step. LinkedIn is more reflective and personal than
-email; match that tone.
-
-- If isInSequence=true: acknowledge the existing conversation.
-  The note can reference "our team's outreach" or name the owner
-  if that feels natural (e.g. "I saw [ownerName] has been in touch
-  — wanted to reach out personally as well"). Keep it light; don't
-  repeat what the email sequence has already said.
-- If formMessage is present: they expressed their own problem in
-  their own words. Reference the topic or pain they described
-  without quoting verbatim or saying "you filled out a form".
-  Example: if they mentioned 10 Shopify stores, note their
-  multi-store commerce context; if they mentioned a specific
-  challenge, reference that pain point naturally.
-- If firstPageSeen or lastPageSeen reference a specific topic
-  (e.g. headless CMS, composable commerce, edge delivery),
-  weave that intent signal in naturally — it shows you know what
-  they were researching without being creepy about it.
-- Never start with "I noticed you…" or similar surveillance clichés.
-- Never fabricate. Only reference signals actually present in the
-  HubSpot data or the LinkedIn capture.
-
-**If no HubSpot data (cold path):**
-Write one connection note that:
-- References something specific and true from the capture (a post,
-  a role detail, shared context). Never invent facts.
-- Matches the voice defined in the ICP docs.
-- Fits LinkedIn's limit: 300 chars Premium/Sales Navigator, about
-  200 free. Validate length before returning.
-- Holds the pitch. The note earns the accept; the ask comes later.
-
-Optionally draft a short follow-up for after they accept.
-
-## Step 5: Store and return
-Write the verdict, reasoning, note, and follow-up to the
-prospect's row and set status "drafted" so the extension can
-display them. Record the profile in send_history only when the
-user marks it sent (via mark-sent), not at draft time.
-
-## Writing style (hard rules)
-
-These apply to every note and follow-up, no exceptions:
-
-- **No em dashes** (—). Never use them. Rewrite the sentence instead.
-- **No semicolons** (;). Break into two sentences if needed.
-- **No corporate filler**: "I wanted to reach out", "I hope this finds
-  you well", "touching base", "synergy", "leverage", "circle back".
-- **No surveillance openers**: "I noticed you…", "I saw that you…",
-  "I came across your profile…".
-- Short sentences. One idea per sentence.
-- Active voice. Real words, not buzzwords.
-- Read the note aloud before returning it. If it sounds like a
-  template, rewrite it until it doesn't.
-
-## Do / Don't
-- DON'T fabricate anything about the prospect or the ICP.
-- DON'T design or suggest auto-send or browser automation.
-- DON'T draft more than one note plus one optional follow-up.
-- DO draft against the current Notion selection, read fresh each
-  time, so updated docs are always reflected.
-- DO use HubSpot warm context when available — treat LinkedIn as a
-  personal, supplemental channel that closes the loop on emails,
-  sequences, or meetings, not a cold outreach channel.
+If you're extending this (e.g. wiring HubSpot warm context into drafting, or
+adding style rules like banned phrases), the place to do it is
+`draft-profile.ts`'s `systemPrompt`, not this doc — keep this file in sync
+with whatever the code actually does after that change.

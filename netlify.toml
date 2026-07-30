@@ -9,6 +9,16 @@
 [functions."*"]
   timeout = 75
 
+# Baseline security headers for every response. A full Content-Security-Policy
+# is deliberately not set here yet — it needs testing against each app's real
+# script/style/font origins first, and a wrong CSP can break the whole site.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
 # Root → Dispatch (workspace control plane)
 [[redirects]]
   from = "/"
