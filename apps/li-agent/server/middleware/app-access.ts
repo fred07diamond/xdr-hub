@@ -1,7 +1,7 @@
 import { defineEventHandler, getRequestURL, setResponseStatus } from "h3";
 import { eq, and } from "drizzle-orm";
-import { getSharedDb, workspaceAppAccess } from "@xdr-hub/shared/server";
-import { isWorkspaceMember } from "../helpers/workspace-org.js";
+import { getSharedDb, isWorkspaceMember, workspaceAppAccess } from "@xdr-hub/shared/server";
+import { getDb } from "../db/index.js";
 
 const APP_NAME = "li-agent" as const;
 const DISPATCH_URL = process.env.APP_URL
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   if (existing) return;
 
   // No explicit grant — auto-grant if they're already an org member (backward compat).
-  const isMember = await isWorkspaceMember(userEmail);
+  const isMember = await isWorkspaceMember(userEmail, getDb());
   if (isMember) {
     await db.insert(workspaceAppAccess).values({
       id: `${userEmail}|${APP_NAME}`,

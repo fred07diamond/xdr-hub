@@ -1,44 +1,18 @@
-import { text } from "@agent-native/core/db/schema";
-import { and, inArray, sql } from "drizzle-orm";
-import { sqliteTable } from "drizzle-orm/sqlite-core";
-import { getDb } from "../db/index.js";
-
-// Minimal binding to the framework-managed org_members table (read-only).
-const orgMembers = sqliteTable("org_members", {
-  email: text("email").notNull(),
-  role: text("role").notNull(),
-});
+import { requireWorkspaceAdmin } from "@xdr-hub/shared/server";
 
 /**
- * Throws unless the caller is a workspace admin or owner.
+ * Throws unless the caller is a workspace admin (or the owner).
  *
- * Priority:
- *  1. WORKSPACE_OWNER_EMAIL env — always admin, no DB query needed.
- *  2. org_members table — role must be 'owner' or 'admin'.
+ * Delegates entirely to the shared `requireWorkspaceAdmin`, the same gate
+ * Dispatch's Team & Access page and Booking use — this used to run its own,
+ * separate check against the framework's `org_members` table, which let
+ * someone who was merely an org member (but never made an admin via
+ * Dispatch) call li-agent's own admin actions, including the ones that
+ * grant workspace roles and app access. There is now exactly one admin
+ * source of truth across all three apps.
  */
 export async function requireAdmin(
   ctx: { userEmail?: string } | null | undefined,
 ): Promise<void> {
-  if (!ctx?.userEmail) {
-    throw new Error("Authentication required");
-  }
-
-  // Workspace owner is always admin — skip the DB round-trip.
-  if (ctx.userEmail === process.env.WORKSPACE_OWNER_EMAIL) return;
-
-  const db = getDb();
-  const result = await db
-    .select({ role: orgMembers.role })
-    .from(orgMembers)
-    .where(
-      and(
-        sql`lower(${orgMembers.email}) = lower(${ctx.userEmail})`,
-        inArray(orgMembers.role, ["owner", "admin"]),
-      ),
-    )
-    .limit(1);
-
-  if (result.length === 0) {
-    throw new Error("Admin access required");
-  }
+  await requireWorkspaceAdmin(ctx?.userEmail);
 }

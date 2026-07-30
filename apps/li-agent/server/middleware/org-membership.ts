@@ -1,8 +1,12 @@
 import { defineEventHandler, getRequestURL, setResponseStatus } from "h3";
-import { getWorkspaceOrgId, isWorkspaceMember } from "../helpers/workspace-org.js";
+import { getWorkspaceOrgId, isWorkspaceMember } from "@xdr-hub/shared/server";
+import { getDb } from "../db/index.js";
 
 // Paths the extension calls without a session — auth is handled by API token
-// inside each action, not here.
+// inside each action, not here. This list is documentation only: the actual
+// enforcement is each action's own `requiresAuth` flag at dispatch time, so
+// an action missing from this list isn't a gap — but keep it accurate so the
+// next reader isn't misled about what's actually public.
 const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/capture-profile",
   "/_agent-native/actions/get-draft",
@@ -10,6 +14,12 @@ const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/check-already-contacted",
   "/_agent-native/actions/get-daily-stats",
   "/_agent-native/actions/submit-feedback",
+  "/_agent-native/actions/check-hubspot-contact",
+  "/_agent-native/actions/list-canvases",
+  "/_agent-native/actions/ingest-post-engager",
+  "/_agent-native/actions/enrich-post-engager",
+  "/_agent-native/actions/get-post-engager",
+  "/_agent-native/actions/resolve-connect-button",
 ]);
 
 // Runs after auth.ts (alphabetical order). Rejects authenticated users who
@@ -31,10 +41,11 @@ export default defineEventHandler(async (event) => {
   if (userEmail === process.env.WORKSPACE_OWNER_EMAIL) return;
 
   // Resolve workspace org_id and check membership in that specific org.
-  const workspaceOrgId = await getWorkspaceOrgId();
+  const db = getDb();
+  const workspaceOrgId = await getWorkspaceOrgId(db);
   if (!workspaceOrgId) return; // Can't determine workspace org — owner check above covers it
 
-  const isMember = await isWorkspaceMember(userEmail);
+  const isMember = await isWorkspaceMember(userEmail, db);
   if (!isMember) {
     setResponseStatus(event, 403);
     return { error: "Your access has been removed. Contact your workspace admin." };

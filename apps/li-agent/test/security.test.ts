@@ -99,7 +99,7 @@ describe("Layer 2 — InviteOnlyGate blocks uninvited users in UI", () => {
 
 describe("Layer 3 — server middleware + extension helper scope to workspace org", () => {
   it("workspace-org.ts (shared membership helper) binds the orgId column from org_members", () => {
-    const src = readFile("server/helpers/workspace-org.ts");
+    const src = readFile("../../packages/shared/src/server/workspace-org.ts");
     expect(
       src,
       "workspace-org.ts does not bind org_id column.\n" +
@@ -128,7 +128,7 @@ describe("Layer 3 — server middleware + extension helper scope to workspace or
   });
 
   it("workspace-org.ts isWorkspaceMember filters by workspaceOrgId", () => {
-    const src = readFile("server/helpers/workspace-org.ts");
+    const src = readFile("../../packages/shared/src/server/workspace-org.ts");
     expect(
       src,
       "workspace-org.ts does not filter by workspaceOrgId.\n" +

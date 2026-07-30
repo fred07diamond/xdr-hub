@@ -12,8 +12,9 @@ export default defineAction({
   }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ email, role, hubspotAccountId }, ctx) => {
+  run: async ({ email: rawEmail, role, hubspotAccountId }, ctx) => {
     await requireAdminOrOwner(ctx?.userEmail);
+    const email = rawEmail.toLowerCase();
     const db = getSharedDb();
     const now = new Date().toISOString();
     await db

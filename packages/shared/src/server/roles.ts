@@ -1,9 +1,9 @@
-import { eq } from "@agent-native/core/db/schema";
+import { sql } from "@agent-native/core/db/schema";
 import { getSharedDb, workspaceUserRoles } from "./db/index.js";
 
 export type WorkspaceRole = "xdr" | "ae" | "admin" | "none";
 
-function isWorkspaceOwner(email: string): boolean {
+export function isWorkspaceOwner(email: string): boolean {
   const owner = process.env.WORKSPACE_OWNER_EMAIL;
   return !!owner && email.toLowerCase() === owner.toLowerCase();
 }
@@ -22,7 +22,7 @@ export async function getWorkspaceRole(email: string): Promise<WorkspaceRole> {
   const row = await db
     .select({ role: workspaceUserRoles.role })
     .from(workspaceUserRoles)
-    .where(eq(workspaceUserRoles.email, email))
+    .where(sql`lower(${workspaceUserRoles.email}) = lower(${email})`)
     .limit(1);
   const role = (row[0]?.role as WorkspaceRole | undefined) ?? "none";
   if (role === "none" && isWorkspaceOwner(email)) return "admin";
