@@ -15,11 +15,13 @@ export default defineAction({
   run: async ({ emails }, ctx) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
 
+    const orgDomain = process.env.WORKSPACE_ORG_DOMAIN?.toLowerCase();
     const names: Record<string, string> = {};
 
     await Promise.all(
       emails.map(async (email) => {
         if (!email) return;
+        if (orgDomain && !email.toLowerCase().endsWith(`@${orgDomain}`)) return;
         try {
           const result = (await hubspotFetch(`/crm/v3/owners?email=${encodeURIComponent(email)}`)) as {
             results?: Array<{ firstName?: string; lastName?: string; email?: string }>;

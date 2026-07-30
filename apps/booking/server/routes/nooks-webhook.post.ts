@@ -99,12 +99,20 @@ export default defineEventHandler(async (event) => {
     if (verified) {
       console.log(`[nooks-webhook] signature verified (${variant})`);
     } else {
-      console.warn(
-        "[nooks-webhook] signature verification failed — header:",
-        sigHeader.slice(0, 120),
-        "bodyLen:", raw.length,
-        "bodyB64:", Buffer.from(raw).toString("base64").slice(0, 2400),
-      );
+      if (process.env.NOOKS_SIG_CAPTURE === "1") {
+        console.warn(
+          "[nooks-webhook] signature verification failed — header:",
+          sigHeader.slice(0, 120),
+          "bodyLen:", raw.length,
+          "bodyB64:", Buffer.from(raw).toString("base64").slice(0, 2400),
+        );
+      } else {
+        console.warn(
+          "[nooks-webhook] signature verification failed — header:",
+          sigHeader.slice(0, 120),
+          "bodyLen:", raw.length,
+        );
+      }
       // Capture mode (NOOKS_SIG_CAPTURE=1): acknowledge mismatches so
       // Nooks' save-time signed test can succeed while a key rotation is
       // being sorted out. Data creation stays blocked (verified=false).
@@ -145,8 +153,10 @@ export default defineEventHandler(async (event) => {
   );
 
   if (payload.event !== "call.logged" || !call?.callId) return { received: true };
-  // Data creation requires a verified signature (or no key configured yet).
-  if (signingKey && !verified) {
+  // Data creation always requires a verified signature — a missing signing
+  // key is NOT treated as "trust it anyway", it fails closed exactly like an
+  // invalid signature would.
+  if (!verified) {
     return { received: true, workflowInitiated: false, reason: "unsigned" };
   }
   if (!dispositionName || !CONNECTED_MEETING_RE.test(dispositionName)) {

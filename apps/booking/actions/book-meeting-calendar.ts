@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { bookedMeetings, generatedNotes } from "../server/db/schema.js";
@@ -116,13 +116,42 @@ export default defineAction({
       );
     }
 
-    await db
+    // Conditional write: only commit if calendarEventId still matches what we
+    // read before the (slow, network-bound) booking call above. If a
+    // concurrent call already wrote a different result in the meantime, this
+    // affects 0 rows instead of silently clobbering it — the loser reports
+    // the winner's result rather than presenting two different truths.
+    const originalEventId = meeting.calendarEventId;
+    const raceGuard = originalEventId
+      ? eq(bookedMeetings.calendarEventId, originalEventId)
+      : isNull(bookedMeetings.calendarEventId);
+
+    const updated = await db
       .update(bookedMeetings)
       .set({
         calendarEventId: result.eventId,
         meetingLink: result.meetingLink,
       })
-      .where(and(eq(bookedMeetings.id, meetingId), eq(bookedMeetings.status, "confirmed")));
+      .where(and(eq(bookedMeetings.id, meetingId), eq(bookedMeetings.status, "confirmed"), raceGuard))
+      .returning({ id: bookedMeetings.id });
+
+    if (updated.length === 0) {
+      const [current] = await db
+        .select({ calendarEventId: bookedMeetings.calendarEventId, meetingLink: bookedMeetings.meetingLink })
+        .from(bookedMeetings)
+        .where(eq(bookedMeetings.id, meetingId))
+        .limit(1);
+      warnings.push(
+        "Another request booked this meeting's calendar event at the same time — showing that one instead of creating a duplicate.",
+      );
+      return {
+        meetingId,
+        calendarEventId: current?.calendarEventId ?? result.eventId,
+        meetingLink: current?.meetingLink ?? result.meetingLink,
+        calendarOwner: result.ownerEmail,
+        warnings,
+      };
+    }
 
     return {
       meetingId,

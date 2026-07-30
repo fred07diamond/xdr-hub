@@ -45,10 +45,6 @@ export default defineAction({
     const refreshToken = account?.tokens?.refresh_token as string | undefined;
     const accountEmail = account?.accountId ?? "unknown";
 
-    console.log("[cal] userEmail=%s accounts=%d accountId=%s hasToken=%s hasRefresh=%s tokenKeys=%s",
-      ctx!.userEmail, accounts.length, accountEmail, !!token, !!refreshToken,
-      account ? Object.keys(account.tokens ?? {}).join(",") : "none");
-
     if (!token) {
       return { events: [], connected: false, reason: "no_google_account" as const };
     }
@@ -71,7 +67,6 @@ export default defineAction({
 
     try {
       let res = await fetchEvents(token);
-      console.log("[cal] calendar API status=%d calId=%s", res.status, calId);
 
       // Auto-refresh on 401
       if (res.status === 401 && refreshToken) {

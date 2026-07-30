@@ -11,11 +11,11 @@ export interface NooksOAuthState {
   ts: number;
 }
 
+// Deliberately does NOT fall back to A2A_SECRET — that secret is trusted for
+// cross-app calls workspace-wide, and reusing it here would mean a compromise
+// of one trust boundary weakens the other. OAuth state gets its own secret.
 function signingKey(): string {
-  const key =
-    process.env.OAUTH_STATE_SECRET ||
-    process.env.BETTER_AUTH_SECRET ||
-    process.env.A2A_SECRET;
+  const key = process.env.OAUTH_STATE_SECRET || process.env.BETTER_AUTH_SECRET;
   if (!key) throw new Error("OAuth state signing requires a server secret.");
   return key;
 }

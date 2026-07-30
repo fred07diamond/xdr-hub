@@ -42,8 +42,6 @@ export default defineEventHandler(async (event) => {
     return oauthErrorPage("Google OAuth credentials are not configured.");
   }
 
-  console.log("[cb] ownerEmail=%s redirectUri=%s", ownerEmail, state.redirectUri);
-
   try {
     const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
       method: "POST",
@@ -57,8 +55,6 @@ export default defineEventHandler(async (event) => {
       }),
     });
     const tokens = (await tokenRes.json()) as Record<string, unknown>;
-    console.log("[cb] token exchange status=%d hasRefresh=%s tokenKeys=%s",
-      tokenRes.status, !!tokens.refresh_token, Object.keys(tokens).join(","));
     if (!tokenRes.ok) {
       const errMsg =
         (tokens.error_description as string) ||
@@ -72,11 +68,9 @@ export default defineEventHandler(async (event) => {
     });
     const user = (await userRes.json()) as Record<string, unknown>;
     const email = user.email as string | undefined;
-    console.log("[cb] userinfo email=%s", email);
     if (!email) throw new Error("Could not retrieve email from Google.");
 
     await saveOAuthTokens("google", email, tokens, ownerEmail);
-    console.log("[cb] saveOAuthTokens done for email=%s", email);
 
     return oauthCallbackResponse(event, email, {
       addAccount: true,
