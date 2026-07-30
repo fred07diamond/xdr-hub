@@ -20,9 +20,10 @@ export default defineAction({
   }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ email, role, hubspotAccountId, grantApps, revokeApps }, ctx) => {
+  run: async ({ email: rawEmail, role, hubspotAccountId, grantApps, revokeApps }, ctx) => {
     const callerEmail = await getRequestUserEmail();
     await requireWorkspaceAdmin(callerEmail);
+    const email = rawEmail.toLowerCase();
     const db = getSharedDb();
     const now = new Date().toISOString();
 

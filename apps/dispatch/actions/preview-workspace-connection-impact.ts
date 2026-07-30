@@ -1,4 +1,6 @@
 import { defineAction } from "@agent-native/core";
+import { getRequestUserEmail } from "@agent-native/core/server";
+import { requireWorkspaceAdmin } from "@xdr-hub/shared/server";
 import { getWorkspaceConnectionProvider } from "@agent-native/core/connections";
 import {
   getWorkspaceConnectionAppAccess,
@@ -6,6 +8,10 @@ import {
   listWorkspaceConnections,
   summarizeWorkspaceConnectionProviderReadiness,
 } from "@agent-native/core/workspace-connections";
+import {
+  humanizeAppId,
+  uniqueStrings,
+} from "../server/lib/workspace-connection-helpers.js";
 import { z } from "zod";
 
 const KNOWN_IMPACT_APPS = [
@@ -22,20 +28,6 @@ const operationSchema = z.enum([
   "delete-connection",
   "revoke-app-grant",
 ]);
-
-function unique(values: string[]): string[] {
-  return Array.from(
-    new Set(values.map((value) => value.trim()).filter(Boolean)),
-  );
-}
-
-function humanizeAppId(appId: string): string {
-  return appId
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
 
 function appLabel(appId: string): string {
   return (
@@ -79,7 +71,8 @@ function operationVerb(operation: z.infer<typeof operationSchema>) {
 
 export default defineAction({
   description:
-    "Preview which apps and grants would be affected before revoking, disabling, or deleting a shared workspace integration connection.",
+    "Preview which apps and grants would be affected before revoking, disabling, or deleting a shared workspace integration connection. Admin only.",
+  requiresAuth: true,
   schema: z.object({
     connectionId: z
       .string()
@@ -97,6 +90,7 @@ export default defineAction({
   http: { method: "GET" },
   readOnly: true,
   run: async (args) => {
+    await requireWorkspaceAdmin(await getRequestUserEmail());
     const connectionId = args.connectionId.trim();
     const targetAppId = args.appId?.trim();
 
@@ -124,15 +118,15 @@ export default defineAction({
       listWorkspaceConnectionGrants({ connectionId: connection.id }),
     ]);
     const provider = getWorkspaceConnectionProvider(connection.provider);
-    const recommendedAppIds = unique(
+    const recommendedAppIds = uniqueStrings(
       provider?.recommendedTemplateUses.map((appId) => appId) ?? [],
     );
-    const selectedAppIds = unique(connection.allowedApps);
-    const explicitGrantAppIds = unique(
+    const selectedAppIds = uniqueStrings(connection.allowedApps);
+    const explicitGrantAppIds = uniqueStrings(
       connectionGrants.map((grant) => grant.appId),
     );
     const allApps = selectedAppIds.length === 0;
-    const trackedAppIds = unique([
+    const trackedAppIds = uniqueStrings([
       ...KNOWN_IMPACT_APPS.map((app) => app.id),
       ...recommendedAppIds,
       ...selectedAppIds,
@@ -267,7 +261,7 @@ export default defineAction({
         explicitGrantAppIds,
         effectiveAppIds: allApps
           ? ["*"]
-          : unique([...selectedAppIds, ...explicitGrantAppIds]),
+          : uniqueStrings([...selectedAppIds, ...explicitGrantAppIds]),
         trackedApps,
       },
       usedByApps,

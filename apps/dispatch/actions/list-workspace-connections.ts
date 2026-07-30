@@ -1,4 +1,6 @@
 import { defineAction } from "@agent-native/core";
+import { getRequestUserEmail } from "@agent-native/core/server";
+import { requireWorkspaceAdmin } from "@xdr-hub/shared/server";
 import {
   listWorkspaceConnectionProviders,
   type WorkspaceConnectionCapability,
@@ -14,7 +16,10 @@ import {
   listWorkspaceConnections,
   summarizeWorkspaceConnectionProviderReadiness,
 } from "@agent-native/core/workspace-connections";
-import { dispatchActions } from "@agent-native/dispatch/actions";
+import {
+  listGrantApps,
+  uniqueStrings,
+} from "../server/lib/workspace-connection-helpers.js";
 import { z } from "zod";
 
 const httpBoolean = z.preprocess((value) => {
@@ -25,18 +30,6 @@ const httpBoolean = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
-type GrantApp = {
-  id: string;
-  label: string;
-};
-
-type WorkspaceApp = {
-  id: string;
-  name?: string;
-  status?: "ready" | "pending";
-  archived?: boolean;
-};
-
 type GrantSummary = {
   id: string;
   connectionId: string;
@@ -46,12 +39,6 @@ type GrantSummary = {
   lastUsedAt?: string | null;
 };
 
-function unique(values: string[]) {
-  return Array.from(
-    new Set(values.map((value) => value.trim()).filter(Boolean)),
-  );
-}
-
 function optionalTimestamp(source: object, key: string) {
   if (!Object.prototype.hasOwnProperty.call(source, key)) return undefined;
   const value = (source as Record<string, unknown>)[key];
@@ -60,40 +47,10 @@ function optionalTimestamp(source: object, key: string) {
   return String(value);
 }
 
-function humanizeAppId(appId: string): string {
-  return appId
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-async function listGrantApps(): Promise<GrantApp[]> {
-  const listWorkspaceApps = dispatchActions["list-workspace-apps"];
-  if (!listWorkspaceApps) return [{ id: "dispatch", label: "Dispatch" }];
-
-  try {
-    const apps = (await listWorkspaceApps.run({
-      includeAgentCards: false,
-      audience: "all",
-    } as any)) as WorkspaceApp[];
-    const grantApps = apps
-      .filter((app) => !app.archived && app.status !== "pending")
-      .map((app) => ({
-        id: app.id,
-        label: app.name || humanizeAppId(app.id),
-      }));
-    return grantApps.length > 0
-      ? grantApps
-      : [{ id: "dispatch", label: "Dispatch" }];
-  } catch {
-    return [{ id: "dispatch", label: "Dispatch" }];
-  }
-}
-
 export default defineAction({
   description:
-    "List the workspace integration provider catalog, saved shared connections, and app access grants.",
+    "List the workspace integration provider catalog, saved shared connections, and app access grants. Admin only.",
+  requiresAuth: true,
   schema: z.object({
     provider: z
       .string()
@@ -117,6 +74,7 @@ export default defineAction({
   }),
   http: { method: "GET" },
   run: async (args) => {
+    await requireWorkspaceAdmin(await getRequestUserEmail());
     const providers = listWorkspaceConnectionProviders({
       capability: args.capability as WorkspaceConnectionCapability | undefined,
       templateUse: args.templateUse as
@@ -170,16 +128,16 @@ export default defineAction({
       }),
     ];
     const grantSummaries = connections.map((connection) => {
-      const explicitGrantAppIds = unique(
+      const explicitGrantAppIds = uniqueStrings(
         explicitGrants
           .filter((grant) => grant.connectionId === connection.id)
           .map((grant) => grant.appId),
       );
-      const selectedAppIds = unique(connection.allowedApps);
+      const selectedAppIds = uniqueStrings(connection.allowedApps);
       const allApps = selectedAppIds.length === 0;
       const effectiveAppIds = allApps
         ? ["*"]
-        : unique([...selectedAppIds, ...explicitGrantAppIds]);
+        : uniqueStrings([...selectedAppIds, ...explicitGrantAppIds]);
 
       return {
         connectionId: connection.id,

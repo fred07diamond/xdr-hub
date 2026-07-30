@@ -5,6 +5,9 @@ import {
   upsertWorkspaceConnection,
   upsertWorkspaceConnectionGrant,
 } from "@agent-native/core/workspace-connections";
+import { getRequestUserEmail } from "@agent-native/core/server";
+import { requireWorkspaceAdmin } from "@xdr-hub/shared/server";
+import { uniqueStrings } from "../server/lib/workspace-connection-helpers.js";
 import { z } from "zod";
 
 const httpBoolean = z.preprocess((value) => {
@@ -23,15 +26,10 @@ const DEFAULT_KNOWN_APP_IDS = [
   "mail",
 ];
 
-function uniqueStrings(values: string[]): string[] {
-  return Array.from(
-    new Set(values.map((value) => value.trim()).filter(Boolean)),
-  );
-}
-
 export default defineAction({
   description:
-    "Grant or revoke one workspace app's access to a shared workspace integration connection.",
+    "Grant or revoke one workspace app's access to a shared workspace integration connection. Admin only.",
+  requiresAuth: true,
   schema: z.object({
     connectionId: z.string().describe("Workspace connection ID."),
     appId: z
@@ -55,6 +53,7 @@ export default defineAction({
       ),
   }),
   run: async (args) => {
+    await requireWorkspaceAdmin(await getRequestUserEmail());
     const connection = await getWorkspaceConnection(args.connectionId);
     if (!connection) {
       throw new Error(`Workspace connection "${args.connectionId}" not found.`);

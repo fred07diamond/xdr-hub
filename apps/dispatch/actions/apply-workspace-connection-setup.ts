@@ -1,7 +1,10 @@
 import { defineAction } from "@agent-native/core";
 import { getWorkspaceConnectionProvider } from "@agent-native/core/connections";
+import { getRequestUserEmail } from "@agent-native/core/server";
+import { requireWorkspaceAdmin } from "@xdr-hub/shared/server";
 import { z } from "zod";
 
+import { uniqueStrings } from "../server/lib/workspace-connection-helpers.js";
 import upsertWorkspaceConnection from "./upsert-workspace-connection.js";
 
 const statusSchema = z.enum([
@@ -32,12 +35,6 @@ const RAW_SECRET_PATTERNS = [
   /-----BEGIN [A-Z ]+PRIVATE KEY-----/,
 ];
 
-function uniqueStrings(values: string[]): string[] {
-  return Array.from(
-    new Set(values.map((value) => value.trim()).filter(Boolean)),
-  );
-}
-
 function assertSafeCredentialRefKey(key: string) {
   const value = key.trim();
   if (!value) return;
@@ -56,7 +53,8 @@ function assertSafeCredentialRefKey(key: string) {
 
 export default defineAction({
   description:
-    "Apply a planned workspace integration setup or repair using credential reference names only.",
+    "Apply a planned workspace integration setup or repair using credential reference names only. Admin only.",
+  requiresAuth: true,
   schema: z.object({
     connectionId: z
       .string()
@@ -75,6 +73,7 @@ export default defineAction({
     selectedApps: z.array(z.string()).default([]),
   }),
   run: async (args) => {
+    await requireWorkspaceAdmin(await getRequestUserEmail());
     const provider = getWorkspaceConnectionProvider(args.provider);
     if (!provider) {
       throw new Error(

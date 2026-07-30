@@ -7,6 +7,8 @@ import {
   upsertWorkspaceConnection,
   type WorkspaceConnectionStatus,
 } from "@agent-native/core/workspace-connections";
+import { getRequestUserEmail } from "@agent-native/core/server";
+import { requireWorkspaceAdmin } from "@xdr-hub/shared/server";
 import { z } from "zod";
 
 const statusSchema = z.enum([
@@ -59,7 +61,8 @@ function normalizeCredentialRefs(
 
 export default defineAction({
   description:
-    "Create or update a shared workspace integration connection and its app access list.",
+    "Create or update a shared workspace integration connection and its app access list. Admin only.",
+  requiresAuth: true,
   schema: z.object({
     id: z.string().optional().describe("Existing connection ID to update."),
     provider: z
@@ -100,6 +103,7 @@ export default defineAction({
     lastError: z.string().nullable().optional(),
   }),
   run: async (args) => {
+    await requireWorkspaceAdmin(await getRequestUserEmail());
     const provider = getWorkspaceConnectionProvider(args.provider);
     if (!provider) {
       throw new Error(
