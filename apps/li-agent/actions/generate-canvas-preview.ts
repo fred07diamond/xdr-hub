@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { buildCanvasContext } from "../server/helpers/build-canvas-context.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
+import { assertCanvasReadable } from "../server/helpers/canvas-access.js";
 
 export default defineAction({
   description:
@@ -11,9 +12,11 @@ export default defineAction({
   schema: z.object({
     canvasId: z.string().describe("Messaging canvas ID to use for context"),
   }),
+  requiresAuth: true,
   http: { method: "POST" },
-  run: async (args) => {
+  run: async (args, ctx) => {
     const db = getDb();
+    await assertCanvasReadable(args.canvasId, ctx!.userEmail, db);
     const canvasContext = await buildCanvasContext(args.canvasId, db);
 
     const systemPrompt =

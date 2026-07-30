@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { messagingNodes } from "../server/db/schema.js";
+import { assertCanvasWritable } from "../server/helpers/canvas-access.js";
 
 const DEFAULT_TITLES: Record<string, string> = {
   tone: "Tone & Voice",
@@ -46,6 +47,7 @@ export default defineAction({
   requiresAuth: true,
   run: async ({ canvasId, nodeType, title: titleArg, positionX, positionY, personaId, tone, valueProps, phrasesToUse, phrasesToAvoid, exampleNotes, notes }, ctx) => {
     const db = getDb();
+    await assertCanvasWritable(canvasId, ctx!.userEmail, db);
     const id = nanoid();
     const now = new Date().toISOString();
     const title = titleArg ?? DEFAULT_TITLES[nodeType] ?? "New Node";

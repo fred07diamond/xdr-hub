@@ -6,6 +6,7 @@ import { getDb } from "../server/db/index.js";
 import { messagingNodes } from "../server/db/schema.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
 import { hubspotFetchIfConnected } from "../server/helpers/hubspot-client.js";
+import { assertNodeWritable } from "../server/helpers/canvas-access.js";
 
 export default defineAction({
   description:
@@ -16,7 +17,8 @@ export default defineAction({
   }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ nodeId, companyName }) => {
+  run: async ({ nodeId, companyName }, ctx) => {
+    await assertNodeWritable(nodeId, ctx!.userEmail, getDb());
     const systemPrompt =
       "You are a B2B sales researcher. Write a concise company research summary for use in LinkedIn outreach.\n\n" +
       "Cover: industry, estimated company size, business model, likely buyer pain points, recent news or initiatives, and GTM motion if inferrable.\n\n" +

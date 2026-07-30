@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { icpPersonas, messagingEdges, messagingNodes } from "../server/db/schema.js";
 import { ensureUserCanvas, seedSystemCanvases } from "../server/helpers/seed-system-canvases.js";
+import { assertCanvasReadable } from "../server/helpers/canvas-access.js";
 
 export default defineAction({
   description: "Return the messaging graph for a canvas. Pass canvasId to scope to a specific canvas; omit it to use the user's default canvas.",
@@ -20,6 +21,7 @@ export default defineAction({
     await seedSystemCanvases(db);
     const defaultCanvasId = await ensureUserCanvas(userEmail, db);
     const activeCanvasId = canvasId ?? defaultCanvasId;
+    if (canvasId) await assertCanvasReadable(canvasId, userEmail, db);
 
     const [allNodes, allEdges, personas] = await Promise.all([
       db.select().from(messagingNodes)

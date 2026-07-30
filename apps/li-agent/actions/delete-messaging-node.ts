@@ -3,6 +3,7 @@ import { eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { messagingEdges, messagingNodes } from "../server/db/schema.js";
+import { requireAdmin } from "../server/helpers/require-admin.js";
 
 export default defineAction({
   description: "Delete a messaging node and all its connected edges. Cannot delete the global node or nodes owned by other users.",
@@ -23,7 +24,11 @@ export default defineAction({
 
     if (!row[0]) return { ok: false, error: "Node not found" };
     if (row[0].type === "global") return { ok: false, error: "Cannot delete the global node." };
-    if (row[0].ownerEmail !== ctx!.userEmail) return { ok: false, error: "Not authorized to delete this node." };
+    if (row[0].type === "persona") {
+      await requireAdmin(ctx);
+    } else if (row[0].ownerEmail !== ctx!.userEmail) {
+      return { ok: false, error: "Not authorized to delete this node." };
+    }
 
     await Promise.all([
       db.delete(messagingEdges).where(or(eq(messagingEdges.sourceId, id), eq(messagingEdges.targetId, id))),

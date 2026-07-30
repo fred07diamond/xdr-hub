@@ -32,16 +32,13 @@ export default defineAction({
 
     if (!row[0]) return { ok: false, error: "Node not found" };
 
-    // Persona and global node content is admin-only; position updates are allowed for all.
-    const contentFields = ["title", "tone", "valueProps", "phrasesToUse", "phrasesToAvoid", "exampleNotes", "notes", "personaId"];
-    const updatingContent = contentFields.some((k) => fields[k as keyof typeof fields] !== undefined);
-    if ((row[0].type === "global" || row[0].type === "persona") && updatingContent) {
+    // Persona and global nodes (shared, ownerEmail=null) are admin-only for
+    // ANY change, including a position-only drag — not just content edits.
+    // Everything else is owned — only the owner may edit it, position or not.
+    if (row[0].type === "global" || row[0].type === "persona") {
       await requireAdmin(ctx);
-    } else if (row[0].type !== "global" && row[0].type !== "persona") {
-      // Fine-tuning nodes are owned — only the owner may edit them
-      if (row[0].ownerEmail !== ctx!.userEmail) {
-        return { ok: false, error: "Not authorized to edit this node." };
-      }
+    } else if (row[0].ownerEmail !== ctx!.userEmail) {
+      return { ok: false, error: "Not authorized to edit this node." };
     }
 
     await db

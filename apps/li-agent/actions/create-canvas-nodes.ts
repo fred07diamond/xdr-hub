@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { icpPersonas, messagingEdges, messagingNodes } from "../server/db/schema.js";
 import { ensureUserCanvas } from "../server/helpers/seed-system-canvases.js";
+import { assertCanvasWritable } from "../server/helpers/canvas-access.js";
 
 const NODE_INPUT = z.object({
   type: z.enum([
@@ -49,6 +50,7 @@ export default defineAction({
   run: async ({ canvasId, nodes }, ctx) => {
     const db = getDb();
     const userEmail = ctx!.userEmail!;
+    if (canvasId) await assertCanvasWritable(canvasId, userEmail, db);
     const activeCanvasId = canvasId ?? (await ensureUserCanvas(userEmail, db));
 
     const [existingNodes, personas] = await Promise.all([

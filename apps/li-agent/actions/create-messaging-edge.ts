@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { messagingEdges } from "../server/db/schema.js";
+import { assertCanvasWritable } from "../server/helpers/canvas-access.js";
 
 type Db = ReturnType<typeof import("../server/db/index.js").getDb>;
 
@@ -50,6 +51,12 @@ export default defineAction({
 
     const db = getDb();
     const ownerEmail = ctx!.userEmail!;
+
+    try {
+      await assertCanvasWritable(canvasId, ownerEmail, db);
+    } catch {
+      return { ok: false, error: "Canvas not found or not writable." };
+    }
 
     // Prevent duplicate edges for this user on this canvas
     const dupEdges = await db

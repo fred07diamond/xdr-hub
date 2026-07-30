@@ -4,7 +4,8 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
 import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
-import { resolveOwner } from "../server/helpers/resolve-owner.js";
+import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
+import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 export default defineAction({
   description: "Check if a prospect exists in HubSpot and return their CRM status, owner, warm signals, and a direct link to their contact record.",
@@ -13,17 +14,24 @@ export default defineAction({
     name: z.string().nullish().describe("Full name scraped from the LinkedIn profile (used when not yet in DB)"),
     company: z.string().nullish().describe("Company name scraped from the LinkedIn profile (used when not yet in DB)"),
     apiToken: z.string().nullish().describe("Personal API token"),
-    debug: z.coerce.boolean().nullish().describe("Return raw contact properties for field name verification"),
   }),
   requiresAuth: false,
   readOnly: true,
   http: { method: "GET" },
   publicAgent: { expose: true, readOnly: true, requiresAuth: false },
-  run: async ({ profileUrl, name: nameParam, company: companyParam, apiToken, debug }, ctx) => {
+  run: async ({ profileUrl, name: nameParam, company: companyParam, apiToken }, ctx) => {
     const token = await getHubSpotToken();
     if (!token) return { connected: false, found: false };
 
-    const ownerEmail = await resolveOwner(apiToken, ctx);
+    // A real session or a valid personal token is required — this searches
+    // the org's live HubSpot data, so a credential-free caller gets nothing
+    // rather than being silently treated as the workspace owner.
+    const ownerEmail = await resolveOwnerStrict(apiToken, ctx);
+    if (!ownerEmail) return { connected: false, found: false };
+
+    if (!(await checkRateLimit(ownerEmail, "check-hubspot-contact", 120))) {
+      return { connected: false, found: false };
+    }
 
     // Try DB first — gives us stored name/company and lets us scope by owner.
     const db = getDb();
@@ -117,17 +125,7 @@ export default defineAction({
       (results.length === 1 ? results[0] : undefined);
 
     if (!match) {
-      // Debug: return the raw search results so we can see what HubSpot returned.
-      if (debug) {
-        return { connected: true, found: false, debugSearched: { firstName, lastName, companyLower }, debugResults: results.map(r => ({ id: r.id, properties: r.properties })) };
-      }
       return { connected: true, found: false };
-    }
-
-    // In debug mode, return raw properties so you can verify field names.
-    // Usage: GET /check-hubspot-contact?profileUrl=...&debug=true
-    if (debug) {
-      return { connected: true, found: true, contactId: match.id, rawProperties: match.properties };
     }
 
     // Get portal ID to construct the direct HubSpot link (best-effort)
