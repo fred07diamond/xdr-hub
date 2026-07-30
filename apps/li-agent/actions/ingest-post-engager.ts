@@ -7,6 +7,7 @@ import { getDb } from "../server/db/index.js";
 import { postEngagements } from "../server/db/schema.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
+import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 async function generatePostName(rawText: string): Promise<string> {
   try {
@@ -42,6 +43,10 @@ export default defineAction({
     const db = getDb();
     const now = new Date().toISOString();
     const ownerEmail = await resolveOwner(args.apiToken, ctx);
+
+    if (!(await checkRateLimit(ownerEmail ?? "anonymous", "ingest-post-engager", 60))) {
+      return { ok: false, error: "Rate limit reached — try again shortly." };
+    }
 
     // Check if this (postUrl, engagerProfileUrl, ownerEmail) combo already exists.
     const ownerFilter = ownerEmail

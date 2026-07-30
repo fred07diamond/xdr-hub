@@ -272,6 +272,15 @@ export default runMigrations(
       name: "messaging-nodes-hubspot-contact-id",
       sql: `ALTER TABLE messaging_nodes ADD COLUMN IF NOT EXISTS hubspot_contact_id TEXT`,
     },
+    {
+      version: 43,
+      name: "rate-limit-counters-table",
+      sql: `CREATE TABLE IF NOT EXISTS rate_limit_counters (
+        id TEXT PRIMARY KEY,
+        count INTEGER NOT NULL DEFAULT 0,
+        window_start TEXT NOT NULL
+      )`,
+    },
   ],
   { table: "outreach_migrations" },
 );

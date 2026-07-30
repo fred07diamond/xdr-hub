@@ -193,3 +193,11 @@ export const postEngagements = table("post_engagements", {
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });
+
+// Fixed-window rate-limit counters. One row per (bucket, action) pair; the
+// window resets whenever a check finds windowStart older than the window size.
+export const rateLimitCounters = table("rate_limit_counters", {
+  id: text("id").primaryKey(),
+  count: integer("count").notNull().default(0),
+  windowStart: text("window_start").notNull(),
+});

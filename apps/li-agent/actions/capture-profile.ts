@@ -9,6 +9,8 @@ import { buildCanvasContext } from "../server/helpers/build-canvas-context.js";
 import { draftProfile } from "../server/helpers/draft-profile.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
+import { checkRateLimit } from "../server/helpers/rate-limit.js";
+import { isOverDailyLimit } from "../server/helpers/daily-limit.js";
 
 export default defineAction({
   description:
@@ -31,6 +33,33 @@ export default defineAction({
     const now = new Date().toISOString();
 
     const ownerEmail = await resolveOwner(args.apiToken, ctx);
+
+    if (!(await checkRateLimit(ownerEmail ?? "anonymous", "capture-profile", 60))) {
+      return {
+        id: "",
+        status: "captured" as const,
+        fitVerdict: "inconclusive" as const,
+        fitReason: "Rate limit reached — try again shortly.",
+        draftNote: "",
+        draftFollowUp: null,
+        personaName: null,
+        personaColor: null,
+      };
+    }
+
+    if (await isOverDailyLimit(ownerEmail)) {
+      return {
+        id: "",
+        status: "captured" as const,
+        fitVerdict: "inconclusive" as const,
+        fitReason: "Daily outreach limit reached — resets tomorrow.",
+        draftNote: "",
+        draftFollowUp: null,
+        personaName: null,
+        personaColor: null,
+      };
+    }
+
     const ownerFilter = ownerEmail ? eq(prospects.ownerEmail, ownerEmail) : isNull(prospects.ownerEmail);
 
     // Upsert prospect row

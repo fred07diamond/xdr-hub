@@ -7,6 +7,7 @@ import { getDb } from "../server/db/index.js";
 import { postEngagements } from "../server/db/schema.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
+import { checkRateLimit } from "../server/helpers/rate-limit.js";
 import { scoreEngager } from "../server/helpers/score-engager.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
@@ -27,6 +28,11 @@ export default defineAction({
     const db = getDb();
     const now = new Date().toISOString();
     const ownerEmail = await resolveOwner(args.apiToken, ctx);
+
+    if (!(await checkRateLimit(ownerEmail ?? "anonymous", "enrich-post-engager", 60))) {
+      return { ok: false, error: "Rate limit reached — try again shortly." };
+    }
+
     const ownerFilter = ownerEmail
       ? eq(postEngagements.ownerEmail, ownerEmail)
       : isNull(postEngagements.ownerEmail);
