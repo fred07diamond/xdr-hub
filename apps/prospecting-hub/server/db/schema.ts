@@ -59,6 +59,7 @@ export const personas = table("personas", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  color: text("color"), // UI accent color, hex string
   criteria: text("criteria"), // JSON: titles/attributes/rules parsed from source_doc_url
   sourceDocUrl: text("source_doc_url"), // Notion or Google Docs source of truth
   ownerEmail: text("owner_email").notNull(),

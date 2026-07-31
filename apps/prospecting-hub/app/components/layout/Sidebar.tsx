@@ -19,6 +19,7 @@ import {
   IconMessageCircle,
   IconSearch,
   IconSettings,
+  IconTarget,
 } from "@tabler/icons-react";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -38,6 +39,12 @@ const navItems = [
     labelKey: "navigation.chat",
     href: "/",
     view: "chat",
+  },
+  {
+    icon: IconTarget,
+    labelKey: "Personas",
+    href: "/personas",
+    view: "personas",
   },
 ];
 

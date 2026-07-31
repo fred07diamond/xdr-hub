@@ -110,6 +110,11 @@ export default runMigrations(
         error TEXT
       )`,
     },
+    {
+      version: 9,
+      name: "personas-color-column",
+      sql: `ALTER TABLE personas ADD COLUMN color TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );
