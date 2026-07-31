@@ -1,3 +1,4 @@
+import { getOrgContext } from "@agent-native/core/org";
 import {
   createAgentChatPlugin,
   loadActionsFromStaticRegistry,
@@ -10,6 +11,7 @@ const createWorkspaceAgentChatPlugin = (workspaceServer as Record<string, unknow
 const options = {
   appId: "prospecting-hub",
   actions: loadActionsFromStaticRegistry(actionsRegistry),
+  resolveOrgId: async (event) => (await getOrgContext(event)).orgId,
 } satisfies AgentChatPluginOptions;
 
 export default typeof createWorkspaceAgentChatPlugin === "function"
