@@ -18,6 +18,12 @@ export default defineAction({
     const db = getDb();
     await assertSegmentWritable(id, ctx!.userEmail!, db);
 
+    if (name == null && visibility == null) {
+      throw Object.assign(new Error("Provide at least one field to update."), {
+        statusCode: 400,
+      });
+    }
+
     await db
       .update(segments)
       .set({
