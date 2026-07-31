@@ -14,6 +14,7 @@ import {
   type ChatHistoryItem,
 } from "@agent-native/toolkit/chat-history";
 import {
+  IconChartBar,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconListDetails,
@@ -52,6 +53,12 @@ const navItems = [
     labelKey: "Segments",
     href: "/segments",
     view: "segments",
+  },
+  {
+    icon: IconChartBar,
+    labelKey: "Analytics",
+    href: "/analytics",
+    view: "analytics",
   },
 ];
 
