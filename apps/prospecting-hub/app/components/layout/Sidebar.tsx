@@ -16,6 +16,7 @@ import {
 import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconListDetails,
   IconMessageCircle,
   IconSearch,
   IconSettings,
@@ -45,6 +46,12 @@ const navItems = [
     labelKey: "Personas",
     href: "/personas",
     view: "personas",
+  },
+  {
+    icon: IconListDetails,
+    labelKey: "Segments",
+    href: "/segments",
+    view: "segments",
   },
 ];
 
