@@ -92,6 +92,27 @@ export const analyticsEvents = table("analytics_events", {
   timestamp: text("timestamp").default(now()),
 });
 
+// Per-XDR configuration for the scheduled CommonRoom-Prospector pipeline.
+// Each rule owns exactly one stable segment (segment_id) that accumulates
+// matches across every scheduled run — the segment is created once when the
+// rule is created, not regenerated per run.
+export const sourcingRules = table("sourcing_rules", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  ownerEmail: text("owner_email").notNull(),
+  personaId: text("persona_id").notNull(),
+  subPersonaId: text("sub_persona_id"),
+  companyAllowList: text("company_allow_list"), // JSON-encoded string array
+  companyDenyList: text("company_deny_list"), // JSON-encoded string array
+  desiredVolume: integer("desired_volume").notNull().default(20),
+  readyByTime: text("ready_by_time").notNull(), // "HH:MM", 24-hour, server-local (single-timezone workspace)
+  leadHours: integer("lead_hours").notNull().default(3),
+  segmentId: text("segment_id").notNull(),
+  jobResourcePath: text("job_resource_path"),
+  status: text("status", { enum: ["active", "paused"] }).notNull().default("active"),
+  createdAt: text("created_at").default(now()),
+});
+
 // One row per sync run against an external source.
 export const syncRecords = table("sync_records", {
   id: text("id").primaryKey(),

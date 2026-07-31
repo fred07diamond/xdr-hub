@@ -115,6 +115,26 @@ export default runMigrations(
       name: "personas-color-column",
       sql: `ALTER TABLE personas ADD COLUMN color TEXT`,
     },
+    {
+      version: 10,
+      name: "sourcing-rules-table",
+      sql: `CREATE TABLE IF NOT EXISTS sourcing_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        owner_email TEXT NOT NULL,
+        persona_id TEXT NOT NULL,
+        sub_persona_id TEXT,
+        company_allow_list TEXT,
+        company_deny_list TEXT,
+        desired_volume INTEGER NOT NULL DEFAULT 20,
+        ready_by_time TEXT NOT NULL,
+        lead_hours INTEGER NOT NULL DEFAULT 3,
+        segment_id TEXT NOT NULL,
+        job_resource_path TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );
