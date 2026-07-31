@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, segmentContacts } from "../server/db/schema.js";
 import { assertSegmentReadable } from "../server/helpers/segment-access.js";
+import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
   description: "Get a segment and its full contact list, if the caller can read it.",
@@ -12,6 +13,7 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async ({ id }, ctx) => {
+    await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
     const segment = await assertSegmentReadable(id, ctx!.userEmail!, db);
 

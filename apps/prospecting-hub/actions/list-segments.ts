@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { personas, segmentContacts, segments } from "../server/db/schema.js";
-import { getUserRole } from "../server/helpers/require-role.js";
+import { getUserRole, requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
   description: "List segments visible to the caller — owned or public, plus every segment if the caller is an admin — with contact counts and persona name/color.",
@@ -12,6 +12,7 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async (_input, ctx) => {
+    await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
     const role = await getUserRole(ctx!.userEmail!);
 

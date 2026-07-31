@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { personas } from "../server/db/schema.js";
 import { decodePersonaCriteria } from "../server/helpers/persona-sync.js";
+import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
   description: "List core personas with name, color, description, and a word count derived from their synced document text.",
@@ -11,7 +12,8 @@ export default defineAction({
   requiresAuth: true,
   readOnly: true,
   http: { method: "GET" },
-  run: async () => {
+  run: async (_input, ctx) => {
+    await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
     const rows = await db
       .select({
