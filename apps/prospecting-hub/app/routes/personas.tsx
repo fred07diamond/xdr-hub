@@ -4,6 +4,8 @@ import {
 } from "@agent-native/core/client";
 import {
   IconCheck,
+  IconChevronDown,
+  IconChevronUp,
   IconFileText,
   IconLoader2,
   IconLock,
@@ -60,6 +62,15 @@ interface Persona {
   createdAt: string | null;
 }
 
+interface SubPersona {
+  id: string;
+  personaId: string;
+  name: string;
+  wordCount: number;
+  ownerEmail: string;
+  createdAt: string | null;
+}
+
 // ── Color swatch picker ──────────────────────────────────────────────────────
 
 function ColorPicker({
@@ -85,6 +96,182 @@ function ColorPicker({
           )}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── Sub-personas (inline, XDR/AE-owned, on every card) ───────────────────────
+
+function SubPersonaSection({ personaId }: { personaId: string }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [pendingFile, setPendingFile] = useState<{ name: string; text: string } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data, isLoading, refetch } = useActionQuery(
+    "list-sub-personas",
+    { personaId },
+    { enabled: expanded },
+  );
+  const createSubPersona = useActionMutation("create-sub-persona");
+  const deleteSubPersona = useActionMutation("delete-sub-persona");
+
+  const subPersonas: SubPersona[] = (data as { subPersonas?: SubPersona[] })?.subPersonas ?? [];
+
+  async function loadFile(file: File) {
+    setError(null);
+    if (!isAccepted(file)) { setError("Only .txt and .md files supported."); return; }
+    const text = await readFileAsText(file);
+    if (!text.trim()) { setError("File appears to be empty."); return; }
+    setPendingFile({ name: file.name, text });
+    if (!name) setName(file.name.replace(/\.[^.]+$/, ""));
+  }
+
+  async function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) await loadFile(file);
+    e.target.value = "";
+  }
+
+  function resetAddForm() {
+    setAdding(false);
+    setName("");
+    setPendingFile(null);
+    setError(null);
+  }
+
+  async function handleCreate() {
+    if (!name.trim() || !pendingFile) return;
+    await createSubPersona.mutateAsync({ personaId, name: name.trim(), text: pendingFile.text });
+    resetAddForm();
+    refetch();
+  }
+
+  async function handleDelete(id: string) {
+    const result = await deleteSubPersona.mutateAsync({ id });
+    if ((result as { ok?: boolean; error?: string })?.ok === false) {
+      alert((result as { error: string }).error);
+      return;
+    }
+    refetch();
+  }
+
+  return (
+    <div className="border-t border-border/60 px-4 py-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        Sub-personas
+        {expanded ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {isLoading ? (
+            <p className="text-[11px] text-muted-foreground/50">Loading…</p>
+          ) : subPersonas.length === 0 ? (
+            <p className="text-[11px] italic text-muted-foreground/50">None yet</p>
+          ) : (
+            subPersonas.map((sp) => (
+              <div key={sp.id} className="flex items-center justify-between gap-2 rounded bg-muted/30 px-2 py-1">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-medium text-foreground">{sp.name}</p>
+                  <p className="text-[10px] text-muted-foreground/60">{sp.wordCount.toLocaleString()} words</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(sp.id)}
+                  disabled={deleteSubPersona.isPending}
+                  className="shrink-0 rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-destructive"
+                  aria-label={`Delete ${sp.name}`}
+                >
+                  <IconTrash size={11} />
+                </button>
+              </div>
+            ))
+          )}
+
+          {adding ? (
+            <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-border bg-background p-2">
+              <input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Sub-persona name"
+                className="w-full rounded border border-border bg-background px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_INPUT}
+                className="hidden"
+                onChange={handleFileInput}
+              />
+              {pendingFile ? (
+                <div className="flex items-center gap-2 rounded border border-border bg-muted/30 px-2 py-1">
+                  <IconFileText size={12} className="shrink-0 text-muted-foreground" />
+                  <p className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">{pendingFile.name}</p>
+                  <button
+                    type="button"
+                    onClick={() => setPendingFile(null)}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <IconX size={10} />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={async (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) await loadFile(f); }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`flex cursor-pointer items-center justify-center gap-1.5 rounded border border-dashed py-2 text-[10px] transition-colors ${
+                    dragOver
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border/60 text-muted-foreground/60 hover:border-border"
+                  }`}
+                >
+                  <IconUpload size={11} />
+                  Drop or click to add criteria doc
+                </div>
+              )}
+              {error && <p className="text-[10px] text-destructive">{error}</p>}
+              <div className="flex justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={resetAddForm}
+                  className="rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreate}
+                  disabled={!name.trim() || !pendingFile || createSubPersona.isPending}
+                  className="inline-flex items-center gap-1 rounded bg-primary px-2 py-1 text-[10px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+                >
+                  {createSubPersona.isPending && <IconLoader2 size={10} className="animate-spin" />}
+                  Add
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="mt-0.5 inline-flex items-center gap-1 self-start text-[11px] text-primary hover:underline"
+            >
+              <IconPlus size={11} />
+              Add sub-persona
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -250,6 +437,8 @@ function PersonaCard({
           <p className="text-xs text-muted-foreground/50 italic">No document uploaded yet</p>
         )}
       </div>
+
+      <SubPersonaSection personaId={persona.id} />
 
       <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
         {isAdmin ? (
