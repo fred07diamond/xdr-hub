@@ -1,6 +1,6 @@
 import { defineAction } from "@agent-native/core";
 import { z } from "zod";
-import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
+import { getHubSpotToken, hubspotFetch } from "@xdr-hub/shared/server";
 
 export default defineAction({
   description: "Check whether HubSpot is connected by verifying the stored token.",

@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { hubspotQueues, hubspotQueueItems } from "../server/db/schema.js";
-import { hubspotFetch } from "../server/helpers/hubspot-client.js";
+import { hubspotFetch } from "@xdr-hub/shared/server";
 
 export default defineAction({
   description: "Import a HubSpot contact list as an outreach queue.",

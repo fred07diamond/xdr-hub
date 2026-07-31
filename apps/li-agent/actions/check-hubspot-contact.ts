@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
-import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
+import { getHubSpotToken, hubspotFetch } from "@xdr-hub/shared/server";
 import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 

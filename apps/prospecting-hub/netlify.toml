@@ -1,0 +1,13 @@
+[build]
+command = "export DATABASE_URL=\"${NETLIFY_DATABASE_URL:-$DATABASE_URL}\" && APP_BASE_PATH=/prospecting-hub VITE_APP_BASE_PATH=/prospecting-hub NITRO_PRESET=netlify pnpm --filter prospecting-hub build"
+publish = "apps/prospecting-hub/dist"
+functions = "apps/prospecting-hub/.netlify/functions-internal"
+
+[build.environment]
+GA_MEASUREMENT_ID = "G-ESF7FYXGN9"
+GTM_CONTAINER_ID = "GTM-N3WSTXZ"
+  NITRO_PRESET = "netlify"
+  NPM_CONFIG_PRODUCTION = "false"
+
+  APP_BASE_PATH = "/prospecting-hub"
+  VITE_APP_BASE_PATH = "/prospecting-hub"

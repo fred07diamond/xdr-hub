@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { messagingNodes } from "../server/db/schema.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
-import { hubspotFetch } from "../server/helpers/hubspot-client.js";
+import { hubspotFetch } from "@xdr-hub/shared/server";
 import { assertNodeWritable } from "../server/helpers/canvas-access.js";
 
 interface EmailResult {

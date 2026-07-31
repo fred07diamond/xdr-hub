@@ -10,7 +10,7 @@ import { resolveOwner } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 import { scoreEngager } from "../server/helpers/score-engager.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
-import { getHubSpotToken, hubspotFetch } from "../server/helpers/hubspot-client.js";
+import { getHubSpotToken, hubspotFetch } from "@xdr-hub/shared/server";
 
 export default defineAction({
   description: "Update a post engager with full LinkedIn profile data, then run HubSpot lookup and ICP fit scoring synchronously.",
