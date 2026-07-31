@@ -334,9 +334,12 @@ function SegmentDetailView({
   onBack: () => void;
   onDeleted: () => void;
 }) {
-  const { data, isLoading, refetch } = useActionQuery("get-segment", { id });
+  const { data, isLoading, error, refetch } = useActionQuery("get-segment", { id });
   const segment: SegmentDetail | undefined = (data as { segment?: SegmentDetail })?.segment;
   const contacts: SegmentContact[] = (data as { contacts?: SegmentContact[] })?.contacts ?? [];
+  const loadError = !isLoading && !segment
+    ? errorMessage(error, "Couldn't load this segment.")
+    : null;
 
   const updateSegment = useActionMutation("update-segment");
   const assignSegment = useActionMutation("assign-segment");
@@ -416,8 +419,10 @@ function SegmentDetailView({
           <IconArrowLeft size={16} />
         </button>
 
-        {isLoading || !segment ? (
+        {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !segment ? (
+          <p className="text-sm text-destructive">{loadError}</p>
         ) : (
           <>
             <div className="min-w-0 flex-1">
@@ -523,7 +528,7 @@ function SegmentDetailView({
           <div className="flex h-32 items-center justify-center">
             <IconLoader2 size={20} className="animate-spin text-muted-foreground" />
           </div>
-        ) : contacts.length === 0 ? (
+        ) : loadError ? null : contacts.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2 text-center">
             <IconUsers size={28} className="text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">No contacts in this segment</p>
