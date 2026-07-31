@@ -22,6 +22,7 @@ import {
   IconSearch,
   IconSettings,
   IconTarget,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -47,6 +48,12 @@ const navItems = [
     labelKey: "Personas",
     href: "/personas",
     view: "personas",
+  },
+  {
+    icon: IconUsers,
+    labelKey: "Contacts",
+    href: "/contacts",
+    view: "contacts",
   },
   {
     icon: IconListDetails,
