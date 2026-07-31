@@ -6,6 +6,7 @@ import { getDb } from "../server/db/index.js";
 import { contacts, syncRecords } from "../server/db/schema.js";
 import { hubspotFetch } from "@xdr-hub/shared/server";
 import { requireRole } from "../server/helpers/require-role.js";
+import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 
 const CONTACT_PROPERTIES = ["firstname", "lastname", "jobtitle", "company", "email", "phone", "hs_linkedin_url"];
 // Hard cap per run so a single sync can't run away — matches the pattern
@@ -126,6 +127,8 @@ export default defineAction({
         .set({ status: "success", completedAt: new Date().toISOString(), recordsPulled: pulled.length })
         .where(eq(syncRecords.id, syncId));
 
+      await logAnalyticsEvent(ctx!.userEmail!, "sync_run", { source: "hubspot", status: "success", recordsPulled: pulled.length });
+
       return { syncId, status: "success" as const, recordsPulled: pulled.length, created, updated };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -133,6 +136,7 @@ export default defineAction({
         .update(syncRecords)
         .set({ status: "failed", completedAt: new Date().toISOString(), error: message })
         .where(eq(syncRecords.id, syncId));
+      await logAnalyticsEvent(ctx!.userEmail!, "sync_run", { source: "hubspot", status: "failed", recordsPulled: 0 });
       throw Object.assign(new Error(`HubSpot sync failed: ${message}`), { statusCode: 502 });
     }
   },

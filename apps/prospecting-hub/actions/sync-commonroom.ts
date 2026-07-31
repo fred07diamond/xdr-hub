@@ -6,6 +6,7 @@ import { getDb } from "../server/db/index.js";
 import { contacts, syncRecords } from "../server/db/schema.js";
 import { commonroomListContactsInSegment, type CommonRoomContact } from "../server/helpers/commonroom-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
+import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 
 // Hard cap per run, same reasoning as sync-hubspot.ts's MAX_CONTACTS_PER_RUN.
 const MAX_CONTACTS_PER_RUN = 1000;
@@ -94,6 +95,8 @@ export default defineAction({
         .set({ status: "success", completedAt: new Date().toISOString(), recordsPulled: pulled.length })
         .where(eq(syncRecords.id, syncId));
 
+      await logAnalyticsEvent(ctx!.userEmail!, "sync_run", { source: "commonroom", status: "success", recordsPulled: pulled.length });
+
       return { syncId, status: "success" as const, recordsPulled: pulled.length, created, updated };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -101,6 +104,7 @@ export default defineAction({
         .update(syncRecords)
         .set({ status: "failed", completedAt: new Date().toISOString(), error: message })
         .where(eq(syncRecords.id, syncId));
+      await logAnalyticsEvent(ctx!.userEmail!, "sync_run", { source: "commonroom", status: "failed", recordsPulled: 0 });
       throw Object.assign(new Error(`CommonRoom sync failed: ${message}`), { statusCode: 502 });
     }
   },
