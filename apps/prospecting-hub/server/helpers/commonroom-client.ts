@@ -23,6 +23,36 @@ export function resolveServerId(orgId: string | null | undefined): string {
   return mergedConfigKey("org", { name: SERVER_NAME } as StoredRemoteMcpServer, orgId);
 }
 
+// callMcpTool has no built-in timeout or abort signal — a stalled MCP
+// connection (confirmed to happen live: a run-sourcing-rule-pipeline call
+// hung indefinitely at 0% CPU, meaning it was blocked on a network call that
+// never returned) leaves the awaiting call, and everything sequenced after
+// it, stuck forever with no error and no recovery. Promise.race can't cancel
+// the underlying call (the framework gives us no cancellation hook), but it
+// lets OUR code stop waiting and treat a stalled connection as a failure —
+// converting an indefinite hang into a normal, catchable error that the
+// existing "CommonRoom hiccup -> null signal, never fail the whole
+// operation" handling (score-contact.ts, prospector-client.ts) already
+// knows how to absorb.
+const DEFAULT_MCP_TIMEOUT_MS = 20_000;
+
+export async function callMcpToolWithTimeout(
+  serverId: string,
+  toolName: string,
+  args?: Record<string, unknown>,
+  timeoutMs: number = DEFAULT_MCP_TIMEOUT_MS,
+): Promise<unknown> {
+  return Promise.race([
+    callMcpTool(serverId, toolName, args),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`CommonRoom MCP call "${toolName}" timed out after ${timeoutMs}ms — the connection may have stalled.`)),
+        timeoutMs,
+      ),
+    ),
+  ]);
+}
+
 export function parseMcpToolResult(result: unknown): unknown {
   const withStructured = result as { structuredContent?: unknown; content?: unknown; isError?: boolean } | null;
   const content = withStructured?.content;
@@ -75,7 +105,7 @@ export async function commonroomListContactsInSegment(options: {
   limit: number;
   cursor?: string;
 }): Promise<CommonRoomListResult<CommonRoomContact>> {
-  const result = await callMcpTool(resolveServerId(options.orgId), "commonroom_list_objects", {
+  const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
     objectType: "Contact",
     filter: {
       type: "and",
@@ -118,7 +148,7 @@ export async function commonroomListSegments(options: {
   limit: number;
   cursor?: string;
 }): Promise<CommonRoomListResult<{ id: string; name: string }>> {
-  const result = await callMcpTool(resolveServerId(options.orgId), "commonroom_list_objects", {
+  const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
     objectType: "Segment",
     limit: options.limit,
     ...(options.cursor ? { cursor: options.cursor } : {}),

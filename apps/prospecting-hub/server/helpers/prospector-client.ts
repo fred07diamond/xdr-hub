@@ -1,5 +1,4 @@
-import { callMcpTool } from "@agent-native/core/mcp-client";
-import { parseMcpToolResult, resolveServerId } from "./commonroom-client.js";
+import { callMcpToolWithTimeout, parseMcpToolResult, resolveServerId } from "./commonroom-client.js";
 
 // CommonRoom Prospector contacts are queried through the exact same
 // org-scoped MCP connection as the rest of commonroom-client.ts (the vendor
@@ -85,7 +84,7 @@ export async function searchProspectorContacts(options: {
   // post-filter to still return close to the requested count.
   const mcpLimit = Math.min(200, options.limit * 3);
 
-  const result = await callMcpTool(resolveServerId(options.orgId), "commonroom_list_objects", {
+  const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
     objectType: "ProspectorContact",
     ...(clauses.length > 0 ? { filter: { type: "and", clauses } } : {}),
     properties: PROSPECTOR_PROPERTIES,
@@ -167,7 +166,7 @@ export async function searchProspectorCompanies(options: {
     });
   }
 
-  const result = await callMcpTool(resolveServerId(options.orgId), "commonroom_list_objects", {
+  const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
     objectType: "ProspectorCompany",
     ...(clauses.length > 0 ? { filter: { type: "and", clauses } } : {}),
     properties: PROSPECTOR_COMPANY_PROPERTIES,

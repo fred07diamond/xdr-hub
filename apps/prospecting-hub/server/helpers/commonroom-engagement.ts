@@ -1,5 +1,4 @@
-import { callMcpTool } from "@agent-native/core/mcp-client";
-import { parseMcpToolResult, resolveServerId } from "./commonroom-client.js";
+import { callMcpToolWithTimeout, parseMcpToolResult, resolveServerId } from "./commonroom-client.js";
 
 // CommonRoom LeadScore lookups, reusing the exact same org-scoped MCP
 // connection as the rest of commonroom-client.ts / prospector-client.ts /
@@ -80,7 +79,7 @@ function normalizeLeadScoreId(raw: string | number | undefined | null): string |
 }
 
 async function resolveLeadScoreIds(orgId: string | null | undefined): Promise<ResolvedLeadScoreIds> {
-  const result = await callMcpTool(resolveServerId(orgId), "commonroom_list_objects", {
+  const result = await callMcpToolWithTimeout(resolveServerId(orgId), "commonroom_list_objects", {
     objectType: "LeadScore",
     limit: 20,
   });
@@ -128,7 +127,7 @@ export async function lookupCommonRoomSignals(options: {
   let commonRoomFitScore: number | null = null;
   let commonRoomIntentScore: number | null = null;
   if (ids.contactFitId || ids.contactIntentId) {
-    const contactResult = await callMcpTool(resolveServerId(options.orgId), "commonroom_list_objects", {
+    const contactResult = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
       objectType: "Contact",
       filter: {
         type: "and",
@@ -155,7 +154,7 @@ export async function lookupCommonRoomSignals(options: {
   let commonRoomCompanyFitScore: number | null = null;
   const companyLower = options.companyName?.trim();
   if (ids.companyFitId && companyLower) {
-    const orgResult = await callMcpTool(resolveServerId(options.orgId), "commonroom_list_objects", {
+    const orgResult = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
       objectType: "Organization",
       filter: {
         type: "and",

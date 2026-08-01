@@ -1,4 +1,5 @@
 import {
+  callAction,
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client";
@@ -352,13 +353,13 @@ function SegmentDetailView({
   const updateSegment = useActionMutation("update-segment");
   const assignSegment = useActionMutation("assign-segment");
   const refreshSegment = useActionMutation("refresh-segment");
-  const runSourcingRulePipeline = useActionMutation("run-sourcing-rule-pipeline");
   const deleteSegment = useActionMutation("delete-segment");
   const markActioned = useActionMutation("mark-contact-actioned");
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [assignDraft, setAssignDraft] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [isRunningSourcingRule, setIsRunningSourcingRule] = useState(false);
 
   async function handleToggleVisibility() {
     if (!segment) return;
@@ -398,11 +399,20 @@ function SegmentDetailView({
   async function handleRunSourcingRule() {
     if (!segment?.owningSourcingRuleId) return;
     setActionError(null);
+    setIsRunningSourcingRule(true);
     try {
-      await runSourcingRulePipeline.mutateAsync({ ruleId: segment.owningSourcingRuleId });
+      // The pipeline scores every matched contact sequentially (an AI call
+      // plus CommonRoom lookups per contact) — routinely well past
+      // useActionMutation's default 60s timeout for anything but a tiny
+      // desiredVolume. callAction lets us override it explicitly instead of
+      // the UI silently sitting on a spinner past the point a real timeout
+      // would otherwise fire with no explanation.
+      await callAction("run-sourcing-rule-pipeline", { ruleId: segment.owningSourcingRuleId }, { timeoutMs: 300_000 });
       refetch();
     } catch (err) {
       setActionError(errorMessage(err, "Couldn't run the sourcing rule."));
+    } finally {
+      setIsRunningSourcingRule(false);
     }
   }
 
@@ -469,16 +479,16 @@ function SegmentDetailView({
                 <button
                   type="button"
                   onClick={handleRunSourcingRule}
-                  disabled={runSourcingRulePipeline.isPending}
+                  disabled={isRunningSourcingRule}
                   title={`This segment is populated by the sourcing rule "${segment.owningSourcingRuleName ?? "Unnamed rule"}" — run it now instead of a generic refresh`}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
                 >
-                  {runSourcingRulePipeline.isPending ? (
+                  {isRunningSourcingRule ? (
                     <IconLoader2 size={12} className="animate-spin" />
                   ) : (
                     <IconRefresh size={12} />
                   )}
-                  Run sourcing rule
+                  {isRunningSourcingRule ? "Running…" : "Run sourcing rule"}
                 </button>
               ) : (
                 segment.personaId && (
