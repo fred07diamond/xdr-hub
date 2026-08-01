@@ -15,7 +15,7 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
-import { ScorePill } from "@/components/ScorePill";
+import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -64,6 +64,9 @@ interface SegmentContact {
   personaMatchScore: number | null;
   companyFitScore: number | null;
   engagementScore: number | null;
+  hubspotQlScore: number | null;
+  commonRoomIntentScore: number | null;
+  commonRoomCompanyFitScore: number | null;
   overallScore: number | null;
   scoreReasoning: string | null;
   status: "active" | "actioned";
@@ -595,7 +598,7 @@ function SegmentDetailView({
                   <td className="max-w-[140px] truncate px-4 py-2.5 text-muted-foreground" title={c.company ?? undefined}>
                     {c.company ?? "—"}
                   </td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" /></td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" breakdown={buildOverallScoreBreakdown(c)} /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.personaMatchScore} /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.companyFitScore} /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.engagementScore} /></td>

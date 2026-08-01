@@ -19,7 +19,14 @@ export const contacts = table("contacts", {
   hubspotUrl: text("hubspot_url"),
   personaMatchScore: integer("persona_match_score"),
   companyFitScore: integer("company_fit_score"),
+  // "Engagement" = CommonRoom's "Contact Score V2" LeadScore — itself
+  // already a blended fit+intent model on CommonRoom's side, kept as one
+  // more real fit-side signal in this app's own overallScore blend
+  // (Fred's explicit call, not deduplicated away).
   engagementScore: integer("engagement_score"),
+  hubspotQlScore: integer("hubspot_ql_score"), // HubSpot's real `ql_score` contact property ("QL Score - Contact"), clamped to 0-100
+  commonRoomIntentScore: integer("commonroom_intent_score"), // CommonRoom's "Contact Intent Score" LeadScore percentile
+  commonRoomCompanyFitScore: integer("commonroom_company_fit_score"), // CommonRoom's org-level "Company Fit Score (Common Room)" LeadScore percentile
   overallScore: integer("overall_score"),
   scoreReasoning: text("score_reasoning"),
   country: text("country"), // firmographic signal for deterministic company-fit scoring — HubSpot's associated Company.country or CommonRoom's Contact.location; null when unavailable

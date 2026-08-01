@@ -8,7 +8,7 @@ import { hubspotFetch } from "@xdr-hub/shared/server";
 import { requireRole } from "../server/helpers/require-role.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 
-const CONTACT_PROPERTIES = ["firstname", "lastname", "jobtitle", "company", "email", "phone", "hs_linkedin_url"];
+const CONTACT_PROPERTIES = ["firstname", "lastname", "jobtitle", "company", "email", "phone", "hs_linkedin_url", "ql_score"];
 // Hard cap per run so a single sync can't run away — matches the pattern
 // import-hubspot-queue.ts already uses (IMPORT_LIMIT) for the same reason.
 const MAX_CONTACTS_PER_RUN = 1000;
@@ -148,6 +148,12 @@ export default defineAction({
         const enrichment = companyId ? companyEnrichment.get(companyId) : undefined;
         const country = enrichment?.country ?? null;
         const employees = enrichment?.employees ?? null;
+        // Real HubSpot property "QL Score - Contact" — observed live range is
+        // roughly 0-125 (a soft 0-100 scale that occasionally overshoots),
+        // so clamp to 0-100 like every other blended score in this app
+        // rather than rescaling by an arbitrary divisor.
+        const rawQlScore = p.ql_score != null && p.ql_score !== "" ? Number(p.ql_score) : NaN;
+        const hubspotQlScore = Number.isFinite(rawQlScore) ? Math.max(0, Math.min(100, Math.round(rawQlScore))) : null;
 
         if (existing[0]) {
           await db
@@ -162,6 +168,7 @@ export default defineAction({
               hubspotUrl,
               country,
               employees,
+              hubspotQlScore,
               syncedAt: now,
               updatedAt: now,
             })
@@ -179,6 +186,7 @@ export default defineAction({
             hubspotUrl,
             country,
             employees,
+            hubspotQlScore,
             source: "hubspot",
             externalId: hsContact.id,
             status: "active",

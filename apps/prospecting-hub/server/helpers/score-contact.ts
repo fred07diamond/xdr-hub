@@ -1,6 +1,6 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { computeDeterministicCompanyFit } from "./company-fit.js";
-import { lookupCommonRoomEngagement } from "./commonroom-engagement.js";
+import { lookupCommonRoomSignals } from "./commonroom-engagement.js";
 import { decodePersonaCriteria } from "./persona-sync.js";
 
 export interface PersonaForScoring {
@@ -22,13 +22,21 @@ export interface ContactForScoring {
   // fallback in that case.
   country?: string | null;
   employees?: number | null;
+  // Captured at sync time (sync-hubspot.ts), not computed here — a plain
+  // pass-through input, same as country/employees, so it can feed the
+  // overallScore blend below without this function needing to know how it
+  // was derived.
+  hubspotQlScore?: number | null;
 }
 
 export interface ContactScoreResult {
   personaId: string | null;
   personaMatchScore: number;
   companyFitScore: number;
-  engagementScore: number | null;
+  engagementScore: number | null; // CommonRoom's "Contact Score V2" — itself already fit+intent blended on CommonRoom's side
+  hubspotQlScore: number | null; // echoed back from the input, for convenient one-call persistence at the DB-write call site
+  commonRoomIntentScore: number | null; // CommonRoom's "Contact Intent Score"
+  commonRoomCompanyFitScore: number | null; // CommonRoom's org-level "Company Fit Score (Common Room)"
   overallScore: number | null;
   reasoning: string;
 }
@@ -41,6 +49,25 @@ function averageAvailable(values: Array<number | null | undefined>): number | nu
   const present = values.filter((v): v is number => v != null);
   if (present.length === 0) return null;
   return Math.round(present.reduce((sum, v) => sum + v, 0) / present.length);
+}
+
+// overallScore blends two buckets, 50/50, per Fred's explicit direction
+// (mirroring CommonRoom's own "Contact Score V2" fit/intent philosophy):
+//   - Fit bucket: personaMatchScore, companyFitScore, hubspotQlScore,
+//     engagementScore (CommonRoom's Contact Score V2 — kept here as an
+//     extra fit-side signal per Fred's call, even though it already has
+//     some intent baked in on CommonRoom's side), commonRoomCompanyFitScore.
+//   - Intent bucket: commonRoomIntentScore.
+// Each bucket independently averages whichever of its own signals are
+// present (never inventing a missing one as zero). If only one bucket has
+// any signal at all, overallScore is just that bucket's average — never
+// silently halved against an empty bucket. If neither bucket has anything,
+// overallScore is null.
+function blendFitAndIntent(fitSignals: Array<number | null | undefined>, intentSignals: Array<number | null | undefined>): number | null {
+  const fitAvg = averageAvailable(fitSignals);
+  const intentAvg = averageAvailable(intentSignals);
+  if (fitAvg != null && intentAvg != null) return Math.round(0.5 * fitAvg + 0.5 * intentAvg);
+  return fitAvg ?? intentAvg;
 }
 
 function buildContactBlurb(c: ContactForScoring): string {
@@ -134,19 +161,39 @@ export async function scoreContactAgainstPersonas(options: {
 
   // Best-effort: a CommonRoom hiccup (no org-scoped connection configured,
   // MCP call failure, etc.) must not fail contact scoring outright — treat
-  // it the same as "no engagement signal available" (null), never an error.
+  // it the same as "no signals available" (all null), never an error.
   let engagementScore: number | null = null;
+  let commonRoomIntentScore: number | null = null;
+  let commonRoomCompanyFitScore: number | null = null;
   try {
-    engagementScore = await lookupCommonRoomEngagement({
+    const signals = await lookupCommonRoomSignals({
       orgId: options.orgId,
       fullName: options.contact.name,
       companyName: options.contact.company,
     });
+    engagementScore = signals.commonRoomFitScore;
+    commonRoomIntentScore = signals.commonRoomIntentScore;
+    commonRoomCompanyFitScore = signals.commonRoomCompanyFitScore;
   } catch {
-    engagementScore = null;
+    // leave all three null
   }
 
-  const overallScore = averageAvailable([personaMatchScore, companyFitScore, engagementScore]);
+  const hubspotQlScore = options.contact.hubspotQlScore ?? null;
 
-  return { personaId, personaMatchScore, companyFitScore, engagementScore, overallScore, reasoning };
+  const overallScore = blendFitAndIntent(
+    [personaMatchScore, companyFitScore, hubspotQlScore, engagementScore, commonRoomCompanyFitScore],
+    [commonRoomIntentScore],
+  );
+
+  return {
+    personaId,
+    personaMatchScore,
+    companyFitScore,
+    engagementScore,
+    hubspotQlScore,
+    commonRoomIntentScore,
+    commonRoomCompanyFitScore,
+    overallScore,
+    reasoning,
+  };
 }

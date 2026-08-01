@@ -195,6 +195,21 @@ export default runMigrations(
       name: "contacts-employees-column",
       sql: `ALTER TABLE contacts ADD COLUMN employees INTEGER`,
     },
+    {
+      version: 19,
+      name: "contacts-hubspot-ql-score-column",
+      sql: `ALTER TABLE contacts ADD COLUMN hubspot_ql_score INTEGER`,
+    },
+    {
+      version: 20,
+      name: "contacts-commonroom-intent-score-column",
+      sql: `ALTER TABLE contacts ADD COLUMN commonroom_intent_score INTEGER`,
+    },
+    {
+      version: 21,
+      name: "contacts-commonroom-company-fit-score-column",
+      sql: `ALTER TABLE contacts ADD COLUMN commonroom_company_fit_score INTEGER`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

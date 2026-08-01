@@ -17,7 +17,7 @@ import {
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
-import { ScorePill } from "@/components/ScorePill";
+import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -84,6 +84,9 @@ interface ContactRow {
   personaMatchScore: number | null;
   companyFitScore: number | null;
   engagementScore: number | null;
+  hubspotQlScore: number | null;
+  commonRoomIntentScore: number | null;
+  commonRoomCompanyFitScore: number | null;
   overallScore: number | null;
   scoreReasoning: string | null;
   personaId: string | null;
@@ -363,7 +366,7 @@ export default function ContactsRoute() {
                       <span className="text-muted-foreground/50">Unscored</span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" /></td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" breakdown={buildOverallScoreBreakdown(c)} /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.personaMatchScore} /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.companyFitScore} /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.engagementScore} /></td>
