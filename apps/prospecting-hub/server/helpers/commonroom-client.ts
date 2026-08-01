@@ -13,7 +13,7 @@ const SERVER_NAME = "commonroom";
 // getRequestOrgId() global — that reads a different "current org" concept
 // than the one the MCP Connections org-scope feature stores servers under,
 // and returns undefined here even inside a real authenticated request.
-function resolveServerId(orgId: string | null | undefined): string {
+export function resolveServerId(orgId: string | null | undefined): string {
   if (!orgId) {
     throw new Error("CommonRoom sync requires an active organization context.");
   }
@@ -23,7 +23,7 @@ function resolveServerId(orgId: string | null | undefined): string {
   return mergedConfigKey("org", { name: SERVER_NAME } as StoredRemoteMcpServer, orgId);
 }
 
-function parseMcpToolResult(result: unknown): unknown {
+export function parseMcpToolResult(result: unknown): unknown {
   const withStructured = result as { structuredContent?: unknown; content?: unknown; isError?: boolean } | null;
   const content = withStructured?.content;
   const textPart = Array.isArray(content)

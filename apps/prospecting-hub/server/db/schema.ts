@@ -20,7 +20,7 @@ export const contacts = table("contacts", {
   personaMatchScore: integer("persona_match_score"),
   companyFitScore: integer("company_fit_score"),
   scoreReasoning: text("score_reasoning"),
-  source: text("source", { enum: ["hubspot", "commonroom"] }).notNull(),
+  source: text("source", { enum: ["hubspot", "commonroom", "prospector"] }).notNull(),
   externalId: text("external_id"), // the source system's own record id, for de-duping re-syncs
   personaId: text("persona_id"), // exactly one persona per contact once matched
   status: text("status", { enum: ["active", "actioned"] }).notNull().default("active"),
