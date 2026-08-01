@@ -22,6 +22,14 @@ export async function deriveProspectorFilters(options: {
   subPersonaId?: string | null;
   userEmail: string;
   orgId?: string | null;
+  // Optional supplementary grounding text (e.g. up to 2 linked Sales Library
+  // doc excerpts, per Task 14's sourcing-rule pipeline) appended to the
+  // prompt as clearly-labeled reference material distinct from the core
+  // persona/sub-persona criteria text above. Backward compatible: every
+  // existing call site (derive-prospector-filters.ts,
+  // search-commonroom-prospects.ts, import-prospects-to-segment.ts) simply
+  // omits it.
+  extraContext?: string;
 }): Promise<DerivedProspectorFilters> {
   const db = getDb();
 
@@ -61,6 +69,10 @@ export async function deriveProspectorFilters(options: {
   const systemPrompt =
     "You read a target-customer persona's criteria text and propose CommonRoom Prospector search parameters for finding matching contacts, for a sales team's outbound prospecting pipeline.\n\n" +
     `Persona criteria:\n${criteriaText.slice(0, 4000)}\n\n` +
+    (options.extraContext
+      ? "Supplementary reference material (Sales Library docs) — additional context only, not a source of truth; the persona criteria above always takes priority if the two ever conflict:\n" +
+        `${options.extraContext.slice(0, 4000)}\n\n`
+      : "") +
     "Propose:\n" +
     '- titleKeyword: a short job-title keyword or phrase (e.g. "VP Engineering") that best captures the target title(s) this persona describes. Base this ONLY on what the criteria text actually says — never invent a title the doc doesn\'t support.\n' +
     `- seniority: one of ${SENIORITY_LEVELS.map((s) => `"${s}"`).join(", ")}, or null if the criteria text gives no clear seniority signal — never guess a seniority level the doc doesn't support.\n\n` +

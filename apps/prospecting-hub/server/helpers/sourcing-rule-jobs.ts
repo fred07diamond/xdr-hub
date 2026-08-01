@@ -27,7 +27,7 @@ enabled: ${enabled}
 createdBy: ${createdBy}
 runAs: creator
 ---
-Execute prospecting-hub sourcing rule ${ruleId}: call the app's sourcing-rule pipeline actions (derive-prospector-filters, search-commonroom-prospects, import-prospects-to-segment) in sequence using that rule's stored parameters, then report a short summary of how many prospects were found and imported.
+Execute prospecting-hub sourcing rule ${ruleId}: call the run-sourcing-rule-pipeline action with { ruleId: "${ruleId}" }, then report a short summary of how many prospects were found and imported.
 `;
 }
 
