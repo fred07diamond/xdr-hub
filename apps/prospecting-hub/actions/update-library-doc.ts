@@ -26,10 +26,10 @@ export default defineAction({
 
     const existing = await db.select().from(libraryDocs).where(eq(libraryDocs.id, id)).limit(1);
     if (!existing[0]) {
-      throw Object.assign(new Error(`Library doc ${id} not found.`), { statusCode: 404 });
+      return { ok: false, error: `Library doc ${id} not found.` };
     }
     if (existing[0].ownerEmail !== ctx!.userEmail! && role !== "admin") {
-      throw Object.assign(new Error("Only the document's owner or a manager can update this."), { statusCode: 403 });
+      return { ok: false, error: "Only the document's owner or a manager can update this." };
     }
 
     if (
@@ -67,6 +67,6 @@ export default defineAction({
       })
       .where(eq(libraryDocs.id, id));
 
-    return { id };
+    return { ok: true, id };
   },
 });
