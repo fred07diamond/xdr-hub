@@ -51,6 +51,8 @@ interface SegmentDetail {
   status: string;
   lastRefreshedAt: string | null;
   createdAt: string | null;
+  owningSourcingRuleId: string | null;
+  owningSourcingRuleName: string | null;
 }
 
 interface SegmentContact {
@@ -347,6 +349,7 @@ function SegmentDetailView({
   const updateSegment = useActionMutation("update-segment");
   const assignSegment = useActionMutation("assign-segment");
   const refreshSegment = useActionMutation("refresh-segment");
+  const runSourcingRulePipeline = useActionMutation("run-sourcing-rule-pipeline");
   const deleteSegment = useActionMutation("delete-segment");
   const markActioned = useActionMutation("mark-contact-actioned");
 
@@ -386,6 +389,17 @@ function SegmentDetailView({
       refetch();
     } catch (err) {
       setActionError(errorMessage(err, "Couldn't refresh segment."));
+    }
+  }
+
+  async function handleRunSourcingRule() {
+    if (!segment?.owningSourcingRuleId) return;
+    setActionError(null);
+    try {
+      await runSourcingRulePipeline.mutateAsync({ ruleId: segment.owningSourcingRuleId });
+      refetch();
+    } catch (err) {
+      setActionError(errorMessage(err, "Couldn't run the sourcing rule."));
     }
   }
 
@@ -448,20 +462,37 @@ function SegmentDetailView({
                 Make {segment.visibility === "public" ? "private" : "public"}
               </button>
 
-              {segment.personaId && (
+              {segment.owningSourcingRuleId ? (
                 <button
                   type="button"
-                  onClick={handleRefresh}
-                  disabled={refreshSegment.isPending}
+                  onClick={handleRunSourcingRule}
+                  disabled={runSourcingRulePipeline.isPending}
+                  title={`This segment is populated by the sourcing rule "${segment.owningSourcingRuleName ?? "Unnamed rule"}" — run it now instead of a generic refresh`}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
                 >
-                  {refreshSegment.isPending ? (
+                  {runSourcingRulePipeline.isPending ? (
                     <IconLoader2 size={12} className="animate-spin" />
                   ) : (
                     <IconRefresh size={12} />
                   )}
-                  Refresh
+                  Run sourcing rule
                 </button>
+              ) : (
+                segment.personaId && (
+                  <button
+                    type="button"
+                    onClick={handleRefresh}
+                    disabled={refreshSegment.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                  >
+                    {refreshSegment.isPending ? (
+                      <IconLoader2 size={12} className="animate-spin" />
+                    ) : (
+                      <IconRefresh size={12} />
+                    )}
+                    Refresh
+                  </button>
+                )
               )}
 
               {confirmDelete ? (

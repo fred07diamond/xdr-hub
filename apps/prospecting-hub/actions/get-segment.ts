@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, segmentContacts } from "../server/db/schema.js";
+import { contacts, segmentContacts, sourcingRules } from "../server/db/schema.js";
 import { assertSegmentReadable } from "../server/helpers/segment-access.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -16,6 +16,18 @@ export default defineAction({
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
     const segment = await assertSegmentReadable(id, ctx!.userEmail!, db);
+
+    // A sourcing-rule-owned segment has `filters: null` by design (it's
+    // populated by the rule's pipeline run, not the generic persona/score
+    // query refresh-segment.ts uses) — the UI needs to know this so it can
+    // offer "run the sourcing rule" instead of a generic refresh that will
+    // always fail with "no generation filters" for this kind of segment.
+    const owningRuleRows = await db
+      .select({ id: sourcingRules.id, name: sourcingRules.name })
+      .from(sourcingRules)
+      .where(eq(sourcingRules.segmentId, id))
+      .limit(1);
+    const owningSourcingRule = owningRuleRows[0] ?? null;
 
     const contactRows = await db
       .select({
@@ -37,6 +49,13 @@ export default defineAction({
       .innerJoin(contacts, eq(segmentContacts.contactId, contacts.id))
       .where(eq(segmentContacts.segmentId, id));
 
-    return { segment, contacts: contactRows };
+    return {
+      segment: {
+        ...segment,
+        owningSourcingRuleId: owningSourcingRule?.id ?? null,
+        owningSourcingRuleName: owningSourcingRule?.name ?? null,
+      },
+      contacts: contactRows,
+    };
   },
 });
