@@ -85,7 +85,20 @@ export async function searchIcpCompanies(options: {
     throw new Error(`ICP ${options.icpId} has no criteria text to derive company filters from.`);
   }
 
-  const filters = await deriveIcpCompanyFilters(criteriaText);
+  // Establish request context from searchIcpCompanies's own real userEmail/
+  // orgId params before calling deriveIcpCompanyFilters, one call frame up
+  // — deriveIcpCompanyFilters's brief-mandated signature (icpText only)
+  // can't take them directly, and its internal `getRequestContext() ?? {}`
+  // reuse is only a safety net for the case where a context already
+  // exists (the action-route path). Without this, Task 14's future
+  // cron-triggered call to searchIcpCompanies would have no ambient
+  // context at all, deriveIcpCompanyFilters's fallback would establish an
+  // EMPTY context, and completeText() would silently resolve no
+  // user-scoped key/attribution instead of the real caller's.
+  const filters = await runWithRequestContext(
+    { userEmail: options.userEmail, orgId: options.orgId ?? undefined },
+    () => deriveIcpCompanyFilters(criteriaText),
+  );
 
   return searchProspectorCompanies({
     orgId: options.orgId,
