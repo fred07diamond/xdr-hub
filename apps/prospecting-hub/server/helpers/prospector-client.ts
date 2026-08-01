@@ -42,6 +42,21 @@ const PROSPECTOR_PROPERTIES = [
   "linkedInFollowerCount",
 ];
 
+// Normalizes a seniority string for loose comparison — CommonRoom's
+// documented catalog gives ProspectorContact.seniority examples like
+// "director", "manager", "individual_contributor" (lowercase,
+// underscore-separated), a DIFFERENT taxonomy than deriveProspectorFilters'
+// own SENIORITY_LEVELS ("Intern", "Junior IC", "Senior IC", "Manager",
+// "Director", "VP", "C-Level" — the Contact object's memberSeniority
+// vocabulary). A strict equality check between the two would silently never
+// match. Strip case/spacing/punctuation so "VP" ~ "vp", "C-Level" ~
+// "c_level", "Senior IC" loosely matches "individual_contributor" via
+// substring overlap on "ic"/"individual" fragments where possible — this is
+// necessarily best-effort given the taxonomy mismatch, not an exact mapping.
+function normalizeSeniority(value: string): string {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
 export async function searchProspectorContacts(options: {
   orgId: string | null | undefined;
   titleKeyword?: string;
@@ -54,9 +69,14 @@ export async function searchProspectorContacts(options: {
   if (options.titleKeyword) {
     clauses.push({ type: "stringFilter", field: "title", params: { op: "like", value: options.titleKeyword } });
   }
-  if (options.seniority) {
-    clauses.push({ type: "stringFilter", field: "seniority", params: { op: "eq", value: options.seniority } });
-  }
+  // NOTE: ProspectorContact has NO "seniority" filter field on CommonRoom's
+  // live catalog (confirmed via commonroom_get_catalog — its filters are
+  // fullName/title/companyName/companyDomain/locationId/
+  // previousCompanyName/previousCompanyDomain/linkedInFollowerCount/
+  // lastOrgChange only; "seniority" is a returned/sortable COLUMN, not a
+  // filter). Pushing a seniority stringFilter into the MCP call itself
+  // throws "Unknown filter field: seniority" — seniority is applied as a
+  // post-filter below instead, same as the company allow/deny lists.
 
   // ProspectorContact has no direct company-list filter matching companyName
   // by name-list, so allow/deny is applied as a post-filter below rather
@@ -77,6 +97,7 @@ export async function searchProspectorContacts(options: {
 
   const allowList = options.companyAllowList?.map((c) => c.toLowerCase()).filter(Boolean);
   const denyList = options.companyDenyList?.map((c) => c.toLowerCase()).filter(Boolean);
+  const normalizedSeniority = options.seniority ? normalizeSeniority(options.seniority) : null;
 
   const filtered = records.filter((record) => {
     const company = record.companyName?.toLowerCase();
@@ -85,6 +106,12 @@ export async function searchProspectorContacts(options: {
     }
     if (denyList && denyList.length > 0) {
       if (company && denyList.includes(company)) return false;
+    }
+    if (normalizedSeniority) {
+      const recordSeniority = record.seniority ? normalizeSeniority(record.seniority) : "";
+      if (!recordSeniority || (!recordSeniority.includes(normalizedSeniority) && !normalizedSeniority.includes(recordSeniority))) {
+        return false;
+      }
     }
     return true;
   });
