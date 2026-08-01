@@ -15,6 +15,7 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { ScorePill } from "@/components/ScorePill";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -563,18 +564,10 @@ function SegmentDetailView({
                   <td className="max-w-[140px] truncate px-4 py-2.5 text-muted-foreground" title={c.company ?? undefined}>
                     {c.company ?? "—"}
                   </td>
-                  <td className="px-4 py-2.5 font-semibold text-foreground">
-                    {c.overallScore ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-muted-foreground">
-                    {c.personaMatchScore ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-muted-foreground">
-                    {c.companyFitScore ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-muted-foreground">
-                    {c.engagementScore ?? "—"}
-                  </td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" /></td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.personaMatchScore} /></td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.companyFitScore} /></td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.engagementScore} /></td>
                   <td className="max-w-[220px] truncate px-4 py-2.5 text-muted-foreground/80" title={c.scoreReasoning ?? undefined}>
                     {c.scoreReasoning ?? "—"}
                   </td>

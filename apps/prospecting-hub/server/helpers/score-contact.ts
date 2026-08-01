@@ -111,7 +111,7 @@ export async function scoreContactAgainstPersonas(options: {
   // AI-judged company-fit source until this signal has real inputs) and not
   // folded into `overallScore` below — this task's overallScore blends only
   // personaMatchScore/companyFitScore/engagementScore, per spec.
-  computeDeterministicCompanyFit({ country: undefined, employees: undefined });
+  const _deterministicCompanyFit = computeDeterministicCompanyFit({ country: undefined, employees: undefined });
 
   // Best-effort: a CommonRoom hiccup (no org-scoped connection configured,
   // MCP call failure, etc.) must not fail contact scoring outright — treat
