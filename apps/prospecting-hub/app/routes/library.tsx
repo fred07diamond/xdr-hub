@@ -514,14 +514,26 @@ function UploadPanel({
 
   async function handleCategoryChange(category: LibraryCategory) {
     if (!created) return;
+    const previous = created;
     setCreated({ ...created, category });
-    await updateDoc.mutateAsync({ id: created.id, category });
+    setError(null);
+    const result = await updateDoc.mutateAsync({ id: created.id, category });
+    if ((result as { ok?: boolean; error?: string })?.ok === false) {
+      setCreated(previous);
+      setError((result as { error: string }).error);
+    }
   }
 
   async function handleTagsChange(tags: string[]) {
     if (!created) return;
+    const previous = created;
     setCreated({ ...created, tags });
-    await updateDoc.mutateAsync({ id: created.id, tags });
+    setError(null);
+    const result = await updateDoc.mutateAsync({ id: created.id, tags });
+    if ((result as { ok?: boolean; error?: string })?.ok === false) {
+      setCreated(previous);
+      setError((result as { error: string }).error);
+    }
   }
 
   return (
@@ -560,6 +572,8 @@ function UploadPanel({
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Tags</label>
               <TagEditor tags={created.tags} saving={updateDoc.isPending} onChange={handleTagsChange} />
             </div>
+
+            {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
         ) : (
           <div className="flex flex-col gap-4 p-5">
