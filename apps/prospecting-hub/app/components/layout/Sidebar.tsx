@@ -14,6 +14,7 @@ import {
   type ChatHistoryItem,
 } from "@agent-native/toolkit/chat-history";
 import {
+  IconBuildingSkyscraper,
   IconChartBar,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
@@ -50,6 +51,12 @@ const navItems = [
     labelKey: "Personas",
     href: "/personas",
     view: "personas",
+  },
+  {
+    icon: IconBuildingSkyscraper,
+    labelKey: "ICPs",
+    href: "/icps",
+    view: "icps",
   },
   {
     icon: IconUsers,

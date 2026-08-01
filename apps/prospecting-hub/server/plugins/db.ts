@@ -151,6 +151,25 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 12,
+      name: "icps-table",
+      sql: `CREATE TABLE IF NOT EXISTS icps (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        product TEXT,
+        color TEXT,
+        criteria TEXT,
+        source_doc_url TEXT,
+        owner_email TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 13,
+      name: "sourcing-rules-icp-column",
+      sql: `ALTER TABLE sourcing_rules ADD COLUMN icp_id TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

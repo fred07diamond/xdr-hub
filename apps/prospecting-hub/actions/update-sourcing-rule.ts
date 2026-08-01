@@ -13,6 +13,7 @@ export default defineAction({
   schema: z.object({
     id: z.string().min(1),
     name: z.string().min(1).nullish(),
+    icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
     desiredVolume: z.number().int().min(1).max(200).nullish(),
@@ -23,7 +24,7 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async (
-    { id, name, companyAllowList, companyDenyList, desiredVolume, readyByTime, leadHours, status },
+    { id, name, icpId, companyAllowList, companyDenyList, desiredVolume, readyByTime, leadHours, status },
     ctx,
   ) => {
     const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
@@ -63,6 +64,7 @@ export default defineAction({
       .update(sourcingRules)
       .set({
         ...(name != null ? { name } : {}),
+        ...(icpId !== undefined ? { icpId } : {}),
         ...(companyAllowList !== undefined ? { companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null } : {}),
         ...(companyDenyList !== undefined ? { companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null } : {}),
         ...(desiredVolume != null ? { desiredVolume } : {}),

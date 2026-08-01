@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { desc, eq, inArray, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { personas, segmentContacts, sourcingRules, subPersonas } from "../server/db/schema.js";
+import { icps, personas, segmentContacts, sourcingRules, subPersonas } from "../server/db/schema.js";
 import { getUserRole, requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -26,6 +26,7 @@ export default defineAction({
         ownerEmail: sourcingRules.ownerEmail,
         personaId: sourcingRules.personaId,
         subPersonaId: sourcingRules.subPersonaId,
+        icpId: sourcingRules.icpId,
         companyAllowList: sourcingRules.companyAllowList,
         companyDenyList: sourcingRules.companyDenyList,
         desiredVolume: sourcingRules.desiredVolume,
@@ -37,10 +38,12 @@ export default defineAction({
         createdAt: sourcingRules.createdAt,
         personaName: personas.name,
         subPersonaName: subPersonas.name,
+        icpName: icps.name,
       })
       .from(sourcingRules)
       .leftJoin(personas, eq(sourcingRules.personaId, personas.id))
       .leftJoin(subPersonas, eq(sourcingRules.subPersonaId, subPersonas.id))
+      .leftJoin(icps, eq(sourcingRules.icpId, icps.id))
       .where(whereClause)
       .orderBy(desc(sourcingRules.createdAt));
 

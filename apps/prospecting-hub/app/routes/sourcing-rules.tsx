@@ -34,6 +34,7 @@ interface SourcingRule {
   ownerEmail: string;
   personaId: string;
   subPersonaId: string | null;
+  icpId: string | null;
   companyAllowList: string | null;
   companyDenyList: string | null;
   desiredVolume: number;
@@ -45,6 +46,7 @@ interface SourcingRule {
   createdAt: string | null;
   personaName: string | null;
   subPersonaName: string | null;
+  icpName: string | null;
   contactCount: number;
 }
 
@@ -58,6 +60,12 @@ interface SubPersonaOption {
   id: string;
   personaId: string;
   name: string;
+}
+
+interface IcpOption {
+  id: string;
+  name: string;
+  product: string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -134,11 +142,19 @@ function NewRulePanel({
   const personas: PersonaOption[] =
     (personaData as { personas?: PersonaOption[] })?.personas ?? [];
 
+  const { data: icpData, isLoading: icpsLoading } = useActionQuery(
+    "list-icps",
+    {},
+  );
+  const icps: IcpOption[] =
+    (icpData as { icps?: IcpOption[] })?.icps ?? [];
+
   const createSourcingRule = useActionMutation("create-sourcing-rule");
 
   const [name, setName] = useState("");
   const [personaId, setPersonaId] = useState("");
   const [subPersonaId, setSubPersonaId] = useState("");
+  const [icpId, setIcpId] = useState("");
   const [allowListText, setAllowListText] = useState("");
   const [denyListText, setDenyListText] = useState("");
   const [desiredVolume, setDesiredVolume] = useState(20);
@@ -169,6 +185,7 @@ function NewRulePanel({
         name: name.trim(),
         personaId,
         subPersonaId: subPersonaId || undefined,
+        icpId: icpId || undefined,
         companyAllowList: parseListInput(allowListText).length
           ? parseListInput(allowListText)
           : undefined,
@@ -261,6 +278,34 @@ function NewRulePanel({
               )}
             </div>
           )}
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              ICP (optional)
+            </label>
+            {icpsLoading ? (
+              <div className="flex h-9 items-center text-xs text-muted-foreground">
+                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading ICPs…
+              </div>
+            ) : icps.length === 0 ? (
+              <p className="text-xs text-muted-foreground/60">
+                No ICPs yet — create one on the ICPs page to add company-level criteria.
+              </p>
+            ) : (
+              <select
+                value={icpId}
+                onChange={(e) => setIcpId(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">No ICP</option>
+                {icps.map((icp) => (
+                  <option key={icp.id} value={icp.id}>
+                    {icp.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -373,10 +418,19 @@ function EditRulePanel({
 }) {
   const updateSourcingRule = useActionMutation("update-sourcing-rule");
 
+  const { data: icpData, isLoading: icpsLoading } = useActionQuery(
+    "list-icps",
+    {},
+  );
+  const icps: IcpOption[] =
+    (icpData as { icps?: IcpOption[] })?.icps ?? [];
+
   const initialAllowList = safeParseList(rule.companyAllowList);
   const initialDenyList = safeParseList(rule.companyDenyList);
+  const initialIcpId = rule.icpId ?? "";
 
   const [name, setName] = useState(rule.name);
+  const [icpId, setIcpId] = useState(initialIcpId);
   const [allowListText, setAllowListText] = useState(initialAllowList.join(", "));
   const [denyListText, setDenyListText] = useState(initialDenyList.join(", "));
   const [desiredVolume, setDesiredVolume] = useState(rule.desiredVolume);
@@ -389,6 +443,7 @@ function EditRulePanel({
 
   const hasChanges =
     name.trim() !== rule.name ||
+    icpId !== initialIcpId ||
     !sameList(nextAllowList, initialAllowList) ||
     !sameList(nextDenyList, initialDenyList) ||
     desiredVolume !== rule.desiredVolume ||
@@ -404,6 +459,7 @@ function EditRulePanel({
     const payload = {
       id: rule.id,
       ...(name.trim() !== rule.name ? { name: name.trim() } : {}),
+      ...(icpId !== initialIcpId ? { icpId: icpId || null } : {}),
       ...(!sameList(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
       ...(!sameList(nextDenyList, initialDenyList) ? { companyDenyList: nextDenyList } : {}),
       ...(desiredVolume !== rule.desiredVolume ? { desiredVolume } : {}),
@@ -443,6 +499,34 @@ function EditRulePanel({
               onChange={(e) => setName(e.target.value)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              ICP (optional)
+            </label>
+            {icpsLoading ? (
+              <div className="flex h-9 items-center text-xs text-muted-foreground">
+                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading ICPs…
+              </div>
+            ) : icps.length === 0 ? (
+              <p className="text-xs text-muted-foreground/60">
+                No ICPs yet — create one on the ICPs page to add company-level criteria.
+              </p>
+            ) : (
+              <select
+                value={icpId}
+                onChange={(e) => setIcpId(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">No ICP</option>
+                {icps.map((icp) => (
+                  <option key={icp.id} value={icp.id}>
+                    {icp.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -606,6 +690,11 @@ function RuleRow({
           {rule.subPersonaName && (
             <span className="truncate text-[11px] text-muted-foreground" title={rule.subPersonaName}>
               › {rule.subPersonaName}
+            </span>
+          )}
+          {rule.icpName && (
+            <span className="truncate text-[11px] text-muted-foreground/70" title={`ICP: ${rule.icpName}`}>
+              ICP: {rule.icpName}
             </span>
           )}
         </div>

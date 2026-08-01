@@ -66,6 +66,24 @@ export const personas = table("personas", {
   createdAt: text("created_at").default(now()),
 });
 
+// ICP (Ideal Customer Profile) — manager-owned, company-level qualification
+// criteria (firmographics, product fit) rather than the person-level
+// targeting personas describe. Mirrors personas' shape (color-accented,
+// doc-upload-driven criteria) but has no sub-ICP concept. `product` is a
+// plain nullable freeform string (e.g. "Develop", "Publish", or blank for a
+// cross-product ICP) — no enum, since nothing should hardcode exactly two
+// products.
+export const icps = table("icps", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  product: text("product"),
+  color: text("color"), // UI accent color, hex string
+  criteria: text("criteria"), // JSON: {rawText} via encodePersonaCriteria/decodePersonaCriteria
+  sourceDocUrl: text("source_doc_url"),
+  ownerEmail: text("owner_email").notNull(),
+  createdAt: text("created_at").default(now()),
+});
+
 // Sub-persona — XDR/AE-owned fine-tuning under a core persona.
 export const subPersonas = table("sub_personas", {
   id: text("id").primaryKey(),
@@ -102,6 +120,7 @@ export const sourcingRules = table("sourcing_rules", {
   ownerEmail: text("owner_email").notNull(),
   personaId: text("persona_id").notNull(),
   subPersonaId: text("sub_persona_id"),
+  icpId: text("icp_id"), // optional company-level qualification criteria; no FK enforcement, matches this app's convention
   companyAllowList: text("company_allow_list"), // JSON-encoded string array
   companyDenyList: text("company_deny_list"), // JSON-encoded string array
   desiredVolume: integer("desired_volume").notNull().default(20),

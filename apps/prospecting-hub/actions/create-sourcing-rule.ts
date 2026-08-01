@@ -34,6 +34,7 @@ export default defineAction({
     name: z.string().min(1),
     personaId: z.string().min(1),
     subPersonaId: z.string().nullish(),
+    icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
     desiredVolume: z.number().int().min(1).max(200).default(20),
@@ -43,7 +44,7 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async (
-    { name, personaId, subPersonaId, companyAllowList, companyDenyList, desiredVolume, readyByTime, leadHours },
+    { name, personaId, subPersonaId, icpId, companyAllowList, companyDenyList, desiredVolume, readyByTime, leadHours },
     ctx,
   ) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
@@ -112,6 +113,7 @@ export default defineAction({
         ownerEmail: userEmail,
         personaId,
         subPersonaId: subPersonaId ?? null,
+        icpId: icpId ?? null,
         companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null,
         companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null,
         desiredVolume,
