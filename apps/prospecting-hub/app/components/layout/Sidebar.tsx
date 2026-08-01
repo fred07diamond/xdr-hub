@@ -19,6 +19,7 @@ import {
   IconLayoutSidebarLeftExpand,
   IconListDetails,
   IconMessageCircle,
+  IconRadar,
   IconSearch,
   IconSettings,
   IconTarget,
@@ -60,6 +61,12 @@ const navItems = [
     labelKey: "Segments",
     href: "/segments",
     view: "segments",
+  },
+  {
+    icon: IconRadar,
+    labelKey: "Sourcing rules",
+    href: "/sourcing-rules",
+    view: "sourcing-rules",
   },
   {
     icon: IconChartBar,
