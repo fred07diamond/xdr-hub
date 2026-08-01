@@ -1,4 +1,5 @@
 import {
+  callAction,
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client";
@@ -25,6 +26,20 @@ export function meta() {
 }
 
 const PAGE_SIZE = 50;
+// Each rescored contact needs a completeText() call plus (when applicable)
+// several CommonRoom MCP round-trips — a single "refresh all" call over
+// dozens of contacts routinely exceeds the framework's 60s default action
+// timeout. Chunking keeps each individual request comfortably bounded and
+// lets the UI show real progress instead of one long spinner that can time
+// out with no partial result.
+const RESCORE_CHUNK_SIZE = 12;
+const RESCORE_CHUNK_TIMEOUT_MS = 150_000;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
 
 type SortableColumn =
   | "name"
@@ -123,6 +138,7 @@ export default function ContactsRoute() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rescoreError, setRescoreError] = useState<string | null>(null);
+  const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
 
   const { data: personasData } = useActionQuery("list-personas", {});
   const personaOptions: PersonaOption[] = (personasData as { personas?: PersonaOption[] })?.personas ?? [];
@@ -147,7 +163,6 @@ export default function ContactsRoute() {
   });
 
   const markActioned = useActionMutation("mark-contact-actioned");
-  const rescoreContacts = useActionMutation("rescore-contacts");
 
   const contacts: ContactRow[] = (data as { contacts?: ContactRow[] })?.contacts ?? [];
   const total = (data as { total?: number })?.total ?? 0;
@@ -202,19 +217,56 @@ export default function ContactsRoute() {
 
   async function handleRefreshScores() {
     setRescoreError(null);
-    try {
-      const result = (await rescoreContacts.mutateAsync(
-        selected.size > 0 ? { contactIds: Array.from(selected) } : {},
-      )) as { rescored?: number; error?: string };
-      if (result?.error) {
-        setRescoreError(result.error);
-      } else {
-        setSelected(new Set());
-        refetch();
+
+    let targetIds: string[];
+    if (selected.size > 0) {
+      targetIds = Array.from(selected);
+    } else {
+      // "Refresh all" — fetch every active contact id directly (not just the
+      // current page's `contacts` array, which is paginated/filtered) so a
+      // refresh-all click always covers the full active pool.
+      try {
+        const all = await callAction<{ contacts: Array<{ id: string }> }>(
+          "list-contacts",
+          { status: "active", limit: 200, offset: 0 },
+          { method: "GET" },
+        );
+        targetIds = all.contacts.map((c) => c.id);
+      } catch (err) {
+        setRescoreError(err instanceof Error ? err.message : "Couldn't load contacts to refresh.");
+        return;
       }
-    } catch (err) {
-      setRescoreError(err instanceof Error ? err.message : "Couldn't refresh scores.");
     }
+
+    if (targetIds.length === 0) return;
+
+    const chunks = chunkArray(targetIds, RESCORE_CHUNK_SIZE);
+    setRefreshProgress({ done: 0, total: targetIds.length });
+    const errors: string[] = [];
+    let done = 0;
+
+    for (const chunk of chunks) {
+      try {
+        const result = await callAction<{ rescored?: number; error?: string; errors?: string[] }>(
+          "rescore-contacts",
+          { contactIds: chunk },
+          { timeoutMs: RESCORE_CHUNK_TIMEOUT_MS },
+        );
+        if (result?.error) errors.push(result.error);
+        if (result?.errors?.length) errors.push(...result.errors);
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : "A batch failed to refresh.");
+      }
+      done += chunk.length;
+      setRefreshProgress({ done, total: targetIds.length });
+    }
+
+    setRefreshProgress(null);
+    if (errors.length > 0) {
+      setRescoreError(`${errors.length} batch${errors.length === 1 ? "" : "es"} had errors: ${errors[0]}`);
+    }
+    setSelected(new Set());
+    refetch();
   }
 
   const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
@@ -233,16 +285,20 @@ export default function ContactsRoute() {
         <button
           type="button"
           onClick={handleRefreshScores}
-          disabled={rescoreContacts.isPending || total === 0}
+          disabled={refreshProgress !== null || total === 0}
           className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
           title={selected.size > 0 ? `Re-score ${selected.size} selected contact${selected.size === 1 ? "" : "s"}` : "Re-score all active contacts (capped at 200 per run)"}
         >
-          {rescoreContacts.isPending ? (
+          {refreshProgress ? (
             <IconLoader2 size={13} className="animate-spin" />
           ) : (
             <IconRefresh size={13} />
           )}
-          {selected.size > 0 ? `Refresh ${selected.size} selected` : "Refresh scores"}
+          {refreshProgress
+            ? `Refreshing ${refreshProgress.done}/${refreshProgress.total}…`
+            : selected.size > 0
+              ? `Refresh ${selected.size} selected`
+              : "Refresh scores"}
         </button>
       </div>
 
