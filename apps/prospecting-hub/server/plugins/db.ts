@@ -180,6 +180,11 @@ export default runMigrations(
       name: "contacts-overall-score-column",
       sql: `ALTER TABLE contacts ADD COLUMN overall_score INTEGER`,
     },
+    {
+      version: 16,
+      name: "sync-records-metadata-column",
+      sql: `ALTER TABLE sync_records ADD COLUMN metadata TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

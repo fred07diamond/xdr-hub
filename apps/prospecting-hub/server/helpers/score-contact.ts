@@ -13,6 +13,15 @@ export interface ContactForScoring {
   name: string;
   title: string | null;
   company: string | null;
+  // Optional firmographic signals — when available (e.g. a Prospector
+  // match's `location.country`, and an ICP-qualified company's known
+  // `employees` count in run-sourcing-rule-pipeline.ts), these feed
+  // computeDeterministicCompanyFit() below for a more precise, auditable
+  // company-fit score than the AI-judged one. Absent (undefined/null) for
+  // every other caller today — the AI-judged companyFitScore remains the
+  // fallback in that case.
+  country?: string | null;
+  employees?: number | null;
 }
 
 export interface ContactScoreResult {
@@ -104,14 +113,24 @@ export async function scoreContactAgainstPersonas(options: {
   }
 
   // A SEPARATE, better-precision company-fit signal from firmographic data
-  // (country/employees), wired in per spec even though `ContactForScoring`
-  // doesn't currently carry either field — the `contacts` table has no
-  // country/employees columns yet, so this always returns `null` today.
-  // Not used to override `companyFitScore` above (which stays the sole,
-  // AI-judged company-fit source until this signal has real inputs) and not
-  // folded into `overallScore` below — this task's overallScore blends only
-  // personaMatchScore/companyFitScore/engagementScore, per spec.
-  const _deterministicCompanyFit = computeDeterministicCompanyFit({ country: undefined, employees: undefined });
+  // (country/employees) — per the plan's stated design, this deterministic,
+  // auditable formula REPLACES the AI-judged companyFitScore above whenever
+  // real firmographic inputs are available (today: run-sourcing-rule-
+  // pipeline.ts threads a Prospector match's location.country and an
+  // ICP-qualified company's known employees count through via
+  // ContactForScoring.country/employees). When neither input is available
+  // (every other caller, or an ICP-less/unmatched company), this returns
+  // `null` and the AI-judged companyFitScore computed above stands
+  // unchanged as the fallback. Not folded into `overallScore` below — that
+  // still blends personaMatchScore/companyFitScore/engagementScore, per
+  // spec, just with a (possibly now-deterministic) companyFitScore input.
+  const deterministicCompanyFit = computeDeterministicCompanyFit({
+    country: options.contact.country,
+    employees: options.contact.employees,
+  });
+  if (deterministicCompanyFit !== null) {
+    companyFitScore = deterministicCompanyFit;
+  }
 
   // Best-effort: a CommonRoom hiccup (no org-scoped connection configured,
   // MCP call failure, etc.) must not fail contact scoring outright — treat

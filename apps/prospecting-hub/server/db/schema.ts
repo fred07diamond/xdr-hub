@@ -156,7 +156,14 @@ export const libraryDocs = table("library_docs", {
   createdAt: text("created_at").default(now()),
 });
 
-// One row per sync run against an external source.
+// One row per sync run against an external source. `metadata` is JSON,
+// event-specific — added for run-sourcing-rule-pipeline.ts (Task 14 fix
+// round) to record `sourcingRuleId`/`companiesConsidered`/
+// `icpQualifiedZeroCompanies` so a silently-empty ICP run (0 companies
+// qualified, 0 contacts imported, `status: "success"`) is distinguishable
+// from "a quiet day, nothing new" instead of indistinguishable from it.
+// Null for every other existing writer (sync-hubspot.ts, sync-commonroom.ts,
+// import-prospects-to-segment.ts) — none of them needed this before.
 export const syncRecords = table("sync_records", {
   id: text("id").primaryKey(),
   source: text("source", { enum: ["hubspot", "commonroom", "notion", "gdocs", "prospector"] }).notNull(),
@@ -165,4 +172,5 @@ export const syncRecords = table("sync_records", {
   recordsPulled: integer("records_pulled"),
   status: text("status", { enum: ["success", "failed", "running"] }).notNull(),
   error: text("error"),
+  metadata: text("metadata"),
 });

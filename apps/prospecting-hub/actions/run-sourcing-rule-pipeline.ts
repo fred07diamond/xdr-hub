@@ -35,13 +35,28 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async ({ ruleId }, ctx) => {
-    await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
+    const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
 
     const ruleRows = await db.select().from(sourcingRules).where(eq(sourcingRules.id, ruleId)).limit(1);
     const rule = ruleRows[0];
     if (!rule) {
       throw Object.assign(new Error(`Sourcing rule ${ruleId} not found.`), { statusCode: 404 });
+    }
+
+    // Ownership gate, matching update-sourcing-rule.ts/delete-sourcing-rule.ts:
+    // any XDR/AE passes the role gate above, but only the rule's own owner
+    // (or an admin) may actually run it — otherwise any XDR/AE could
+    // manually trigger any OTHER user's rule by ruleId (no data leak, since
+    // writes still target the rule owner's own segment via
+    // assertSegmentWritable below, but an authorization-consistency gap and
+    // a mild quota-abuse vector). The scheduled path runs `runAs: creator`
+    // (i.e. as the rule's own owner), so this never affects the scheduled
+    // flow — only manual/chat-triggered calls.
+    if (rule.ownerEmail !== ctx!.userEmail! && role !== "admin") {
+      throw Object.assign(new Error("Only the sourcing rule's owner or a manager can run this rule's pipeline."), {
+        statusCode: 403,
+      });
     }
 
     // Defense-in-depth existence checks mirroring create-sourcing-rule.ts's
@@ -87,6 +102,13 @@ export default defineAction({
     let companiesConsidered: number | null = null;
     let effectiveAllowList: string[] | undefined = manualAllowList ?? undefined;
     const effectiveDenyList: string[] | undefined = manualDenyList ?? undefined;
+    // Lowercased company name -> known employee count, from the ICP-
+    // qualified companies list — feeds scoreContactAgainstPersonas's
+    // deterministic company-fit signal below (per-contact) when a match's
+    // company was one of the companies the ICP search already qualified.
+    // Stays empty for a rule with no icpId (the AI-judged companyFitScore
+    // remains the fallback in that case, unchanged).
+    const companyEmployeesByName = new Map<string, number>();
 
     if (rule.icpId) {
       const icpLimit = Math.min(200, rule.desiredVolume * 3);
@@ -98,6 +120,11 @@ export default defineAction({
       });
       companiesConsidered = icpCompanies.length;
       const icpNames = icpCompanies.map((c) => c.name).filter((n): n is string => !!n);
+      for (const c of icpCompanies) {
+        if (c.name && c.employees != null) {
+          companyEmployeesByName.set(c.name.toLowerCase(), c.employees);
+        }
+      }
 
       if (manualAllowList && manualAllowList.length > 0) {
         // A company must appear in BOTH the ICP-qualified list and the
@@ -128,12 +155,18 @@ export default defineAction({
         completedAt,
         status: "success",
         recordsPulled: 0,
+        // Distinguishes "the ICP qualified zero companies, so this rule is
+        // effectively dead" from "a quiet day, nothing new today" — both
+        // are status: "success" / recordsPulled: 0 otherwise indistinguishable.
+        metadata: JSON.stringify({ sourcingRuleId: ruleId, companiesConsidered, icpQualifiedZeroCompanies: true }),
       });
       await logAnalyticsEvent(rule.ownerEmail, "sync_run", {
         source: "prospector",
         status: "success",
         recordsPulled: 0,
         sourcingRuleId: ruleId,
+        companiesConsidered,
+        icpQualifiedZeroCompanies: true,
       });
       return { imported: 0, scored: 0, segmentId: rule.segmentId, companiesConsidered };
     }
@@ -244,7 +277,20 @@ export default defineAction({
       imported++;
 
       const score = await scoreContactAgainstPersonas({
-        contact: { name: match.fullName ?? "Unknown", title: match.title ?? null, company: match.companyName ?? null },
+        contact: {
+          name: match.fullName ?? "Unknown",
+          title: match.title ?? null,
+          company: match.companyName ?? null,
+          // Real firmographic signals, when available, feed
+          // computeDeterministicCompanyFit() inside scoreContactAgainstPersonas
+          // and take over companyFitScore in place of the AI-judged value:
+          // - country: straight from this Prospector match's own location.
+          // - employees: only known when this match's company was one of the
+          //   rule's ICP-qualified companies (empty map for a no-ICP rule, or
+          //   null when the company wasn't in the qualified set).
+          country: match.location?.country ?? null,
+          employees: companyEmployeesByName.get(match.companyName?.toLowerCase() ?? "") ?? null,
+        },
         personas: personaRowsForScoring,
         userEmail: rule.ownerEmail,
         orgId: ctx?.orgId,
@@ -281,12 +327,15 @@ export default defineAction({
       completedAt: syncCompletedAt,
       status: "success",
       recordsPulled: records.length,
+      metadata: JSON.stringify({ sourcingRuleId: ruleId, companiesConsidered, icpQualifiedZeroCompanies: false }),
     });
     await logAnalyticsEvent(rule.ownerEmail, "sync_run", {
       source: "prospector",
       status: "success",
       recordsPulled: records.length,
       sourcingRuleId: ruleId,
+      companiesConsidered,
+      icpQualifiedZeroCompanies: false,
     });
 
     return { imported, scored, segmentId: rule.segmentId, companiesConsidered };
