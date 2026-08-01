@@ -17,6 +17,7 @@ import {
   IconChartBar,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconLibrary,
   IconListDetails,
   IconMessageCircle,
   IconRadar,
@@ -67,6 +68,12 @@ const navItems = [
     labelKey: "Sourcing rules",
     href: "/sourcing-rules",
     view: "sourcing-rules",
+  },
+  {
+    icon: IconLibrary,
+    labelKey: "Sales Library",
+    href: "/library",
+    view: "library",
   },
   {
     icon: IconChartBar,
