@@ -3,7 +3,7 @@ import { eq } from "@agent-native/core/db/schema";
 import { resourceGetByPath, resourcePut } from "@agent-native/core/resources";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { sourcingRules } from "../server/db/schema.js";
+import { icps, sourcingRules } from "../server/db/schema.js";
 import { computeSourcingRuleCron, updateJobFrontmatterField } from "../server/helpers/sourcing-rule-jobs.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -38,6 +38,13 @@ export default defineAction({
 
     if (rule.ownerEmail !== ctx!.userEmail! && role !== "admin") {
       return { ok: false, error: "Only the sourcing rule's owner or a manager can update this." };
+    }
+
+    if (icpId) {
+      const icp = await db.select({ id: icps.id }).from(icps).where(eq(icps.id, icpId)).limit(1);
+      if (!icp[0]) {
+        return { ok: false, error: `ICP ${icpId} not found.` };
+      }
     }
 
     const nextReadyByTime = readyByTime ?? rule.readyByTime;

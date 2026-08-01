@@ -4,7 +4,7 @@ import { resourceDeleteByPath, resourcePut } from "@agent-native/core/resources"
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { personas, segmentContacts, segments, sourcingRules, subPersonas } from "../server/db/schema.js";
+import { icps, personas, segmentContacts, segments, sourcingRules, subPersonas } from "../server/db/schema.js";
 import { buildSourcingRuleJobContent, computeSourcingRuleCron } from "../server/helpers/sourcing-rule-jobs.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -66,6 +66,13 @@ export default defineAction({
         throw Object.assign(new Error(`Sub-persona ${subPersonaId} not found under persona ${personaId}.`), {
           statusCode: 404,
         });
+      }
+    }
+
+    if (icpId) {
+      const icp = await db.select({ id: icps.id }).from(icps).where(eq(icps.id, icpId)).limit(1);
+      if (!icp[0]) {
+        throw Object.assign(new Error(`ICP ${icpId} not found.`), { statusCode: 404 });
       }
     }
 
