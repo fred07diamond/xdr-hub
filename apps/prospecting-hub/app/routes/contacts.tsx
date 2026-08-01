@@ -33,6 +33,8 @@ interface ContactRow {
   status: "active" | "actioned";
   personaMatchScore: number | null;
   companyFitScore: number | null;
+  engagementScore: number | null;
+  overallScore: number | null;
   scoreReasoning: string | null;
   personaId: string | null;
   personaName: string | null;
@@ -60,10 +62,11 @@ function scoreBadge(score: number | null) {
   return { label: `Weak · ${score}`, className: "bg-muted text-muted-foreground" };
 }
 
-function ScorePill({ score }: { score: number | null }) {
+function ScorePill({ score, size = "sm" }: { score: number | null; size?: "sm" | "lg" }) {
   const badge = scoreBadge(score);
+  const sizeClass = size === "lg" ? "px-2.5 py-1 text-sm" : "px-2 py-0.5 text-xs";
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>
+    <span className={`inline-flex items-center rounded-full font-medium ${sizeClass} ${badge.className}`}>
       {badge.label}
     </span>
   );
@@ -202,8 +205,10 @@ export default function ContactsRoute() {
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Company</th>
                 <th className="px-4 py-2 font-medium">Persona</th>
+                <th className="px-4 py-2 font-medium">Overall Score</th>
                 <th className="px-4 py-2 font-medium">Persona Match</th>
                 <th className="px-4 py-2 font-medium">Company Fit</th>
+                <th className="px-4 py-2 font-medium">Engagement</th>
                 <th className="px-4 py-2 font-medium">Source</th>
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium">Segments</th>
@@ -229,8 +234,10 @@ export default function ContactsRoute() {
                       <span className="text-muted-foreground/50">Unscored</span>
                     )}
                   </td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.personaMatchScore} /></td>
                   <td className="px-4 py-2.5"><ScorePill score={c.companyFitScore} /></td>
+                  <td className="px-4 py-2.5"><ScorePill score={c.engagementScore} /></td>
                   <td className="px-4 py-2.5 capitalize text-muted-foreground">{c.source}</td>
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${c.status === "actioned" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>

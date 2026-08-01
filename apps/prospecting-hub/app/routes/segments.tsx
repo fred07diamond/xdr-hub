@@ -60,6 +60,8 @@ interface SegmentContact {
   email: string | null;
   personaMatchScore: number | null;
   companyFitScore: number | null;
+  engagementScore: number | null;
+  overallScore: number | null;
   scoreReasoning: string | null;
   status: "active" | "actioned";
   linkedinUrl: string | null;
@@ -540,8 +542,10 @@ function SegmentDetailView({
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Title</th>
                 <th className="px-4 py-2 font-medium">Company</th>
+                <th className="px-4 py-2 font-medium">Overall</th>
                 <th className="px-4 py-2 font-medium">Persona match</th>
                 <th className="px-4 py-2 font-medium">Company fit</th>
+                <th className="px-4 py-2 font-medium">Engagement</th>
                 <th className="px-4 py-2 font-medium">Reasoning</th>
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium" />
@@ -559,11 +563,17 @@ function SegmentDetailView({
                   <td className="max-w-[140px] truncate px-4 py-2.5 text-muted-foreground" title={c.company ?? undefined}>
                     {c.company ?? "—"}
                   </td>
+                  <td className="px-4 py-2.5 font-semibold text-foreground">
+                    {c.overallScore ?? "—"}
+                  </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
                     {c.personaMatchScore ?? "—"}
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
                     {c.companyFitScore ?? "—"}
+                  </td>
+                  <td className="px-4 py-2.5 text-muted-foreground">
+                    {c.engagementScore ?? "—"}
                   </td>
                   <td className="max-w-[220px] truncate px-4 py-2.5 text-muted-foreground/80" title={c.scoreReasoning ?? undefined}>
                     {c.scoreReasoning ?? "—"}

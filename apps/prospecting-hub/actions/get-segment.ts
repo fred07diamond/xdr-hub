@@ -26,6 +26,8 @@ export default defineAction({
         email: contacts.email,
         personaMatchScore: contacts.personaMatchScore,
         companyFitScore: contacts.companyFitScore,
+        engagementScore: contacts.engagementScore,
+        overallScore: contacts.overallScore,
         scoreReasoning: contacts.scoreReasoning,
         status: contacts.status,
         linkedinUrl: contacts.linkedinUrl,

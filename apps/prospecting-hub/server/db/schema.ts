@@ -19,6 +19,8 @@ export const contacts = table("contacts", {
   hubspotUrl: text("hubspot_url"),
   personaMatchScore: integer("persona_match_score"),
   companyFitScore: integer("company_fit_score"),
+  engagementScore: integer("engagement_score"),
+  overallScore: integer("overall_score"),
   scoreReasoning: text("score_reasoning"),
   source: text("source", { enum: ["hubspot", "commonroom", "prospector"] }).notNull(),
   externalId: text("external_id"), // the source system's own record id, for de-duping re-syncs

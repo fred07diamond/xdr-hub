@@ -170,6 +170,16 @@ export default runMigrations(
       name: "sourcing-rules-icp-column",
       sql: `ALTER TABLE sourcing_rules ADD COLUMN icp_id TEXT`,
     },
+    {
+      version: 14,
+      name: "contacts-engagement-score-column",
+      sql: `ALTER TABLE contacts ADD COLUMN engagement_score INTEGER`,
+    },
+    {
+      version: 15,
+      name: "contacts-overall-score-column",
+      sql: `ALTER TABLE contacts ADD COLUMN overall_score INTEGER`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

@@ -7,7 +7,7 @@ import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 
 export default defineAction({
-  description: "Score one contact against all personas with synced criteria, writing personaId/personaMatchScore/companyFitScore/scoreReasoning back onto the contact.",
+  description: "Score one contact against all personas with synced criteria, writing personaId/personaMatchScore/companyFitScore/engagementScore/overallScore/scoreReasoning back onto the contact.",
   schema: z.object({ contactId: z.string().min(1) }),
   requiresAuth: true,
   http: { method: "POST" },
@@ -39,6 +39,8 @@ export default defineAction({
         personaId: score.personaId,
         personaMatchScore: score.personaMatchScore,
         companyFitScore: score.companyFitScore,
+        engagementScore: score.engagementScore,
+        overallScore: score.overallScore,
         scoreReasoning: score.reasoning,
         updatedAt: new Date().toISOString(),
       })
