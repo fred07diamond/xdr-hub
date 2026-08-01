@@ -1,12 +1,31 @@
 import { defineAction } from "@agent-native/core";
 import { and, eq } from "@agent-native/core/db/schema";
-import { resourcePut } from "@agent-native/core/resources";
+import { resourceDeleteByPath, resourcePut } from "@agent-native/core/resources";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { personas, segments, sourcingRules, subPersonas } from "../server/db/schema.js";
+import { personas, segmentContacts, segments, sourcingRules, subPersonas } from "../server/db/schema.js";
 import { buildSourcingRuleJobContent, computeSourcingRuleCron } from "../server/helpers/sourcing-rule-jobs.js";
 import { requireRole } from "../server/helpers/require-role.js";
+
+type Db = ReturnType<typeof getDb>;
+
+// Best-effort compensating cleanup for the create-once segment this action
+// creates before the job resource / rule row exist. Not a transaction — just
+// undoes what we already wrote so a later-step failure doesn't leave an
+// orphaned segment behind. Cleanup failures are logged, never thrown, so the
+// original error is always what the caller sees.
+async function cleanupOrphanedSegment(db: Db, segmentId: string): Promise<void> {
+  try {
+    await db.delete(segmentContacts).where(eq(segmentContacts.segmentId, segmentId));
+    await db.delete(segments).where(eq(segments.id, segmentId));
+  } catch (cleanupError) {
+    console.error(
+      `[create-sourcing-rule] Failed to clean up orphaned segment ${segmentId} after a later step failed:`,
+      cleanupError,
+    );
+  }
+}
 
 export default defineAction({
   description:
@@ -76,24 +95,48 @@ export default defineAction({
       createdBy: userEmail,
       ruleId,
     });
-    await resourcePut(userEmail, jobResourcePath, jobContent, "text/markdown");
 
-    await db.insert(sourcingRules).values({
-      id: ruleId,
-      name,
-      ownerEmail: userEmail,
-      personaId,
-      subPersonaId: subPersonaId ?? null,
-      companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null,
-      companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null,
-      desiredVolume,
-      readyByTime,
-      leadHours,
-      segmentId,
-      jobResourcePath,
-      status: "active",
-      createdAt: now,
-    });
+    try {
+      await resourcePut(userEmail, jobResourcePath, jobContent, "text/markdown");
+    } catch (err) {
+      // Job resource write failed — the segment is now orphaned (no rule
+      // will ever own it). Undo it before re-throwing the original error.
+      await cleanupOrphanedSegment(db, segmentId);
+      throw err;
+    }
+
+    try {
+      await db.insert(sourcingRules).values({
+        id: ruleId,
+        name,
+        ownerEmail: userEmail,
+        personaId,
+        subPersonaId: subPersonaId ?? null,
+        companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null,
+        companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null,
+        desiredVolume,
+        readyByTime,
+        leadHours,
+        segmentId,
+        jobResourcePath,
+        status: "active",
+        createdAt: now,
+      });
+    } catch (err) {
+      // Rule row insert failed — both the segment and the job resource are
+      // now orphaned (no rule row references them). Undo both before
+      // re-throwing the original error.
+      try {
+        await resourceDeleteByPath(userEmail, jobResourcePath);
+      } catch (cleanupError) {
+        console.error(
+          `[create-sourcing-rule] Failed to clean up orphaned job resource ${jobResourcePath} after the rule row insert failed:`,
+          cleanupError,
+        );
+      }
+      await cleanupOrphanedSegment(db, segmentId);
+      throw err;
+    }
 
     return { id: ruleId, segmentId, cronExpression };
   },
