@@ -115,7 +115,14 @@ export async function scoreContactAgainstPersonas(options: {
       'Reply with valid JSON only: { "personaId": "<id or null>", "personaMatchScore": <0-100>, "companyFitScore": <0-100>, "reasoning": "<one or two sentences citing the specific persona criteria and contact fields that drove the scores>" }';
 
     const input = buildContactBlurb(options.contact) || "Unknown contact";
-    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 300 });
+    // 300 was too tight in practice — live-confirmed truncation mid-JSON on
+    // a real response ("...giving a partial match to the Design person" with
+    // no closing quote/brace), most likely because this model spends part of
+    // its output budget on internal reasoning before emitting the visible
+    // JSON. Bumped generously rather than nudged, since a reasoning model's
+    // internal token consumption isn't predictable from the visible prompt
+    // alone.
+    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 800 });
     const result = await runWithRequestContext(
       { userEmail: options.userEmail, orgId: options.orgId ?? undefined },
       call,

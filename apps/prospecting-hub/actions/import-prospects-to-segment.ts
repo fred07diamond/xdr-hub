@@ -52,6 +52,7 @@ export default defineAction({
     const now = new Date().toISOString();
     let imported = 0;
     let scored = 0;
+    const scoringErrors: string[] = [];
 
     for (const match of records) {
       const linkedinUrl = match.linkedInHandle ? `https://www.linkedin.com/${match.linkedInHandle}` : null;
@@ -99,28 +100,39 @@ export default defineAction({
       }
       imported++;
 
-      const score = await scoreContactAgainstPersonas({
-        contact: { name: match.fullName ?? "Unknown", title: match.title ?? null, company: match.companyName ?? null },
-        personas: personaRows,
-        userEmail,
-        orgId: ctx?.orgId,
-      });
-      await db
-        .update(contacts)
-        .set({
-          personaId: score.personaId,
-          personaMatchScore: score.personaMatchScore,
-          companyFitScore: score.companyFitScore,
-          engagementScore: score.engagementScore,
-          commonRoomIntentScore: score.commonRoomIntentScore,
-          commonRoomCompanyFitScore: score.commonRoomCompanyFitScore,
-          overallScore: score.overallScore,
-          scoreReasoning: score.reasoning,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(contacts.id, contactId));
-      scored++;
+      // Wrapped so a single contact's bad AI response (e.g. truncated/
+      // unparseable JSON) or a CommonRoom lookup failure can't abort the
+      // rest of the batch — this contact is already correctly imported
+      // above regardless; a scoring failure just leaves it unscored for
+      // now, re-scorable later via "Refresh scores".
+      try {
+        const score = await scoreContactAgainstPersonas({
+          contact: { name: match.fullName ?? "Unknown", title: match.title ?? null, company: match.companyName ?? null },
+          personas: personaRows,
+          userEmail,
+          orgId: ctx?.orgId,
+        });
+        await db
+          .update(contacts)
+          .set({
+            personaId: score.personaId,
+            personaMatchScore: score.personaMatchScore,
+            companyFitScore: score.companyFitScore,
+            engagementScore: score.engagementScore,
+            commonRoomIntentScore: score.commonRoomIntentScore,
+            commonRoomCompanyFitScore: score.commonRoomCompanyFitScore,
+            overallScore: score.overallScore,
+            scoreReasoning: score.reasoning,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(contacts.id, contactId));
+        scored++;
+      } catch (err) {
+        scoringErrors.push(`${contactId} (${match.fullName ?? "Unknown"}): ${err instanceof Error ? err.message : String(err)}`);
+      }
 
+      // Link into the segment regardless of whether scoring succeeded — the
+      // contact was legitimately found by this search either way.
       const existingLink = await db
         .select({ id: segmentContacts.id })
         .from(segmentContacts)
@@ -139,9 +151,15 @@ export default defineAction({
       completedAt: syncCompletedAt,
       status: "success",
       recordsPulled: records.length,
+      metadata: JSON.stringify({ scoringErrorCount: scoringErrors.length }),
     });
-    await logAnalyticsEvent(userEmail, "sync_run", { source: "prospector", status: "success", recordsPulled: records.length });
+    await logAnalyticsEvent(userEmail, "sync_run", {
+      source: "prospector",
+      status: "success",
+      recordsPulled: records.length,
+      scoringErrorCount: scoringErrors.length,
+    });
 
-    return { imported, scored, segmentId };
+    return { imported, scored, segmentId, scoringErrors };
   },
 });

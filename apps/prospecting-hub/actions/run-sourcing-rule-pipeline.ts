@@ -228,6 +228,7 @@ export default defineAction({
     const now = new Date().toISOString();
     let imported = 0;
     let scored = 0;
+    const scoringErrors: string[] = [];
 
     for (const match of records) {
       const linkedinUrl = match.linkedInHandle ? `https://www.linkedin.com/${match.linkedInHandle}` : null;
@@ -276,48 +277,74 @@ export default defineAction({
       }
       imported++;
 
-      const score = await scoreContactAgainstPersonas({
-        contact: {
-          name: match.fullName ?? "Unknown",
-          title: match.title ?? null,
-          company: match.companyName ?? null,
-          // Real firmographic signals, when available, feed
-          // computeDeterministicCompanyFit() inside scoreContactAgainstPersonas
-          // and take over companyFitScore in place of the AI-judged value:
-          // - country: straight from this Prospector match's own location.
-          // - employees: only known when this match's company was one of the
-          //   rule's ICP-qualified companies (empty map for a no-ICP rule, or
-          //   null when the company wasn't in the qualified set).
-          country: match.location?.country ?? null,
-          employees: companyEmployeesByName.get(match.companyName?.toLowerCase() ?? "") ?? null,
-        },
-        personas: personaRowsForScoring,
-        userEmail: rule.ownerEmail,
-        orgId: ctx?.orgId,
-      });
-      await db
-        .update(contacts)
-        .set({
-          personaId: score.personaId,
-          personaMatchScore: score.personaMatchScore,
-          companyFitScore: score.companyFitScore,
-          engagementScore: score.engagementScore,
-          commonRoomIntentScore: score.commonRoomIntentScore,
-          commonRoomCompanyFitScore: score.commonRoomCompanyFitScore,
-          overallScore: score.overallScore,
-          scoreReasoning: score.reasoning,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(contacts.id, contactId));
-      scored++;
+      // Scoring and everything that depends on it is wrapped so a single
+      // contact's bad AI response (e.g. truncated/unparseable JSON) or a
+      // CommonRoom lookup failure can't abort the rest of the batch — this
+      // contact is already correctly imported above regardless; a scoring
+      // failure just means it stays unscored for now, re-scorable later via
+      // "Refresh scores".
+      try {
+        const score = await scoreContactAgainstPersonas({
+          contact: {
+            name: match.fullName ?? "Unknown",
+            title: match.title ?? null,
+            company: match.companyName ?? null,
+            // Real firmographic signals, when available, feed
+            // computeDeterministicCompanyFit() inside scoreContactAgainstPersonas
+            // and take over companyFitScore in place of the AI-judged value:
+            // - country: straight from this Prospector match's own location.
+            // - employees: only known when this match's company was one of the
+            //   rule's ICP-qualified companies (empty map for a no-ICP rule, or
+            //   null when the company wasn't in the qualified set).
+            country: match.location?.country ?? null,
+            employees: companyEmployeesByName.get(match.companyName?.toLowerCase() ?? "") ?? null,
+          },
+          personas: personaRowsForScoring,
+          userEmail: rule.ownerEmail,
+          orgId: ctx?.orgId,
+        });
+        await db
+          .update(contacts)
+          .set({
+            personaId: score.personaId,
+            personaMatchScore: score.personaMatchScore,
+            companyFitScore: score.companyFitScore,
+            engagementScore: score.engagementScore,
+            commonRoomIntentScore: score.commonRoomIntentScore,
+            commonRoomCompanyFitScore: score.commonRoomCompanyFitScore,
+            overallScore: score.overallScore,
+            scoreReasoning: score.reasoning,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(contacts.id, contactId));
+        scored++;
 
-      const existingLink = await db
-        .select({ id: segmentContacts.id })
-        .from(segmentContacts)
-        .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, contactId)))
-        .limit(1);
-      if (!existingLink[0]) {
-        await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId });
+        const existingLink = await db
+          .select({ id: segmentContacts.id })
+          .from(segmentContacts)
+          .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, contactId)))
+          .limit(1);
+        if (!existingLink[0]) {
+          await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId });
+        }
+      } catch (err) {
+        scoringErrors.push(`${contactId} (${match.fullName ?? "Unknown"}): ${err instanceof Error ? err.message : String(err)}`);
+        // Still link the contact into the segment even when scoring failed —
+        // it was legitimately found by this rule's search, it just doesn't
+        // have a score yet. Best-effort; a failure here doesn't matter for
+        // the pipeline's overall outcome.
+        try {
+          const existingLink = await db
+            .select({ id: segmentContacts.id })
+            .from(segmentContacts)
+            .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, contactId)))
+            .limit(1);
+          if (!existingLink[0]) {
+            await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId });
+          }
+        } catch {
+          // best-effort, ignore
+        }
       }
     }
 
@@ -329,7 +356,12 @@ export default defineAction({
       completedAt: syncCompletedAt,
       status: "success",
       recordsPulled: records.length,
-      metadata: JSON.stringify({ sourcingRuleId: ruleId, companiesConsidered, icpQualifiedZeroCompanies: false }),
+      metadata: JSON.stringify({
+        sourcingRuleId: ruleId,
+        companiesConsidered,
+        icpQualifiedZeroCompanies: false,
+        scoringErrorCount: scoringErrors.length,
+      }),
     });
     await logAnalyticsEvent(rule.ownerEmail, "sync_run", {
       source: "prospector",
@@ -338,8 +370,9 @@ export default defineAction({
       sourcingRuleId: ruleId,
       companiesConsidered,
       icpQualifiedZeroCompanies: false,
+      scoringErrorCount: scoringErrors.length,
     });
 
-    return { imported, scored, segmentId: rule.segmentId, companiesConsidered };
+    return { imported, scored, segmentId: rule.segmentId, companiesConsidered, scoringErrors };
   },
 });
