@@ -185,6 +185,16 @@ export default runMigrations(
       name: "sync-records-metadata-column",
       sql: `ALTER TABLE sync_records ADD COLUMN metadata TEXT`,
     },
+    {
+      version: 17,
+      name: "contacts-country-column",
+      sql: `ALTER TABLE contacts ADD COLUMN country TEXT`,
+    },
+    {
+      version: 18,
+      name: "contacts-employees-column",
+      sql: `ALTER TABLE contacts ADD COLUMN employees INTEGER`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

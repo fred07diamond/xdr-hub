@@ -53,6 +53,12 @@ export interface CommonRoomContact {
   primaryEmail?: string;
   title?: string;
   companyName?: string;
+  // Catalog lists `location` as an allowedColumn on Contact but doesn't
+  // specify its exact return shape — could come back as a plain country
+  // string or as a structured object with a `.country` field. Callers
+  // (sync-commonroom.ts) must parse this defensively rather than assume
+  // either shape.
+  location?: string | { country?: string | null } | null;
 }
 
 export interface CommonRoomListResult<T> {
@@ -81,11 +87,30 @@ export async function commonroomListContactsInSegment(options: {
         },
       ],
     },
-    properties: ["primaryEmail", "title", "companyName"],
+    properties: ["primaryEmail", "title", "companyName", "location"],
     limit: options.limit,
     ...(options.cursor ? { cursor: options.cursor } : {}),
   });
   return parseMcpToolResult(result) as CommonRoomListResult<CommonRoomContact>;
+}
+
+// Defensive parse of CommonRoom's Contact.location property into a plain
+// country string for computeDeterministicCompanyFit(). The catalog lists
+// `location` as an allowedColumn on Contact but doesn't specify its exact
+// return shape, and this can't be verified against a live CommonRoom
+// session in this environment — so this handles a plain string (treated as
+// the country directly), an object with a `.country` field, or anything
+// else/unparseable by returning `null` rather than storing garbage.
+export function parseCommonRoomLocationCountry(location: CommonRoomContact["location"]): string | null {
+  if (typeof location === "string") {
+    const trimmed = location.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (location && typeof location === "object" && typeof location.country === "string") {
+    const trimmed = location.country.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
 }
 
 export async function commonroomListSegments(options: {

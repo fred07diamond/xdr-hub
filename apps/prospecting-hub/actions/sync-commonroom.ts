@@ -4,7 +4,11 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, syncRecords } from "../server/db/schema.js";
-import { commonroomListContactsInSegment, type CommonRoomContact } from "../server/helpers/commonroom-client.js";
+import {
+  commonroomListContactsInSegment,
+  parseCommonRoomLocationCountry,
+  type CommonRoomContact,
+} from "../server/helpers/commonroom-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 
@@ -59,6 +63,11 @@ export default defineAction({
           .where(and(eq(contacts.externalId, crContact.id), eq(contacts.source, "commonroom")))
           .limit(1);
 
+        // employees is intentionally left null here — CommonRoom's tracked
+        // Contact object has no employee-count field directly (would need
+        // an additional Organization lookup, out of scope for this task).
+        const country = parseCommonRoomLocationCountry(crContact.location);
+
         if (existing[0]) {
           await db
             .update(contacts)
@@ -67,6 +76,7 @@ export default defineAction({
               title: crContact.title ?? null,
               company: crContact.companyName ?? null,
               email: crContact.primaryEmail ?? null,
+              country,
               syncedAt: now,
               updatedAt: now,
             })
@@ -79,6 +89,7 @@ export default defineAction({
             title: crContact.title ?? null,
             company: crContact.companyName ?? null,
             email: crContact.primaryEmail ?? null,
+            country,
             source: "commonroom",
             externalId: crContact.id,
             status: "active",

@@ -27,7 +27,13 @@ export default defineAction({
       .where(sql`${personas.criteria} IS NOT NULL`);
 
     const score = await scoreContactAgainstPersonas({
-      contact: { name: contact.name, title: contact.title, company: contact.company },
+      contact: {
+        name: contact.name,
+        title: contact.title,
+        company: contact.company,
+        country: contact.country,
+        employees: contact.employees,
+      },
       personas: personaRows,
       userEmail: ctx!.userEmail!,
       orgId: ctx?.orgId,

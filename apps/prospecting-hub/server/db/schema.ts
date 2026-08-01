@@ -22,6 +22,8 @@ export const contacts = table("contacts", {
   engagementScore: integer("engagement_score"),
   overallScore: integer("overall_score"),
   scoreReasoning: text("score_reasoning"),
+  country: text("country"), // firmographic signal for deterministic company-fit scoring — HubSpot's associated Company.country or CommonRoom's Contact.location; null when unavailable
+  employees: integer("employees"), // firmographic signal for deterministic company-fit scoring — HubSpot's associated Company.numberofemployees; null when unavailable (CommonRoom never sets this — see sync-commonroom.ts)
   source: text("source", { enum: ["hubspot", "commonroom", "prospector"] }).notNull(),
   externalId: text("external_id"), // the source system's own record id, for de-duping re-syncs
   personaId: text("persona_id"), // exactly one persona per contact once matched
