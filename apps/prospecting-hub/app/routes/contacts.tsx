@@ -29,7 +29,7 @@ interface ContactRow {
   email: string | null;
   linkedinUrl: string | null;
   hubspotUrl: string | null;
-  source: "hubspot" | "commonroom";
+  source: "hubspot" | "commonroom" | "prospector";
   status: "active" | "actioned";
   personaMatchScore: number | null;
   companyFitScore: number | null;
@@ -82,8 +82,8 @@ function relativeTime(iso: string | null) {
 export default function ContactsRoute() {
   const [search, setSearch] = useState("");
   const [personaId, setPersonaId] = useState("");
-  const [source, setSource] = useState("");
-  const [status, setStatus] = useState("");
+  const [source, setSource] = useState<"" | ContactRow["source"]>("");
+  const [status, setStatus] = useState<"" | ContactRow["status"]>("");
   const [offset, setOffset] = useState(0);
   const [actioningId, setActioningId] = useState<string | null>(null);
 
@@ -163,16 +163,17 @@ export default function ContactsRoute() {
         </select>
         <select
           value={source}
-          onChange={(e) => { setSource(e.target.value); resetToFirstPage(); }}
+          onChange={(e) => { setSource(e.target.value as "" | ContactRow["source"]); resetToFirstPage(); }}
           className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All sources</option>
           <option value="hubspot">HubSpot</option>
           <option value="commonroom">CommonRoom</option>
+          <option value="prospector">Prospector</option>
         </select>
         <select
           value={status}
-          onChange={(e) => { setStatus(e.target.value); resetToFirstPage(); }}
+          onChange={(e) => { setStatus(e.target.value as "" | ContactRow["status"]); resetToFirstPage(); }}
           className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All statuses</option>

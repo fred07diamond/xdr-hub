@@ -13,7 +13,7 @@ export default defineAction({
   schema: z.object({
     search: z.string().nullish().describe("Matches name or company, case-insensitive substring"),
     personaId: z.string().nullish(),
-    source: z.enum(["hubspot", "commonroom"]).nullish(),
+    source: z.enum(["hubspot", "commonroom", "prospector"]).nullish(),
     status: z.enum(["active", "actioned"]).nullish(),
     limit: z.number().int().min(1).max(PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
     offset: z.number().int().min(0).default(0),
