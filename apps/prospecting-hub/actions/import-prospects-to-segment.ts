@@ -3,12 +3,13 @@ import { and, eq, sql } from "@agent-native/core/db/schema";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas, segmentContacts, segments } from "../server/db/schema.js";
+import { contacts, personas, segmentContacts, syncRecords } from "../server/db/schema.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { searchProspectorContacts } from "../server/helpers/prospector-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
+import { assertSegmentWritable } from "../server/helpers/segment-access.js";
 
 export default defineAction({
   description:
@@ -28,10 +29,7 @@ export default defineAction({
     const db = getDb();
     const userEmail = ctx!.userEmail!;
 
-    const segment = await db.select({ id: segments.id }).from(segments).where(eq(segments.id, segmentId)).limit(1);
-    if (!segment[0]) {
-      throw Object.assign(new Error(`Segment ${segmentId} not found.`), { statusCode: 404 });
-    }
+    await assertSegmentWritable(segmentId, ctx!.userEmail!, db);
 
     const filters = await deriveProspectorFilters({ personaId, subPersonaId, userEmail, orgId: ctx?.orgId });
     const { records } = await searchProspectorContacts({
@@ -129,6 +127,15 @@ export default defineAction({
       }
     }
 
+    const syncCompletedAt = new Date().toISOString();
+    await db.insert(syncRecords).values({
+      id: nanoid(),
+      source: "prospector",
+      startedAt: syncCompletedAt,
+      completedAt: syncCompletedAt,
+      status: "success",
+      recordsPulled: records.length,
+    });
     await logAnalyticsEvent(userEmail, "sync_run", { source: "prospector", status: "success", recordsPulled: records.length });
 
     return { imported, scored, segmentId };

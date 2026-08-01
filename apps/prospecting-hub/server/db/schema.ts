@@ -116,7 +116,7 @@ export const sourcingRules = table("sourcing_rules", {
 // One row per sync run against an external source.
 export const syncRecords = table("sync_records", {
   id: text("id").primaryKey(),
-  source: text("source", { enum: ["hubspot", "commonroom", "notion", "gdocs"] }).notNull(),
+  source: text("source", { enum: ["hubspot", "commonroom", "notion", "gdocs", "prospector"] }).notNull(),
   startedAt: text("started_at").default(now()),
   completedAt: text("completed_at"),
   recordsPulled: integer("records_pulled"),

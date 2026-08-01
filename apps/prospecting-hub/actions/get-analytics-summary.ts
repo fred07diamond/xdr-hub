@@ -29,6 +29,7 @@ export default defineAction({
       [syncRunsCommonroom],
       [contactsHubspotActive],
       [contactsCommonroomActive],
+      [contactsProspectorActive],
     ] = await Promise.all([
       db
         .select({ count: sql<number>`count(*)` })
@@ -81,6 +82,10 @@ export default defineAction({
         .select({ count: sql<number>`count(*)` })
         .from(contacts)
         .where(and(eq(contacts.source, "commonroom"), eq(contacts.status, "active"))),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(contacts)
+        .where(and(eq(contacts.source, "prospector"), eq(contacts.status, "active"))),
     ]);
 
     return {
@@ -104,6 +109,7 @@ export default defineAction({
       contactsBySource: {
         hubspot: Number(contactsHubspotActive?.count ?? 0),
         commonroom: Number(contactsCommonroomActive?.count ?? 0),
+        prospector: Number(contactsProspectorActive?.count ?? 0),
       },
     };
   },
