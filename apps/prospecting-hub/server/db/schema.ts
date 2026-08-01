@@ -113,6 +113,28 @@ export const sourcingRules = table("sourcing_rules", {
   createdAt: text("created_at").default(now()),
 });
 
+// Sales Library — reference material (call scripts, ICP notes, positioning
+// docs, etc.) any XDR/AE can contribute. `content` stores the raw text
+// directly (not JSON-wrapped like persona/ICP criteria). `category`/`tags`
+// are AI-derived on create via deriveLibraryTags(), and can be overridden
+// later through update-library-doc. `linkedPersonaId`/`linkedIcpId` are
+// plain nullable text columns with no FK enforcement, matching this app's
+// existing convention (see contacts.personaId).
+export const libraryDocs = table("library_docs", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  category: text("category", {
+    enum: ["icp", "persona_messaging", "sales_process", "campaigns", "tools", "positioning", "other"],
+  }).notNull(),
+  tags: text("tags"), // JSON-encoded string array
+  content: text("content").notNull(),
+  linkedPersonaId: text("linked_persona_id"),
+  linkedIcpId: text("linked_icp_id"),
+  sourceFileName: text("source_file_name"),
+  ownerEmail: text("owner_email").notNull(),
+  createdAt: text("created_at").default(now()),
+});
+
 // One row per sync run against an external source.
 export const syncRecords = table("sync_records", {
   id: text("id").primaryKey(),

@@ -135,6 +135,22 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 11,
+      name: "library-docs-table",
+      sql: `CREATE TABLE IF NOT EXISTS library_docs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        tags TEXT,
+        content TEXT NOT NULL,
+        linked_persona_id TEXT,
+        linked_icp_id TEXT,
+        source_file_name TEXT,
+        owner_email TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );
