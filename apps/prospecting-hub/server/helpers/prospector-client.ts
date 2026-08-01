@@ -91,3 +91,64 @@ export async function searchProspectorContacts(options: {
 
   return { total: parsed.total ?? filtered.length, records: filtered.slice(0, options.limit) };
 }
+
+export interface ProspectorCompanyMatch {
+  id: string;
+  name?: string;
+  primaryWebsite?: string;
+  employees?: number;
+  subIndustry?: string;
+}
+
+interface ProspectorCompanyListResult {
+  total: number;
+  count: number;
+  nextCursor?: string;
+  has_more: boolean;
+  records: ProspectorCompanyMatch[];
+}
+
+const PROSPECTOR_COMPANY_PROPERTIES = ["name", "primaryWebsite", "employees", "subIndustry"];
+
+// ProspectorCompany is CommonRoom's company-level Prospector object type —
+// same MCP tool/objectType pattern as searchProspectorContacts above, but
+// qualifying companies against an ICP's firmographic criteria (industry,
+// headcount) rather than contacts against a persona's title/seniority
+// criteria. This object type has NOT been live-tested this session — the
+// filter shape (groupSubIndustry stringListFilter, groupCompanySize
+// numberFilter) is best-effort based on CommonRoom's documented catalog,
+// not something verifiable without a live MCP connection.
+export async function searchProspectorCompanies(options: {
+  orgId: string | null | undefined;
+  industryKeyword?: string;
+  minEmployees?: number;
+  limit: number;
+}): Promise<{ total: number; records: ProspectorCompanyMatch[] }> {
+  const clauses: unknown[] = [];
+  if (options.industryKeyword) {
+    clauses.push({
+      type: "stringListFilter",
+      field: "groupSubIndustry",
+      params: { op: "any", value: [options.industryKeyword] },
+    });
+  }
+  if (options.minEmployees !== undefined) {
+    clauses.push({
+      type: "numberFilter",
+      field: "groupCompanySize",
+      params: { op: "gte", value: options.minEmployees },
+    });
+  }
+
+  const result = await callMcpTool(resolveServerId(options.orgId), "commonroom_list_objects", {
+    objectType: "ProspectorCompany",
+    ...(clauses.length > 0 ? { filter: { type: "and", clauses } } : {}),
+    properties: PROSPECTOR_COMPANY_PROPERTIES,
+    limit: options.limit,
+  });
+
+  const parsed = parseMcpToolResult(result) as ProspectorCompanyListResult;
+  const records = parsed.records ?? [];
+
+  return { total: parsed.total ?? records.length, records: records.slice(0, options.limit) };
+}
