@@ -111,6 +111,8 @@ export default defineAction({
           personaId: score.personaId,
           personaMatchScore: score.personaMatchScore,
           companyFitScore: score.companyFitScore,
+          engagementScore: score.engagementScore,
+          overallScore: score.overallScore,
           scoreReasoning: score.reasoning,
           updatedAt: new Date().toISOString(),
         })

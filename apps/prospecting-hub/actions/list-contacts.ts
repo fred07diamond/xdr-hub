@@ -8,20 +8,34 @@ import { requireRole } from "../server/helpers/require-role.js";
 const PAGE_SIZE_DEFAULT = 50;
 const PAGE_SIZE_MAX = 200;
 
+const SORTABLE_COLUMNS = {
+  name: contacts.name,
+  company: contacts.company,
+  overallScore: sql`coalesce(${contacts.overallScore}, -1)`,
+  personaMatchScore: sql`coalesce(${contacts.personaMatchScore}, -1)`,
+  companyFitScore: sql`coalesce(${contacts.companyFitScore}, -1)`,
+  engagementScore: sql`coalesce(${contacts.engagementScore}, -1)`,
+  source: contacts.source,
+  status: contacts.status,
+  syncedAt: contacts.syncedAt,
+} as const;
+
 export default defineAction({
-  description: "List synced contacts (master pool, across all sources) with persona/score/segment-membership info, filterable and paginated.",
+  description: "List synced contacts (master pool, across all sources) with persona/score/segment-membership info, filterable, sortable, and paginated.",
   schema: z.object({
     search: z.string().nullish().describe("Matches name or company, case-insensitive substring"),
     personaId: z.string().nullish(),
     source: z.enum(["hubspot", "commonroom", "prospector"]).nullish(),
     status: z.enum(["active", "actioned"]).nullish(),
+    sortBy: z.enum(Object.keys(SORTABLE_COLUMNS) as [keyof typeof SORTABLE_COLUMNS]).nullish(),
+    sortDirection: z.enum(["asc", "desc"]).nullish(),
     limit: z.number().int().min(1).max(PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
     offset: z.number().int().min(0).default(0),
   }),
   requiresAuth: true,
   readOnly: true,
   http: { method: "GET" },
-  run: async ({ search, personaId, source, status, limit, offset }, ctx) => {
+  run: async ({ search, personaId, source, status, sortBy, sortDirection, limit, offset }, ctx) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
 
@@ -67,7 +81,11 @@ export default defineAction({
       .from(contacts)
       .leftJoin(personas, eq(contacts.personaId, personas.id))
       .where(whereClause)
-      .orderBy(desc(sql`coalesce(${contacts.personaMatchScore}, -1)`), desc(contacts.syncedAt))
+      .orderBy(
+        ...(sortBy
+          ? [sortDirection === "asc" ? sql`${SORTABLE_COLUMNS[sortBy]} ASC` : desc(SORTABLE_COLUMNS[sortBy])]
+          : [desc(sql`coalesce(${contacts.overallScore}, -1)`), desc(contacts.syncedAt)]),
+      )
       .limit(limit)
       .offset(offset);
 

@@ -3,11 +3,15 @@ import {
   useActionQuery,
 } from "@agent-native/core/client";
 import {
+  IconArrowsSort,
   IconBrandLinkedin,
+  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
+  IconChevronUp,
   IconExternalLink,
   IconLoader2,
+  IconRefresh,
   IconSearch,
   IconUsers,
 } from "@tabler/icons-react";
@@ -21,6 +25,51 @@ export function meta() {
 }
 
 const PAGE_SIZE = 50;
+
+type SortableColumn =
+  | "name"
+  | "company"
+  | "overallScore"
+  | "personaMatchScore"
+  | "companyFitScore"
+  | "engagementScore"
+  | "source"
+  | "status"
+  | "syncedAt";
+
+function SortableTh({
+  column,
+  label,
+  sortBy,
+  sortDirection,
+  onSort,
+  className,
+}: {
+  column: SortableColumn;
+  label: string;
+  sortBy: SortableColumn | null;
+  sortDirection: "asc" | "desc";
+  onSort: (column: SortableColumn) => void;
+  className?: string;
+}) {
+  const active = sortBy === column;
+  return (
+    <th className={`px-4 py-2 font-medium ${className ?? ""}`}>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={`inline-flex items-center gap-1 hover:text-foreground ${active ? "text-foreground" : ""}`}
+      >
+        {label}
+        {active ? (
+          sortDirection === "asc" ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />
+        ) : (
+          <IconArrowsSort size={12} className="text-muted-foreground/40" />
+        )}
+      </button>
+    </th>
+  );
+}
 
 interface ContactRow {
   id: string;
@@ -67,6 +116,10 @@ export default function ContactsRoute() {
   const [status, setStatus] = useState<"" | ContactRow["status"]>("");
   const [offset, setOffset] = useState(0);
   const [actioningId, setActioningId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortableColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [rescoreError, setRescoreError] = useState<string | null>(null);
 
   const { data: personasData } = useActionQuery("list-personas", {});
   const personaOptions: PersonaOption[] = (personasData as { personas?: PersonaOption[] })?.personas ?? [];
@@ -77,10 +130,12 @@ export default function ContactsRoute() {
       personaId: personaId || undefined,
       source: source || undefined,
       status: status || undefined,
+      sortBy: sortBy ?? undefined,
+      sortDirection,
       limit: PAGE_SIZE,
       offset,
     }),
-    [search, personaId, source, status, offset],
+    [search, personaId, source, status, sortBy, sortDirection, offset],
   );
 
   const { data, isLoading, refetch } = useActionQuery("list-contacts", queryArgs, {
@@ -89,6 +144,7 @@ export default function ContactsRoute() {
   });
 
   const markActioned = useActionMutation("mark-contact-actioned");
+  const rescoreContacts = useActionMutation("rescore-contacts");
 
   const contacts: ContactRow[] = (data as { contacts?: ContactRow[] })?.contacts ?? [];
   const total = (data as { total?: number })?.total ?? 0;
@@ -96,6 +152,16 @@ export default function ContactsRoute() {
 
   function resetToFirstPage() {
     setOffset(0);
+  }
+
+  function handleSort(column: SortableColumn) {
+    if (sortBy === column) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(column);
+      setSortDirection("desc");
+    }
+    resetToFirstPage();
   }
 
   async function handleMarkActioned(contactId: string) {
@@ -108,6 +174,47 @@ export default function ContactsRoute() {
     }
   }
 
+  function toggleSelected(contactId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(contactId)) next.delete(contactId);
+      else next.add(contactId);
+      return next;
+    });
+  }
+
+  function toggleSelectAllOnPage() {
+    setSelected((prev) => {
+      const allSelected = contacts.length > 0 && contacts.every((c) => prev.has(c.id));
+      if (allSelected) {
+        const next = new Set(prev);
+        contacts.forEach((c) => next.delete(c.id));
+        return next;
+      }
+      const next = new Set(prev);
+      contacts.forEach((c) => next.add(c.id));
+      return next;
+    });
+  }
+
+  async function handleRefreshScores() {
+    setRescoreError(null);
+    try {
+      const result = (await rescoreContacts.mutateAsync(
+        selected.size > 0 ? { contactIds: Array.from(selected) } : {},
+      )) as { rescored?: number; error?: string };
+      if (result?.error) {
+        setRescoreError(result.error);
+      } else {
+        setSelected(new Set());
+        refetch();
+      }
+    } catch (err) {
+      setRescoreError(err instanceof Error ? err.message : "Couldn't refresh scores.");
+    }
+  }
+
+  const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
   const rangeStart = total === 0 ? 0 : offset + 1;
   const rangeEnd = Math.min(offset + contacts.length, total);
 
@@ -120,7 +227,25 @@ export default function ContactsRoute() {
             {isLoading ? "Loading…" : total === 0 ? "No contacts synced yet" : `${total.toLocaleString()} contact${total === 1 ? "" : "s"} across HubSpot and CommonRoom`}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleRefreshScores}
+          disabled={rescoreContacts.isPending || total === 0}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+          title={selected.size > 0 ? `Re-score ${selected.size} selected contact${selected.size === 1 ? "" : "s"}` : "Re-score all active contacts (capped at 200 per run)"}
+        >
+          {rescoreContacts.isPending ? (
+            <IconLoader2 size={13} className="animate-spin" />
+          ) : (
+            <IconRefresh size={13} />
+          )}
+          {selected.size > 0 ? `Refresh ${selected.size} selected` : "Refresh scores"}
+        </button>
       </div>
+
+      {rescoreError && (
+        <p className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{rescoreError}</p>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
         <div className="relative">
@@ -161,6 +286,14 @@ export default function ContactsRoute() {
           <option value="active">Active</option>
           <option value="actioned">Actioned</option>
         </select>
+        {selected.size > 0 && (
+          <span className="ml-auto text-xs text-muted-foreground">
+            {selected.size} selected
+            <button type="button" onClick={() => setSelected(new Set())} className="ml-2 text-primary hover:underline">
+              Clear
+            </button>
+          </span>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -180,23 +313,41 @@ export default function ContactsRoute() {
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 border-b border-border bg-background text-muted-foreground">
               <tr>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Company</th>
+                <th className="px-4 py-2">
+                  <input
+                    type="checkbox"
+                    checked={allOnPageSelected}
+                    onChange={toggleSelectAllOnPage}
+                    aria-label="Select all on page"
+                    className="size-3.5 rounded border-border"
+                  />
+                </th>
+                <SortableTh column="name" label="Name" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableTh column="company" label="Company" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
                 <th className="px-4 py-2 font-medium">Persona</th>
-                <th className="px-4 py-2 font-medium">Overall Score</th>
-                <th className="px-4 py-2 font-medium">Persona Match</th>
-                <th className="px-4 py-2 font-medium">Company Fit</th>
-                <th className="px-4 py-2 font-medium">Engagement</th>
-                <th className="px-4 py-2 font-medium">Source</th>
-                <th className="px-4 py-2 font-medium">Status</th>
+                <SortableTh column="overallScore" label="Overall Score" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableTh column="personaMatchScore" label="Persona Match" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableTh column="companyFitScore" label="Company Fit" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableTh column="engagementScore" label="Engagement" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableTh column="source" label="Source" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableTh column="status" label="Status" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
                 <th className="px-4 py-2 font-medium">Segments</th>
-                <th className="px-4 py-2 font-medium">Synced</th>
+                <SortableTh column="syncedAt" label="Synced" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
                 <th className="px-4 py-2 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {contacts.map((c) => (
-                <tr key={c.id} className="hover:bg-muted/30">
+                <tr key={c.id} className={`hover:bg-muted/30 ${selected.has(c.id) ? "bg-primary/5" : ""}`}>
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(c.id)}
+                      onChange={() => toggleSelected(c.id)}
+                      aria-label={`Select ${c.name}`}
+                      className="size-3.5 rounded border-border"
+                    />
+                  </td>
                   <td className="px-4 py-2.5">
                     <p className="font-medium text-foreground">{c.name}</p>
                     {c.title && <p className="text-muted-foreground/70">{c.title}</p>}
