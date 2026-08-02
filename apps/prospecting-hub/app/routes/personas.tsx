@@ -13,6 +13,7 @@ import {
   IconTarget,
   IconTrash,
   IconUpload,
+  IconUsers,
   IconX,
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
@@ -58,6 +59,8 @@ interface Persona {
   description: string | null;
   sourceDocUrl: string | null;
   wordCount: number;
+  subPersonaCount: number;
+  linkedLibraryDocCount: number;
   ownerEmail: string;
   createdAt: string | null;
 }
@@ -410,6 +413,11 @@ function PersonaCard({
             {persona.wordCount.toLocaleString()} words synced
           </p>
         )}
+
+        <p className="flex items-center gap-1 text-xs text-muted-foreground/60">
+          <IconUsers size={12} className="shrink-0" />
+          {persona.subPersonaCount} sub-persona{persona.subPersonaCount === 1 ? "" : "s"} · {persona.linkedLibraryDocCount} library doc{persona.linkedLibraryDocCount === 1 ? "" : "s"}
+        </p>
 
         {isAdmin && <ColorPicker value={color} onChange={handleColorChange} />}
 

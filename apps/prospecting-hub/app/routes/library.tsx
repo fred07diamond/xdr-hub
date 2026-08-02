@@ -3,6 +3,7 @@ import {
   useActionQuery,
 } from "@agent-native/core/client";
 import {
+  IconBuildingSkyscraper,
   IconFileText,
   IconLoader2,
   IconPlus,
@@ -84,6 +85,7 @@ interface LibraryDocSummary {
   linkedPersonaId: string | null;
   linkedPersonaName: string | null;
   linkedIcpId: string | null;
+  linkedIcpName: string | null;
   ownerEmail: string;
   createdAt: string | null;
 }
@@ -150,6 +152,19 @@ function PersonaBadge({ name }: { name: string }) {
     <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
       <IconUser size={11} />
       {name}
+    </span>
+  );
+}
+
+// Distinct from PersonaBadge on purpose — amber/firmographic styling and a
+// "Criteria:" prefix so a doc linked to Company Criteria reads as "a
+// different kind of link" than one linked to a person-level persona, not a
+// copy-pasted clone.
+function CriteriaBadge({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+      <IconBuildingSkyscraper size={11} />
+      Criteria: {name}
     </span>
   );
 }
@@ -232,13 +247,14 @@ function LibraryCard({
     <button
       type="button"
       onClick={onSelect}
-      className="flex flex-col gap-2.5 rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-colors hover:border-ring"
+      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5 text-left shadow-sm transition-colors hover:border-ring"
       style={{ borderTop: `4px solid ${color}` }}
     >
       <p className="truncate text-sm font-semibold text-foreground">{doc.name}</p>
       <div className="flex flex-wrap items-center gap-1.5">
         <CategoryBadge category={doc.category} />
         {doc.linkedPersonaName && <PersonaBadge name={doc.linkedPersonaName} />}
+        {doc.linkedIcpName && <CriteriaBadge name={doc.linkedIcpName} />}
       </div>
       <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">
         {doc.contentSnippet}
@@ -784,7 +800,7 @@ export default function LibraryRoute() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {docs.map((doc) => (
               <LibraryCard key={doc.id} doc={doc} onSelect={() => setSelectedDocId(doc.id)} />
             ))}

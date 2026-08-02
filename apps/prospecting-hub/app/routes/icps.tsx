@@ -53,6 +53,7 @@ interface Icp {
   product: string | null;
   sourceDocUrl: string | null;
   wordCount: number;
+  linkedLibraryDocCount: number;
   ownerEmail: string;
   createdAt: string | null;
 }
@@ -214,11 +215,18 @@ function IcpCard({
           </div>
         </div>
 
-        <div className="min-h-[48px]">
+        <div className="flex min-h-[48px] flex-col gap-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50">
+            Firmographic fit
+          </p>
           {icp.product ? (
-            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+            <span
+              className="inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
+              style={{ background: `${color}1a`, color }}
+            >
+              <IconBuildingSkyscraper size={13} className="shrink-0" />
               {icp.product}
-            </p>
+            </span>
           ) : (
             <p className="text-xs text-muted-foreground/50 italic">
               No product set
@@ -231,6 +239,11 @@ function IcpCard({
             {icp.wordCount.toLocaleString()} words synced
           </p>
         )}
+
+        <p className="flex items-center gap-1 text-xs text-muted-foreground/60">
+          <IconFileText size={12} className="shrink-0" />
+          {icp.linkedLibraryDocCount} library doc{icp.linkedLibraryDocCount === 1 ? "" : "s"} linked
+        </p>
 
         {isAdmin && <ColorPicker value={color} onChange={handleColorChange} />}
 

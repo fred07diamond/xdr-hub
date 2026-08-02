@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { and, desc, eq, or, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { libraryDocs, personas } from "../server/db/schema.js";
+import { icps, libraryDocs, personas } from "../server/db/schema.js";
 import { LIBRARY_CATEGORIES } from "../server/helpers/library-tagging.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -36,9 +36,6 @@ export default defineAction({
     ].filter((c): c is NonNullable<typeof c> => c !== undefined);
     const whereClause = conditions.length ? and(...conditions) : undefined;
 
-    // TODO(Task 11): once the `icps` table exists, left-join it here for
-    // linkedIcpName the same way personas is joined below for
-    // linkedPersonaName.
     const rows = await db
       .select({
         id: libraryDocs.id,
@@ -49,11 +46,13 @@ export default defineAction({
         linkedPersonaId: libraryDocs.linkedPersonaId,
         linkedPersonaName: personas.name,
         linkedIcpId: libraryDocs.linkedIcpId,
+        linkedIcpName: icps.name,
         ownerEmail: libraryDocs.ownerEmail,
         createdAt: libraryDocs.createdAt,
       })
       .from(libraryDocs)
       .leftJoin(personas, eq(libraryDocs.linkedPersonaId, personas.id))
+      .leftJoin(icps, eq(libraryDocs.linkedIcpId, icps.id))
       .where(whereClause)
       .orderBy(desc(libraryDocs.createdAt));
 
@@ -67,6 +66,7 @@ export default defineAction({
         linkedPersonaId: r.linkedPersonaId,
         linkedPersonaName: r.linkedPersonaName,
         linkedIcpId: r.linkedIcpId,
+        linkedIcpName: r.linkedIcpName,
         ownerEmail: r.ownerEmail,
         createdAt: r.createdAt,
       })),
