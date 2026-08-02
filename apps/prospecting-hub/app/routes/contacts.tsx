@@ -14,15 +14,19 @@ import {
   IconLoader2,
   IconRefresh,
   IconSearch,
+  IconSparkles,
   IconUsers,
   IconWand,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 
 import { ContactDrawer } from "@/components/ContactDrawer";
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { APP_TITLE } from "@/lib/app-config";
+
+const DEFAULT_PERSONA_COLOR = "#94a3b8";
 
 export function meta() {
   return [{ title: `${APP_TITLE} — Contacts` }];
@@ -148,6 +152,14 @@ export default function ContactsRoute() {
 
   const { data: personasData } = useActionQuery("list-personas", {});
   const personaOptions: PersonaOption[] = (personasData as { personas?: PersonaOption[] })?.personas ?? [];
+
+  const { data: homeStatsData } = useActionQuery("get-contacts-home-stats", {}, {
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+  const homeStats = homeStatsData as
+    | { newTodayCount: number; focusAccountsTotal: number; focusAccountsWithNewContactsToday: number }
+    | undefined;
 
   const queryArgs = useMemo(
     () => ({
@@ -336,10 +348,24 @@ export default function ContactsRoute() {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
-          <h1 className="text-sm font-semibold text-foreground">Contacts</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold text-foreground">Contacts</h1>
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+              <IconSparkles size={11} />
+              {homeStats ? `${homeStats.newTodayCount.toLocaleString()} new today` : "…"}
+            </span>
+          </div>
           <p className="text-xs text-muted-foreground">
             {isLoading ? "Loading…" : total === 0 ? "No contacts synced yet" : `${total.toLocaleString()} contact${total === 1 ? "" : "s"} across HubSpot and CommonRoom`}
           </p>
+          {homeStats && homeStats.focusAccountsTotal > 0 && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              <Link to="/focus-accounts" className="text-primary hover:underline">
+                {homeStats.focusAccountsWithNewContactsToday} of {homeStats.focusAccountsTotal} focus accounts
+              </Link>{" "}
+              have new contacts today
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -398,16 +424,34 @@ export default function ContactsRoute() {
             className="w-56 rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
-        <select
-          value={personaId}
-          onChange={(e) => { setPersonaId(e.target.value); resetToFirstPage(); }}
-          className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="">All personas</option>
-          {personaOptions.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => { setPersonaId(""); resetToFirstPage(); }}
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              personaId === ""
+                ? "bg-foreground text-background"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            }`}
+          >
+            All
+          </button>
+          {personaOptions.map((p) => {
+            const active = personaId === p.id;
+            const color = p.color ?? DEFAULT_PERSONA_COLOR;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { setPersonaId(active ? "" : p.id); resetToFirstPage(); }}
+                className="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
+                style={active ? { background: color, color: "white" } : { background: `${color}14`, color }}
+              >
+                {p.name}
+              </button>
+            );
+          })}
+        </div>
         <select
           value={source}
           onChange={(e) => { setSource(e.target.value as "" | ContactRow["source"]); resetToFirstPage(); }}
