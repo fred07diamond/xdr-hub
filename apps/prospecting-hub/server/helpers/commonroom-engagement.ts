@@ -116,6 +116,78 @@ const NO_SIGNALS: CommonRoomBlendedSignals = {
   commonRoomCompanyFitScore: null,
 };
 
+// ── Contact detail-drawer enrichment (Task 6) ───────────────────────────────
+//
+// A SEPARATE Contact lookup from lookupCommonRoomSignals above — same org-
+// scoped MCP connection and the exact same best-match fuzzy-identity-matching
+// cascade (prefer a companyName match, fall back to a single unambiguous
+// result, otherwise no match — never an error), but requesting a different
+// set of `properties` for a richer, human-readable enrichment block instead
+// of `leadScores` percentiles. These four extra properties are confirmed-real,
+// live CommonRoom Contact `allowedColumns`:
+//   - recentActivities: "Recent user-initiated activities... id, type,
+//     activityTime, content, sentiment, url"
+//   - recentWebPages: "Top 5 most visited web pages in the last 12 weeks"
+//   - jobHistory: "array of {company, title, startDate, endDate}"
+//   - sparkSummary: "AI-generated strategic overview"
+// Their exact inner shapes beyond those descriptions can't be verified against
+// a live CommonRoom session in this environment, so the caller (get-contact-
+// detail.ts) and ContactDrawer.tsx must render defensively rather than assume
+// more structure than what's promised above.
+
+export interface CommonRoomContactEnrichment {
+  recentActivities: unknown[] | null;
+  recentWebPages: unknown[] | null;
+  jobHistory: unknown[] | null;
+  sparkSummary: string | null;
+}
+
+interface CommonRoomEnrichmentContactRecord {
+  fullName?: string;
+  companyName?: string;
+  recentActivities?: unknown;
+  recentWebPages?: unknown;
+  jobHistory?: unknown;
+  sparkSummary?: unknown;
+}
+
+interface CommonRoomEnrichmentListResult {
+  records?: CommonRoomEnrichmentContactRecord[];
+}
+
+export async function lookupCommonRoomContactEnrichment(options: {
+  orgId: string | null | undefined;
+  fullName: string;
+  companyName?: string | null;
+}): Promise<CommonRoomContactEnrichment | null> {
+  const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
+    objectType: "Contact",
+    filter: {
+      type: "and",
+      clauses: [{ type: "stringFilter", field: "fullName", params: { op: "eq", value: options.fullName } }],
+    },
+    properties: ["fullName", "companyName", "recentActivities", "recentWebPages", "jobHistory", "sparkSummary"],
+    limit: 5,
+  });
+  const records = (parseMcpToolResult(result) as CommonRoomEnrichmentListResult).records ?? [];
+  const companyLower = options.companyName?.toLowerCase().trim() || undefined;
+  // Same best-effort match cascade as lookupCommonRoomSignals above: prefer a
+  // company match, fall back to a single unambiguous result, otherwise no
+  // match (a normal, expected outcome, never an error).
+  const match =
+    (companyLower
+      ? records.find((c) => (c.companyName ?? "").toLowerCase().trim() === companyLower)
+      : undefined) ?? (records.length === 1 ? records[0] : undefined);
+  if (!match) return null;
+
+  return {
+    recentActivities: Array.isArray(match.recentActivities) ? match.recentActivities : null,
+    recentWebPages: Array.isArray(match.recentWebPages) ? match.recentWebPages : null,
+    jobHistory: Array.isArray(match.jobHistory) ? match.jobHistory : null,
+    sparkSummary: typeof match.sparkSummary === "string" ? match.sparkSummary : null,
+  };
+}
+
 export async function lookupCommonRoomSignals(options: {
   orgId: string | null | undefined;
   fullName: string;

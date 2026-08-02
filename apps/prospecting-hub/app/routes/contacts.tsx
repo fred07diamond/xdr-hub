@@ -18,6 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
+import { ContactDrawer } from "@/components/ContactDrawer";
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { APP_TITLE } from "@/lib/app-config";
@@ -140,6 +141,7 @@ export default function ContactsRoute() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rescoreError, setRescoreError] = useState<string | null>(null);
   const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
   const { data: personasData } = useActionQuery("list-personas", {});
   const personaOptions: PersonaOption[] = (personasData as { personas?: PersonaOption[] })?.personas ?? [];
@@ -398,8 +400,12 @@ export default function ContactsRoute() {
             </thead>
             <tbody className="divide-y divide-border">
               {contacts.map((c) => (
-                <tr key={c.id} className={`hover:bg-muted/30 ${selected.has(c.id) ? "bg-primary/5" : ""}`}>
-                  <td className="px-4 py-2.5">
+                <tr
+                  key={c.id}
+                  onClick={() => setSelectedContactId(c.id)}
+                  className={`cursor-pointer hover:bg-muted/30 ${selected.has(c.id) ? "bg-primary/5" : ""}`}
+                >
+                  <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selected.has(c.id)}
@@ -444,7 +450,7 @@ export default function ContactsRoute() {
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground">{relativeTime(c.syncedAt)}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       {c.linkedinUrl && (
                         <a href={c.linkedinUrl} target="_blank" rel="noreferrer" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="Open LinkedIn profile">
@@ -498,6 +504,8 @@ export default function ContactsRoute() {
           </div>
         </div>
       )}
+
+      <ContactDrawer contactId={selectedContactId} onClose={() => setSelectedContactId(null)} />
     </div>
   );
 }

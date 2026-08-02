@@ -23,6 +23,7 @@ import {
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
 
+import { ContactDrawer } from "@/components/ContactDrawer";
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { APP_TITLE } from "@/lib/app-config";
@@ -1125,6 +1126,7 @@ function ListDetailView({
   const [ruleActionError, setRuleActionError] = useState<string | null>(null);
   const [isRunningSourcingRule, setIsRunningSourcingRule] = useState(false);
   const [editingRule, setEditingRule] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
   async function handleToggleVisibility() {
     if (!segment) return;
@@ -1487,7 +1489,11 @@ function ListDetailView({
             </thead>
             <tbody>
               {contacts.map((c) => (
-                <tr key={c.id} className="border-b border-border/60">
+                <tr
+                  key={c.id}
+                  onClick={() => setSelectedContactId(c.id)}
+                  className="cursor-pointer border-b border-border/60 hover:bg-muted/30"
+                >
                   <td className="max-w-[160px] truncate px-4 py-2.5 font-medium text-foreground" title={c.name}>
                     {c.name}
                   </td>
@@ -1516,7 +1522,7 @@ function ListDetailView({
                       {c.status === "actioned" ? "Actioned" : "Active"}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
                     {c.status === "active" && (
                       <button
                         type="button"
@@ -1542,6 +1548,8 @@ function ListDetailView({
           onUpdated={() => refetchRules()}
         />
       )}
+
+      <ContactDrawer contactId={selectedContactId} onClose={() => setSelectedContactId(null)} />
     </div>
   );
 }
