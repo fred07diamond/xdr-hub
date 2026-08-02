@@ -210,6 +210,18 @@ export default runMigrations(
       name: "contacts-commonroom-company-fit-score-column",
       sql: `ALTER TABLE contacts ADD COLUMN commonroom_company_fit_score INTEGER`,
     },
+    {
+      version: 22,
+      name: "focus-accounts-table",
+      sql: `CREATE TABLE IF NOT EXISTS focus_accounts (
+        id TEXT PRIMARY KEY,
+        owner_email TEXT NOT NULL,
+        company_name TEXT NOT NULL,
+        company_domain TEXT,
+        tier TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

@@ -165,6 +165,21 @@ export const libraryDocs = table("library_docs", {
   createdAt: text("created_at").default(now()),
 });
 
+// Focus Accounts — a per-XDR list of target companies used to scope
+// CommonRoom Prospector searches (see Active Lists). Private per-owner, no
+// visibility/sharing concept: different XDRs have different target accounts.
+// `tier` is a plain nullable freeform text field (e.g. "1"/"2"/"3", or any
+// label an XDR wants) — no enum, matching this app's no-hardcoded-cardinality
+// convention (see icps.product).
+export const focusAccounts = table("focus_accounts", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  companyName: text("company_name").notNull(),
+  companyDomain: text("company_domain"),
+  tier: text("tier"),
+  createdAt: text("created_at").default(now()),
+});
+
 // One row per sync run against an external source. `metadata` is JSON,
 // event-specific — added for run-sourcing-rule-pipeline.ts (Task 14 fix
 // round) to record `sourcingRuleId`/`companiesConsidered`/
