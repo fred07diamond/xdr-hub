@@ -24,6 +24,7 @@ import {
 import { useRef, useState } from "react";
 
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
+import { SourceBadge } from "@/components/SourceBadge";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -83,6 +84,7 @@ interface SegmentContact {
   status: "active" | "actioned";
   linkedinUrl: string | null;
   hubspotUrl: string | null;
+  source: "hubspot" | "commonroom" | "prospector";
 }
 
 interface PersonaOption {
@@ -1478,6 +1480,7 @@ function ListDetailView({
                 <th className="px-4 py-2 font-medium">Company fit</th>
                 <th className="px-4 py-2 font-medium">Engagement</th>
                 <th className="px-4 py-2 font-medium">Reasoning</th>
+                <th className="px-4 py-2 font-medium">Source</th>
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium" />
               </tr>
@@ -1501,6 +1504,7 @@ function ListDetailView({
                   <td className="max-w-[220px] truncate px-4 py-2.5 text-muted-foreground/80" title={c.scoreReasoning ?? undefined}>
                     {c.scoreReasoning ?? "—"}
                   </td>
+                  <td className="px-4 py-2.5"><SourceBadge source={c.source} hubspotUrl={c.hubspotUrl} /></td>
                   <td className="px-4 py-2.5">
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${

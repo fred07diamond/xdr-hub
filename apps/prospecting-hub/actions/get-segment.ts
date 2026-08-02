@@ -47,6 +47,7 @@ export default defineAction({
         status: contacts.status,
         linkedinUrl: contacts.linkedinUrl,
         hubspotUrl: contacts.hubspotUrl,
+        source: contacts.source,
       })
       .from(segmentContacts)
       .innerJoin(contacts, eq(segmentContacts.contactId, contacts.id))
