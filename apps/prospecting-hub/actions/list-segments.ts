@@ -2,11 +2,12 @@ import { defineAction } from "@agent-native/core";
 import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { personas, segmentContacts, segments } from "../server/db/schema.js";
+import { personas, segmentContacts, segments, sourcingRules } from "../server/db/schema.js";
 import { getUserRole, requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
-  description: "List segments visible to the caller — owned or public, plus every segment if the caller is an admin — with contact counts and persona name/color.",
+  description:
+    "List segments (\"Lists\") visible to the caller — owned or public, plus every segment if the caller is an admin — with contact counts, persona name/color, and whether the list is Active (auto-populated by a sourcing rule) or Static (manually curated).",
   schema: z.object({}),
   requiresAuth: true,
   readOnly: true,
@@ -22,6 +23,11 @@ export default defineAction({
         ? notArchived
         : and(notArchived, or(eq(segments.ownerEmail, ctx!.userEmail!), eq(segments.visibility, "public")));
 
+    // LEFT JOIN sourcingRules the reverse direction of list-sourcing-rules.ts's
+    // own persona/sub-persona/ICP joins: each sourcing rule owns exactly one
+    // segment (1:1 via sourcingRules.segmentId), so this join returns at most
+    // one rule row per segment — its presence is what makes a list "Active"
+    // rather than "Static".
     const rows = await db
       .select({
         id: segments.id,
@@ -35,9 +41,11 @@ export default defineAction({
         createdAt: segments.createdAt,
         personaName: personas.name,
         personaColor: personas.color,
+        sourcingRuleId: sourcingRules.id,
       })
       .from(segments)
       .leftJoin(personas, eq(segments.personaId, personas.id))
+      .leftJoin(sourcingRules, eq(sourcingRules.segmentId, segments.id))
       .where(whereClause)
       .orderBy(desc(segments.createdAt));
 
@@ -51,7 +59,11 @@ export default defineAction({
     const countMap = new Map(counts.map((c) => [c.segmentId, Number(c.count)]));
 
     return {
-      segments: rows.map((r) => ({ ...r, contactCount: countMap.get(r.id) ?? 0 })),
+      segments: rows.map((r) => ({
+        ...r,
+        isActive: r.sourcingRuleId != null,
+        contactCount: countMap.get(r.id) ?? 0,
+      })),
     };
   },
 });
