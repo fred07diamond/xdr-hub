@@ -40,17 +40,36 @@ export interface DraftOutreachContact {
 }
 
 /**
- * Parses the "Customer Evidence Quick Reference" library doc's markdown
- * table and returns the SINGLE proof point the doc itself authorizes as the
- * primary lead for `personaName` — per the doc's own explicit "one proof per
+ * Parses the "Customer Evidence Quick Reference" doc's markdown table into
+ * every row's {customer, evidence} — a simple line-by-line `|`-split parse,
+ * no markdown table library needed, this doc's shape is fixed and small.
+ * Shared by `selectCustomerEvidenceProof` (which picks the one authorized
+ * row) and `getCustomerEvidence` (which also needs the full customer-name
+ * list, to build the "unauthorized names" compliance guard in
+ * `draftOutreach`).
+ */
+function parseCustomerEvidenceRows(docContent: string): CustomerEvidenceProof[] {
+  const rows: CustomerEvidenceProof[] = [];
+  for (const line of docContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|") || /^\|\s*-+/.test(trimmed)) continue;
+    const cells = trimmed.split("|").map((c) => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
+    if (cells.length < 3) continue;
+    const [customer, evidence, useFor] = cells;
+    if (customer === "Customer") continue; // header row
+    rows.push({ customer, evidence: `${evidence} (${useFor})` });
+  }
+  return rows;
+}
+
+/**
+ * Returns the SINGLE proof point the doc itself authorizes as the primary
+ * lead for `personaName` — per the doc's own explicit "one proof per
  * call... lead with X, Y, or Z by persona" sentence. Any persona not named
  * in that lead sentence (Exec, CMS Outreach, or any future persona) gets
  * `null` — a "Use For" mention elsewhere in the table (e.g. WebMD's
  * "Eng/Exec persona") is explicitly NOT a primary assignment, only the row
  * whose customer is named in the doc's own "lead with" sentence counts.
- *
- * A simple line-by-line `|`-split parse — no markdown table library needed,
- * this doc's shape is fixed and small.
  */
 export function selectCustomerEvidenceProof(
   docContent: string,
@@ -67,16 +86,7 @@ export function selectCustomerEvidenceProof(
     .filter(Boolean);
   if (leadCustomers.length === 0) return null;
 
-  const rows: CustomerEvidenceProof[] = [];
-  for (const line of docContent.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("|") || /^\|\s*-+/.test(trimmed)) continue;
-    const cells = trimmed.split("|").map((c) => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
-    if (cells.length < 3) continue;
-    const [customer, evidence, useFor] = cells;
-    if (customer === "Customer") continue; // header row
-    rows.push({ customer, evidence: `${evidence} (${useFor})` });
-  }
+  const rows = parseCustomerEvidenceRows(docContent);
 
   for (const leadCustomer of leadCustomers) {
     const row = rows.find((r) => r.customer.toLowerCase() === leadCustomer.toLowerCase());
@@ -120,9 +130,16 @@ async function getPersonaLinkedGroundingDocs(personaId: string | null): Promise<
     .slice(0, MAX_GROUNDING_DOCS);
 }
 
-/** Looked up by exact `name` match — it's a shared cross-persona reference
- * doc (`linkedPersonaId` is NULL), not linked to any one persona. */
-async function getCustomerEvidenceProof(personaName: string | null): Promise<CustomerEvidenceProof | null> {
+/**
+ * Looked up by exact `name` match — it's a shared cross-persona reference
+ * doc (`linkedPersonaId` is NULL), not linked to any one persona. Also
+ * returns every customer name in the table (not just the authorized one) so
+ * `draftOutreach`'s post-generation compliance guard can check the model's
+ * output never names one of the OTHER, unauthorized customers.
+ */
+async function getCustomerEvidence(
+  personaName: string | null,
+): Promise<{ proof: CustomerEvidenceProof | null; allCustomerNames: string[] }> {
   const db = getDb();
   const rows = await db
     .select({ content: libraryDocs.content })
@@ -130,32 +147,97 @@ async function getCustomerEvidenceProof(personaName: string | null): Promise<Cus
     .where(eq(libraryDocs.name, NAME))
     .limit(1);
   const doc = rows[0];
-  if (!doc) return null;
-  return selectCustomerEvidenceProof(doc.content, personaName);
+  if (!doc) return { proof: null, allCustomerNames: [] };
+  const proof = selectCustomerEvidenceProof(doc.content, personaName);
+  const allCustomerNames = parseCustomerEvidenceRows(doc.content).map((r) => r.customer);
+  return { proof, allCustomerNames };
 }
 
 /**
- * One `completeText()` call: drafts a personalized cold email (subject +
- * body) and a separate, shorter LinkedIn connection note, grounded ONLY in
- * the supplied persona-linked Library doc excerpts, the single authorized
- * Customer Evidence proof point (if any), and the contact's own fields.
- * JSON-primary output, parsed via the same two-tier strict-then-regex-
- * fallback shape as apps/li-agent/server/helpers/draft-profile.ts (more
- * resilient to truncated/malformed model output than a strict-JSON-only
- * parse) — but, like scoreContactAgainstPersonas, THROWS on a genuinely
- * unparseable response rather than silently returning empty-string junk;
- * the caller (generate-contact-draft.ts / bulk-generate-drafts.ts) is what
- * catches this per-contact.
+ * Case-insensitive substring search for the first `names` entry that
+ * appears anywhere in `text` — these are proper nouns (Intuit, BlueMarvel,
+ * H&R Block, Frete, EagleEye, WebMD, Rakuten, Conservice), so a plain
+ * substring match is sufficient; collision risk with ordinary prose is low.
+ */
+function findMention(text: string, names: string[]): string | null {
+  const lower = text.toLowerCase();
+  return names.find((name) => lower.includes(name.toLowerCase())) ?? null;
+}
+
+function parseDraftResponse(rawText: string): DraftOutreachResult {
+  const raw = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const g = (re: RegExp) => re.exec(raw)?.[1]?.trim() ?? null;
+    parsed = {
+      emailSubject: g(/"emailSubject"\s*:\s*"([^"\\]*)"/),
+      emailBody: g(/"emailBody"\s*:\s*"([^"\\]*)"/),
+      linkedinMessage: g(/"linkedinMessage"\s*:\s*"([^"\\]*)"/),
+    };
+    if (!parsed.emailSubject && !parsed.emailBody && !parsed.linkedinMessage) {
+      throw new Error(`Unparseable draft response: ${raw.slice(0, 200)}`);
+    }
+  }
+
+  return {
+    emailSubject: typeof parsed.emailSubject === "string" ? parsed.emailSubject : "",
+    emailBody: typeof parsed.emailBody === "string" ? parsed.emailBody : "",
+    linkedinMessage: typeof parsed.linkedinMessage === "string" ? parsed.linkedinMessage : "",
+  };
+}
+
+/**
+ * One `completeText()` call (plus, only when the compliance guard below
+ * trips, a single corrective retry): drafts a personalized cold email
+ * (subject + body) and a separate, shorter LinkedIn connection note,
+ * grounded ONLY in the supplied persona-linked Library doc excerpts, the
+ * single authorized Customer Evidence proof point (if any), and the
+ * contact's own fields. JSON-primary output, parsed via the same two-tier
+ * strict-then-regex-fallback shape as
+ * apps/li-agent/server/helpers/draft-profile.ts (more resilient to
+ * truncated/malformed model output than a strict-JSON-only parse) — but,
+ * like scoreContactAgainstPersonas, THROWS on a genuinely unparseable
+ * response rather than silently returning empty-string junk; the caller
+ * (generate-contact-draft.ts / bulk-generate-drafts.ts) is what catches
+ * this per-contact.
+ *
+ * Post-generation compliance guard: the "one proof per call" rule is a
+ * content-accuracy constraint — an unauthorized customer name leaking into
+ * real outreach copy is a reputational problem, not a cosmetic one — so it
+ * is NOT enforced by prompt wording alone (verified during initial
+ * development: a softer prompt sometimes just omitted the proof point).
+ * After parsing the model's response, this checks the combined
+ * subject+body+LinkedIn text for any customer name from the Customer
+ * Evidence table OTHER than the one (if any) authorized for this persona:
+ *   - Unauthorized customer mentioned -> genuine content-safety violation.
+ *     Retries the completeText() call once with an explicit correction
+ *     naming the violation; if the retry STILL contains an unauthorized
+ *     mention, throws (mirroring the "genuinely unparseable" throw
+ *     convention above, just for "genuinely non-compliant") so the
+ *     caller's existing per-contact try/catch absorbs it rather than a bad
+ *     draft ever reaching persistence.
+ *   - Authorized proof point supplied but omitted entirely from the draft
+ *     -> lower severity (this is the failure mode observed during prompt
+ *     tuning: a weaker prompt sometimes left the proof out). This is not a
+ *     factual-accuracy problem — the draft still only ever states facts
+ *     present in the input, it just under-uses the available evidence —
+ *     so it gets the SAME one corrective retry to improve quality, but
+ *     does NOT throw if still omitted afterward: an under-grounded but
+ *     otherwise-safe draft is fine to persist, unlike a wrong-customer one.
  */
 export async function draftOutreach(options: {
   contact: DraftOutreachContact;
   personaName: string | null;
   groundingDocs: GroundingDoc[];
   customerEvidence: CustomerEvidenceProof | null;
+  otherCustomerNames: string[];
   userEmail: string;
   orgId?: string | null;
 }): Promise<DraftOutreachResult> {
-  const { contact, personaName, groundingDocs, customerEvidence, userEmail, orgId } = options;
+  const { contact, personaName, groundingDocs, customerEvidence, otherCustomerNames, userEmail, orgId } = options;
 
   const groundingBlock =
     groundingDocs.length > 0
@@ -192,42 +274,61 @@ export async function draftOutreach(options: {
 
   const input = `Draft outreach for ${contact.name}${contact.title ? `, ${contact.title}` : ""}${contact.company ? ` at ${contact.company}` : ""}.`;
 
-  const call = () =>
-    completeText({
-      systemPrompt,
-      input,
-      // Draft prose (subject + multi-paragraph body + LinkedIn note) is
-      // longer than a JSON score object — score-contact.ts bumped its own
-      // maxOutputTokens to 800 after a live-confirmed mid-JSON truncation on
-      // a much shorter payload. 1200 gives comparable headroom for this
-      // longer expected output plus the same unpredictable internal-
-      // reasoning token spend.
-      maxOutputTokens: 1200,
-    });
-  const result = await runWithRequestContext({ userEmail, orgId: orgId ?? undefined }, call);
+  const callModel = (userInput: string) =>
+    runWithRequestContext({ userEmail, orgId: orgId ?? undefined }, () =>
+      completeText({
+        systemPrompt,
+        input: userInput,
+        // Draft prose (subject + multi-paragraph body + LinkedIn note) is
+        // longer than a JSON score object — score-contact.ts bumped its own
+        // maxOutputTokens to 800 after a live-confirmed mid-JSON truncation
+        // on a much shorter payload. 1200 gives comparable headroom for
+        // this longer expected output plus the same unpredictable
+        // internal-reasoning token spend.
+        maxOutputTokens: 1200,
+      }),
+    );
 
-  const raw = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  const combinedText = (d: DraftOutreachResult) => `${d.emailSubject} ${d.emailBody} ${d.linkedinMessage}`;
 
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    const g = (re: RegExp) => re.exec(raw)?.[1]?.trim() ?? null;
-    parsed = {
-      emailSubject: g(/"emailSubject"\s*:\s*"([^"\\]*)"/),
-      emailBody: g(/"emailBody"\s*:\s*"([^"\\]*)"/),
-      linkedinMessage: g(/"linkedinMessage"\s*:\s*"([^"\\]*)"/),
-    };
-    if (!parsed.emailSubject && !parsed.emailBody && !parsed.linkedinMessage) {
-      throw new Error(`Unparseable draft response: ${raw.slice(0, 200)}`);
+  const result = await callModel(input);
+  let draft = parseDraftResponse(result.text);
+
+  const unauthorized = findMention(combinedText(draft), otherCustomerNames);
+  const omittedAuthorized =
+    !!customerEvidence && !combinedText(draft).toLowerCase().includes(customerEvidence.customer.toLowerCase());
+
+  if (unauthorized || omittedAuthorized) {
+    const correctionNote = unauthorized
+      ? `CORRECTION NEEDED: your previous draft incorrectly named "${unauthorized}", a customer that is NOT authorized for this persona. Regenerate the draft. ${
+          customerEvidence
+            ? `Use ONLY "${customerEvidence.customer}" as the customer proof point.`
+            : "Do not name any customer at all."
+        } Do not mention "${unauthorized}" or any other unauthorized customer.`
+      : `CORRECTION NEEDED: your previous draft did not mention the authorized customer proof point at all. Regenerate the draft and make sure the email body references "${customerEvidence!.customer}" by name.`;
+
+    const retryResult = await callModel(`${input}\n\n${correctionNote}`);
+    const retryDraft = parseDraftResponse(retryResult.text);
+    const retryUnauthorized = findMention(combinedText(retryDraft), otherCustomerNames);
+
+    if (retryUnauthorized) {
+      // A genuine content-safety violation that survived a corrective
+      // retry — refuse to return (and therefore persist) this draft, per
+      // the same "throw on genuine failure" discipline as the unparseable-
+      // response case above.
+      throw new Error(
+        `Draft mentioned unauthorized customer "${retryUnauthorized}" even after a correction retry — refusing to persist unsafe outreach copy.`,
+      );
     }
+
+    // Omission (unlike a wrong-customer mention) isn't a factual-accuracy
+    // problem — accept the retry's result even if it still omits the proof
+    // point, rather than failing the whole generation over a missed
+    // opportunity to cite a stat.
+    draft = retryDraft;
   }
 
-  return {
-    emailSubject: typeof parsed.emailSubject === "string" ? parsed.emailSubject : "",
-    emailBody: typeof parsed.emailBody === "string" ? parsed.emailBody : "",
-    linkedinMessage: typeof parsed.linkedinMessage === "string" ? parsed.linkedinMessage : "",
-  };
+  return draft;
 }
 
 /**
@@ -255,10 +356,14 @@ export async function generateAndPersistDraft(options: {
   const { contact, personaName, userEmail, orgId } = options;
   const db = getDb();
 
-  const [groundingDocs, customerEvidence] = await Promise.all([
+  const [groundingDocs, { proof: customerEvidence, allCustomerNames }] = await Promise.all([
     getPersonaLinkedGroundingDocs(contact.personaId),
-    getCustomerEvidenceProof(personaName),
+    getCustomerEvidence(personaName),
   ]);
+
+  const otherCustomerNames = allCustomerNames.filter(
+    (name) => !customerEvidence || name.toLowerCase() !== customerEvidence.customer.toLowerCase(),
+  );
 
   const draft = await draftOutreach({
     contact: {
@@ -270,6 +375,7 @@ export async function generateAndPersistDraft(options: {
     personaName,
     groundingDocs,
     customerEvidence,
+    otherCustomerNames,
     userEmail,
     orgId,
   });

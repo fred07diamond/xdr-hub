@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { eq, inArray } from "@agent-native/core/db/schema";
+import { inArray } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, personas } from "../server/db/schema.js";
