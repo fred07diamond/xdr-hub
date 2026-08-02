@@ -1,8 +1,8 @@
 // Shared source/CRM-provenance badge for contacts — makes it visible at a
 // glance which platform a contact came from, and whether it's also a real
 // HubSpot record. Used by contacts.tsx's table and lists.tsx's
-// ListDetailView contact table; Task 6's contact detail drawer should reuse
-// this rather than re-deriving the label/color logic.
+// ListDetailView contact table; also reused by the contact detail drawer
+// rather than re-deriving the label/color logic.
 //
 // `source` and `hubspotUrl` are NOT assumed mutually exclusive: Task 4's
 // cross-source dedup means a Prospector- or CommonRoom-sourced contact can

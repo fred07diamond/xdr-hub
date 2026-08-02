@@ -516,7 +516,7 @@ export default function ContactsRoute() {
                 <SortableTh column="engagementScore" label="Engagement" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
                 <SortableTh column="source" label="Source" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
                 <SortableTh column="status" label="Status" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                <th className="px-4 py-2 font-medium">Segments</th>
+                <th className="px-4 py-2 font-medium">Lists</th>
                 <SortableTh column="syncedAt" label="Synced" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
                 <th className="px-4 py-2 font-medium" />
               </tr>

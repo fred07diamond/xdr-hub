@@ -89,7 +89,7 @@ export default function AnalyticsRoute() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <SummaryCard
                 icon={IconTargetArrow}
-                label="Segments created"
+                label="Lists created"
                 total={summary.segmentsCreated.total}
                 last30Days={summary.segmentsCreated.last30Days}
               />
