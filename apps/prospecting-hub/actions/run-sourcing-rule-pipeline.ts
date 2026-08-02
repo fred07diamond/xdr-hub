@@ -16,7 +16,7 @@ import {
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { searchIcpCompanies } from "../server/helpers/icp-filters.js";
-import { normalizeLinkedinUrl } from "../server/helpers/normalize-linkedin-url.js";
+import { escapeLikePattern, normalizeLinkedinUrl } from "../server/helpers/normalize-linkedin-url.js";
 import { searchProspectorContacts } from "../server/helpers/prospector-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
@@ -277,25 +277,50 @@ export default defineAction({
           dedupConditions.push(sql`LOWER(${contacts.email}) = LOWER(${matchEmail})`);
         }
         if (linkedinSlug) {
-          dedupConditions.push(sql`LOWER(${contacts.linkedinUrl}) LIKE LOWER(${`%${linkedinSlug}%`})`);
+          // Coarse SQL-level candidate filter only — `LIKE '%slug%'` is a
+          // SUBSTRING match, and LinkedIn allocates "name-2", "name-marketing"
+          // etc. when the base slug "name" is already taken, so a shorter
+          // slug can substring-match into a longer, genuinely different
+          // person's URL. This LIKE only narrows a bounded candidate set (no
+          // full table scan); the actual accept/reject decision is an EXACT
+          // normalized-slug comparison in application code below.
+          dedupConditions.push(
+            sql`LOWER(${contacts.linkedinUrl}) LIKE LOWER(${`%${escapeLikePattern(linkedinSlug)}%`}) ESCAPE '\\'`,
+          );
         }
 
-        const crossSourceMatch =
+        const dedupCandidates =
           dedupConditions.length > 0
             ? await db
-                .select({ id: contacts.id })
+                .select({ id: contacts.id, email: contacts.email, linkedinUrl: contacts.linkedinUrl })
                 .from(contacts)
                 .where(or(...dedupConditions))
-                .limit(1)
+                .limit(25)
             : [];
 
-        if (crossSourceMatch[0]) {
+        // Narrow the coarse candidates down to a genuine duplicate: exact
+        // case-insensitive email equality, or an exact normalized-slug
+        // match (not substring) against each candidate's own stored
+        // linkedinUrl. If no candidate exactly matches, this is treated
+        // exactly as if the coarse filter had found nothing at all — falls
+        // through to creating a new contact.
+        const crossSourceMatch = dedupCandidates.find((candidate) => {
+          if (matchEmail && candidate.email && candidate.email.toLowerCase() === matchEmail.toLowerCase()) {
+            return true;
+          }
+          if (linkedinSlug && normalizeLinkedinUrl(candidate.linkedinUrl) === linkedinSlug) {
+            return true;
+          }
+          return false;
+        });
+
+        if (crossSourceMatch) {
           // Belongs to a different sync pipeline that owns its own
           // field-refresh cadence — don't create a duplicate row and don't
           // touch its name/title/company/etc; a Prospector guess
           // overwriting HubSpot-synced fields would fight with HubSpot's
           // own sync.
-          contactId = crossSourceMatch[0].id;
+          contactId = crossSourceMatch.id;
           isCrossSourceDedup = true;
         } else {
           contactId = nanoid();
