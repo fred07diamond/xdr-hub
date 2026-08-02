@@ -21,7 +21,7 @@ import {
   IconUsers,
   IconX,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { APP_TITLE } from "@/lib/app-config";
@@ -1196,24 +1196,49 @@ function ListDetailView({
     }
   }
 
+  // Deleting an Active list is two independent mutations with no shared
+  // transaction between them — delete-sourcing-rule (stop automation + drop
+  // the job resource) then delete-segment (drop the segment/contacts). If
+  // the first succeeds but the second then fails (network blip, a future
+  // writability check, etc.), the rule is already gone but the segment
+  // survives. ruleDeletedRef records that so a retry skips straight to
+  // deleteSegment instead of re-attempting a delete against a now-nonexistent
+  // rule id — which would otherwise soft-fail with a confusing "not found"
+  // error and never reach the segment delete at all. (Without this ref,
+  // navigating away and back would eventually self-heal too, since a
+  // fresh get-segment fetch reports owningSourcingRuleId: null once the rule
+  // is gone — but that recovery path is invisible to the user in the
+  // moment, so we make the retry work correctly immediately instead.)
+  const ruleDeletedRef = useRef(false);
+
   async function handleDelete() {
     setActionError(null);
-    try {
-      if (segment?.owningSourcingRuleId) {
-        // Active list: stop the automation first (this also removes the job
-        // resource) before removing the underlying segment/contacts, so we
-        // never leave a sourcing rule row pointing at a deleted segment.
+
+    if (segment?.owningSourcingRuleId && !ruleDeletedRef.current) {
+      try {
         const ruleResult = await deleteSourcingRule.mutateAsync({ id: segment.owningSourcingRuleId });
         if ((ruleResult as { ok?: boolean; error?: string })?.ok === false) {
           setActionError((ruleResult as { error: string }).error);
           setConfirmDelete(false);
           return;
         }
+        ruleDeletedRef.current = true;
+      } catch (err) {
+        setActionError(errorMessage(err, "Couldn't stop this list's automation."));
+        setConfirmDelete(false);
+        return;
       }
+    }
+
+    try {
       await deleteSegment.mutateAsync({ id });
       onDeleted();
     } catch (err) {
-      setActionError(errorMessage(err, "Couldn't delete list."));
+      setActionError(
+        ruleDeletedRef.current
+          ? "Automation removed, but couldn't delete the list — click delete again to finish."
+          : errorMessage(err, "Couldn't delete list."),
+      );
       setConfirmDelete(false);
     }
   }
