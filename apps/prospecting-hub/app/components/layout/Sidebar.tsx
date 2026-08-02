@@ -16,12 +16,12 @@ import {
 import {
   IconBuildingSkyscraper,
   IconChartBar,
+  IconFlag3,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLibrary,
   IconListDetails,
   IconMessageCircle,
-  IconRadar,
   IconSearch,
   IconSettings,
   IconTarget,
@@ -39,60 +39,77 @@ import {
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
 
+// `label` is a literal display string rendered as-is. `labelKey` is only
+// consulted (via `t(item.labelKey)`) when `label` is omitted, i.e. for
+// entries backed by a genuine registered i18n message (see app/i18n/en-US.ts).
+// Ad-hoc nav copy like "Sales Library" was never a registered translation key,
+// so routing it through t() fell through to useT()'s humanizeFallbackKey()
+// fallback, which lowercases the whole string before capitalizing only the
+// first letter (e.g. "Company Criteria" -> "Company criteria"). Providing a
+// `label` bypasses that fallback path entirely.
 const navItems = [
   {
-    icon: IconMessageCircle,
-    labelKey: "navigation.chat",
-    href: "/",
-    view: "chat",
-  },
-  {
-    icon: IconTarget,
-    labelKey: "Personas",
-    href: "/personas",
-    view: "personas",
-  },
-  {
-    icon: IconBuildingSkyscraper,
-    labelKey: "ICPs",
-    href: "/icps",
-    view: "icps",
-  },
-  {
     icon: IconUsers,
+    label: "Contacts",
     labelKey: "Contacts",
     href: "/contacts",
     view: "contacts",
   },
   {
     icon: IconListDetails,
-    labelKey: "Segments",
-    href: "/segments",
-    view: "segments",
+    label: "Lists",
+    labelKey: "Lists",
+    href: "/lists",
+    view: "lists",
   },
   {
-    icon: IconRadar,
-    labelKey: "Sourcing rules",
-    href: "/sourcing-rules",
-    view: "sourcing-rules",
+    icon: IconTarget,
+    label: "Personas",
+    labelKey: "Personas",
+    href: "/personas",
+    view: "personas",
+  },
+  {
+    icon: IconBuildingSkyscraper,
+    label: "Company Criteria",
+    labelKey: "Company Criteria",
+    href: "/icps",
+    view: "icps",
+  },
+  {
+    icon: IconFlag3,
+    label: "Focus Accounts",
+    labelKey: "Focus Accounts",
+    href: "/focus-accounts",
+    view: "focus-accounts",
   },
   {
     icon: IconLibrary,
+    label: "Sales Library",
     labelKey: "Sales Library",
     href: "/library",
     view: "library",
   },
   {
     icon: IconChartBar,
+    label: "Analytics",
     labelKey: "Analytics",
     href: "/analytics",
     view: "analytics",
+  },
+  {
+    icon: IconMessageCircle,
+    label: undefined as string | undefined,
+    labelKey: "navigation.chat",
+    href: "/",
+    view: "chat",
   },
 ];
 
 const bottomNavItems = [
   {
     icon: IconSettings,
+    label: undefined as string | undefined,
     labelKey: "navigation.settings",
     href: "/settings",
     view: "settings",
@@ -467,11 +484,13 @@ export function Sidebar({
                 }}
                 className={navClass({ isActive })}
                 aria-current={isActive ? "page" : undefined}
-                aria-label={collapsed ? t(item.labelKey) : undefined}
+                aria-label={
+                  collapsed ? (item.label ?? t(item.labelKey)) : undefined
+                }
               >
                 <Icon className="size-4 shrink-0" />
                 <span className={collapsed ? "sr-only" : "truncate"}>
-                  {t(item.labelKey)}
+                  {item.label ?? t(item.labelKey)}
                 </span>
               </Link>
             );
@@ -481,7 +500,7 @@ export function Sidebar({
                   <Tooltip>
                     <TooltipTrigger asChild>{link}</TooltipTrigger>
                     <TooltipContent side="right">
-                      {t(item.labelKey)}
+                      {item.label ?? t(item.labelKey)}
                     </TooltipContent>
                   </Tooltip>
                 ) : (
@@ -511,18 +530,22 @@ export function Sidebar({
                 to={item.href}
                 className={navClass({ isActive })}
                 aria-current={isActive ? "page" : undefined}
-                aria-label={collapsed ? t(item.labelKey) : undefined}
+                aria-label={
+                  collapsed ? (item.label ?? t(item.labelKey)) : undefined
+                }
               >
                 <Icon className="size-4 shrink-0" />
                 <span className={collapsed ? "sr-only" : "truncate"}>
-                  {t(item.labelKey)}
+                  {item.label ?? t(item.labelKey)}
                 </span>
               </Link>
             );
             return collapsed ? (
               <Tooltip key={item.href}>
                 <TooltipTrigger asChild>{link}</TooltipTrigger>
-                <TooltipContent side="right">{t(item.labelKey)}</TooltipContent>
+                <TooltipContent side="right">
+                  {item.label ?? t(item.labelKey)}
+                </TooltipContent>
               </Tooltip>
             ) : (
               <div key={item.href}>{link}</div>

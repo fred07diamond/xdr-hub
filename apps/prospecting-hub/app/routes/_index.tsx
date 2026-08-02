@@ -4,7 +4,7 @@ import {
 } from "@agent-native/core/client/agent-chat";
 import { useT } from "@agent-native/core/client/i18n";
 import { useEffect } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router";
 
 import { APP_TITLE } from "@/lib/app-config";
 import { TAB_ID } from "@/lib/tab-id";
@@ -35,6 +35,7 @@ function chatThreadPath(threadId: string | null) {
 export default function ChatRoute() {
   const { threadId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const t = useT();
   const threadUrlSync = threadId
     ? {
@@ -54,6 +55,21 @@ export default function ChatRoute() {
     return () =>
       window.removeEventListener("agentNative.chatRunning", handleChatRunning);
   }, []);
+
+  // `location.key` is React Router's built-in marker for "this is the entry
+  // that existed before any client-side navigation happened in this
+  // session" — it's literally the string "default" for that entry and a
+  // fresh random value for every subsequent push/replace. That lets us tell
+  // "user just opened the app at bare /" (fresh doc load or a hard refresh)
+  // apart from "user clicked the Chat item in the sidebar", which performs a
+  // client-side navigate() to "/" and therefore always gets a non-"default"
+  // key. Only the former should bounce to /contacts; the latter must keep
+  // rendering chat so Chat stays fully reachable from the sidebar. This only
+  // applies to the bare "/" path (no threadId) — direct/bookmarked links to
+  // a specific thread at /chat/:threadId are never redirected.
+  if (!threadId && location.key === "default") {
+    return <Navigate to="/contacts" replace />;
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">

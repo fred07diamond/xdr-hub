@@ -1,7 +1,4 @@
-import {
-  useActionMutation,
-  useActionQuery,
-} from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconBuildingSkyscraper,
   IconCheck,
@@ -18,7 +15,7 @@ import { useRef, useState } from "react";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
-  return [{ title: `${APP_TITLE} — ICPs` }];
+  return [{ title: `${APP_TITLE} — Company Criteria` }];
 }
 
 const ICP_COLORS = [
@@ -81,7 +78,11 @@ function ColorPicker({
           aria-label={c}
         >
           {value === c && (
-            <IconCheck size={11} className="mx-auto text-white" strokeWidth={3} />
+            <IconCheck
+              size={11}
+              className="mx-auto text-white"
+              strokeWidth={3}
+            />
           )}
         </button>
       ))}
@@ -189,7 +190,10 @@ function IcpCard({
                 onBlur={handleNameBlur}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") e.currentTarget.blur();
-                  if (e.key === "Escape") { setNameDraft(icp.name); setEditingName(false); }
+                  if (e.key === "Escape") {
+                    setNameDraft(icp.name);
+                    setEditingName(false);
+                  }
                 }}
                 className="w-full rounded border border-ring bg-background px-1.5 py-0.5 text-sm font-semibold text-foreground focus:outline-none"
               />
@@ -203,7 +207,9 @@ function IcpCard({
                 {icp.name}
               </button>
             ) : (
-              <p className="text-sm font-semibold text-foreground truncate">{icp.name}</p>
+              <p className="text-sm font-semibold text-foreground truncate">
+                {icp.name}
+              </p>
             )}
           </div>
         </div>
@@ -214,7 +220,9 @@ function IcpCard({
               {icp.product}
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground/50 italic">No product set</p>
+            <p className="text-xs text-muted-foreground/50 italic">
+              No product set
+            </p>
           )}
         </div>
 
@@ -228,7 +236,10 @@ function IcpCard({
 
         {icp.wordCount === 0 && isAdmin && (
           <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
@@ -247,7 +258,9 @@ function IcpCard({
           </div>
         )}
         {icp.wordCount === 0 && !isAdmin && (
-          <p className="text-xs text-muted-foreground/50 italic">No document uploaded yet</p>
+          <p className="text-xs text-muted-foreground/50 italic">
+            No document uploaded yet
+          </p>
         )}
       </div>
 
@@ -290,7 +303,7 @@ function IcpCard({
                   type="button"
                   onClick={() => setConfirmDelete(true)}
                   className="rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-destructive"
-                  aria-label="Delete ICP"
+                  aria-label="Delete Company Criterion"
                 >
                   <IconTrash size={14} />
                 </button>
@@ -307,11 +320,16 @@ function IcpCard({
 
       {isAdmin && icp.wordCount > 0 && (
         <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
           className={`absolute inset-0 rounded-xl border-2 border-dashed transition-all pointer-events-none ${
-            dragOver ? "border-primary bg-primary/10 pointer-events-auto" : "border-transparent"
+            dragOver
+              ? "border-primary bg-primary/10 pointer-events-auto"
+              : "border-transparent"
           }`}
         >
           {dragOver && (
@@ -342,15 +360,24 @@ function NewIcpPanel({
   const [name, setName] = useState("");
   const [product, setProduct] = useState("");
   const [color, setColor] = useState(ICP_COLORS[0]);
-  const [pendingFile, setPendingFile] = useState<{ name: string; text: string } | null>(null);
+  const [pendingFile, setPendingFile] = useState<{
+    name: string;
+    text: string;
+  } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function loadFile(file: File) {
     setError(null);
-    if (!isAccepted(file)) { setError("Only .txt and .md files supported."); return; }
+    if (!isAccepted(file)) {
+      setError("Only .txt and .md files supported.");
+      return;
+    }
     const text = await readFileAsText(file);
-    if (!text.trim()) { setError("File appears to be empty."); return; }
+    if (!text.trim()) {
+      setError("File appears to be empty.");
+      return;
+    }
     setPendingFile({ name: file.name, text });
     if (!name) setName(file.name.replace(/\.[^.]+$/, ""));
   }
@@ -371,15 +398,23 @@ function NewIcpPanel({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-sm font-semibold text-foreground">New ICP</h2>
-          <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted">
+          <h2 className="text-sm font-semibold text-foreground">
+            New Company Criterion
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-muted"
+          >
             <IconX size={16} />
           </button>
         </div>
 
         <div className="flex flex-col gap-4 p-5">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Name</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Name
+            </label>
             <input
               autoFocus
               value={name}
@@ -390,7 +425,9 @@ function NewIcpPanel({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Product (optional)</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Product (optional)
+            </label>
             <input
               value={product}
               onChange={(e) => setProduct(e.target.value)}
@@ -400,49 +437,94 @@ function NewIcpPanel({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Color</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Color
+            </label>
             <ColorPicker value={color} onChange={setColor} />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">ICP document</label>
-            <input ref={fileInputRef} type="file" accept={ACCEPTED_INPUT} className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) await loadFile(f); e.target.value = ""; }} />
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Company Criterion document
+            </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_INPUT}
+              className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (f) await loadFile(f);
+                e.target.value = "";
+              }}
+            />
 
             {pendingFile ? (
               <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-                <IconFileText size={18} className="shrink-0 text-muted-foreground" />
+                <IconFileText
+                  size={18}
+                  className="shrink-0 text-muted-foreground"
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-foreground">{pendingFile.name}</p>
+                  <p className="truncate text-xs font-medium text-foreground">
+                    {pendingFile.name}
+                  </p>
                   <p className="text-[11px] text-muted-foreground">
-                    {pendingFile.text.split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                    {pendingFile.text
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .length.toLocaleString()}{" "}
+                    words
                   </p>
                 </div>
-                <button type="button" onClick={() => setPendingFile(null)} className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground">
+                <button
+                  type="button"
+                  onClick={() => setPendingFile(null)}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                >
                   <IconX size={13} />
                 </button>
               </div>
             ) : (
               <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
                 onDragLeave={() => setDragOver(false)}
-                onDrop={async (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) await loadFile(f); }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) await loadFile(f);
+                }}
                 onClick={() => fileInputRef.current?.click()}
                 className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed py-6 text-center transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-border/60"}`}
               >
                 <IconUpload size={20} className="text-muted-foreground/50" />
                 <p className="text-xs text-muted-foreground">
                   Drop a file or{" "}
-                  <span className="text-primary underline underline-offset-2">browse</span>
+                  <span className="text-primary underline underline-offset-2">
+                    browse
+                  </span>
                 </p>
-                <p className="text-[11px] text-muted-foreground/50">.txt · .md</p>
+                <p className="text-[11px] text-muted-foreground/50">
+                  .txt · .md
+                </p>
               </div>
             )}
-            {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
+            {error && (
+              <p className="mt-1.5 text-xs text-destructive">{error}</p>
+            )}
           </div>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted"
+          >
             Cancel
           </button>
           <button
@@ -451,8 +533,10 @@ function NewIcpPanel({
             disabled={!name.trim() || !pendingFile || createIcp.isPending}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
           >
-            {createIcp.isPending && <IconLoader2 size={12} className="animate-spin" />}
-            Create ICP
+            {createIcp.isPending && (
+              <IconLoader2 size={12} className="animate-spin" />
+            )}
+            Create Company Criterion
           </button>
         </div>
       </div>
@@ -466,10 +550,14 @@ export default function IcpsRoute() {
   const { data: roleData } = useActionQuery("get-my-role", {});
   const isAdmin = (roleData as { role?: string })?.role === "admin";
 
-  const { data, isLoading, refetch } = useActionQuery("list-icps", {}, {
-    refetchInterval: 30000,
-    staleTime: 25000,
-  });
+  const { data, isLoading, refetch } = useActionQuery(
+    "list-icps",
+    {},
+    {
+      refetchInterval: 30000,
+      staleTime: 25000,
+    },
+  );
   const [creating, setCreating] = useState(false);
 
   const icps: Icp[] = (data as { icps?: Icp[] })?.icps ?? [];
@@ -478,15 +566,17 @@ export default function IcpsRoute() {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
-          <h1 className="text-sm font-semibold text-foreground">ICPs</h1>
+          <h1 className="text-sm font-semibold text-foreground">
+            Company Criteria
+          </h1>
           <p className="text-xs text-muted-foreground">
             {isLoading
               ? "Loading…"
               : icps.length === 0
                 ? isAdmin
-                  ? "No ICPs yet — upload a doc to define your first ideal customer profile"
-                  : "No ICPs yet — ask an admin to create one"
-                : `${icps.length} ICP${icps.length === 1 ? "" : "s"} · company-level qualification criteria`}
+                  ? "No Company Criteria yet — upload a doc to define your first ideal customer profile"
+                  : "No Company Criteria yet — ask an admin to create one"
+                : `${icps.length} ${icps.length === 1 ? "Company Criterion" : "Company Criteria"} · company-level qualification criteria`}
           </p>
         </div>
         {isAdmin && (
@@ -496,7 +586,7 @@ export default function IcpsRoute() {
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <IconPlus size={13} />
-            New ICP
+            New Company Criterion
           </button>
         )}
       </div>
@@ -504,27 +594,40 @@ export default function IcpsRoute() {
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {isLoading ? (
           <div className="flex h-32 items-center justify-center">
-            <IconLoader2 size={20} className="animate-spin text-muted-foreground" />
+            <IconLoader2
+              size={20}
+              className="animate-spin text-muted-foreground"
+            />
           </div>
         ) : icps.length === 0 ? (
           <div
             className={`flex h-48 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border text-center transition-colors ${isAdmin ? "cursor-pointer hover:border-border/60 hover:bg-muted/20" : ""}`}
             onClick={isAdmin ? () => setCreating(true) : undefined}
           >
-            <IconBuildingSkyscraper size={32} className="text-muted-foreground/30" />
+            <IconBuildingSkyscraper
+              size={32}
+              className="text-muted-foreground/30"
+            />
             <div>
-              <p className="text-sm font-medium text-muted-foreground">No ICPs yet</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                No Company Criteria yet
+              </p>
               <p className="mt-1 text-xs text-muted-foreground/60">
                 {isAdmin
                   ? "Upload a doc for each company profile you target"
-                  : "Ask an admin to set up ICPs"}
+                  : "Ask an admin to set up Company Criteria"}
               </p>
             </div>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {icps.map((icp) => (
-              <IcpCard key={icp.id} icp={icp} isAdmin={isAdmin} onRefetch={refetch} />
+              <IcpCard
+                key={icp.id}
+                icp={icp}
+                isAdmin={isAdmin}
+                onRefetch={refetch}
+              />
             ))}
             {isAdmin && (
               <button
@@ -533,7 +636,9 @@ export default function IcpsRoute() {
                 className="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border text-muted-foreground/50 transition-colors hover:border-border hover:text-muted-foreground"
               >
                 <IconPlus size={22} />
-                <span className="text-xs font-medium">New ICP</span>
+                <span className="text-xs font-medium">
+                  New Company Criterion
+                </span>
               </button>
             )}
           </div>
@@ -541,10 +646,7 @@ export default function IcpsRoute() {
       </div>
 
       {isAdmin && creating && (
-        <NewIcpPanel
-          onClose={() => setCreating(false)}
-          onCreated={refetch}
-        />
+        <NewIcpPanel onClose={() => setCreating(false)} onCreated={refetch} />
       )}
     </div>
   );
