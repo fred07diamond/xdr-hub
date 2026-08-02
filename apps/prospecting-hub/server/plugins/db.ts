@@ -222,6 +222,16 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 23,
+      name: "contacts-draft-email-columns",
+      sql: `ALTER TABLE contacts ADD COLUMN draft_email_subject TEXT; ALTER TABLE contacts ADD COLUMN draft_email_body TEXT`,
+    },
+    {
+      version: 24,
+      name: "contacts-draft-linkedin-and-generated-at-columns",
+      sql: `ALTER TABLE contacts ADD COLUMN draft_linkedin_message TEXT; ALTER TABLE contacts ADD COLUMN draft_generated_at TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

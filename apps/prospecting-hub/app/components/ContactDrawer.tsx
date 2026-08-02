@@ -1,13 +1,16 @@
-import { useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconBrandLinkedin,
   IconBriefcase,
+  IconCheck,
+  IconCopy,
   IconExternalLink,
   IconLoader2,
+  IconRefresh,
   IconSparkles,
   IconWand,
 } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
@@ -40,6 +43,10 @@ interface ContactDetail {
   personaId: string | null;
   country: string | null;
   employees: number | null;
+  draftEmailSubject: string | null;
+  draftEmailBody: string | null;
+  draftLinkedinMessage: string | null;
+  draftGeneratedAt: string | null;
 }
 
 interface SegmentMembership {
@@ -84,6 +91,45 @@ function SectionHeading({ children }: { children: ReactNode }) {
   return <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</h3>;
 }
 
+// No shared relative-time helper is importable here (contacts.tsx's own
+// `relativeTime` is a route-local, unexported function) — a simple inline
+// equivalent for the draftGeneratedAt caption.
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return "";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // Clipboard access denied/unavailable — silently no-op, nothing
+          // else meaningful to do in that case.
+        }
+      }}
+      title="Copy to clipboard"
+      className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      {copied ? <IconCheck size={13} className="text-green-600 dark:text-green-400" /> : <IconCopy size={13} />}
+    </button>
+  );
+}
+
 export function ContactDrawer({
   contactId,
   onClose,
@@ -93,11 +139,25 @@ export function ContactDrawer({
 }) {
   const open = contactId != null;
 
-  const { data, isLoading, error } = useActionQuery(
+  const { data, isLoading, error, refetch } = useActionQuery(
     "get-contact-detail",
     { contactId: contactId ?? "" },
     { enabled: open },
   );
+
+  const generateDraft = useActionMutation("generate-contact-draft");
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  async function handleGenerateDraft() {
+    if (!contactId) return;
+    setDraftError(null);
+    try {
+      await generateDraft.mutateAsync({ contactId });
+      refetch();
+    } catch (err) {
+      setDraftError(err instanceof Error ? err.message : "Couldn't generate outreach for this contact.");
+    }
+  }
 
   const { data: personaData } = useActionQuery("list-personas", {}, { enabled: open });
   const personaById = new Map(
@@ -321,20 +381,72 @@ export function ContactDrawer({
               </div>
             )}
 
-            {/* Outreach Draft — Task 7 placeholder. Task 7's implementer should
-                wire this button to generate an AI-drafted outreach message
-                using this contact's persona/score/CommonRoom context. */}
+            {/* Outreach Draft — AI-drafted cold email + LinkedIn note,
+                grounded in this contact's matched persona's linked Sales
+                Library docs and the single authorized Customer Evidence
+                proof point (draft-outreach.ts). */}
             <div>
               <SectionHeading>Outreach Draft</SectionHeading>
-              <button
-                type="button"
-                disabled
-                title="Coming soon — outreach drafting lands in a later task"
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
-              >
-                <IconWand size={13} />
-                Generate Outreach (coming soon)
-              </button>
+              {contact.draftEmailSubject || contact.draftEmailBody || contact.draftLinkedinMessage ? (
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-md border border-border p-3">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-medium text-muted-foreground">Cold email</p>
+                      <CopyButton text={`${contact.draftEmailSubject ?? ""}\n\n${contact.draftEmailBody ?? ""}`} />
+                    </div>
+                    {contact.draftEmailSubject && (
+                      <p className="text-xs font-medium text-foreground">{contact.draftEmailSubject}</p>
+                    )}
+                    {contact.draftEmailBody && (
+                      <p className="mt-1 whitespace-pre-line text-xs text-muted-foreground/90">{contact.draftEmailBody}</p>
+                    )}
+                  </div>
+                  {contact.draftLinkedinMessage && (
+                    <div className="rounded-md border border-border p-3">
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                          <IconBrandLinkedin size={12} /> LinkedIn note
+                        </p>
+                        <CopyButton text={contact.draftLinkedinMessage} />
+                      </div>
+                      <p className="whitespace-pre-line text-xs text-muted-foreground/90">{contact.draftLinkedinMessage}</p>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    {contact.draftGeneratedAt && (
+                      <p className="text-[11px] text-muted-foreground/60">Generated {formatRelativeTime(contact.draftGeneratedAt)}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleGenerateDraft}
+                      disabled={generateDraft.isPending}
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                    >
+                      {generateDraft.isPending ? (
+                        <IconLoader2 size={13} className="animate-spin" />
+                      ) : (
+                        <IconRefresh size={13} />
+                      )}
+                      {generateDraft.isPending ? "Regenerating…" : "Regenerate"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleGenerateDraft}
+                  disabled={generateDraft.isPending}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                >
+                  {generateDraft.isPending ? (
+                    <IconLoader2 size={13} className="animate-spin" />
+                  ) : (
+                    <IconWand size={13} />
+                  )}
+                  {generateDraft.isPending ? "Generating…" : "Generate Outreach"}
+                </button>
+              )}
+              {draftError && <p className="mt-1.5 text-xs text-destructive">{draftError}</p>}
             </div>
           </div>
         )}

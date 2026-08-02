@@ -15,6 +15,7 @@ import {
   IconRefresh,
   IconSearch,
   IconUsers,
+  IconWand,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
@@ -141,6 +142,8 @@ export default function ContactsRoute() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rescoreError, setRescoreError] = useState<string | null>(null);
   const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftProgress, setDraftProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
   const { data: personasData } = useActionQuery("list-personas", {});
@@ -272,6 +275,59 @@ export default function ContactsRoute() {
     refetch();
   }
 
+  // Same chunked-callAction pattern as handleRefreshScores above — draft
+  // generation is a completeText() call per contact, similar cost profile to
+  // scoring, so it reuses the exact same chunk size/timeout constants.
+  async function handleGenerateOutreach() {
+    setDraftError(null);
+
+    let targetIds: string[];
+    if (selected.size > 0) {
+      targetIds = Array.from(selected);
+    } else {
+      try {
+        const all = await callAction<{ contacts: Array<{ id: string }> }>(
+          "list-contacts",
+          { status: "active", limit: 200, offset: 0 },
+          { method: "GET" },
+        );
+        targetIds = all.contacts.map((c) => c.id);
+      } catch (err) {
+        setDraftError(err instanceof Error ? err.message : "Couldn't load contacts to draft for.");
+        return;
+      }
+    }
+
+    if (targetIds.length === 0) return;
+
+    const chunks = chunkArray(targetIds, RESCORE_CHUNK_SIZE);
+    setDraftProgress({ done: 0, total: targetIds.length });
+    const errors: string[] = [];
+    let done = 0;
+
+    for (const chunk of chunks) {
+      try {
+        const result = await callAction<{ generated?: number; errors?: string[] }>(
+          "bulk-generate-drafts",
+          { contactIds: chunk },
+          { timeoutMs: RESCORE_CHUNK_TIMEOUT_MS },
+        );
+        if (result?.errors?.length) errors.push(...result.errors);
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : "A batch failed to generate drafts.");
+      }
+      done += chunk.length;
+      setDraftProgress({ done, total: targetIds.length });
+    }
+
+    setDraftProgress(null);
+    if (errors.length > 0) {
+      setDraftError(`${errors.length} contact${errors.length === 1 ? "" : "s"} had errors: ${errors[0]}`);
+    }
+    setSelected(new Set());
+    refetch();
+  }
+
   const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
   const rangeStart = total === 0 ? 0 : offset + 1;
   const rangeEnd = Math.min(offset + contacts.length, total);
@@ -285,28 +341,51 @@ export default function ContactsRoute() {
             {isLoading ? "Loading…" : total === 0 ? "No contacts synced yet" : `${total.toLocaleString()} contact${total === 1 ? "" : "s"} across HubSpot and CommonRoom`}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleRefreshScores}
-          disabled={refreshProgress !== null || total === 0}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
-          title={selected.size > 0 ? `Re-score ${selected.size} selected contact${selected.size === 1 ? "" : "s"}` : "Re-score all active contacts (capped at 200 per run)"}
-        >
-          {refreshProgress ? (
-            <IconLoader2 size={13} className="animate-spin" />
-          ) : (
-            <IconRefresh size={13} />
-          )}
-          {refreshProgress
-            ? `Refreshing ${refreshProgress.done}/${refreshProgress.total}…`
-            : selected.size > 0
-              ? `Refresh ${selected.size} selected`
-              : "Refresh scores"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleRefreshScores}
+            disabled={refreshProgress !== null || total === 0}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+            title={selected.size > 0 ? `Re-score ${selected.size} selected contact${selected.size === 1 ? "" : "s"}` : "Re-score all active contacts (capped at 200 per run)"}
+          >
+            {refreshProgress ? (
+              <IconLoader2 size={13} className="animate-spin" />
+            ) : (
+              <IconRefresh size={13} />
+            )}
+            {refreshProgress
+              ? `Refreshing ${refreshProgress.done}/${refreshProgress.total}…`
+              : selected.size > 0
+                ? `Refresh ${selected.size} selected`
+                : "Refresh scores"}
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerateOutreach}
+            disabled={draftProgress !== null || total === 0}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+            title={selected.size > 0 ? `Generate outreach for ${selected.size} selected contact${selected.size === 1 ? "" : "s"}` : "Generate outreach for all active contacts (capped at 200 per run)"}
+          >
+            {draftProgress ? (
+              <IconLoader2 size={13} className="animate-spin" />
+            ) : (
+              <IconWand size={13} />
+            )}
+            {draftProgress
+              ? `Generating ${draftProgress.done}/${draftProgress.total}…`
+              : selected.size > 0
+                ? `Generate outreach for ${selected.size} selected`
+                : "Generate Outreach"}
+          </button>
+        </div>
       </div>
 
       {rescoreError && (
         <p className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{rescoreError}</p>
+      )}
+      {draftError && (
+        <p className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{draftError}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">

@@ -45,6 +45,10 @@ export default defineAction({
         personaId: contacts.personaId,
         country: contacts.country,
         employees: contacts.employees,
+        draftEmailSubject: contacts.draftEmailSubject,
+        draftEmailBody: contacts.draftEmailBody,
+        draftLinkedinMessage: contacts.draftLinkedinMessage,
+        draftGeneratedAt: contacts.draftGeneratedAt,
       })
       .from(contacts)
       .where(eq(contacts.id, contactId))
