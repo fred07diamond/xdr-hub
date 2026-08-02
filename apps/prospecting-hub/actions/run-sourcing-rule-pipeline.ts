@@ -16,6 +16,7 @@ import {
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { searchIcpCompanies } from "../server/helpers/icp-filters.js";
+import { normalizeLinkedinUrl } from "../server/helpers/normalize-linkedin-url.js";
 import { searchProspectorContacts } from "../server/helpers/prospector-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
@@ -168,7 +169,7 @@ export default defineAction({
         companiesConsidered,
         icpQualifiedZeroCompanies: true,
       });
-      return { imported: 0, scored: 0, segmentId: rule.segmentId, companiesConsidered };
+      return { imported: 0, scored: 0, deduped: 0, segmentId: rule.segmentId, companiesConsidered };
     }
 
     // Up to 2 linked Sales Library docs as extra grounding context for the
@@ -227,6 +228,7 @@ export default defineAction({
 
     const now = new Date().toISOString();
     let imported = 0;
+    let deduped = 0;
     let scored = 0;
     const scoringErrors: string[] = [];
 
@@ -240,6 +242,7 @@ export default defineAction({
         .limit(1);
 
       let contactId: string;
+      let isCrossSourceDedup = false;
       if (existing[0]) {
         contactId = existing[0].id;
         // Mirrors import-prospects-to-segment.ts's update path: refresh the
@@ -259,23 +262,65 @@ export default defineAction({
           })
           .where(eq(contacts.id, contactId));
       } else {
-        contactId = nanoid();
-        await db.insert(contacts).values({
-          id: contactId,
-          name: match.fullName ?? "Unknown",
-          title: match.title ?? null,
-          company: match.companyName ?? null,
-          email: null, // Prospector has no email field — never invent or backfill one.
-          linkedinUrl,
-          source: "prospector",
-          externalId: match.id,
-          status: "active",
-          syncedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
+        // No same-source (externalId, source="prospector") row exists yet —
+        // but this match might still be a contact we already have from a
+        // DIFFERENT source (HubSpot, CommonRoom, or another Prospector row
+        // that for some reason didn't match on externalId). Check by email
+        // (defensive — Prospector itself never provides one today, see
+        // `email: null` below) and by normalized LinkedIn vanity-slug before
+        // deciding this is truly a new person.
+        const matchEmail = (match as { email?: string | null }).email ?? null;
+        const linkedinSlug = normalizeLinkedinUrl(linkedinUrl);
+
+        const dedupConditions = [];
+        if (matchEmail) {
+          dedupConditions.push(sql`LOWER(${contacts.email}) = LOWER(${matchEmail})`);
+        }
+        if (linkedinSlug) {
+          dedupConditions.push(sql`LOWER(${contacts.linkedinUrl}) LIKE LOWER(${`%${linkedinSlug}%`})`);
+        }
+
+        const crossSourceMatch =
+          dedupConditions.length > 0
+            ? await db
+                .select({ id: contacts.id })
+                .from(contacts)
+                .where(or(...dedupConditions))
+                .limit(1)
+            : [];
+
+        if (crossSourceMatch[0]) {
+          // Belongs to a different sync pipeline that owns its own
+          // field-refresh cadence — don't create a duplicate row and don't
+          // touch its name/title/company/etc; a Prospector guess
+          // overwriting HubSpot-synced fields would fight with HubSpot's
+          // own sync.
+          contactId = crossSourceMatch[0].id;
+          isCrossSourceDedup = true;
+        } else {
+          contactId = nanoid();
+          await db.insert(contacts).values({
+            id: contactId,
+            name: match.fullName ?? "Unknown",
+            title: match.title ?? null,
+            company: match.companyName ?? null,
+            email: null, // Prospector has no email field — never invent or backfill one.
+            linkedinUrl,
+            source: "prospector",
+            externalId: match.id,
+            status: "active",
+            syncedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
       }
-      imported++;
+
+      if (isCrossSourceDedup) {
+        deduped++;
+      } else {
+        imported++;
+      }
 
       // Scoring and everything that depends on it is wrapped so a single
       // contact's bad AI response (e.g. truncated/unparseable JSON) or a
@@ -361,6 +406,7 @@ export default defineAction({
         companiesConsidered,
         icpQualifiedZeroCompanies: false,
         scoringErrorCount: scoringErrors.length,
+        deduped,
       }),
     });
     await logAnalyticsEvent(rule.ownerEmail, "sync_run", {
@@ -371,8 +417,9 @@ export default defineAction({
       companiesConsidered,
       icpQualifiedZeroCompanies: false,
       scoringErrorCount: scoringErrors.length,
+      deduped,
     });
 
-    return { imported, scored, segmentId: rule.segmentId, companiesConsidered, scoringErrors };
+    return { imported, scored, deduped, segmentId: rule.segmentId, companiesConsidered, scoringErrors };
   },
 });
