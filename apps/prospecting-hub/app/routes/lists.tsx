@@ -177,7 +177,7 @@ function formatRelativeTime(iso: string | null) {
 // into the UI.
 function errorMessage(err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : "";
-  if (/^\s*<(!doctype|html)/i.test(message)) {
+  if (/<(!doctype|html)[\s>]/i.test(message)) {
     return "This took too long and timed out — try again, or lower the desired volume for a faster run.";
   }
   return message || fallback;

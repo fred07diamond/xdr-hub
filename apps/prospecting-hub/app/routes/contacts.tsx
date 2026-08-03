@@ -64,7 +64,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 // into the UI.
 function sanitizeActionError(err: unknown, fallback: string): string {
   const message = err instanceof Error ? err.message : String(err);
-  if (/^\s*<(!doctype|html)/i.test(message)) {
+  if (/<(!doctype|html)[\s>]/i.test(message)) {
     return "The request took too long and timed out — try again with a smaller selection.";
   }
   return message || fallback;
