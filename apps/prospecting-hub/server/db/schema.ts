@@ -234,3 +234,28 @@ export const syncRecords = table("sync_records", {
   // isn't rule-scoped and never sets this.
   sourcingRuleId: text("sourcing_rule_id"),
 });
+
+// Per-run work queue for run-sourcing-rule-pipeline.ts's resumable, chunked
+// execution (raising the Active List volume cap from 200 to 1000 required
+// splitting the pipeline across many invocations -- one HTTP request can't
+// synchronously score 1000 contacts before a server function timeout). One
+// row per contact still needing to be scored/linked for a given in-progress
+// run: Phase 1 (search + dedup/insert) populates this table with `pending`
+// rows once search is genuinely complete; Phase 2 (scoring) claims a bounded
+// chunk of `pending` rows per invocation and flips each to `scored` or
+// `errored` as it goes, so the NEXT invocation's "give me the next chunk"
+// query naturally skips whatever's already been processed -- this table IS
+// the durable checkpoint that makes scoring resumable across invocations,
+// since Phase 1's in-memory `records` array no longer survives past the one
+// invocation that gathered it. Ephemeral by design: deleted in full for a
+// given sync_record_id once that run terminally resolves (success or
+// failed) -- sync_records + its metadata is the permanent historical record
+// (see the Run History feature), not this table.
+export const sourcingRuleRunTargets = table("sourcing_rule_run_targets", {
+  id: text("id").primaryKey(),
+  syncRecordId: text("sync_record_id").notNull(),
+  contactId: text("contact_id").notNull(),
+  status: text("status", { enum: ["pending", "scored", "errored"] }).notNull().default("pending"),
+  error: text("error"),
+  createdAt: text("created_at").default(now()),
+});

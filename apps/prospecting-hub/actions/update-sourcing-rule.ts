@@ -20,7 +20,7 @@ export default defineAction({
     icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
-    desiredVolume: z.number().int().min(1).max(200).nullish(),
+    desiredVolume: z.number().int().min(1).max(1000).nullish(),
     intervalHours: z
       .number()
       .int()

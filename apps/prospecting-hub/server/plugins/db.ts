@@ -253,6 +253,18 @@ export default runMigrations(
       name: "sync-records-sourcing-rule-id-column",
       sql: `ALTER TABLE sync_records ADD COLUMN sourcing_rule_id TEXT`,
     },
+    {
+      version: 28,
+      name: "sourcing-rule-run-targets-table",
+      sql: `CREATE TABLE IF NOT EXISTS sourcing_rule_run_targets (
+        id TEXT PRIMARY KEY,
+        sync_record_id TEXT NOT NULL,
+        contact_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        error TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

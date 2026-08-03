@@ -41,7 +41,7 @@ export default defineAction({
     icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
-    desiredVolume: z.number().int().min(1).max(200).default(20),
+    desiredVolume: z.number().int().min(1).max(1000).default(20),
     intervalHours: z.number().int().refine(
       (v) => VALID_INTERVAL_HOURS.includes(v as (typeof VALID_INTERVAL_HOURS)[number]),
       `Must be one of ${VALID_INTERVAL_HOURS.join(", ")} hours`,

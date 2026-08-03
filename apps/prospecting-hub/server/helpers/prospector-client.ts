@@ -56,14 +56,26 @@ function normalizeSeniority(value: string): string {
   return value.toLowerCase().replace(/[^a-z]/g, "");
 }
 
+// Restructured (from a single one-shot call) to support real pagination —
+// reaching a target of up to 1000 POST-FILTERED matches can require far more
+// than one raw CommonRoom page (each capped at 200 raw records before this
+// function's own post-filter narrows that down further), and looping through
+// every page needed to reach 1000 inside ONE call would itself risk this
+// function's own caller timing out. So this function now fetches exactly ONE
+// page per call — passing `cursor` through to CommonRoom and returning its
+// own `nextCursor`/`hasMore` pagination fields untouched — and it's the
+// CALLER's job (run-sourcing-rule-pipeline.ts) to decide how many pages to
+// fetch across however many of its own invocations it takes, following
+// `nextCursor` between them.
 export async function searchProspectorContacts(options: {
   orgId: string | null | undefined;
   titleKeyword?: string;
   seniority?: string;
   companyAllowList?: string[];
   companyDenyList?: string[];
-  limit: number;
-}): Promise<{ total: number; records: ProspectorMatch[] }> {
+  limit: number; // page size hint for THIS ONE call, not the overall target
+  cursor?: string;
+}): Promise<{ records: ProspectorMatch[]; nextCursor?: string; hasMore: boolean }> {
   const clauses: unknown[] = [];
   if (options.titleKeyword) {
     clauses.push({ type: "stringFilter", field: "title", params: { op: "like", value: options.titleKeyword } });
@@ -80,15 +92,17 @@ export async function searchProspectorContacts(options: {
   // ProspectorContact has no direct company-list filter matching companyName
   // by name-list, so allow/deny is applied as a post-filter below rather
   // than pushed into the MCP call. Request more than `options.limit` from
-  // the MCP call itself (3x, capped at 200) to leave headroom for the
-  // post-filter to still return close to the requested count.
-  const mcpLimit = Math.min(200, options.limit * 3);
+  // the MCP call itself (3x, capped at 200 — CommonRoom's own apparent
+  // per-call ceiling) to leave headroom for the post-filter to still return
+  // close to the requested count for THIS page.
+  const mcpLimit = Math.min(200, Math.max(1, options.limit * 3));
 
   const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
     objectType: "ProspectorContact",
     ...(clauses.length > 0 ? { filter: { type: "and", clauses } } : {}),
     properties: PROSPECTOR_PROPERTIES,
     limit: mcpLimit,
+    ...(options.cursor ? { cursor: options.cursor } : {}),
   });
 
   const parsed = parseMcpToolResult(result) as ProspectorListResult;
@@ -115,7 +129,20 @@ export async function searchProspectorContacts(options: {
     return true;
   });
 
-  return { total: parsed.total ?? filtered.length, records: filtered.slice(0, options.limit) };
+  // `hasMore`/`nextCursor` describe CommonRoom's OWN raw pagination state —
+  // whether it has more raw records beyond this page — independent of how
+  // many of THIS page's records survived the post-filter above. Slicing the
+  // post-filtered results to `options.limit` (this page's own size hint)
+  // mirrors the pre-pagination behavior exactly for every single-page caller
+  // (import-prospects-to-segment.ts, search-commonroom-prospects.ts); the
+  // multi-page caller (run-sourcing-rule-pipeline.ts) always passes a
+  // `limit` sized to what it still needs for the current page, so this slice
+  // is never a real cap on its overall target.
+  return {
+    records: filtered.slice(0, options.limit),
+    nextCursor: parsed.nextCursor,
+    hasMore: parsed.has_more ?? false,
+  };
 }
 
 export interface ProspectorCompanyMatch {

@@ -23,6 +23,7 @@ import {
   IconUsers,
   IconX,
 } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
 import { ContactDrawer } from "@/components/ContactDrawer";
@@ -162,6 +163,31 @@ interface SourcingRuleRun {
   icpQualifiedZeroCompanies?: boolean;
   phase?: string;
   recordsFound?: number;
+}
+
+// Live progress for an in-flight "Find prospects now" run — populated from
+// each run-sourcing-rule-pipeline.ts invocation's own response as the
+// client-side auto-continuation loop (handleRunSourcingRule) calls it
+// repeatedly. Deliberately a small subset of that action's full response
+// (just enough to render a meaningful button label) rather than the whole
+// payload.
+interface SourcingRunProgress {
+  phase: "searching" | "scoring" | "complete";
+  recordsFound: number;
+  scored: number;
+  remaining: number;
+}
+
+// Turns a single in-flight progress snapshot into the button's label — e.g.
+// "Searching… (340 found)" while still paging Prospector, "Scoring
+// 120/340…" once search has handed off to per-contact scoring.
+function buildSourcingRunLabel(progress: SourcingRunProgress | null): string {
+  if (!progress) return "Finding prospects…";
+  if (progress.phase === "scoring") {
+    const total = progress.scored + progress.remaining;
+    return total > 0 ? `Scoring ${progress.scored}/${total}…` : "Scoring…";
+  }
+  return progress.recordsFound > 0 ? `Searching… (${progress.recordsFound} found)` : "Searching…";
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1274,11 +1300,14 @@ function ListDetailView({
   const updateSourcingRule = useActionMutation("update-sourcing-rule");
   const deleteSourcingRule = useActionMutation("delete-sourcing-rule");
 
+  const queryClient = useQueryClient();
+
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [assignDraft, setAssignDraft] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ruleActionError, setRuleActionError] = useState<string | null>(null);
   const [isRunningSourcingRule, setIsRunningSourcingRule] = useState(false);
+  const [sourcingRunProgress, setSourcingRunProgress] = useState<SourcingRunProgress | null>(null);
   const [editingRule, setEditingRule] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
@@ -1321,20 +1350,54 @@ function ListDetailView({
     if (!segment?.owningSourcingRuleId) return;
     setActionError(null);
     setIsRunningSourcingRule(true);
+    setSourcingRunProgress(null);
+    // The pipeline is now a resumable, chunked state machine (raising the
+    // Active List volume cap to 1000 made a single synchronous request
+    // impossible — scoring that many contacts would run well past any
+    // realistic server function timeout even with the pipeline's own
+    // concurrency). Each call below does ONE bounded unit of work (a few
+    // more search pages, or a chunk of scoring) and returns `done: false`
+    // with a `syncRecordId` to keep calling with until the run actually
+    // finishes — this loop auto-continues while the tab stays open,
+    // showing live progress each call, per Fred's explicit UX call. It does
+    // NOT survive the tab closing mid-run; see the pipeline action's own
+    // notes on the (unattempted) server-side safety-net stretch goal.
+    let syncRecordId: string | undefined;
     try {
-      // The pipeline scores every matched contact sequentially (an AI call
-      // plus CommonRoom lookups per contact) — routinely well past
-      // useActionMutation's default 60s timeout for anything but a tiny
-      // desiredVolume. callAction lets us override it explicitly instead of
-      // the UI silently sitting on a spinner past the point a real timeout
-      // would otherwise fire with no explanation.
-      await callAction("run-sourcing-rule-pipeline", { ruleId: segment.owningSourcingRuleId }, { timeoutMs: 300_000 });
+      for (;;) {
+        const result = (await callAction(
+          "run-sourcing-rule-pipeline",
+          { ruleId: segment.owningSourcingRuleId, syncRecordId },
+          { timeoutMs: 90_000 },
+        )) as {
+          done: boolean;
+          syncRecordId: string;
+          phase: "searching" | "scoring" | "complete";
+          recordsFound: number;
+          scored: number;
+          remaining: number;
+        };
+        syncRecordId = result.syncRecordId;
+        setSourcingRunProgress({
+          phase: result.phase,
+          recordsFound: result.recordsFound,
+          scored: result.scored,
+          remaining: result.remaining,
+        });
+        if (result.done) break;
+      }
       refetch();
       refetchRules();
+      // "Recent runs" has its own useActionQuery instance inside
+      // RecentRunsSection (keyed on ruleId) — invalidate it directly rather
+      // than waiting for its own 30s poll interval, so the just-completed
+      // run shows up immediately.
+      queryClient.invalidateQueries({ queryKey: ["action", "list-sourcing-rule-runs"] });
     } catch (err) {
       setActionError(errorMessage(err, "Couldn't find new prospects."));
     } finally {
       setIsRunningSourcingRule(false);
+      setSourcingRunProgress(null);
     }
   }
 
@@ -1465,7 +1528,7 @@ function ListDetailView({
                   ) : (
                     <IconRefresh size={12} />
                   )}
-                  {isRunningSourcingRule ? "Finding prospects…" : "Find prospects now"}
+                  {isRunningSourcingRule ? buildSourcingRunLabel(sourcingRunProgress) : "Find prospects now"}
                 </button>
               ) : (
                 segment.personaId && (

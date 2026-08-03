@@ -9,6 +9,7 @@ import {
   libraryDocs,
   personas,
   segmentContacts,
+  sourcingRuleRunTargets,
   sourcingRules,
   subPersonas,
   syncRecords,
@@ -17,7 +18,7 @@ import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { searchIcpCompanies } from "../server/helpers/icp-filters.js";
 import { escapeLikePattern, normalizeLinkedinUrl } from "../server/helpers/normalize-linkedin-url.js";
-import { searchProspectorContacts } from "../server/helpers/prospector-client.js";
+import { searchProspectorContacts, type ProspectorMatch } from "../server/helpers/prospector-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 import { assertSegmentWritable } from "../server/helpers/segment-access.js";
@@ -29,13 +30,75 @@ const PREFERRED_GROUNDING_CATEGORIES = new Set(["icp", "persona_messaging"]);
 const MAX_GROUNDING_DOCS = 2;
 const GROUNDING_DOC_EXCERPT_LENGTH = 3000;
 
+// ── Resumable, chunked execution (raising the volume cap 200 -> 1000) ──────
+//
+// Scoring 1000 contacts one HTTP request at a time (even with the existing
+// 4x scoring concurrency) would take well past any realistic server function
+// timeout, and CommonRoom Prospector search itself needs multiple raw pages
+// to reach 1000 post-filtered matches. So this action is now a resumable
+// state machine: each invocation does exactly ONE bounded unit of work
+// (either "fetch a few more search pages" or "score a chunk of already-found
+// contacts") and returns a `{done, ...}` progress payload. The caller (the
+// "Find prospects now" button in lists.tsx) keeps calling this action with
+// the returned `syncRecordId` until `done: true`.
+//
+// Two phases, tracked in `sync_records.metadata.phase`:
+//   "searching" — accumulating post-filtered Prospector matches across
+//     however many invocations it takes to reach the rule's desiredVolume
+//     (or CommonRoom genuinely running out of matches). The accumulated raw
+//     matches themselves are round-tripped through metadata (JSON) between
+//     invocations, since nothing else durable holds them — this table only
+//     tracks post-resolution contactIds (see below).
+//   "scoring" — once search + the existing dedup/insert loop have both
+//     completed (exactly once, over ALL accumulated matches), each resulting
+//     contactId gets one `sourcing_rule_run_targets` row. Each invocation
+//     claims a small chunk of `pending` rows, scores/links them with the
+//     existing bounded-concurrency logic, and flips them to `scored`/
+//     `errored` — that queue table (not an in-memory counter) is the
+//     durable source of truth for "how much scoring is left", since nothing
+//     in-memory survives between invocations.
+const MAX_SEARCH_PAGES_PER_INVOCATION = 4;
+const SCORING_CHUNK_SIZE = 16;
+const CONCURRENCY_LIMIT = 4;
+
+// Same threshold and reasoning as the run-history UI's own `deriveRunStatus`
+// (lists.tsx) — a "running" sync_records row whose startedAt is older than
+// this is treated as abandoned (the hosting platform's own infrastructure
+// killed the process mid-flight) rather than genuinely still in progress.
+// Reusing the exact number keeps the concept consistent between what the
+// UI displays and what the server does with a "running" row it finds.
+const RUN_STALE_AFTER_MS = 6 * 60_000;
+
+interface PipelineResult {
+  done: boolean;
+  syncRecordId: string;
+  phase: "searching" | "scoring" | "complete";
+  recordsFound: number;
+  scored: number;
+  remaining: number;
+  imported: number;
+  deduped: number;
+  scoringErrors: string[];
+  companiesConsidered: number | null;
+}
+
+function parseMetadata(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default defineAction({
   description:
-    "Run a sourcing rule's full scheduled pipeline end to end: qualify companies against its ICP (if any), derive persona-based Prospector search filters (grounded with any linked Sales Library docs), search CommonRoom Prospector, upsert + score + segment-link every match, and log the sync run. This is the single deterministic action the rule's recurring job calls directly — it replaces the old agent-orchestrated 3-tool-call sequence (derive-prospector-filters, search-commonroom-prospects, import-prospects-to-segment).",
-  schema: z.object({ ruleId: z.string().min(1) }),
+    "Run (or resume) a sourcing rule's Prospector pipeline: qualify companies against its ICP (if any), derive persona-based Prospector search filters, search CommonRoom Prospector, upsert + score + segment-link every match, and log the sync run. Resumable and chunked — a single invocation does ONE bounded unit of work (a few more search pages, or a chunk of scoring) and returns {done: false, syncRecordId, ...} if more remains; the caller passes that syncRecordId back in to continue the SAME run instead of starting a new one. Pass no syncRecordId to start a fresh run (or attach to an already-in-progress one for this rule).",
+  schema: z.object({ ruleId: z.string().min(1), syncRecordId: z.string().nullish() }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ ruleId }, ctx) => {
+  run: async ({ ruleId, syncRecordId: requestedSyncRecordId }, ctx) => {
     const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
 
@@ -45,81 +108,117 @@ export default defineAction({
       throw Object.assign(new Error(`Sourcing rule ${ruleId} not found.`), { statusCode: 404 });
     }
 
-    // Ownership gate, matching update-sourcing-rule.ts/delete-sourcing-rule.ts:
-    // any XDR/AE passes the role gate above, but only the rule's own owner
-    // (or an admin) may actually run it — otherwise any XDR/AE could
-    // manually trigger any OTHER user's rule by ruleId (no data leak, since
-    // writes still target the rule owner's own segment via
-    // assertSegmentWritable below, but an authorization-consistency gap and
-    // a mild quota-abuse vector). The scheduled path runs `runAs: creator`
-    // (i.e. as the rule's own owner), so this never affects the scheduled
-    // flow — only manual/chat-triggered calls.
+    // Ownership gate, matching update-sourcing-rule.ts/delete-sourcing-rule.ts
+    // — re-checked on EVERY invocation (not just the first), since each
+    // invocation is its own independent HTTP request/auth context.
     if (rule.ownerEmail !== ctx!.userEmail! && role !== "admin") {
       throw Object.assign(new Error("Only the sourcing rule's owner or a manager can run this rule's pipeline."), {
         statusCode: 403,
       });
     }
 
-    // Defense-in-depth existence checks mirroring create-sourcing-rule.ts's
-    // own validation — a correctly-created rule should never fail these, but
-    // a persona/sub-persona/ICP deleted out from under a live rule shouldn't
-    // surface as an opaque downstream error from deriveProspectorFilters or
-    // searchIcpCompanies several steps later.
-    const personaRow = await db.select({ id: personas.id }).from(personas).where(eq(personas.id, rule.personaId)).limit(1);
-    if (!personaRow[0]) {
-      throw Object.assign(new Error(`Persona ${rule.personaId} not found.`), { statusCode: 404 });
-    }
-    if (rule.subPersonaId) {
-      const subRow = await db
-        .select({ id: subPersonas.id })
-        .from(subPersonas)
-        .where(and(eq(subPersonas.id, rule.subPersonaId), eq(subPersonas.personaId, rule.personaId)))
+    // ── Resolve which sync_records row this invocation continues ───────────
+    //
+    // Three cases:
+    //  1. Caller passed a syncRecordId — resume it directly (after confirming
+    //     it's really this rule's and still "running").
+    //  2. No syncRecordId, but a genuinely-still-running (non-stale) row for
+    //     this rule already exists — ATTACH to it instead of starting a
+    //     second concurrent run for the same rule (e.g. a manual click
+    //     racing the scheduled job, or a double-click).
+    //  3. Neither — start fresh.
+    let syncRecordId: string;
+    let runMetadata: Record<string, unknown>;
+    let isFreshStart = false;
+
+    if (requestedSyncRecordId) {
+      const rows = await db
+        .select({ id: syncRecords.id, sourcingRuleId: syncRecords.sourcingRuleId, status: syncRecords.status, metadata: syncRecords.metadata })
+        .from(syncRecords)
+        .where(eq(syncRecords.id, requestedSyncRecordId))
         .limit(1);
-      if (!subRow[0]) {
-        throw Object.assign(new Error(`Sub-persona ${rule.subPersonaId} not found under persona ${rule.personaId}.`), {
-          statusCode: 404,
+      const row = rows[0];
+      if (!row || row.sourcingRuleId !== ruleId || row.status !== "running") {
+        throw Object.assign(
+          new Error(`Sync record ${requestedSyncRecordId} is not a resumable, in-progress run for rule ${ruleId}.`),
+          { statusCode: 404 },
+        );
+      }
+      syncRecordId = row.id;
+      runMetadata = parseMetadata(row.metadata);
+    } else {
+      const runningRows = await db
+        .select({ id: syncRecords.id, startedAt: syncRecords.startedAt, metadata: syncRecords.metadata })
+        .from(syncRecords)
+        .where(and(eq(syncRecords.sourcingRuleId, ruleId), eq(syncRecords.status, "running")))
+        .orderBy(desc(syncRecords.startedAt))
+        .limit(1);
+      const runningRow = runningRows[0];
+      // Mirrors deriveRunStatus's exact staleness formula (lists.tsx) so a
+      // row the UI would show as "running" is also attached to here, and one
+      // it would show as "timedOut" is also treated as abandoned here.
+      const startedMs = runningRow?.startedAt ? new Date(runningRow.startedAt).getTime() : NaN;
+      const isStale = !Number.isNaN(startedMs) && Date.now() - startedMs > RUN_STALE_AFTER_MS;
+
+      if (runningRow && !isStale) {
+        syncRecordId = runningRow.id;
+        runMetadata = parseMetadata(runningRow.metadata);
+      } else {
+        isFreshStart = true;
+
+        // Defense-in-depth existence checks mirroring create-sourcing-rule.ts's
+        // own validation — a correctly-created rule should never fail these,
+        // but a persona/sub-persona/ICP deleted out from under a live rule
+        // shouldn't surface as an opaque downstream error several steps
+        // later.
+        const personaRow = await db.select({ id: personas.id }).from(personas).where(eq(personas.id, rule.personaId)).limit(1);
+        if (!personaRow[0]) {
+          throw Object.assign(new Error(`Persona ${rule.personaId} not found.`), { statusCode: 404 });
+        }
+        if (rule.subPersonaId) {
+          const subRow = await db
+            .select({ id: subPersonas.id })
+            .from(subPersonas)
+            .where(and(eq(subPersonas.id, rule.subPersonaId), eq(subPersonas.personaId, rule.personaId)))
+            .limit(1);
+          if (!subRow[0]) {
+            throw Object.assign(new Error(`Sub-persona ${rule.subPersonaId} not found under persona ${rule.personaId}.`), {
+              statusCode: 404,
+            });
+          }
+        }
+        if (rule.icpId) {
+          const icpRow = await db.select({ id: icps.id }).from(icps).where(eq(icps.id, rule.icpId)).limit(1);
+          if (!icpRow[0]) {
+            throw Object.assign(new Error(`ICP ${rule.icpId} not found.`), { statusCode: 404 });
+          }
+        }
+
+        // Defense-in-depth: the rule owner must still legitimately own (or
+        // manage) the segment this rule writes into.
+        await assertSegmentWritable(rule.segmentId, rule.ownerEmail, db);
+
+        syncRecordId = nanoid();
+        const runStartedAt = new Date().toISOString();
+        await db.insert(syncRecords).values({
+          id: syncRecordId,
+          source: "prospector",
+          sourcingRuleId: ruleId,
+          startedAt: runStartedAt,
+          completedAt: null,
+          recordsPulled: null,
+          status: "running",
+          metadata: JSON.stringify({
+            sourcingRuleId: ruleId,
+            phase: "searching",
+            searchCursor: null,
+            targetVolume: rule.desiredVolume,
+            recordsFound: 0,
+          }),
         });
+        runMetadata = { phase: "searching" };
       }
     }
-    if (rule.icpId) {
-      const icpRow = await db.select({ id: icps.id }).from(icps).where(eq(icps.id, rule.icpId)).limit(1);
-      if (!icpRow[0]) {
-        throw Object.assign(new Error(`ICP ${rule.icpId} not found.`), { statusCode: 404 });
-      }
-    }
-
-    // Defense-in-depth: the rule owner must still legitimately own (or
-    // manage) the segment this rule writes into — same
-    // Task-7-fix-wave pattern already established in
-    // import-prospects-to-segment.ts.
-    await assertSegmentWritable(rule.segmentId, rule.ownerEmail, db);
-
-    // Run-history checkpoint (Run History feature): insert ONE sync_records
-    // row now, in "running" state, before any of the actually slow/failure-
-    // prone work (ICP qualification, Prospector search, per-contact
-    // scoring) begins. Every step below UPDATES this same row by id — never
-    // inserts a second one — so a "Recent runs" list always shows exactly
-    // one row per pipeline invocation, whether it succeeds, fails cleanly,
-    // or gets killed mid-flight by the hosting platform's own infrastructure
-    // timeout (the failure mode Fred kept hitting with zero visibility
-    // before this). If the process is killed by that platform timeout, none
-    // of the code below ever runs again — this row is simply left in
-    // whatever "running" state its last completed checkpoint update left
-    // it in, with no completedAt. That's expected, not a bug: the UI treats
-    // a "running" row whose startedAt is implausibly old as "likely timed
-    // out" (see list-sourcing-rule-runs.ts / lists.tsx).
-    const syncRecordId = nanoid();
-    const runStartedAt = new Date().toISOString();
-    await db.insert(syncRecords).values({
-      id: syncRecordId,
-      source: "prospector",
-      sourcingRuleId: ruleId,
-      startedAt: runStartedAt,
-      completedAt: null,
-      recordsPulled: null,
-      status: "running",
-      metadata: JSON.stringify({ sourcingRuleId: ruleId, phase: "searching" }),
-    });
 
     try {
       return await runPipelineBody();
@@ -132,13 +231,36 @@ export default defineAction({
           error: err instanceof Error ? err.message : String(err),
         })
         .where(eq(syncRecords.id, syncRecordId));
+      // Best-effort cleanup of this run's ephemeral work queue — a failed
+      // run is just as terminal as a successful one; this table only ever
+      // holds in-progress-run state. Failure here must never mask the real
+      // error being re-thrown below.
+      try {
+        await db.delete(sourcingRuleRunTargets).where(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId));
+      } catch {
+        // best-effort, ignore
+      }
       // Re-throw the ORIGINAL error unchanged — this is purely a side-effect
       // DB write on the way through; the real HTTP caller must still see
       // the actual failure exactly as it does today.
       throw err;
     }
 
-    async function runPipelineBody() {
+    async function runPipelineBody(): Promise<PipelineResult> {
+      if (isFreshStart) {
+        return await startFreshAndSearch();
+      }
+      if (runMetadata.phase === "scoring") {
+        return await runScoringChunk();
+      }
+      // phase === "searching" (a resumed run) — everything needed to
+      // continue paging was cached on a prior invocation.
+      return await resumeSearching();
+    }
+
+    // ── Fresh-start bootstrapping: existing ICP-qualification/short-circuit
+    // and deriveProspectorFilters logic, run exactly ONCE per overall run.
+    async function startFreshAndSearch(): Promise<PipelineResult> {
       const manualAllowList: string[] | null = rule.companyAllowList ? JSON.parse(rule.companyAllowList) : null;
       const manualDenyList: string[] | null = rule.companyDenyList ? JSON.parse(rule.companyDenyList) : null;
 
@@ -150,11 +272,12 @@ export default defineAction({
       const effectiveDenyList: string[] | undefined = manualDenyList ?? undefined;
       // Lowercased company name -> known employee count, from the ICP-
       // qualified companies list — feeds scoreContactAgainstPersonas's
-      // deterministic company-fit signal below (per-contact) when a match's
+      // deterministic company-fit signal (per-contact) when a match's
       // company was one of the companies the ICP search already qualified.
-      // Stays empty for a rule with no icpId (the AI-judged companyFitScore
-      // remains the fallback in that case, unchanged).
-      const companyEmployeesByName = new Map<string, number>();
+      // A plain JSON-serializable object (not a Map) since this needs to
+      // round-trip through sync_records.metadata across invocations if
+      // search takes more than one.
+      const companyEmployeesByName: Record<string, number> = {};
 
       if (rule.icpId) {
         const icpLimit = Math.min(200, rule.desiredVolume * 3);
@@ -168,7 +291,7 @@ export default defineAction({
         const icpNames = icpCompanies.map((c) => c.name).filter((n): n is string => !!n);
         for (const c of icpCompanies) {
           if (c.name && c.employees != null) {
-            companyEmployeesByName.set(c.name.toLowerCase(), c.employees);
+            companyEmployeesByName[c.name.toLowerCase()] = c.employees;
           }
         }
 
@@ -183,29 +306,21 @@ export default defineAction({
         }
       }
 
-      // If the rule has an ICP and NO company ended up qualifying (either the
-      // ICP search itself returned nothing, or the manual allow list and the
-      // ICP list don't overlap at all), searchProspectorContacts's own
-      // allow-list semantics treat an EMPTY array the same as "no allow list at
-      // all" (see prospector-client.ts: `if (allowList && allowList.length > 0)`)
-      // — passing an empty array through would silently admit every company
-      // instead of correctly admitting none. Short-circuit instead: a rule
-      // with 0 ICP-qualified companies should find 0 contacts, not fall back
-      // to unfiltered results.
+      // If the rule has an ICP and NO company ended up qualifying,
+      // searchProspectorContacts's own allow-list semantics treat an EMPTY
+      // array the same as "no allow list at all" — passing an empty array
+      // through would silently admit every company instead of correctly
+      // admitting none. Short-circuit instead: a rule with 0 ICP-qualified
+      // companies should find 0 contacts, not fall back to unfiltered
+      // results.
       if (rule.icpId && effectiveAllowList && effectiveAllowList.length === 0) {
         const completedAt = new Date().toISOString();
-        // Update the already-inserted "running" row to its final success
-        // state instead of inserting a second row — this is the same run,
-        // it just never reached the Prospector search.
         await db
           .update(syncRecords)
           .set({
             completedAt,
             status: "success",
             recordsPulled: 0,
-            // Distinguishes "the ICP qualified zero companies, so this rule is
-            // effectively dead" from "a quiet day, nothing new today" — both
-            // are status: "success" / recordsPulled: 0 otherwise indistinguishable.
             metadata: JSON.stringify({ sourcingRuleId: ruleId, companiesConsidered, icpQualifiedZeroCompanies: true }),
           })
           .where(eq(syncRecords.id, syncRecordId));
@@ -217,14 +332,22 @@ export default defineAction({
           companiesConsidered,
           icpQualifiedZeroCompanies: true,
         });
-        return { imported: 0, scored: 0, deduped: 0, segmentId: rule.segmentId, companiesConsidered };
+        return {
+          done: true,
+          syncRecordId,
+          phase: "complete",
+          recordsFound: 0,
+          scored: 0,
+          remaining: 0,
+          imported: 0,
+          deduped: 0,
+          scoringErrors: [],
+          companiesConsidered,
+        };
       }
 
       // Up to 2 linked Sales Library docs as extra grounding context for the
-      // persona-filter derivation prompt — docs whose category is "icp" or
-      // "persona_messaging" preferred, per the brief's simple heuristic (no
-      // relevance-ranking model). Queried directly against libraryDocs (not
-      // via list-library-docs.ts, to avoid a nested action-to-action hop).
+      // persona-filter derivation prompt.
       const linkConditions = [eq(libraryDocs.linkedPersonaId, rule.personaId)];
       if (rule.icpId) linkConditions.push(eq(libraryDocs.linkedIcpId, rule.icpId));
       const linkedDocs = await db
@@ -248,6 +371,11 @@ export default defineAction({
               .join("\n\n---\n\n")
           : undefined;
 
+      // deriveProspectorFilters runs exactly ONCE per overall run, here at
+      // the very start of the search phase — its result (titleKeyword/
+      // seniority) is cached into sync_records.metadata below so a resumed
+      // search-continuation invocation reuses it instead of making another
+      // LLM call.
       const filters = await deriveProspectorFilters({
         personaId: rule.personaId,
         subPersonaId: rule.subPersonaId,
@@ -256,221 +384,420 @@ export default defineAction({
         extraContext,
       });
 
-      const { records } = await searchProspectorContacts({
-        orgId: ctx?.orgId,
-        titleKeyword: filters.titleKeyword ?? undefined,
-        seniority: filters.seniority ?? undefined,
-        companyAllowList: effectiveAllowList,
-        companyDenyList: effectiveDenyList,
-        limit: rule.desiredVolume,
+      return await runSearchRound({
+        cursor: undefined,
+        targetVolume: rule.desiredVolume,
+        recordsFoundSoFar: 0,
+        accumulatedMatches: [],
+        titleKeyword: filters.titleKeyword,
+        seniority: filters.seniority,
+        effectiveAllowList,
+        effectiveDenyList,
+        companiesConsidered,
+        companyEmployeesByName,
+      });
+    }
+
+    // ── Resume a run whose last invocation stopped mid-search (hit the
+    // per-invocation page cap without reaching the target or exhausting
+    // CommonRoom) — everything needed to continue paging was cached in
+    // metadata by that prior invocation.
+    async function resumeSearching(): Promise<PipelineResult> {
+      const meta = runMetadata;
+      const cursor = (meta.searchCursor as string | null | undefined) ?? undefined;
+      const targetVolume = (meta.targetVolume as number | undefined) ?? rule.desiredVolume;
+      const recordsFoundSoFar = (meta.recordsFound as number | undefined) ?? 0;
+      const accumulatedMatches = (meta.accumulatedMatches as ProspectorMatch[] | undefined) ?? [];
+      const titleKeyword = (meta.titleKeyword as string | null | undefined) ?? null;
+      const seniority = (meta.seniority as string | null | undefined) ?? null;
+      const effectiveAllowList = (meta.effectiveAllowList as string[] | null | undefined) ?? undefined;
+      const effectiveDenyList = (meta.effectiveDenyList as string[] | null | undefined) ?? undefined;
+      const companiesConsidered = (meta.companiesConsidered as number | null | undefined) ?? null;
+      const companyEmployeesByName = (meta.companyEmployeesByName as Record<string, number> | undefined) ?? {};
+
+      return await runSearchRound({
+        cursor,
+        targetVolume,
+        recordsFoundSoFar,
+        accumulatedMatches,
+        titleKeyword,
+        seniority,
+        effectiveAllowList: effectiveAllowList ?? undefined,
+        effectiveDenyList: effectiveDenyList ?? undefined,
+        companiesConsidered,
+        companyEmployeesByName,
+      });
+    }
+
+    // ── One bounded round of search-page-fetching (phase "searching") ──────
+    //
+    // Fetches up to MAX_SEARCH_PAGES_PER_INVOCATION pages, following
+    // `nextCursor` between them within THIS SAME invocation, accumulating
+    // post-filtered matches until either the target volume is reached,
+    // CommonRoom reports genuinely no more matches, or the page cap is hit
+    // (in which case this invocation checkpoints and returns `done: false`
+    // so the caller invokes again to continue).
+    async function runSearchRound(params: {
+      cursor: string | undefined;
+      targetVolume: number;
+      recordsFoundSoFar: number;
+      accumulatedMatches: ProspectorMatch[];
+      titleKeyword: string | null;
+      seniority: string | null;
+      effectiveAllowList: string[] | undefined;
+      effectiveDenyList: string[] | undefined;
+      companiesConsidered: number | null;
+      companyEmployeesByName: Record<string, number>;
+    }): Promise<PipelineResult> {
+      let cursor = params.cursor;
+      const newMatches: ProspectorMatch[] = [];
+      let newCount = 0;
+      let searchDone = false;
+
+      for (let page = 0; page < MAX_SEARCH_PAGES_PER_INVOCATION; page++) {
+        const remainingNeeded = params.targetVolume - (params.recordsFoundSoFar + newCount);
+        if (remainingNeeded <= 0) {
+          searchDone = true;
+          break;
+        }
+
+        const pageResult = await searchProspectorContacts({
+          orgId: ctx?.orgId,
+          titleKeyword: params.titleKeyword ?? undefined,
+          seniority: params.seniority ?? undefined,
+          companyAllowList: params.effectiveAllowList,
+          companyDenyList: params.effectiveDenyList,
+          limit: remainingNeeded,
+          cursor,
+        });
+
+        newMatches.push(...pageResult.records);
+        newCount += pageResult.records.length;
+        cursor = pageResult.nextCursor;
+
+        // Genuinely exhausted (CommonRoom says no more, or gave no cursor to
+        // continue with even though it claimed more exist — defensive
+        // fallback to avoid ever looping forever on a contract violation).
+        if (!pageResult.hasMore || !cursor) {
+          searchDone = true;
+          break;
+        }
+        if (params.recordsFoundSoFar + newCount >= params.targetVolume) {
+          searchDone = true;
+          break;
+        }
+      }
+
+      const totalRecordsFound = params.recordsFoundSoFar + newCount;
+      const allMatches = [...params.accumulatedMatches, ...newMatches];
+
+      if (!searchDone) {
+        // Stopped only because this invocation hit its own page cap, not
+        // because the search is actually finished — checkpoint progress and
+        // ask the caller to invoke again to keep paging.
+        await db
+          .update(syncRecords)
+          .set({
+            metadata: JSON.stringify({
+              sourcingRuleId: ruleId,
+              phase: "searching",
+              searchCursor: cursor ?? null,
+              targetVolume: params.targetVolume,
+              recordsFound: totalRecordsFound,
+              accumulatedMatches: allMatches,
+              titleKeyword: params.titleKeyword,
+              seniority: params.seniority,
+              effectiveAllowList: params.effectiveAllowList ?? null,
+              effectiveDenyList: params.effectiveDenyList ?? null,
+              companiesConsidered: params.companiesConsidered,
+              companyEmployeesByName: params.companyEmployeesByName,
+            }),
+          })
+          .where(eq(syncRecords.id, syncRecordId));
+
+        return {
+          done: false,
+          syncRecordId,
+          phase: "searching",
+          recordsFound: totalRecordsFound,
+          scored: 0,
+          remaining: 0,
+          imported: 0,
+          deduped: 0,
+          scoringErrors: [],
+          companiesConsidered: params.companiesConsidered,
+        };
+      }
+
+      // Search is genuinely complete (target reached, or CommonRoom
+      // exhausted). If nothing was ever found at all, this run is actually
+      // complete right now — no contacts to resolve or score.
+      if (allMatches.length === 0) {
+        return await finishRun({
+          recordsFound: 0,
+          imported: 0,
+          deduped: 0,
+          companiesConsidered: params.companiesConsidered,
+        });
+      }
+
+      // Phase 1 — the EXISTING sequential dedup/insert-or-update decision,
+      // reused byte-for-byte, now running exactly once over ALL matches
+      // accumulated across however many invocations it took to gather them.
+      // Must stay strictly sequential in original match order — see
+      // resolveContact's own comment for why.
+      const now = new Date().toISOString();
+      let imported = 0;
+      let deduped = 0;
+      const resolvedContactIds: string[] = [];
+      for (const match of allMatches) {
+        const { contactId, isCrossSourceDedup } = await resolveContact(match, params.companyEmployeesByName, now);
+        if (isCrossSourceDedup) {
+          deduped++;
+        } else {
+          imported++;
+        }
+        resolvedContactIds.push(contactId);
+      }
+
+      // De-duplicate by contactId before handing off to scoring — two
+      // DIFFERENT Prospector matches can legitimately resolve (via
+      // cross-source dedup) to the SAME existing contact row; each real
+      // contact should only get one scoring work-queue row.
+      const seenContactIds = new Set<string>();
+      const uniqueContactIds = resolvedContactIds.filter((id) => {
+        if (seenContactIds.has(id)) return false;
+        seenContactIds.add(id);
+        return true;
       });
 
-      // Checkpoint: the first real progress signal — "found N, starting to
-      // score." Survives in the DB even if the process is killed anywhere
-      // during the (potentially slow) per-contact loop below.
+      for (const contactId of uniqueContactIds) {
+        await db.insert(sourcingRuleRunTargets).values({ id: nanoid(), syncRecordId, contactId, status: "pending" });
+      }
+
       await db
         .update(syncRecords)
         .set({
           metadata: JSON.stringify({
             sourcingRuleId: ruleId,
             phase: "scoring",
-            recordsFound: records.length,
-            imported: 0,
+            recordsFound: totalRecordsFound,
+            imported,
+            deduped,
+            companiesConsidered: params.companiesConsidered,
             scored: 0,
-            deduped: 0,
+            scoringErrorCount: 0,
           }),
         })
         .where(eq(syncRecords.id, syncRecordId));
 
-      // Same pool of scorable personas import-prospects-to-segment.ts queries
-      // — scoreContactAgainstPersonas itself picks the single best-fitting one
-      // per contact, across ALL personas with synced criteria, not just this
-      // rule's own persona.
+      return {
+        done: false,
+        syncRecordId,
+        phase: "scoring",
+        recordsFound: totalRecordsFound,
+        scored: 0,
+        remaining: uniqueContactIds.length,
+        imported,
+        deduped,
+        scoringErrors: [],
+        companiesConsidered: params.companiesConsidered,
+      };
+    }
+
+    // Phase 1's existing-check/dedup/insert-or-update decision — identical
+    // logic and order of operations to the pre-existing sequential loop.
+    // ADAPTED to also persist country/employees onto the contact row (a
+    // previously-unused pair of columns for prospector-sourced contacts):
+    // once scoring runs in a SEPARATE invocation from this resolution step,
+    // there is no longer a live `match` object available to read
+    // location.country/companyEmployeesByName from at scoring time — so
+    // those firmographic signals must be persisted here to survive to
+    // whichever later invocation actually scores this contact.
+    async function resolveContact(
+      match: ProspectorMatch,
+      companyEmployeesByName: Record<string, number>,
+      now: string,
+    ): Promise<{ contactId: string; isCrossSourceDedup: boolean }> {
+      const linkedinUrl = match.linkedInHandle ? `https://www.linkedin.com/${match.linkedInHandle}` : null;
+      const country = match.location?.country ?? null;
+      const employees = companyEmployeesByName[match.companyName?.toLowerCase() ?? ""] ?? null;
+
+      const existing = await db
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(eq(contacts.externalId, match.id), eq(contacts.source, "prospector")))
+        .limit(1);
+
+      let contactId: string;
+      let isCrossSourceDedup = false;
+      if (existing[0]) {
+        contactId = existing[0].id;
+        // Mirrors import-prospects-to-segment.ts's update path: refresh the
+        // source-of-truth fields but never touch `status` here — that's
+        // per-contact worked state the XDR owns, not something a re-import
+        // should reset.
+        await db
+          .update(contacts)
+          .set({
+            name: match.fullName ?? "Unknown",
+            title: match.title ?? null,
+            company: match.companyName ?? null,
+            email: null,
+            linkedinUrl,
+            country,
+            employees,
+            syncedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(contacts.id, contactId));
+      } else {
+        // No same-source (externalId, source="prospector") row exists yet —
+        // but this match might still be a contact we already have from a
+        // DIFFERENT source. Check by email and by normalized LinkedIn
+        // vanity-slug before deciding this is truly a new person.
+        const matchEmail = (match as { email?: string | null }).email ?? null;
+        const linkedinSlug = normalizeLinkedinUrl(linkedinUrl);
+
+        const dedupConditions = [];
+        if (matchEmail) {
+          dedupConditions.push(sql`LOWER(${contacts.email}) = LOWER(${matchEmail})`);
+        }
+        if (linkedinSlug) {
+          // Coarse SQL-level candidate filter only — see the LIKE-vs-exact
+          // comment this mirrors from the original implementation.
+          dedupConditions.push(
+            sql`LOWER(${contacts.linkedinUrl}) LIKE LOWER(${`%${escapeLikePattern(linkedinSlug)}%`}) ESCAPE '\\'`,
+          );
+        }
+
+        const dedupCandidates =
+          dedupConditions.length > 0
+            ? await db
+                .select({ id: contacts.id, email: contacts.email, linkedinUrl: contacts.linkedinUrl })
+                .from(contacts)
+                .where(or(...dedupConditions))
+                .limit(25)
+            : [];
+
+        const crossSourceMatch = dedupCandidates.find((candidate) => {
+          if (matchEmail && candidate.email && candidate.email.toLowerCase() === matchEmail.toLowerCase()) {
+            return true;
+          }
+          if (linkedinSlug && normalizeLinkedinUrl(candidate.linkedinUrl) === linkedinSlug) {
+            return true;
+          }
+          return false;
+        });
+
+        if (crossSourceMatch) {
+          // Belongs to a different sync pipeline that owns its own
+          // field-refresh cadence — don't create a duplicate row and don't
+          // touch its name/title/company/country/employees/etc.
+          contactId = crossSourceMatch.id;
+          isCrossSourceDedup = true;
+        } else {
+          contactId = nanoid();
+          await db.insert(contacts).values({
+            id: contactId,
+            name: match.fullName ?? "Unknown",
+            title: match.title ?? null,
+            company: match.companyName ?? null,
+            email: null, // Prospector has no email field — never invent or backfill one.
+            linkedinUrl,
+            country,
+            employees,
+            source: "prospector",
+            externalId: match.id,
+            status: "active",
+            syncedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+
+      return { contactId, isCrossSourceDedup };
+    }
+
+    // ── One bounded chunk of scoring (phase "scoring") ──────────────────────
+    //
+    // Claims up to SCORING_CHUNK_SIZE `pending` rows from the work queue,
+    // scores/links them with the existing bounded-concurrency logic, and
+    // flips each to `scored`/`errored`. The queue table's own aggregate
+    // counts (not an in-memory counter) are the source of truth for
+    // scored/errored/remaining, since nothing in-memory survives between
+    // invocations.
+    async function runScoringChunk(): Promise<PipelineResult> {
+      const pendingRows = await db
+        .select({ id: sourcingRuleRunTargets.id, contactId: sourcingRuleRunTargets.contactId })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "pending")))
+        .orderBy(sourcingRuleRunTargets.createdAt)
+        .limit(SCORING_CHUNK_SIZE);
+
+      const currentMetaRows = await db
+        .select({ metadata: syncRecords.metadata })
+        .from(syncRecords)
+        .where(eq(syncRecords.id, syncRecordId))
+        .limit(1);
+      const currentMeta = parseMetadata(currentMetaRows[0]?.metadata ?? null);
+      const recordsFound = (currentMeta.recordsFound as number | undefined) ?? 0;
+      const imported = (currentMeta.imported as number | undefined) ?? 0;
+      const deduped = (currentMeta.deduped as number | undefined) ?? 0;
+      const companiesConsidered = (currentMeta.companiesConsidered as number | null | undefined) ?? null;
+
+      if (pendingRows.length === 0) {
+        return await finishRun({ recordsFound, imported, deduped, companiesConsidered });
+      }
+
+      // Same pool of scorable personas import-prospects-to-segment.ts
+      // queries — re-fetched fresh each invocation (cheap) rather than
+      // cached, since nothing in-memory survives between invocations
+      // anyway.
       const personaRowsForScoring = await db
         .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
         .from(personas)
         .where(sql`${personas.criteria} IS NOT NULL`);
 
-      const now = new Date().toISOString();
-      let imported = 0;
-      let deduped = 0;
-      let scored = 0;
-      const scoringErrors: string[] = [];
-
-      // This loop is split into two phases instead of one interleaved
-      // per-contact block, specifically to make the concurrency change safe:
-      //
-      // Phase 1 (resolveContact, below) — the existing-check/dedup/
-      // insert-or-update decision — stays STRICTLY SEQUENTIAL, in original
-      // `records` order, byte-for-byte the same logic and the same order of
-      // operations as the pre-existing sequential loop. This matters because
-      // this decision reads the `contacts` table to decide "does this
-      // person already exist" and then writes to it — if two matches in the
-      // same run resolve to the SAME identity (e.g. two Prospector records
-      // that turn out to share an email/LinkedIn slug — verified live during
-      // this fix's testing to be possible, not just theoretical, when forced
-      // deliberately), running that decision concurrently lets both see
-      // "no existing row" before either commits, and both insert a duplicate
-      // contact row for one real person. Keeping this phase sequential
-      // eliminates that race entirely: every match's dedup check always sees
-      // every earlier match's already-committed result, exactly as the
-      // original loop guaranteed.
-      //
-      // Phase 2 (scoreAndLinkContact, below) — the actually expensive part
-      // (one completeText() LLM call + up to 2 CommonRoom lookups per
-      // contact) — runs in bounded-concurrency batches (CONCURRENCY_LIMIT).
-      // This is where root cause #2 (20 sequential rounds of network calls)
-      // actually lived, and where the ~4x wall-clock win comes from. Each
-      // unique contactId produced by phase 1 is scored/linked at most once
-      // (see the `Set`-based de-duplication before phase 2 starts below) —
-      // closing the residual case where two DIFFERENT Prospector matches
-      // legitimately resolved (sequentially, safely) to the SAME existing
-      // contactId via cross-source dedup, which would otherwise let two
-      // concurrent scoring calls race on the same contact's segment-link
-      // insert.
-      async function resolveContact(match: (typeof records)[number]): Promise<{ contactId: string; isCrossSourceDedup: boolean }> {
-        const linkedinUrl = match.linkedInHandle ? `https://www.linkedin.com/${match.linkedInHandle}` : null;
-
-        const existing = await db
-          .select({ id: contacts.id })
-          .from(contacts)
-          .where(and(eq(contacts.externalId, match.id), eq(contacts.source, "prospector")))
-          .limit(1);
-
-        let contactId: string;
-        let isCrossSourceDedup = false;
-        if (existing[0]) {
-          contactId = existing[0].id;
-          // Mirrors import-prospects-to-segment.ts's update path: refresh the
-          // source-of-truth fields but never touch `status` here — that's
-          // per-contact worked state the XDR owns, not something a re-import
-          // should reset.
-          await db
-            .update(contacts)
-            .set({
-              name: match.fullName ?? "Unknown",
-              title: match.title ?? null,
-              company: match.companyName ?? null,
-              email: null,
-              linkedinUrl,
-              syncedAt: now,
-              updatedAt: now,
-            })
-            .where(eq(contacts.id, contactId));
-        } else {
-          // No same-source (externalId, source="prospector") row exists yet —
-          // but this match might still be a contact we already have from a
-          // DIFFERENT source (HubSpot, CommonRoom, or another Prospector row
-          // that for some reason didn't match on externalId). Check by email
-          // (defensive — Prospector itself never provides one today, see
-          // `email: null` below) and by normalized LinkedIn vanity-slug before
-          // deciding this is truly a new person.
-          const matchEmail = (match as { email?: string | null }).email ?? null;
-          const linkedinSlug = normalizeLinkedinUrl(linkedinUrl);
-
-          const dedupConditions = [];
-          if (matchEmail) {
-            dedupConditions.push(sql`LOWER(${contacts.email}) = LOWER(${matchEmail})`);
-          }
-          if (linkedinSlug) {
-            // Coarse SQL-level candidate filter only — `LIKE '%slug%'` is a
-            // SUBSTRING match, and LinkedIn allocates "name-2", "name-marketing"
-            // etc. when the base slug "name" is already taken, so a shorter
-            // slug can substring-match into a longer, genuinely different
-            // person's URL. This LIKE only narrows a bounded candidate set (no
-            // full table scan); the actual accept/reject decision is an EXACT
-            // normalized-slug comparison in application code below.
-            dedupConditions.push(
-              sql`LOWER(${contacts.linkedinUrl}) LIKE LOWER(${`%${escapeLikePattern(linkedinSlug)}%`}) ESCAPE '\\'`,
-            );
-          }
-
-          const dedupCandidates =
-            dedupConditions.length > 0
-              ? await db
-                  .select({ id: contacts.id, email: contacts.email, linkedinUrl: contacts.linkedinUrl })
-                  .from(contacts)
-                  .where(or(...dedupConditions))
-                  .limit(25)
-              : [];
-
-          // Narrow the coarse candidates down to a genuine duplicate: exact
-          // case-insensitive email equality, or an exact normalized-slug
-          // match (not substring) against each candidate's own stored
-          // linkedinUrl. If no candidate exactly matches, this is treated
-          // exactly as if the coarse filter had found nothing at all — falls
-          // through to creating a new contact.
-          const crossSourceMatch = dedupCandidates.find((candidate) => {
-            if (matchEmail && candidate.email && candidate.email.toLowerCase() === matchEmail.toLowerCase()) {
-              return true;
-            }
-            if (linkedinSlug && normalizeLinkedinUrl(candidate.linkedinUrl) === linkedinSlug) {
-              return true;
-            }
-            return false;
-          });
-
-          if (crossSourceMatch) {
-            // Belongs to a different sync pipeline that owns its own
-            // field-refresh cadence — don't create a duplicate row and don't
-            // touch its name/title/company/etc; a Prospector guess
-            // overwriting HubSpot-synced fields would fight with HubSpot's
-            // own sync.
-            contactId = crossSourceMatch.id;
-            isCrossSourceDedup = true;
-          } else {
-            contactId = nanoid();
-            await db.insert(contacts).values({
-              id: contactId,
-              name: match.fullName ?? "Unknown",
-              title: match.title ?? null,
-              company: match.companyName ?? null,
-              email: null, // Prospector has no email field — never invent or backfill one.
-              linkedinUrl,
-              source: "prospector",
-              externalId: match.id,
-              status: "active",
-              syncedAt: now,
-              createdAt: now,
-              updatedAt: now,
-            });
-          }
-        }
-
-        return { contactId, isCrossSourceDedup };
-      }
-
       // Scoring and everything that depends on it is wrapped so a single
-      // contact's bad AI response (e.g. truncated/unparseable JSON) or a
-      // CommonRoom lookup failure can't abort any other contact — this
-      // contact is already correctly imported via resolveContact above
-      // regardless; a scoring failure just means it stays unscored for now,
-      // re-scorable later via "Refresh scores". Safe to run concurrently
-      // across contacts (see CONCURRENCY_LIMIT below): mutates the shared
-      // `scored` counter and `scoringErrors` array, which is safe under
-      // concurrent async execution — JS is single-threaded, so `scored++`
-      // and `scoringErrors.push(...)` always run to completion as one
-      // synchronous step before any other queued microtask can run; there is
-      // no way for two concurrently in-flight calls to interleave
-      // mid-increment or mid-push. Concurrency only changes the ORDER these
-      // synchronous steps happen in relative to each contact's own network
-      // calls (the LLM call, CommonRoom lookups), never their atomicity.
-      async function scoreAndLinkContact(match: (typeof records)[number], contactId: string): Promise<void> {
+      // contact's bad AI response or a CommonRoom lookup failure can't abort
+      // any other contact in this chunk — mirrors the original
+      // scoreAndLinkContact exactly, just sourcing its contact fields from
+      // the `contacts` table (country/employees persisted there by
+      // resolveContact above) instead of a live Prospector match object,
+      // and writing its outcome to the work-queue row instead of an
+      // in-memory counter.
+      async function scoreAndLinkTarget(target: { id: string; contactId: string }): Promise<void> {
         try {
+          const contactRows = await db
+            .select({
+              id: contacts.id,
+              name: contacts.name,
+              title: contacts.title,
+              company: contacts.company,
+              country: contacts.country,
+              employees: contacts.employees,
+            })
+            .from(contacts)
+            .where(eq(contacts.id, target.contactId))
+            .limit(1);
+          const contact = contactRows[0];
+          if (!contact) {
+            await db
+              .update(sourcingRuleRunTargets)
+              .set({ status: "errored", error: `Contact ${target.contactId} no longer exists.` })
+              .where(eq(sourcingRuleRunTargets.id, target.id));
+            return;
+          }
+
           const score = await scoreContactAgainstPersonas({
             contact: {
-              name: match.fullName ?? "Unknown",
-              title: match.title ?? null,
-              company: match.companyName ?? null,
-              // Real firmographic signals, when available, feed
-              // computeDeterministicCompanyFit() inside scoreContactAgainstPersonas
-              // and take over companyFitScore in place of the AI-judged value:
-              // - country: straight from this Prospector match's own location.
-              // - employees: only known when this match's company was one of the
-              //   rule's ICP-qualified companies (empty map for a no-ICP rule, or
-              //   null when the company wasn't in the qualified set).
-              country: match.location?.country ?? null,
-              employees: companyEmployeesByName.get(match.companyName?.toLowerCase() ?? "") ?? null,
+              name: contact.name,
+              title: contact.title,
+              company: contact.company,
+              country: contact.country,
+              employees: contact.employees,
             },
             personas: personaRowsForScoring,
             userEmail: rule.ownerEmail,
@@ -489,173 +816,186 @@ export default defineAction({
               scoreReasoning: score.reasoning,
               updatedAt: new Date().toISOString(),
             })
-            .where(eq(contacts.id, contactId));
-          scored++;
+            .where(eq(contacts.id, target.contactId));
 
           const existingLink = await db
             .select({ id: segmentContacts.id })
             .from(segmentContacts)
-            .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, contactId)))
+            .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, target.contactId)))
             .limit(1);
           if (!existingLink[0]) {
-            await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId });
+            await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId: target.contactId });
           }
+
+          await db
+            .update(sourcingRuleRunTargets)
+            .set({ status: "scored", error: null })
+            .where(eq(sourcingRuleRunTargets.id, target.id));
         } catch (err) {
-          scoringErrors.push(`${contactId} (${match.fullName ?? "Unknown"}): ${err instanceof Error ? err.message : String(err)}`);
-          // Still link the contact into the segment even when scoring failed —
-          // it was legitimately found by this rule's search, it just doesn't
-          // have a score yet. Best-effort; a failure here doesn't matter for
-          // the pipeline's overall outcome.
+          const message = err instanceof Error ? err.message : String(err);
+          // Still link the contact into the segment even when scoring
+          // failed — best-effort, a failure here doesn't matter for the
+          // pipeline's overall outcome.
           try {
             const existingLink = await db
               .select({ id: segmentContacts.id })
               .from(segmentContacts)
-              .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, contactId)))
+              .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, target.contactId)))
               .limit(1);
             if (!existingLink[0]) {
-              await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId });
+              await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId: target.contactId });
             }
           } catch {
             // best-effort, ignore
           }
+          await db
+            .update(sourcingRuleRunTargets)
+            .set({ status: "errored", error: message })
+            .where(eq(sourcingRuleRunTargets.id, target.id));
         }
       }
 
-      // Phase 1: resolve every match's contact row STRICTLY sequentially, in
-      // original `records` order — identical order of operations to the
-      // pre-existing loop, so the dedup/insert decision behaves exactly as it
-      // does today (see the big comment above resolveContact for why this
-      // phase specifically must not be made concurrent).
-      const resolved: { match: (typeof records)[number]; contactId: string }[] = [];
-      for (const match of records) {
-        const { contactId, isCrossSourceDedup } = await resolveContact(match);
-        if (isCrossSourceDedup) {
-          deduped++;
-        } else {
-          imported++;
-        }
-        resolved.push({ match, contactId });
+      // Bounded-concurrency batches, same CONCURRENCY_LIMIT/Promise.allSettled
+      // reasoning as the original perf fix.
+      for (let i = 0; i < pendingRows.length; i += CONCURRENCY_LIMIT) {
+        const batch = pendingRows.slice(i, i + CONCURRENCY_LIMIT);
+        await Promise.allSettled(batch.map((target) => scoreAndLinkTarget(target)));
       }
 
-      // Checkpoint: real imported/deduped counts now known, after the
-      // strictly-sequential dedup/insert phase completes.
+      const [scoredCountRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "scored")));
+      const [erroredCountRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "errored")));
+      const [pendingCountRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "pending")));
+
+      const scored = Number(scoredCountRow?.count ?? 0);
+      const scoringErrorCount = Number(erroredCountRow?.count ?? 0);
+      const remaining = Number(pendingCountRow?.count ?? 0);
+
+      if (remaining === 0) {
+        return await finishRun({ recordsFound, imported, deduped, companiesConsidered });
+      }
+
+      // Checkpoint after every chunk — same pattern as the original
+      // per-batch checkpoint, just sourcing the running totals from the
+      // queue table's aggregate state instead of in-memory counters that
+      // don't persist across invocations.
       await db
         .update(syncRecords)
         .set({
           metadata: JSON.stringify({
             sourcingRuleId: ruleId,
             phase: "scoring",
-            recordsFound: records.length,
+            recordsFound,
             imported,
             deduped,
-            scored: 0,
+            companiesConsidered,
+            scored,
+            scoringErrorCount,
           }),
         })
         .where(eq(syncRecords.id, syncRecordId));
 
-      // De-duplicate by contactId before scoring: two DIFFERENT Prospector
-      // matches can legitimately resolve (via the cross-source dedup check
-      // above) to the SAME existing contact row. Scoring/segment-linking that
-      // row twice would be wasted work today, and would become a genuine race
-      // on the segment-link insert once phase 2 runs concurrently (two
-      // concurrent "does a link already exist for this contactId" checks
-      // could both say no and both insert). Keeping only the first match for
-      // each unique contactId sidesteps that entirely — each real contact is
-      // scored/linked at most once, exactly once, same as if this whole
-      // pipeline only ever saw distinct people.
-      const seenContactIds = new Set<string>();
-      const toScore = resolved.filter(({ contactId }) => {
-        if (seenContactIds.has(contactId)) return false;
-        seenContactIds.add(contactId);
-        return true;
-      });
+      const errorRows = await db
+        .select({ error: sourcingRuleRunTargets.error })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "errored")));
+      const scoringErrors = errorRows.map((r) => r.error).filter((e): e is string => !!e);
 
-      // Phase 2: bounded-concurrency batches for the actually expensive part
-      // — for 20 contacts (a common `desiredVolume`), strictly sequential
-      // scoring meant 20 sequential rounds of network calls (one LLM
-      // completeText() call + up to 2 CommonRoom lookups each), which could
-      // exceed the hosting platform's function timeout even after eliminating
-      // the redundant resolveLeadScoreIds calls above. A cap of 4 gives a
-      // meaningful ~4x wall-clock improvement without firing all of
-      // `toScore.length` calls at once unbounded — this codebase has no
-      // established precedent of concurrent CommonRoom MCP calls, so a
-      // conservative cap is used rather than assuming the MCP transport
-      // tolerates unbounded concurrency cleanly.
-      //
-      // Promise.allSettled (not Promise.all) is used specifically because it
-      // never short-circuits on one rejection — one contact's scoring failure
-      // can never abort sibling contacts in its own batch, subsequent
-      // batches, or the pipeline as a whole. scoreAndLinkContact already
-      // catches its own errors internally (see above), so no rejection is
-      // actually expected here in practice — allSettled is still the right
-      // primitive, not Promise.all, so a future change to that function's
-      // error handling can't silently turn one contact's failure into an
-      // abort of the rest of the run.
-      const CONCURRENCY_LIMIT = 4;
-      for (let i = 0; i < toScore.length; i += CONCURRENCY_LIMIT) {
-        const batch = toScore.slice(i, i + CONCURRENCY_LIMIT);
-        await Promise.allSettled(batch.map(({ match, contactId }) => scoreAndLinkContact(match, contactId)));
+      return {
+        done: false,
+        syncRecordId,
+        phase: "scoring",
+        recordsFound,
+        scored,
+        remaining,
+        imported,
+        deduped,
+        scoringErrors,
+        companiesConsidered,
+      };
+    }
 
-        // Checkpoint after EVERY batch, not just at the very end — this is
-        // what actually captures partial progress if the process gets killed
-        // mid-run (e.g. on batch 3 of 5): the last completed batch's
-        // checkpoint survives in the DB even though the function itself never
-        // returns. `scored` and `scoringErrors` are read here exactly as
-        // scoreAndLinkContact left them after this batch's
-        // Promise.allSettled resolved — see the big comment above
-        // scoreAndLinkContact for why concurrent mutation of these is safe.
-        await db
-          .update(syncRecords)
-          .set({
-            metadata: JSON.stringify({
-              sourcingRuleId: ruleId,
-              phase: "scoring",
-              recordsFound: records.length,
-              imported,
-              deduped,
-              scored,
-              scoringErrorCount: scoringErrors.length,
-            }),
-          })
-          .where(eq(syncRecords.id, syncRecordId));
-      }
+    // ── Final success write — same shape as the original one-invocation
+    // pipeline's final write, just reached via this multi-invocation path.
+    // Also cleans up this run's ephemeral work-queue rows: they only ever
+    // represent in-progress-run state, never a permanent record.
+    async function finishRun(counts: {
+      recordsFound: number;
+      imported: number;
+      deduped: number;
+      companiesConsidered: number | null;
+    }): Promise<PipelineResult> {
+      const [scoredCountRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "scored")));
+      const [erroredCountRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "errored")));
+      const errorRows = await db
+        .select({ error: sourcingRuleRunTargets.error })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "errored")));
 
-      const syncCompletedAt = new Date().toISOString();
+      const scored = Number(scoredCountRow?.count ?? 0);
+      const scoringErrorCount = Number(erroredCountRow?.count ?? 0);
+      const scoringErrors = errorRows.map((r) => r.error).filter((e): e is string => !!e);
+
+      const completedAt = new Date().toISOString();
       await db
         .update(syncRecords)
         .set({
-          completedAt: syncCompletedAt,
+          completedAt,
           status: "success",
-          recordsPulled: records.length,
+          recordsPulled: counts.recordsFound,
           metadata: JSON.stringify({
             sourcingRuleId: ruleId,
-            companiesConsidered,
+            companiesConsidered: counts.companiesConsidered,
             icpQualifiedZeroCompanies: false,
-            scoringErrorCount: scoringErrors.length,
-            deduped,
-            // Checkpoint fields kept present through to the final row, not
-            // just used mid-run — so a completed run's metadata shape is a
-            // strict superset of an in-flight run's, and the UI never has to
-            // special-case "success" vs. "still has checkpoint fields."
+            scoringErrorCount,
+            deduped: counts.deduped,
             phase: "complete",
-            recordsFound: records.length,
-            imported,
+            recordsFound: counts.recordsFound,
+            imported: counts.imported,
             scored,
           }),
         })
         .where(eq(syncRecords.id, syncRecordId));
+
+      await db.delete(sourcingRuleRunTargets).where(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId));
+
       await logAnalyticsEvent(rule.ownerEmail, "sync_run", {
         source: "prospector",
         status: "success",
-        recordsPulled: records.length,
+        recordsPulled: counts.recordsFound,
         sourcingRuleId: ruleId,
-        companiesConsidered,
+        companiesConsidered: counts.companiesConsidered,
         icpQualifiedZeroCompanies: false,
-        scoringErrorCount: scoringErrors.length,
-        deduped,
+        scoringErrorCount,
+        deduped: counts.deduped,
       });
 
-      return { imported, scored, deduped, segmentId: rule.segmentId, companiesConsidered, scoringErrors };
+      return {
+        done: true,
+        syncRecordId,
+        phase: "complete",
+        recordsFound: counts.recordsFound,
+        scored,
+        remaining: 0,
+        imported: counts.imported,
+        deduped: counts.deduped,
+        scoringErrors,
+        companiesConsidered: counts.companiesConsidered,
+      };
     }
   },
 });
