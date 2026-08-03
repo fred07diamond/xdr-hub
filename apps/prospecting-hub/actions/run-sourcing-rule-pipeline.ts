@@ -80,12 +80,15 @@ const RUN_STALE_AFTER_MS = 6 * 60_000;
 // shorter than the 6-minute whole-run window: a single scoring chunk is at
 // most SCORING_CHUNK_SIZE (16) contacts, processed in CONCURRENCY_LIMIT-wide
 // batches (4 sequential batches of 4), each contact bounded by the existing
-// ~20s CommonRoom MCP timeout plus one LLM completeText() call — a healthy
-// chunk should fully resolve in well under a minute in the worst realistic
-// case. 2 minutes gives a comfortable safety margin above that while still
-// being meaningfully shorter than the whole-run window, so a genuinely stuck
-// claim self-heals long before the surrounding run would otherwise need the
-// whole-run abandonment path to notice anything is wrong.
+// ~20s CommonRoom MCP timeout plus one LLM completeText() call. Under
+// degraded CommonRoom latency this could plausibly exceed a minute — but
+// what actually bounds a single invocation's lifetime is the platform's own
+// [functions."*"] timeout = 75 in the repo-root netlify.toml, which hard-kills
+// any one HTTP call to this action (manual or scheduled-job-driven — both go
+// through the same function boundary) well before 120s. So a "claimed" row
+// still owned by a genuinely-alive invocation can never age past this
+// threshold in production; only a crashed/killed invocation's rows ever will,
+// which is exactly the case this reclaim is meant to self-heal.
 const CLAIM_STALE_AFTER_MS = 2 * 60_000;
 
 interface PipelineResult {
@@ -670,7 +673,19 @@ export default defineAction({
       });
 
       for (const contactId of uniqueContactIds) {
-        await db.insert(sourcingRuleRunTargets).values({ id: nanoid(), syncRecordId, contactId, status: "pending" });
+        // onConflictDoNothing guards the v30 UNIQUE(sync_record_id, contact_id)
+        // index: under the disclosed, accepted search-phase race (two
+        // concurrent invocations both attached to this syncRecordId reaching
+        // Phase 1 for the same contact), the second insert would otherwise
+        // throw a unique-constraint violation, which the top-level catch
+        // turns into a whole-run failure — wiping the queue out from under
+        // the invocation that's still actively progressing. Degrading to a
+        // no-op instead makes the second invocation's redundant insert
+        // harmless rather than destructive.
+        await db
+          .insert(sourcingRuleRunTargets)
+          .values({ id: nanoid(), syncRecordId, contactId, status: "pending" })
+          .onConflictDoNothing();
       }
 
       await db
