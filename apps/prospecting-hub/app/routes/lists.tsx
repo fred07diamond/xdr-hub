@@ -123,8 +123,11 @@ interface SourcingRule {
   companyAllowList: string | null;
   companyDenyList: string | null;
   desiredVolume: number;
+  // Legacy schedule fields — kept only for display fallback on pre-migration
+  // rows that predate intervalHours (local dev only; never null in prod).
   readyByTime: string;
   leadHours: number;
+  intervalHours: number | null;
   segmentId: string;
   jobResourcePath: string | null;
   status: RuleStatus;
@@ -136,6 +139,20 @@ interface SourcingRule {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Only these values divide evenly into 24, guaranteeing a predictable,
+// non-drifting recurring schedule — kept in sync with computeIntervalCron's
+// validation on the server.
+const INTERVAL_HOURS_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: "Every hour" },
+  { value: 2, label: "Every 2 hours" },
+  { value: 3, label: "Every 3 hours" },
+  { value: 4, label: "Every 4 hours" },
+  { value: 6, label: "Every 6 hours" },
+  { value: 8, label: "Every 8 hours" },
+  { value: 12, label: "Every 12 hours" },
+  { value: 24, label: "Once a day (24 hours)" },
+];
 
 function formatRelativeTime(iso: string | null) {
   if (!iso) return "Never refreshed";
@@ -533,8 +550,7 @@ function NewActiveListPanel({
   const [denyListText, setDenyListText] = useState("");
   const [selectedFocusAccountIds, setSelectedFocusAccountIds] = useState<Set<string>>(new Set());
   const [desiredVolume, setDesiredVolume] = useState(20);
-  const [readyByTime, setReadyByTime] = useState("");
-  const [leadHours, setLeadHours] = useState(3);
+  const [intervalHours, setIntervalHours] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
 
   const { data: subPersonaData, isLoading: subPersonasLoading } = useActionQuery(
@@ -559,7 +575,7 @@ function NewActiveListPanel({
     });
   }
 
-  const canCreate = Boolean(name.trim() && personaId && readyByTime);
+  const canCreate = Boolean(name.trim() && personaId && intervalHours);
 
   async function handleCreate() {
     setError(null);
@@ -583,8 +599,7 @@ function NewActiveListPanel({
           ? parseListInput(denyListText)
           : undefined,
         desiredVolume,
-        readyByTime,
-        leadHours,
+        intervalHours: intervalHours as number,
       });
       onCreated();
       onClose();
@@ -700,53 +715,43 @@ function NewActiveListPanel({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Desired volume
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={desiredVolume}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setDesiredVolume(Number.isFinite(v) ? Math.min(200, Math.max(1, v)) : 1);
-                }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Lead hours
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={12}
-                value={leadHours}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setLeadHours(Number.isFinite(v) ? Math.min(12, Math.max(1, v)) : 1);
-                }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Desired volume
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={desiredVolume}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setDesiredVolume(Number.isFinite(v) ? Math.min(200, Math.max(1, v)) : 1);
+              }}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
           </div>
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Ready-by time
+              Run every
             </label>
-            <input
-              type="time"
-              value={readyByTime}
-              onChange={(e) => setReadyByTime(e.target.value)}
+            <select
+              value={intervalHours}
+              onChange={(e) => setIntervalHours(e.target.value ? Number(e.target.value) : "")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            >
+              <option value="" disabled>
+                Select a cadence…
+              </option>
+              {INTERVAL_HOURS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
             <p className="mt-1 text-[11px] text-muted-foreground/60">
-              The pipeline runs early enough for contacts to be ready by this time.
+              The pipeline runs on this recurring cadence to keep the list topped up.
             </p>
           </div>
 
@@ -881,8 +886,12 @@ function EditRulePanel({
   const [allowListText, setAllowListText] = useState(initialAllowList.join(", "));
   const [denyListText, setDenyListText] = useState(initialDenyList.join(", "));
   const [desiredVolume, setDesiredVolume] = useState(rule.desiredVolume);
-  const [readyByTime, setReadyByTime] = useState(rule.readyByTime);
-  const [leadHours, setLeadHours] = useState(rule.leadHours);
+  // Rules created before this feature shipped have no intervalHours yet —
+  // default the dropdown to a sensible starting value (4h) rather than
+  // leaving it blank/invalid; the user must then explicitly pick and save a
+  // real interval to persist one.
+  const initialIntervalHours = rule.intervalHours ?? 4;
+  const [intervalHours, setIntervalHours] = useState(initialIntervalHours);
   const [error, setError] = useState<string | null>(null);
 
   const nextAllowList = parseListInput(allowListText);
@@ -894,10 +903,9 @@ function EditRulePanel({
     !sameList(nextAllowList, initialAllowList) ||
     !sameList(nextDenyList, initialDenyList) ||
     desiredVolume !== rule.desiredVolume ||
-    readyByTime !== rule.readyByTime ||
-    leadHours !== rule.leadHours;
+    intervalHours !== rule.intervalHours;
 
-  const canSave = Boolean(name.trim() && readyByTime) && hasChanges;
+  const canSave = Boolean(name.trim() && intervalHours) && hasChanges;
 
   async function handleSave() {
     setError(null);
@@ -910,8 +918,7 @@ function EditRulePanel({
       ...(!sameList(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
       ...(!sameList(nextDenyList, initialDenyList) ? { companyDenyList: nextDenyList } : {}),
       ...(desiredVolume !== rule.desiredVolume ? { desiredVolume } : {}),
-      ...(readyByTime !== rule.readyByTime ? { readyByTime } : {}),
-      ...(leadHours !== rule.leadHours ? { leadHours } : {}),
+      ...(intervalHours !== rule.intervalHours ? { intervalHours } : {}),
     };
 
     try {
@@ -976,51 +983,38 @@ function EditRulePanel({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Desired volume
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={desiredVolume}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setDesiredVolume(Number.isFinite(v) ? Math.min(200, Math.max(1, v)) : 1);
-                }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Lead hours
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={12}
-                value={leadHours}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setLeadHours(Number.isFinite(v) ? Math.min(12, Math.max(1, v)) : 1);
-                }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Desired volume
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={desiredVolume}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setDesiredVolume(Number.isFinite(v) ? Math.min(200, Math.max(1, v)) : 1);
+              }}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
           </div>
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Ready-by time
+              Run every
             </label>
-            <input
-              type="time"
-              value={readyByTime}
-              onChange={(e) => setReadyByTime(e.target.value)}
+            <select
+              value={intervalHours}
+              onChange={(e) => setIntervalHours(Number(e.target.value))}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            >
+              {INTERVAL_HOURS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -1411,10 +1405,15 @@ function ListDetailView({
                 <span className="inline-flex items-center gap-1">
                   <IconUsers size={12} /> {rule.desiredVolume} desired
                 </span>
-                <span className="inline-flex items-center gap-1">
-                  <IconClock size={12} /> Ready by {rule.readyByTime}
-                </span>
-                <span>{rule.leadHours}h lead</span>
+                {rule.intervalHours != null ? (
+                  <span className="inline-flex items-center gap-1">
+                    <IconClock size={12} /> Runs every {rule.intervalHours} hour{rule.intervalHours === 1 ? "" : "s"}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <IconClock size={12} /> Ready by {rule.readyByTime} · {rule.leadHours}h lead
+                  </span>
+                )}
               </div>
               {(safeParseList(rule.companyAllowList).length > 0 || safeParseList(rule.companyDenyList).length > 0) && (
                 <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] text-muted-foreground/70">

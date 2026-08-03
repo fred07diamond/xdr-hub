@@ -232,6 +232,11 @@ export default runMigrations(
       name: "contacts-draft-linkedin-and-generated-at-columns",
       sql: `ALTER TABLE contacts ADD COLUMN draft_linkedin_message TEXT; ALTER TABLE contacts ADD COLUMN draft_generated_at TEXT`,
     },
+    {
+      version: 25,
+      name: "sourcing-rules-interval-hours-column",
+      sql: `ALTER TABLE sourcing_rules ADD COLUMN interval_hours INTEGER`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

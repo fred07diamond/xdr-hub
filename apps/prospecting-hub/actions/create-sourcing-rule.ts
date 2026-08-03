@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { icps, personas, segmentContacts, segments, sourcingRules, subPersonas } from "../server/db/schema.js";
-import { buildSourcingRuleJobContent, computeSourcingRuleCron } from "../server/helpers/sourcing-rule-jobs.js";
+import { buildSourcingRuleJobContent, computeIntervalCron } from "../server/helpers/sourcing-rule-jobs.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 type Db = ReturnType<typeof getDb>;
@@ -29,7 +29,7 @@ async function cleanupOrphanedSegment(db: Db, segmentId: string): Promise<void> 
 
 export default defineAction({
   description:
-    "Create a sourcing rule — a per-XDR scheduled configuration for the CommonRoom-Prospector pipeline that targets a persona/sub-persona, applies company filters, and runs on a daily cron computed from the desired ready-by time.",
+    "Create a sourcing rule — a per-XDR scheduled configuration for the CommonRoom-Prospector pipeline that targets a persona/sub-persona, applies company filters, and runs on a recurring cron computed from the chosen interval.",
   schema: z.object({
     name: z.string().min(1),
     personaId: z.string().min(1),
@@ -38,13 +38,15 @@ export default defineAction({
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
     desiredVolume: z.number().int().min(1).max(200).default(20),
-    readyByTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM 24-hour format"),
-    leadHours: z.number().int().min(1).max(12).default(3),
+    intervalHours: z.number().int().refine(
+      (v) => [1, 2, 3, 4, 6, 8, 12, 24].includes(v),
+      "Must be one of 1, 2, 3, 4, 6, 8, 12, or 24 hours",
+    ),
   }),
   requiresAuth: true,
   http: { method: "POST" },
   run: async (
-    { name, personaId, subPersonaId, icpId, companyAllowList, companyDenyList, desiredVolume, readyByTime, leadHours },
+    { name, personaId, subPersonaId, icpId, companyAllowList, companyDenyList, desiredVolume, intervalHours },
     ctx,
   ) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
@@ -95,7 +97,7 @@ export default defineAction({
     });
 
     const ruleId = nanoid();
-    const cronExpression = computeSourcingRuleCron(readyByTime, leadHours);
+    const cronExpression = computeIntervalCron(intervalHours);
     const jobResourcePath = `jobs/sourcing-rule-${ruleId}.md`;
     const jobContent = buildSourcingRuleJobContent({
       cron: cronExpression,
@@ -124,8 +126,11 @@ export default defineAction({
         companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null,
         companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null,
         desiredVolume,
-        readyByTime,
-        leadHours,
+        // Legacy columns are NOT NULL but no longer meaningful — the schedule
+        // is now driven entirely by intervalHours. Placeholder values only.
+        readyByTime: "00:00",
+        leadHours: 1,
+        intervalHours,
         segmentId,
         jobResourcePath,
         status: "active",

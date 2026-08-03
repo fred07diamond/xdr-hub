@@ -32,6 +32,7 @@ export default defineAction({
         desiredVolume: sourcingRules.desiredVolume,
         readyByTime: sourcingRules.readyByTime,
         leadHours: sourcingRules.leadHours,
+        intervalHours: sourcingRules.intervalHours,
         segmentId: sourcingRules.segmentId,
         jobResourcePath: sourcingRules.jobResourcePath,
         status: sourcingRules.status,

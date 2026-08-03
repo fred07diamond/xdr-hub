@@ -14,6 +14,19 @@ export function computeSourcingRuleCron(readyByTime: string, leadHours: number):
   return `${minute} ${hour} * * *`;
 }
 
+/** Interval-hours values that divide evenly into 24, guaranteeing a predictable, non-drifting recurring schedule. */
+export const VALID_INTERVAL_HOURS = [1, 2, 3, 4, 6, 8, 12, 24] as const;
+
+/** Compute a recurring cron expression that fires every `intervalHours` hours, on the hour. */
+export function computeIntervalCron(intervalHours: number): string {
+  if (!VALID_INTERVAL_HOURS.includes(intervalHours as (typeof VALID_INTERVAL_HOURS)[number])) {
+    throw new Error(
+      `Invalid intervalHours ${intervalHours}: must be one of ${VALID_INTERVAL_HOURS.join(", ")} hours.`,
+    );
+  }
+  return `0 */${intervalHours} * * *`;
+}
+
 export function buildSourcingRuleJobContent(params: {
   cron: string;
   enabled: boolean;

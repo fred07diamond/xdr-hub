@@ -145,8 +145,9 @@ export const sourcingRules = table("sourcing_rules", {
   companyAllowList: text("company_allow_list"), // JSON-encoded string array
   companyDenyList: text("company_deny_list"), // JSON-encoded string array
   desiredVolume: integer("desired_volume").notNull().default(20),
-  readyByTime: text("ready_by_time").notNull(), // "HH:MM", 24-hour, server-local (single-timezone workspace)
-  leadHours: integer("lead_hours").notNull().default(3),
+  readyByTime: text("ready_by_time").notNull(), // "HH:MM", 24-hour, server-local (single-timezone workspace) — legacy, superseded by intervalHours
+  leadHours: integer("lead_hours").notNull().default(3), // legacy, superseded by intervalHours
+  intervalHours: integer("interval_hours"), // recurring cadence in hours (1/2/3/4/6/8/12/24); nullable for pre-migration rows
   segmentId: text("segment_id").notNull(),
   jobResourcePath: text("job_resource_path"),
   status: text("status", { enum: ["active", "paused"] }).notNull().default("active"),
