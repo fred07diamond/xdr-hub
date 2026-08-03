@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { desc, eq } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { syncRecords } from "../server/db/schema.js";
+import { sourcingRules, syncRecords } from "../server/db/schema.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 // Backing the "Recent runs" UI in lists.tsx's ListDetailView (Run History
@@ -20,8 +20,30 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async ({ ruleId }, ctx) => {
-    await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
+    const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
+
+    // Row-level scoping, mirroring run-sourcing-rule-pipeline.ts's own exact
+    // ownership check — the role gate above only proves the caller is SOME
+    // XDR/AE/admin, not that they're allowed to see THIS rule's run history.
+    // Without this, any XDR/AE who knows or guesses another rep's ruleId
+    // could read that rule's full run history (status, error messages,
+    // progress counts) for a rule they don't own and couldn't otherwise
+    // read via list-sourcing-rules (which itself scopes to ownerEmail).
+    const ruleRows = await db
+      .select({ id: sourcingRules.id, ownerEmail: sourcingRules.ownerEmail })
+      .from(sourcingRules)
+      .where(eq(sourcingRules.id, ruleId))
+      .limit(1);
+    const rule = ruleRows[0];
+    if (!rule) {
+      throw Object.assign(new Error(`Sourcing rule ${ruleId} not found.`), { statusCode: 404 });
+    }
+    if (rule.ownerEmail !== ctx!.userEmail! && role !== "admin") {
+      throw Object.assign(new Error("Only the sourcing rule's owner or a manager can view this rule's run history."), {
+        statusCode: 403,
+      });
+    }
 
     const rows = await db
       .select({
