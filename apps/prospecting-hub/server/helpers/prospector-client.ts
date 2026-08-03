@@ -96,10 +96,18 @@ export async function searchProspectorContacts(options: {
   if (effectiveTitleKeywords.length > 0) {
     // Multiple title keywords are a broadening, not narrowing, control — any
     // one matching is enough — so they're OR'd together as one clause group
-    // inside the overall AND filter, same nesting convention as the
-    // top-level `{ type: "and", clauses }` below.
+    // inside the overall AND filter. Verified live against the real
+    // commonroom_list_objects MCP tool: a nested filter GROUP (unlike a leaf
+    // stringFilter/numberFilter/etc.) requires target/objectConfigId/
+    // targetAssocPaths to all be present (null is fine) — omitting them
+    // fails MCP-side input validation before the request ever reaches
+    // CommonRoom's API, which would silently break every manual
+    // multi-keyword search.
     clauses.push({
       type: "or",
+      target: null,
+      objectConfigId: null,
+      targetAssocPaths: null,
       clauses: effectiveTitleKeywords.map((keyword) => ({
         type: "stringFilter",
         field: "title",

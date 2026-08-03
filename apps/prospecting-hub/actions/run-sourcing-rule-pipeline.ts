@@ -536,8 +536,20 @@ export default defineAction({
       const targetVolume = (meta.targetVolume as number | undefined) ?? rule.desiredVolume;
       const recordsFoundSoFar = (meta.recordsFound as number | undefined) ?? 0;
       const accumulatedMatches = (meta.accumulatedMatches as ProspectorMatch[] | undefined) ?? [];
-      const titleKeywords = (meta.titleKeywords as string[] | undefined) ?? [];
-      const seniorities = (meta.seniorities as string[] | undefined) ?? [];
+      // Fallback to the OLD singular keys (titleKeyword/seniority, string |
+      // null) for a run whose metadata was checkpointed by the code BEFORE
+      // this manual-filter commit renamed them to plural arrays — a
+      // sync_records row can sit in phase="searching" across a deploy (it
+      // only checkpoints when MAX_SEARCH_PAGES_PER_INVOCATION is hit without
+      // reaching target) and get resumed by post-deploy code. Without this
+      // fallback, an old row's filter silently vanished (empty array reads
+      // as "no filter"), pulling unfiltered pages into an otherwise
+      // persona-scoped search.
+      const oldTitleKeyword = meta.titleKeyword as string | null | undefined;
+      const oldSeniority = meta.seniority as string | null | undefined;
+      const titleKeywords =
+        (meta.titleKeywords as string[] | undefined) ?? (oldTitleKeyword ? [oldTitleKeyword] : []);
+      const seniorities = (meta.seniorities as string[] | undefined) ?? (oldSeniority ? [oldSeniority] : []);
       const minLinkedinFollowers = (meta.minLinkedinFollowers as number | null | undefined) ?? null;
       const previousCompanyName = (meta.previousCompanyName as string | null | undefined) ?? null;
       const effectiveAllowList = (meta.effectiveAllowList as string[] | null | undefined) ?? undefined;
