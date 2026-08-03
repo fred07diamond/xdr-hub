@@ -700,22 +700,24 @@ function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): strin
   return extras.length > 0 ? `${base}, ${extras.join(", ")}` : base;
 }
 
+function RunStatusIcon({ derived }: { derived: DerivedRunStatus }) {
+  if (derived === "success") return <IconCircleCheck size={14} className="text-green-600 dark:text-green-400" />;
+  if (derived === "failed" || derived === "timedOut") return <IconCircleX size={14} className="text-destructive" />;
+  return (
+    <span className="relative flex size-3.5 items-center justify-center">
+      <span className="absolute inline-flex size-2 animate-ping rounded-full bg-sky-500/70" />
+      <span className="relative inline-flex size-1.5 rounded-full bg-sky-500" />
+    </span>
+  );
+}
+
 function RunRow({ run }: { run: SourcingRuleRun }) {
   const derived = deriveRunStatus(run);
 
   return (
     <div className="flex items-start gap-2.5 px-4 py-2">
       <div className="mt-0.5 shrink-0">
-        {derived === "success" && <IconCircleCheck size={14} className="text-green-600 dark:text-green-400" />}
-        {(derived === "failed" || derived === "timedOut") && (
-          <IconCircleX size={14} className="text-destructive" />
-        )}
-        {derived === "running" && (
-          <span className="relative flex size-3.5 items-center justify-center">
-            <span className="absolute inline-flex size-2 animate-ping rounded-full bg-sky-500/70" />
-            <span className="relative inline-flex size-1.5 rounded-full bg-sky-500" />
-          </span>
-        )}
+        <RunStatusIcon derived={derived} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-1.5 text-xs">
@@ -743,29 +745,59 @@ function RunRow({ run }: { run: SourcingRuleRun }) {
 }
 
 function RecentRunsSection({ ruleId }: { ruleId: string }) {
+  // Collapsed by default — same disclosure pattern as "Advanced Prospector
+  // filters" above. A rule running every few hours accumulates run rows
+  // fast (each one ~3 lines tall), pushing the actual contact table below
+  // the fold; the collapsed header still surfaces the single most recent
+  // run's status/summary at a glance, so nothing important is hidden by
+  // default, only the historical tail.
+  const [open, setOpen] = useState(false);
   const { data } = useActionQuery(
     "list-sourcing-rule-runs",
     { ruleId },
     { refetchInterval: 30000, staleTime: 25000 },
   );
   const runs: SourcingRuleRun[] = (data as { runs?: SourcingRuleRun[] })?.runs ?? [];
+  const latest = runs[0];
+  const latestDerived = latest ? deriveRunStatus(latest) : null;
 
   return (
-    <div className="border-b border-border py-3">
-      <h2 className="px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Recent runs
-      </h2>
-      <div className="mt-2">
-        {runs.length === 0 ? (
-          <p className="px-4 text-xs text-muted-foreground/60">No runs yet</p>
-        ) : (
-          <div className="flex flex-col divide-y divide-border/60">
-            {runs.map((run) => (
-              <RunRow key={run.id} run={run} />
-            ))}
-          </div>
+    <div className="border-b border-border py-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-2 text-left"
+      >
+        <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Recent runs
+        </h2>
+        {latest && latestDerived && (
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <RunStatusIcon derived={latestDerived} />
+            <span className="truncate">{formatRunTimestamp(latest.startedAt)}</span>
+          </span>
         )}
-      </div>
+        <span className="flex-1" />
+        {runs.length > 0 && <span className="text-[11px] text-muted-foreground/60">{runs.length}</span>}
+        {open ? (
+          <IconChevronDown size={14} className="shrink-0 text-muted-foreground" />
+        ) : (
+          <IconChevronRight size={14} className="shrink-0 text-muted-foreground" />
+        )}
+      </button>
+      {open && (
+        <div className="pb-2">
+          {runs.length === 0 ? (
+            <p className="px-4 text-xs text-muted-foreground/60">No runs yet</p>
+          ) : (
+            <div className="flex flex-col divide-y divide-border/60">
+              {runs.map((run) => (
+                <RunRow key={run.id} run={run} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
