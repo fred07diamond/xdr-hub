@@ -293,13 +293,15 @@ function TagInput({
   );
 }
 
-// Company chip entry backed by a live search against companies already
-// synced from HubSpot (search-hubspot-companies.ts — reads this app's own
-// synced contact pool, no live HubSpot API call) — per Fred's explicit ask
-// to search/pick real known companies rather than retyping them blind.
-// Still allows committing a raw typed name via Enter for a company not yet
-// in HubSpot, same as TagInput — search only ever suggests, never
-// constrains what can be added.
+// Company chip entry backed by a live HubSpot company search
+// (search-hubspot-companies.ts — calls HubSpot's Companies Search API
+// directly, so it finds any real HubSpot company, not just ones with an
+// already-synced contact; falls back to this app's own synced-contact
+// company names if HubSpot isn't connected or the live call fails) — per
+// Fred's explicit ask to search/pick real known companies rather than
+// retyping them blind. Still allows committing a raw typed name via Enter
+// for a company not yet in HubSpot at all, same as TagInput — search only
+// ever suggests, never constrains what can be added.
 function CompanyTagInput({
   values,
   onChange,
@@ -1286,7 +1288,7 @@ function NewActiveListPanel({
             </label>
             <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
             <p className="mt-1 text-[11px] text-muted-foreground/60">
-              Search companies already synced from HubSpot, or type a new one and press Enter.
+              Search your HubSpot companies, or type a new one and press Enter.
             </p>
           </div>
 
