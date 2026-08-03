@@ -4,7 +4,9 @@ import {
   useActionQuery,
 } from "@agent-native/core/client";
 import {
+  IconAdjustmentsHorizontal,
   IconArrowLeft,
+  IconChevronDown,
   IconChevronRight,
   IconCircleCheck,
   IconCircleX,
@@ -24,7 +26,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ContactDrawer } from "@/components/ContactDrawer";
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
@@ -125,6 +127,10 @@ interface SourcingRule {
   icpId: string | null;
   companyAllowList: string | null;
   companyDenyList: string | null;
+  manualTitleKeywords: string | null;
+  manualSeniorities: string | null;
+  minLinkedinFollowers: number | null;
+  previousCompanyName: string | null;
   desiredVolume: number;
   // Legacy schedule fields — kept only for display fallback on pre-migration
   // rows that predate intervalHours (local dev only; never null in prod).
@@ -207,6 +213,314 @@ const INTERVAL_HOURS_OPTIONS: { value: number; label: string }[] = [
   { value: 24, label: "Once a day (24 hours)" },
 ];
 
+// Kept in sync with derive-prospector-filters.ts's server-side
+// SENIORITY_LEVELS — the same fixed vocabulary the LLM-derived filter is
+// constrained to, so a manual override picks from the same set of values
+// the auto-derived path could have produced.
+const SENIORITY_LEVELS = ["Intern", "Junior IC", "Senior IC", "Manager", "Director", "VP", "C-Level"];
+
+function parseFollowerCount(text: string): number | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+}
+
+function TagChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-foreground">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="text-muted-foreground hover:text-foreground"
+        aria-label={`Remove ${label}`}
+      >
+        <IconX size={11} />
+      </button>
+    </span>
+  );
+}
+
+// Generic multi-value chip entry — type text, press Enter or "," to commit
+// it as a chip; Backspace on an empty input removes the last chip; click a
+// chip's × to remove it directly. Case-insensitive dedup on commit. Replaces
+// a raw comma-separated text field per Fred's explicit ask for a
+// CommonRoom-like tagging UI instead of typing a delimited string.
+function TagInput({
+  values,
+  onChange,
+  placeholder,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+}) {
+  const [text, setText] = useState("");
+
+  function commit(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    if (!values.some((v) => v.toLowerCase() === trimmed.toLowerCase())) {
+      onChange([...values, trimmed]);
+    }
+    setText("");
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      commit(text);
+    } else if (e.key === "Backspace" && text === "" && values.length > 0) {
+      onChange(values.slice(0, -1));
+    }
+  }
+
+  return (
+    <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring">
+      {values.map((v, i) => (
+        <TagChip key={`${v}-${i}`} label={v} onRemove={() => onChange(values.filter((_, idx) => idx !== i))} />
+      ))}
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => commit(text)}
+        placeholder={values.length === 0 ? placeholder : undefined}
+        className="min-w-[80px] flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+      />
+    </div>
+  );
+}
+
+// Company chip entry backed by a live search against companies already
+// synced from HubSpot (search-hubspot-companies.ts — reads this app's own
+// synced contact pool, no live HubSpot API call) — per Fred's explicit ask
+// to search/pick real known companies rather than retyping them blind.
+// Still allows committing a raw typed name via Enter for a company not yet
+// in HubSpot, same as TagInput — search only ever suggests, never
+// constrains what can be added.
+function CompanyTagInput({
+  values,
+  onChange,
+  placeholder,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+}) {
+  const [text, setText] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedQuery(text.trim()), 200);
+    return () => clearTimeout(handle);
+  }, [text]);
+
+  const { data } = useActionQuery(
+    "search-hubspot-companies",
+    { query: debouncedQuery },
+    { enabled: debouncedQuery.length >= 2 },
+  );
+  const suggestions: string[] = ((data as { companies?: string[] } | undefined)?.companies ?? []).filter(
+    (c) => !values.some((v) => v.toLowerCase() === c.toLowerCase()),
+  );
+
+  function commit(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    if (!values.some((v) => v.toLowerCase() === trimmed.toLowerCase())) {
+      onChange([...values, trimmed]);
+    }
+    setText("");
+    setShowSuggestions(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      commit(text);
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
+    } else if (e.key === "Backspace" && text === "" && values.length > 0) {
+      onChange(values.slice(0, -1));
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring">
+        {values.map((v, i) => (
+          <TagChip key={`${v}-${i}`} label={v} onRemove={() => onChange(values.filter((_, idx) => idx !== i))} />
+        ))}
+        <input
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onKeyDown={handleKeyDown}
+          // Delay hiding so a suggestion button's onMouseDown still fires
+          // before blur would otherwise unmount the dropdown first.
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+          placeholder={values.length === 0 ? placeholder : undefined}
+          className="min-w-[80px] flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+        />
+      </div>
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                commit(s);
+              }}
+              className="flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Shared manual-filter controls for both the New Active List and Edit Rule
+// panels — lets an XDR go as broad or as specific as they want on the
+// CommonRoom Prospector search itself, instead of being limited to whatever
+// a single LLM call inferred from the persona doc (derive-prospector-
+// filters.ts). Title keywords/seniority REPLACE the auto-derived value when
+// set (see run-sourcing-rule-pipeline.ts's startFreshAndSearch); follower
+// count/previous company are purely additive narrowing filters with no
+// auto-derived equivalent. Collapsed by default (progressive disclosure —
+// most rules never need this), since the persona-driven defaults already
+// cover the common case.
+function AdvancedProspectorFilters({
+  titleKeywords,
+  onTitleKeywordsChange,
+  selectedSeniorities,
+  onToggleSeniority,
+  minFollowersText,
+  onMinFollowersChange,
+  previousCompanyName,
+  onPreviousCompanyNameChange,
+}: {
+  titleKeywords: string[];
+  onTitleKeywordsChange: (next: string[]) => void;
+  selectedSeniorities: Set<string>;
+  onToggleSeniority: (level: string) => void;
+  minFollowersText: string;
+  onMinFollowersChange: (v: string) => void;
+  previousCompanyName: string;
+  onPreviousCompanyNameChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const activeCount =
+    (titleKeywords.length > 0 ? 1 : 0) +
+    (selectedSeniorities.size > 0 ? 1 : 0) +
+    (minFollowersText.trim() ? 1 : 0) +
+    (previousCompanyName.trim() ? 1 : 0);
+
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+      >
+        <IconAdjustmentsHorizontal size={14} className="text-muted-foreground" />
+        <span className="flex-1 text-xs font-medium text-foreground">Advanced Prospector filters</span>
+        {activeCount > 0 && (
+          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            {activeCount}
+          </span>
+        )}
+        {open ? (
+          <IconChevronDown size={14} className="text-muted-foreground" />
+        ) : (
+          <IconChevronRight size={14} className="text-muted-foreground" />
+        )}
+      </button>
+      {open && (
+        <div className="flex flex-col gap-4 border-t border-border p-3">
+          <p className="text-[11px] text-muted-foreground/70">
+            By default, title and seniority are auto-derived from the persona. Set either below to take direct
+            control instead — go broader (fewer/looser keywords) or narrower (more specific ones) than the
+            auto-derived guess.
+          </p>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Title keywords (optional override)
+            </label>
+            <TagInput
+              values={titleKeywords}
+              onChange={onTitleKeywordsChange}
+              placeholder="Type a title, press Enter…"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              Matches ANY of these (broadens the search) — replaces the auto-derived keyword.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Seniority (optional override)
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {SENIORITY_LEVELS.map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => onToggleSeniority(level)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    selectedSeniorities.has(level)
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              Pick one or more — replaces the auto-derived seniority when any are selected.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Minimum LinkedIn followers (optional)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={minFollowersText}
+              onChange={(e) => onMinFollowersChange(e.target.value)}
+              placeholder="e.g. 500"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Previous company (optional)
+            </label>
+            <input
+              value={previousCompanyName}
+              onChange={(e) => onPreviousCompanyNameChange(e.target.value)}
+              placeholder="e.g. Google"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground/60">Finds people who previously worked there.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatRelativeTime(iso: string | null) {
   if (!iso) return "Never refreshed";
   const then = new Date(iso).getTime();
@@ -234,13 +548,6 @@ function errorMessage(err: unknown, fallback: string) {
     return "This took too long and timed out — try again, or lower the desired volume for a faster run.";
   }
   return message || fallback;
-}
-
-function parseListInput(value: string): string[] {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 function safeParseList(json: string | null): string[] {
@@ -750,11 +1057,15 @@ function NewActiveListPanel({
   const [personaId, setPersonaId] = useState("");
   const [subPersonaId, setSubPersonaId] = useState("");
   const [icpId, setIcpId] = useState("");
-  const [allowListText, setAllowListText] = useState("");
-  const [denyListText, setDenyListText] = useState("");
+  const [allowList, setAllowList] = useState<string[]>([]);
+  const [denyList, setDenyList] = useState<string[]>([]);
   const [selectedFocusAccountIds, setSelectedFocusAccountIds] = useState<Set<string>>(new Set());
   const [desiredVolume, setDesiredVolume] = useState(20);
   const [intervalHours, setIntervalHours] = useState<number | "">("");
+  const [titleKeywords, setTitleKeywords] = useState<string[]>([]);
+  const [selectedSeniorities, setSelectedSeniorities] = useState<Set<string>>(new Set());
+  const [minFollowersText, setMinFollowersText] = useState("");
+  const [previousCompanyName, setPreviousCompanyName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const { data: subPersonaData, isLoading: subPersonasLoading } = useActionQuery(
@@ -768,6 +1079,15 @@ function NewActiveListPanel({
   function handlePersonaChange(nextPersonaId: string) {
     setPersonaId(nextPersonaId);
     setSubPersonaId("");
+  }
+
+  function toggleSeniority(level: string) {
+    setSelectedSeniorities((prev) => {
+      const next = new Set(prev);
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
+      return next;
+    });
   }
 
   function toggleFocusAccount(id: string) {
@@ -785,13 +1105,12 @@ function NewActiveListPanel({
     setError(null);
     if (!canCreate) return;
     // Focus-Accounts-based targeting is an alternative/addition to the
-    // free-text allow-list, not a replacement — merge both into one array
-    // and dedupe so a company picked both ways isn't sent twice.
-    const freeTextAllowList = parseListInput(allowListText);
+    // manually-picked allow-list, not a replacement — merge both into one
+    // array and dedupe so a company picked both ways isn't sent twice.
     const focusAccountNames = focusAccounts
       .filter((a) => selectedFocusAccountIds.has(a.id))
       .map((a) => a.companyName);
-    const mergedAllowList = Array.from(new Set([...freeTextAllowList, ...focusAccountNames]));
+    const mergedAllowList = Array.from(new Set([...allowList, ...focusAccountNames]));
     try {
       await createSourcingRule.mutateAsync({
         name: name.trim(),
@@ -799,9 +1118,11 @@ function NewActiveListPanel({
         subPersonaId: subPersonaId || undefined,
         icpId: icpId || undefined,
         companyAllowList: mergedAllowList.length ? mergedAllowList : undefined,
-        companyDenyList: parseListInput(denyListText).length
-          ? parseListInput(denyListText)
-          : undefined,
+        companyDenyList: denyList.length ? denyList : undefined,
+        manualTitleKeywords: titleKeywords.length ? titleKeywords : undefined,
+        manualSeniorities: selectedSeniorities.size > 0 ? Array.from(selectedSeniorities) : undefined,
+        minLinkedinFollowers: parseFollowerCount(minFollowersText),
+        previousCompanyName: previousCompanyName.trim() || undefined,
         desiredVolume,
         intervalHours: intervalHours as number,
       });
@@ -963,13 +1284,10 @@ function NewActiveListPanel({
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               Company allow-list (optional)
             </label>
-            <input
-              value={allowListText}
-              onChange={(e) => setAllowListText(e.target.value)}
-              placeholder="Acme Inc, Globex Corp"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground/60">Comma-separated company names.</p>
+            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              Search companies already synced from HubSpot, or type a new one and press Enter.
+            </p>
           </div>
 
           <div>
@@ -1012,14 +1330,19 @@ function NewActiveListPanel({
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               Company deny-list (optional)
             </label>
-            <input
-              value={denyListText}
-              onChange={(e) => setDenyListText(e.target.value)}
-              placeholder="Existing Customer Co"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground/60">Comma-separated company names.</p>
+            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
           </div>
+
+          <AdvancedProspectorFilters
+            titleKeywords={titleKeywords}
+            onTitleKeywordsChange={setTitleKeywords}
+            selectedSeniorities={selectedSeniorities}
+            onToggleSeniority={toggleSeniority}
+            minFollowersText={minFollowersText}
+            onMinFollowersChange={setMinFollowersText}
+            previousCompanyName={previousCompanyName}
+            onPreviousCompanyNameChange={setPreviousCompanyName}
+          />
 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
@@ -1084,11 +1407,13 @@ function EditRulePanel({
   const initialAllowList = safeParseList(rule.companyAllowList);
   const initialDenyList = safeParseList(rule.companyDenyList);
   const initialIcpId = rule.icpId ?? "";
+  const initialTitleKeywords = safeParseList(rule.manualTitleKeywords);
+  const initialSeniorities = safeParseList(rule.manualSeniorities);
 
   const [name, setName] = useState(rule.name);
   const [icpId, setIcpId] = useState(initialIcpId);
-  const [allowListText, setAllowListText] = useState(initialAllowList.join(", "));
-  const [denyListText, setDenyListText] = useState(initialDenyList.join(", "));
+  const [allowList, setAllowList] = useState<string[]>(initialAllowList);
+  const [denyList, setDenyList] = useState<string[]>(initialDenyList);
   const [desiredVolume, setDesiredVolume] = useState(rule.desiredVolume);
   // Rules created before this feature shipped have no intervalHours yet —
   // default the dropdown to a sensible starting value (4h) rather than
@@ -1096,16 +1421,37 @@ function EditRulePanel({
   // real interval to persist one.
   const initialIntervalHours = rule.intervalHours ?? 4;
   const [intervalHours, setIntervalHours] = useState(initialIntervalHours);
+  const [titleKeywords, setTitleKeywords] = useState<string[]>(initialTitleKeywords);
+  const [selectedSeniorities, setSelectedSeniorities] = useState<Set<string>>(new Set(initialSeniorities));
+  const [minFollowersText, setMinFollowersText] = useState(rule.minLinkedinFollowers?.toString() ?? "");
+  const [previousCompanyName, setPreviousCompanyName] = useState(rule.previousCompanyName ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  const nextAllowList = parseListInput(allowListText);
-  const nextDenyList = parseListInput(denyListText);
+  function toggleSeniority(level: string) {
+    setSelectedSeniorities((prev) => {
+      const next = new Set(prev);
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
+      return next;
+    });
+  }
+
+  const nextAllowList = allowList;
+  const nextDenyList = denyList;
+  const nextTitleKeywords = titleKeywords;
+  const nextSeniorities = Array.from(selectedSeniorities);
+  const nextMinFollowers = parseFollowerCount(minFollowersText) ?? null;
+  const nextPreviousCompanyName = previousCompanyName.trim() || null;
 
   const hasChanges =
     name.trim() !== rule.name ||
     icpId !== initialIcpId ||
     !sameList(nextAllowList, initialAllowList) ||
     !sameList(nextDenyList, initialDenyList) ||
+    !sameList(nextTitleKeywords, initialTitleKeywords) ||
+    !sameList(nextSeniorities, initialSeniorities) ||
+    nextMinFollowers !== (rule.minLinkedinFollowers ?? null) ||
+    nextPreviousCompanyName !== (rule.previousCompanyName ?? null) ||
     desiredVolume !== rule.desiredVolume ||
     intervalHours !== rule.intervalHours;
 
@@ -1121,6 +1467,12 @@ function EditRulePanel({
       ...(icpId !== initialIcpId ? { icpId: icpId || null } : {}),
       ...(!sameList(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
       ...(!sameList(nextDenyList, initialDenyList) ? { companyDenyList: nextDenyList } : {}),
+      ...(!sameList(nextTitleKeywords, initialTitleKeywords) ? { manualTitleKeywords: nextTitleKeywords } : {}),
+      ...(!sameList(nextSeniorities, initialSeniorities) ? { manualSeniorities: nextSeniorities } : {}),
+      ...(nextMinFollowers !== (rule.minLinkedinFollowers ?? null) ? { minLinkedinFollowers: nextMinFollowers } : {}),
+      ...(nextPreviousCompanyName !== (rule.previousCompanyName ?? null)
+        ? { previousCompanyName: nextPreviousCompanyName }
+        : {}),
       ...(desiredVolume !== rule.desiredVolume ? { desiredVolume } : {}),
       ...(intervalHours !== rule.intervalHours ? { intervalHours } : {}),
     };
@@ -1225,25 +1577,26 @@ function EditRulePanel({
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               Company allow-list
             </label>
-            <input
-              value={allowListText}
-              onChange={(e) => setAllowListText(e.target.value)}
-              placeholder="Acme Inc, Globex Corp"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
           </div>
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               Company deny-list
             </label>
-            <input
-              value={denyListText}
-              onChange={(e) => setDenyListText(e.target.value)}
-              placeholder="Existing Customer Co"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
           </div>
+
+          <AdvancedProspectorFilters
+            titleKeywords={titleKeywords}
+            onTitleKeywordsChange={setTitleKeywords}
+            selectedSeniorities={selectedSeniorities}
+            onToggleSeniority={toggleSeniority}
+            minFollowersText={minFollowersText}
+            onMinFollowersChange={setMinFollowersText}
+            previousCompanyName={previousCompanyName}
+            onPreviousCompanyNameChange={setPreviousCompanyName}
+          />
 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
@@ -1656,7 +2009,12 @@ function ListDetailView({
                   </span>
                 )}
               </div>
-              {(safeParseList(rule.companyAllowList).length > 0 || safeParseList(rule.companyDenyList).length > 0) && (
+              {(safeParseList(rule.companyAllowList).length > 0 ||
+                safeParseList(rule.companyDenyList).length > 0 ||
+                safeParseList(rule.manualTitleKeywords).length > 0 ||
+                safeParseList(rule.manualSeniorities).length > 0 ||
+                rule.minLinkedinFollowers != null ||
+                rule.previousCompanyName) && (
                 <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] text-muted-foreground/70">
                   {safeParseList(rule.companyAllowList).length > 0 && (
                     <p>Allow: {safeParseList(rule.companyAllowList).join(", ")}</p>
@@ -1664,6 +2022,14 @@ function ListDetailView({
                   {safeParseList(rule.companyDenyList).length > 0 && (
                     <p>Deny: {safeParseList(rule.companyDenyList).join(", ")}</p>
                   )}
+                  {safeParseList(rule.manualTitleKeywords).length > 0 && (
+                    <p>Titles: {safeParseList(rule.manualTitleKeywords).join(", ")}</p>
+                  )}
+                  {safeParseList(rule.manualSeniorities).length > 0 && (
+                    <p>Seniority: {safeParseList(rule.manualSeniorities).join(", ")}</p>
+                  )}
+                  {rule.minLinkedinFollowers != null && <p>Min. followers: {rule.minLinkedinFollowers}</p>}
+                  {rule.previousCompanyName && <p>Previously at: {rule.previousCompanyName}</p>}
                 </div>
               )}
             </>

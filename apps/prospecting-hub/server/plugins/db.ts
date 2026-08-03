@@ -354,6 +354,26 @@ export default runMigrations(
         );
         CREATE UNIQUE INDEX IF NOT EXISTS sourcing_rule_run_targets_sync_contact_idx ON sourcing_rule_run_targets(sync_record_id, contact_id)`,
     },
+    {
+      version: 31,
+      name: "sourcing-rules-manual-prospector-filters",
+      // Manual overrides for the two auto-derived (LLM-guessed) search
+      // parameters, plus two purely-additive filters CommonRoom's own
+      // Prospector search already supports but this app never exposed —
+      // lets an XDR go as narrow or as broad as they want instead of being
+      // stuck with whatever a single LLM call inferred from the persona doc.
+      // manual_title_keywords/manual_seniorities: JSON string arrays,
+      // nullable — when set (non-empty), REPLACE the corresponding
+      // LLM-derived value in run-sourcing-rule-pipeline.ts's
+      // startFreshAndSearch; when unset, today's auto-derivation behavior is
+      // completely unchanged. min_linkedin_followers/previous_company_name
+      // are always additive narrowing filters with no auto-derived
+      // equivalent.
+      sql: `ALTER TABLE sourcing_rules ADD COLUMN manual_title_keywords TEXT;
+        ALTER TABLE sourcing_rules ADD COLUMN manual_seniorities TEXT;
+        ALTER TABLE sourcing_rules ADD COLUMN min_linkedin_followers INTEGER;
+        ALTER TABLE sourcing_rules ADD COLUMN previous_company_name TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

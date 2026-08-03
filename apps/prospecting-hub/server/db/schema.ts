@@ -160,6 +160,14 @@ export const sourcingRules = table("sourcing_rules", {
   icpId: text("icp_id"), // optional company-level qualification criteria; no FK enforcement, matches this app's convention
   companyAllowList: text("company_allow_list"), // JSON-encoded string array
   companyDenyList: text("company_deny_list"), // JSON-encoded string array
+  // Manual overrides for the LLM-auto-derived title/seniority search
+  // parameters (JSON-encoded string arrays) — replace the corresponding
+  // auto-derived value when non-empty, matching today's behavior when null.
+  manualTitleKeywords: text("manual_title_keywords"),
+  manualSeniorities: text("manual_seniorities"),
+  // Purely additive Prospector filters with no auto-derived equivalent.
+  minLinkedinFollowers: integer("min_linkedin_followers"),
+  previousCompanyName: text("previous_company_name"),
   desiredVolume: integer("desired_volume").notNull().default(20),
   readyByTime: text("ready_by_time").notNull(), // "HH:MM", 24-hour, server-local (single-timezone workspace) — legacy, superseded by intervalHours
   leadHours: integer("lead_hours").notNull().default(3), // legacy, superseded by intervalHours

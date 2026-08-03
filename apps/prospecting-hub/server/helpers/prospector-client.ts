@@ -71,14 +71,57 @@ export async function searchProspectorContacts(options: {
   orgId: string | null | undefined;
   titleKeyword?: string;
   seniority?: string;
+  // Manual multi-value overrides (a rule's manualTitleKeywords/
+  // manualSeniorities, when the XDR sets them directly instead of relying on
+  // the single LLM-derived value above) — when non-empty, these REPLACE
+  // titleKeyword/seniority entirely rather than combining with them, since
+  // the caller (run-sourcing-rule-pipeline.ts) already resolves which one to
+  // use before calling this function. Kept as separate params (rather than
+  // just accepting an array for titleKeyword/seniority) so the two existing
+  // single-value callers (import-prospects-to-segment.ts,
+  // search-commonroom-prospects.ts) need no changes at all.
+  titleKeywords?: string[];
+  seniorities?: string[];
+  // Purely additive filters with no LLM-derived equivalent — always AND'd
+  // in on top of whichever title/seniority filter ends up applying.
+  minLinkedinFollowers?: number;
+  previousCompanyName?: string;
   companyAllowList?: string[];
   companyDenyList?: string[];
   limit: number; // page size hint for THIS ONE call, not the overall target
   cursor?: string;
 }): Promise<{ records: ProspectorMatch[]; nextCursor?: string; hasMore: boolean }> {
   const clauses: unknown[] = [];
-  if (options.titleKeyword) {
+  const effectiveTitleKeywords = options.titleKeywords?.filter(Boolean) ?? [];
+  if (effectiveTitleKeywords.length > 0) {
+    // Multiple title keywords are a broadening, not narrowing, control — any
+    // one matching is enough — so they're OR'd together as one clause group
+    // inside the overall AND filter, same nesting convention as the
+    // top-level `{ type: "and", clauses }` below.
+    clauses.push({
+      type: "or",
+      clauses: effectiveTitleKeywords.map((keyword) => ({
+        type: "stringFilter",
+        field: "title",
+        params: { op: "like", value: keyword },
+      })),
+    });
+  } else if (options.titleKeyword) {
     clauses.push({ type: "stringFilter", field: "title", params: { op: "like", value: options.titleKeyword } });
+  }
+  if (options.previousCompanyName) {
+    clauses.push({
+      type: "stringFilter",
+      field: "previousCompanyName",
+      params: { op: "like", value: options.previousCompanyName },
+    });
+  }
+  if (options.minLinkedinFollowers !== undefined) {
+    clauses.push({
+      type: "numberFilter",
+      field: "linkedInFollowerCount",
+      params: { op: "gte", value: options.minLinkedinFollowers },
+    });
   }
   // NOTE: ProspectorContact has NO "seniority" filter field on CommonRoom's
   // live catalog (confirmed via commonroom_get_catalog — its filters are
@@ -110,7 +153,9 @@ export async function searchProspectorContacts(options: {
 
   const allowList = options.companyAllowList?.map((c) => c.toLowerCase()).filter(Boolean);
   const denyList = options.companyDenyList?.map((c) => c.toLowerCase()).filter(Boolean);
-  const normalizedSeniority = options.seniority ? normalizeSeniority(options.seniority) : null;
+  const effectiveSeniorities = (options.seniorities?.filter(Boolean) ?? []).map(normalizeSeniority);
+  const normalizedSeniority =
+    effectiveSeniorities.length === 0 && options.seniority ? normalizeSeniority(options.seniority) : null;
 
   const filtered = records.filter((record) => {
     const company = record.companyName?.toLowerCase();
@@ -120,7 +165,13 @@ export async function searchProspectorContacts(options: {
     if (denyList && denyList.length > 0) {
       if (company && denyList.includes(company)) return false;
     }
-    if (normalizedSeniority) {
+    if (effectiveSeniorities.length > 0) {
+      const recordSeniority = record.seniority ? normalizeSeniority(record.seniority) : "";
+      const matchesAny =
+        !!recordSeniority &&
+        effectiveSeniorities.some((s) => recordSeniority.includes(s) || s.includes(recordSeniority));
+      if (!matchesAny) return false;
+    } else if (normalizedSeniority) {
       const recordSeniority = record.seniority ? normalizeSeniority(record.seniority) : "";
       if (!recordSeniority || (!recordSeniority.includes(normalizedSeniority) && !normalizedSeniority.includes(recordSeniority))) {
         return false;

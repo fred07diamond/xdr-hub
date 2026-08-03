@@ -484,26 +484,41 @@ export default defineAction({
               .join("\n\n---\n\n")
           : undefined;
 
-      // deriveProspectorFilters runs exactly ONCE per overall run, here at
-      // the very start of the search phase — its result (titleKeyword/
-      // seniority) is cached into sync_records.metadata below so a resumed
-      // search-continuation invocation reuses it instead of making another
-      // LLM call.
-      const filters = await deriveProspectorFilters({
-        personaId: rule.personaId,
-        subPersonaId: rule.subPersonaId,
-        userEmail: rule.ownerEmail,
-        orgId: ctx?.orgId,
-        extraContext,
-      });
+      // Manual overrides — when the XDR sets these directly on the rule,
+      // they REPLACE the corresponding LLM-derived value entirely. Only call
+      // deriveProspectorFilters (an LLM call) when at least one of the two
+      // still needs an auto-derived fallback; skip it entirely when both are
+      // manually set, since there's nothing left for it to contribute.
+      const manualTitleKeywords: string[] = rule.manualTitleKeywords ? JSON.parse(rule.manualTitleKeywords) : [];
+      const manualSeniorities: string[] = rule.manualSeniorities ? JSON.parse(rule.manualSeniorities) : [];
+
+      let titleKeywords = manualTitleKeywords;
+      let seniorities = manualSeniorities;
+      if (manualTitleKeywords.length === 0 || manualSeniorities.length === 0) {
+        // deriveProspectorFilters runs at most ONCE per overall run, here at
+        // the very start of the search phase — its result is cached into
+        // sync_records.metadata below so a resumed search-continuation
+        // invocation reuses it instead of making another LLM call.
+        const filters = await deriveProspectorFilters({
+          personaId: rule.personaId,
+          subPersonaId: rule.subPersonaId,
+          userEmail: rule.ownerEmail,
+          orgId: ctx?.orgId,
+          extraContext,
+        });
+        if (manualTitleKeywords.length === 0 && filters.titleKeyword) titleKeywords = [filters.titleKeyword];
+        if (manualSeniorities.length === 0 && filters.seniority) seniorities = [filters.seniority];
+      }
 
       return await runSearchRound({
         cursor: undefined,
         targetVolume: rule.desiredVolume,
         recordsFoundSoFar: 0,
         accumulatedMatches: [],
-        titleKeyword: filters.titleKeyword,
-        seniority: filters.seniority,
+        titleKeywords,
+        seniorities,
+        minLinkedinFollowers: rule.minLinkedinFollowers ?? null,
+        previousCompanyName: rule.previousCompanyName ?? null,
         effectiveAllowList,
         effectiveDenyList,
         companiesConsidered,
@@ -521,8 +536,10 @@ export default defineAction({
       const targetVolume = (meta.targetVolume as number | undefined) ?? rule.desiredVolume;
       const recordsFoundSoFar = (meta.recordsFound as number | undefined) ?? 0;
       const accumulatedMatches = (meta.accumulatedMatches as ProspectorMatch[] | undefined) ?? [];
-      const titleKeyword = (meta.titleKeyword as string | null | undefined) ?? null;
-      const seniority = (meta.seniority as string | null | undefined) ?? null;
+      const titleKeywords = (meta.titleKeywords as string[] | undefined) ?? [];
+      const seniorities = (meta.seniorities as string[] | undefined) ?? [];
+      const minLinkedinFollowers = (meta.minLinkedinFollowers as number | null | undefined) ?? null;
+      const previousCompanyName = (meta.previousCompanyName as string | null | undefined) ?? null;
       const effectiveAllowList = (meta.effectiveAllowList as string[] | null | undefined) ?? undefined;
       const effectiveDenyList = (meta.effectiveDenyList as string[] | null | undefined) ?? undefined;
       const companiesConsidered = (meta.companiesConsidered as number | null | undefined) ?? null;
@@ -533,8 +550,10 @@ export default defineAction({
         targetVolume,
         recordsFoundSoFar,
         accumulatedMatches,
-        titleKeyword,
-        seniority,
+        titleKeywords,
+        seniorities,
+        minLinkedinFollowers,
+        previousCompanyName,
         effectiveAllowList: effectiveAllowList ?? undefined,
         effectiveDenyList: effectiveDenyList ?? undefined,
         companiesConsidered,
@@ -555,8 +574,10 @@ export default defineAction({
       targetVolume: number;
       recordsFoundSoFar: number;
       accumulatedMatches: ProspectorMatch[];
-      titleKeyword: string | null;
-      seniority: string | null;
+      titleKeywords: string[];
+      seniorities: string[];
+      minLinkedinFollowers: number | null;
+      previousCompanyName: string | null;
       effectiveAllowList: string[] | undefined;
       effectiveDenyList: string[] | undefined;
       companiesConsidered: number | null;
@@ -576,8 +597,10 @@ export default defineAction({
 
         const pageResult = await searchProspectorContacts({
           orgId: ctx?.orgId,
-          titleKeyword: params.titleKeyword ?? undefined,
-          seniority: params.seniority ?? undefined,
+          titleKeywords: params.titleKeywords,
+          seniorities: params.seniorities,
+          minLinkedinFollowers: params.minLinkedinFollowers ?? undefined,
+          previousCompanyName: params.previousCompanyName ?? undefined,
           companyAllowList: params.effectiveAllowList,
           companyDenyList: params.effectiveDenyList,
           limit: remainingNeeded,
@@ -618,8 +641,10 @@ export default defineAction({
               targetVolume: params.targetVolume,
               recordsFound: totalRecordsFound,
               accumulatedMatches: allMatches,
-              titleKeyword: params.titleKeyword,
-              seniority: params.seniority,
+              titleKeywords: params.titleKeywords,
+              seniorities: params.seniorities,
+              minLinkedinFollowers: params.minLinkedinFollowers,
+              previousCompanyName: params.previousCompanyName,
               effectiveAllowList: params.effectiveAllowList ?? null,
               effectiveDenyList: params.effectiveDenyList ?? null,
               companiesConsidered: params.companiesConsidered,

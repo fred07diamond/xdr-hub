@@ -20,6 +20,10 @@ export default defineAction({
     icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
+    manualTitleKeywords: z.array(z.string()).nullish(),
+    manualSeniorities: z.array(z.string()).nullish(),
+    minLinkedinFollowers: z.number().int().min(0).nullish(),
+    previousCompanyName: z.string().nullish(),
     desiredVolume: z.number().int().min(1).max(1000).nullish(),
     intervalHours: z
       .number()
@@ -34,7 +38,20 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async (
-    { id, name, icpId, companyAllowList, companyDenyList, desiredVolume, intervalHours, status },
+    {
+      id,
+      name,
+      icpId,
+      companyAllowList,
+      companyDenyList,
+      manualTitleKeywords,
+      manualSeniorities,
+      minLinkedinFollowers,
+      previousCompanyName,
+      desiredVolume,
+      intervalHours,
+      status,
+    },
     ctx,
   ) => {
     const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
@@ -88,6 +105,14 @@ export default defineAction({
         ...(icpId !== undefined ? { icpId } : {}),
         ...(companyAllowList !== undefined ? { companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null } : {}),
         ...(companyDenyList !== undefined ? { companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null } : {}),
+        ...(manualTitleKeywords !== undefined
+          ? { manualTitleKeywords: manualTitleKeywords && manualTitleKeywords.length > 0 ? JSON.stringify(manualTitleKeywords) : null }
+          : {}),
+        ...(manualSeniorities !== undefined
+          ? { manualSeniorities: manualSeniorities && manualSeniorities.length > 0 ? JSON.stringify(manualSeniorities) : null }
+          : {}),
+        ...(minLinkedinFollowers !== undefined ? { minLinkedinFollowers } : {}),
+        ...(previousCompanyName !== undefined ? { previousCompanyName } : {}),
         ...(desiredVolume != null ? { desiredVolume } : {}),
         ...(intervalHours != null ? { intervalHours } : {}),
         ...(status != null ? { status } : {}),

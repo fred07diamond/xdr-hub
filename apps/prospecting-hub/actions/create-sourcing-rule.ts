@@ -41,6 +41,10 @@ export default defineAction({
     icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
+    manualTitleKeywords: z.array(z.string()).nullish(),
+    manualSeniorities: z.array(z.string()).nullish(),
+    minLinkedinFollowers: z.number().int().min(0).nullish(),
+    previousCompanyName: z.string().nullish(),
     desiredVolume: z.number().int().min(1).max(1000).default(20),
     intervalHours: z.number().int().refine(
       (v) => VALID_INTERVAL_HOURS.includes(v as (typeof VALID_INTERVAL_HOURS)[number]),
@@ -50,7 +54,20 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async (
-    { name, personaId, subPersonaId, icpId, companyAllowList, companyDenyList, desiredVolume, intervalHours },
+    {
+      name,
+      personaId,
+      subPersonaId,
+      icpId,
+      companyAllowList,
+      companyDenyList,
+      manualTitleKeywords,
+      manualSeniorities,
+      minLinkedinFollowers,
+      previousCompanyName,
+      desiredVolume,
+      intervalHours,
+    },
     ctx,
   ) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
@@ -129,6 +146,10 @@ export default defineAction({
         icpId: icpId ?? null,
         companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null,
         companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null,
+        manualTitleKeywords: manualTitleKeywords && manualTitleKeywords.length > 0 ? JSON.stringify(manualTitleKeywords) : null,
+        manualSeniorities: manualSeniorities && manualSeniorities.length > 0 ? JSON.stringify(manualSeniorities) : null,
+        minLinkedinFollowers: minLinkedinFollowers ?? null,
+        previousCompanyName: previousCompanyName ?? null,
         desiredVolume,
         // Legacy columns are NOT NULL but no longer meaningful — the schedule
         // is now driven entirely by intervalHours. Placeholder values only.
