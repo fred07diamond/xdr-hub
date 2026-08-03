@@ -89,6 +89,7 @@ export default defineAction({
         imported: parsedMetadata.imported as number | undefined,
         scored: parsedMetadata.scored as number | undefined,
         deduped: parsedMetadata.deduped as number | undefined,
+        alreadyKnown: parsedMetadata.alreadyKnown as number | undefined,
         scoringErrorCount: parsedMetadata.scoringErrorCount as number | undefined,
         companiesConsidered: parsedMetadata.companiesConsidered as number | undefined,
         icpQualifiedZeroCompanies: parsedMetadata.icpQualifiedZeroCompanies as boolean | undefined,

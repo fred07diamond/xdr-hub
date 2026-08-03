@@ -158,6 +158,7 @@ interface SourcingRuleRun {
   imported?: number;
   scored?: number;
   deduped?: number;
+  alreadyKnown?: number;
   scoringErrorCount?: number;
   companiesConsidered?: number;
   icpQualifiedZeroCompanies?: boolean;
@@ -355,10 +356,14 @@ function formatRunTimestamp(iso: string | null) {
 }
 
 // Builds the compact outcome summary shown next to each run — e.g.
-// "12 found · 8 scored, 2 deduped" for a success, or "12 found, 8 scored"
-// for a still-partial timed-out run. Any count that's missing/zero (a run
-// that died before even reaching that checkpoint) is simply omitted rather
-// than shown as a misleading "0 found".
+// "12 found · 8 scored, 3 new, 5 already known, 2 deduped" for a success, or
+// "12 found, 8 scored" for a still-partial timed-out run. Any count that's
+// missing/zero (a run that died before even reaching that checkpoint) is
+// simply omitted rather than shown as a misleading "0 found". `imported` and
+// `alreadyKnown` are surfaced explicitly (not just `found`/`scored`) because
+// re-running a rule with no fresh CommonRoom inventory legitimately re-finds
+// mostly-the-same people every time — "12 found · 8 scored" alone reads as
+// forward progress even when 0 of those 12 were actually new.
 function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): string {
   const foundCount = derived === "success" ? run.recordsPulled ?? undefined : run.recordsFound;
   const parts: string[] = [];
@@ -366,6 +371,8 @@ function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): strin
   if (run.scored) parts.push(`${run.scored} scored`);
   const base = parts.length > 0 ? parts.join(" · ") : "No progress recorded";
   const extras: string[] = [];
+  if (run.imported && run.imported > 0) extras.push(`${run.imported} new`);
+  if (run.alreadyKnown && run.alreadyKnown > 0) extras.push(`${run.alreadyKnown} already known`);
   if (run.deduped && run.deduped > 0) extras.push(`${run.deduped} deduped`);
   if (run.scoringErrorCount && run.scoringErrorCount > 0) {
     extras.push(`${run.scoringErrorCount} error${run.scoringErrorCount === 1 ? "" : "s"}`);

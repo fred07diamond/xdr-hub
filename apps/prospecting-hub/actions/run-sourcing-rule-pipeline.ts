@@ -9,6 +9,7 @@ import {
   libraryDocs,
   personas,
   segmentContacts,
+  segments,
   sourcingRuleRunTargets,
   sourcingRules,
   subPersonas,
@@ -100,6 +101,13 @@ interface PipelineResult {
   remaining: number;
   imported: number;
   deduped: number;
+  // Genuinely new-vs-rediscovered breakdown: a same-source (externalId,
+  // source="prospector") rematch used to be silently counted as `imported`,
+  // even though it's a re-discovery of a contact this rule already found on
+  // a prior run, not a new one. Tracked separately so the run-history UI can
+  // show "found 20, 0 new" honestly instead of implying fresh growth that
+  // didn't happen.
+  alreadyKnown: number;
   scoringErrors: string[];
   companiesConsidered: number | null;
 }
@@ -425,6 +433,9 @@ export default defineAction({
             metadata: JSON.stringify({ sourcingRuleId: ruleId, companiesConsidered, icpQualifiedZeroCompanies: true }),
           })
           .where(eq(syncRecords.id, syncRecordId));
+        // This is also a genuine successful-completion path (bypasses
+        // finishRun entirely) — same lastRefreshedAt reasoning as finishRun.
+        await db.update(segments).set({ lastRefreshedAt: completedAt }).where(eq(segments.id, rule.segmentId));
         await logAnalyticsEvent(rule.ownerEmail, "sync_run", {
           source: "prospector",
           status: "success",
@@ -442,6 +453,7 @@ export default defineAction({
           remaining: 0,
           imported: 0,
           deduped: 0,
+          alreadyKnown: 0,
           scoringErrors: [],
           companiesConsidered,
         };
@@ -625,6 +637,7 @@ export default defineAction({
           remaining: 0,
           imported: 0,
           deduped: 0,
+          alreadyKnown: 0,
           scoringErrors: [],
           companiesConsidered: params.companiesConsidered,
         };
@@ -638,6 +651,7 @@ export default defineAction({
           recordsFound: 0,
           imported: 0,
           deduped: 0,
+          alreadyKnown: 0,
           companiesConsidered: params.companiesConsidered,
         });
       }
@@ -650,11 +664,14 @@ export default defineAction({
       const now = new Date().toISOString();
       let imported = 0;
       let deduped = 0;
+      let alreadyKnown = 0;
       const resolvedContactIds: string[] = [];
       for (const match of allMatches) {
-        const { contactId, isCrossSourceDedup } = await resolveContact(match, params.companyEmployeesByName, now);
-        if (isCrossSourceDedup) {
+        const { contactId, resolutionKind } = await resolveContact(match, params.companyEmployeesByName, now);
+        if (resolutionKind === "deduped") {
           deduped++;
+        } else if (resolutionKind === "alreadyKnown") {
+          alreadyKnown++;
         } else {
           imported++;
         }
@@ -697,6 +714,7 @@ export default defineAction({
             recordsFound: totalRecordsFound,
             imported,
             deduped,
+            alreadyKnown,
             companiesConsidered: params.companiesConsidered,
             scored: 0,
             scoringErrorCount: 0,
@@ -713,6 +731,7 @@ export default defineAction({
         remaining: uniqueContactIds.length,
         imported,
         deduped,
+        alreadyKnown,
         scoringErrors: [],
         companiesConsidered: params.companiesConsidered,
       };
@@ -731,7 +750,7 @@ export default defineAction({
       match: ProspectorMatch,
       companyEmployeesByName: Record<string, number>,
       now: string,
-    ): Promise<{ contactId: string; isCrossSourceDedup: boolean }> {
+    ): Promise<{ contactId: string; resolutionKind: "imported" | "deduped" | "alreadyKnown" }> {
       const linkedinUrl = match.linkedInHandle ? `https://www.linkedin.com/${match.linkedInHandle}` : null;
       const country = match.location?.country ?? null;
       const employees = companyEmployeesByName[match.companyName?.toLowerCase() ?? ""] ?? null;
@@ -743,7 +762,11 @@ export default defineAction({
         .limit(1);
 
       let contactId: string;
-      let isCrossSourceDedup = false;
+      // Default assumption going in: this externalId has been seen by this
+      // rule before (the `existing[0]` branch below) — a re-discovery, not a
+      // new contact. Only the fresh-insert branch at the bottom flips this
+      // to "imported".
+      let resolutionKind: "imported" | "deduped" | "alreadyKnown" = "alreadyKnown";
       if (existing[0]) {
         contactId = existing[0].id;
         // Mirrors import-prospects-to-segment.ts's update path: refresh the
@@ -808,9 +831,10 @@ export default defineAction({
           // field-refresh cadence — don't create a duplicate row and don't
           // touch its name/title/company/country/employees/etc.
           contactId = crossSourceMatch.id;
-          isCrossSourceDedup = true;
+          resolutionKind = "deduped";
         } else {
           contactId = nanoid();
+          resolutionKind = "imported";
           await db.insert(contacts).values({
             id: contactId,
             name: match.fullName ?? "Unknown",
@@ -830,7 +854,7 @@ export default defineAction({
         }
       }
 
-      return { contactId, isCrossSourceDedup };
+      return { contactId, resolutionKind };
     }
 
     // ── One bounded chunk of scoring (phase "scoring") ──────────────────────
@@ -876,6 +900,7 @@ export default defineAction({
       const recordsFound = (currentMeta.recordsFound as number | undefined) ?? 0;
       const imported = (currentMeta.imported as number | undefined) ?? 0;
       const deduped = (currentMeta.deduped as number | undefined) ?? 0;
+      const alreadyKnown = (currentMeta.alreadyKnown as number | undefined) ?? 0;
       const companiesConsidered = (currentMeta.companiesConsidered as number | null | undefined) ?? null;
 
       // "Outstanding" = pending OR claimed — NOT just pending. This matters
@@ -900,7 +925,7 @@ export default defineAction({
       const outstandingBeforeThisChunk = Number(outstandingCountRow?.count ?? 0);
 
       if (outstandingBeforeThisChunk === 0) {
-        return await finishRun({ recordsFound, imported, deduped, companiesConsidered });
+        return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered });
       }
 
       const candidateRows = await db
@@ -1105,7 +1130,7 @@ export default defineAction({
       const remaining = Number(outstandingAfterCountRow?.count ?? 0);
 
       if (remaining === 0) {
-        return await finishRun({ recordsFound, imported, deduped, companiesConsidered });
+        return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered });
       }
 
       // Checkpoint after every chunk — same pattern as the original
@@ -1121,6 +1146,7 @@ export default defineAction({
             recordsFound,
             imported,
             deduped,
+            alreadyKnown,
             companiesConsidered,
             scored,
             scoringErrorCount,
@@ -1143,6 +1169,7 @@ export default defineAction({
         remaining,
         imported,
         deduped,
+        alreadyKnown,
         scoringErrors,
         companiesConsidered,
       };
@@ -1156,6 +1183,7 @@ export default defineAction({
       recordsFound: number;
       imported: number;
       deduped: number;
+      alreadyKnown: number;
       companiesConsidered: number | null;
     }): Promise<PipelineResult> {
       const [scoredCountRow] = await db
@@ -1188,6 +1216,7 @@ export default defineAction({
             icpQualifiedZeroCompanies: false,
             scoringErrorCount,
             deduped: counts.deduped,
+            alreadyKnown: counts.alreadyKnown,
             phase: "complete",
             recordsFound: counts.recordsFound,
             imported: counts.imported,
@@ -1198,6 +1227,14 @@ export default defineAction({
 
       await db.delete(sourcingRuleRunTargets).where(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId));
 
+      // The list detail page's "27 contacts · Refreshed Xm ago" header reads
+      // segments.lastRefreshedAt directly — until now nothing ever wrote it
+      // for an Active list's sourcing-rule runs (only the Static-list/manual
+      // refresh-segment.ts path did), so every successful automated run left
+      // it permanently null and the header always read "Never refreshed"
+      // regardless of how many runs had actually succeeded.
+      await db.update(segments).set({ lastRefreshedAt: completedAt }).where(eq(segments.id, rule.segmentId));
+
       await logAnalyticsEvent(rule.ownerEmail, "sync_run", {
         source: "prospector",
         status: "success",
@@ -1207,6 +1244,7 @@ export default defineAction({
         icpQualifiedZeroCompanies: false,
         scoringErrorCount,
         deduped: counts.deduped,
+        alreadyKnown: counts.alreadyKnown,
       });
 
       return {
@@ -1218,6 +1256,7 @@ export default defineAction({
         remaining: 0,
         imported: counts.imported,
         deduped: counts.deduped,
+        alreadyKnown: counts.alreadyKnown,
         scoringErrors,
         companiesConsidered: counts.companiesConsidered,
       };
