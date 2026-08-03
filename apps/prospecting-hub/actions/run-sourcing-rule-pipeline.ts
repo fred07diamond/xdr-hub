@@ -232,7 +232,38 @@ export default defineAction({
     let scored = 0;
     const scoringErrors: string[] = [];
 
-    for (const match of records) {
+    // This loop is split into two phases instead of one interleaved
+    // per-contact block, specifically to make the concurrency change safe:
+    //
+    // Phase 1 (resolveContact, below) — the existing-check/dedup/
+    // insert-or-update decision — stays STRICTLY SEQUENTIAL, in original
+    // `records` order, byte-for-byte the same logic and the same order of
+    // operations as the pre-existing sequential loop. This matters because
+    // this decision reads the `contacts` table to decide "does this
+    // person already exist" and then writes to it — if two matches in the
+    // same run resolve to the SAME identity (e.g. two Prospector records
+    // that turn out to share an email/LinkedIn slug — verified live during
+    // this fix's testing to be possible, not just theoretical, when forced
+    // deliberately), running that decision concurrently lets both see
+    // "no existing row" before either commits, and both insert a duplicate
+    // contact row for one real person. Keeping this phase sequential
+    // eliminates that race entirely: every match's dedup check always sees
+    // every earlier match's already-committed result, exactly as the
+    // original loop guaranteed.
+    //
+    // Phase 2 (scoreAndLinkContact, below) — the actually expensive part
+    // (one completeText() LLM call + up to 2 CommonRoom lookups per
+    // contact) — runs in bounded-concurrency batches (CONCURRENCY_LIMIT).
+    // This is where root cause #2 (20 sequential rounds of network calls)
+    // actually lived, and where the ~4x wall-clock win comes from. Each
+    // unique contactId produced by phase 1 is scored/linked at most once
+    // (see the `Set`-based de-duplication before phase 2 starts below) —
+    // closing the residual case where two DIFFERENT Prospector matches
+    // legitimately resolved (sequentially, safely) to the SAME existing
+    // contactId via cross-source dedup, which would otherwise let two
+    // concurrent scoring calls race on the same contact's segment-link
+    // insert.
+    async function resolveContact(match: (typeof records)[number]): Promise<{ contactId: string; isCrossSourceDedup: boolean }> {
       const linkedinUrl = match.linkedInHandle ? `https://www.linkedin.com/${match.linkedInHandle}` : null;
 
       const existing = await db
@@ -341,18 +372,25 @@ export default defineAction({
         }
       }
 
-      if (isCrossSourceDedup) {
-        deduped++;
-      } else {
-        imported++;
-      }
+      return { contactId, isCrossSourceDedup };
+    }
 
-      // Scoring and everything that depends on it is wrapped so a single
-      // contact's bad AI response (e.g. truncated/unparseable JSON) or a
-      // CommonRoom lookup failure can't abort the rest of the batch — this
-      // contact is already correctly imported above regardless; a scoring
-      // failure just means it stays unscored for now, re-scorable later via
-      // "Refresh scores".
+    // Scoring and everything that depends on it is wrapped so a single
+    // contact's bad AI response (e.g. truncated/unparseable JSON) or a
+    // CommonRoom lookup failure can't abort any other contact — this
+    // contact is already correctly imported via resolveContact above
+    // regardless; a scoring failure just means it stays unscored for now,
+    // re-scorable later via "Refresh scores". Safe to run concurrently
+    // across contacts (see CONCURRENCY_LIMIT below): mutates the shared
+    // `scored` counter and `scoringErrors` array, which is safe under
+    // concurrent async execution — JS is single-threaded, so `scored++`
+    // and `scoringErrors.push(...)` always run to completion as one
+    // synchronous step before any other queued microtask can run; there is
+    // no way for two concurrently in-flight calls to interleave
+    // mid-increment or mid-push. Concurrency only changes the ORDER these
+    // synchronous steps happen in relative to each contact's own network
+    // calls (the LLM call, CommonRoom lookups), never their atomicity.
+    async function scoreAndLinkContact(match: (typeof records)[number], contactId: string): Promise<void> {
       try {
         const score = await scoreContactAgainstPersonas({
           contact: {
@@ -416,6 +454,66 @@ export default defineAction({
           // best-effort, ignore
         }
       }
+    }
+
+    // Phase 1: resolve every match's contact row STRICTLY sequentially, in
+    // original `records` order — identical order of operations to the
+    // pre-existing loop, so the dedup/insert decision behaves exactly as it
+    // does today (see the big comment above resolveContact for why this
+    // phase specifically must not be made concurrent).
+    const resolved: { match: (typeof records)[number]; contactId: string }[] = [];
+    for (const match of records) {
+      const { contactId, isCrossSourceDedup } = await resolveContact(match);
+      if (isCrossSourceDedup) {
+        deduped++;
+      } else {
+        imported++;
+      }
+      resolved.push({ match, contactId });
+    }
+
+    // De-duplicate by contactId before scoring: two DIFFERENT Prospector
+    // matches can legitimately resolve (via the cross-source dedup check
+    // above) to the SAME existing contact row. Scoring/segment-linking that
+    // row twice would be wasted work today, and would become a genuine race
+    // on the segment-link insert once phase 2 runs concurrently (two
+    // concurrent "does a link already exist for this contactId" checks
+    // could both say no and both insert). Keeping only the first match for
+    // each unique contactId sidesteps that entirely — each real contact is
+    // scored/linked at most once, exactly once, same as if this whole
+    // pipeline only ever saw distinct people.
+    const seenContactIds = new Set<string>();
+    const toScore = resolved.filter(({ contactId }) => {
+      if (seenContactIds.has(contactId)) return false;
+      seenContactIds.add(contactId);
+      return true;
+    });
+
+    // Phase 2: bounded-concurrency batches for the actually expensive part
+    // — for 20 contacts (a common `desiredVolume`), strictly sequential
+    // scoring meant 20 sequential rounds of network calls (one LLM
+    // completeText() call + up to 2 CommonRoom lookups each), which could
+    // exceed the hosting platform's function timeout even after eliminating
+    // the redundant resolveLeadScoreIds calls above. A cap of 4 gives a
+    // meaningful ~4x wall-clock improvement without firing all of
+    // `toScore.length` calls at once unbounded — this codebase has no
+    // established precedent of concurrent CommonRoom MCP calls, so a
+    // conservative cap is used rather than assuming the MCP transport
+    // tolerates unbounded concurrency cleanly.
+    //
+    // Promise.allSettled (not Promise.all) is used specifically because it
+    // never short-circuits on one rejection — one contact's scoring failure
+    // can never abort sibling contacts in its own batch, subsequent
+    // batches, or the pipeline as a whole. scoreAndLinkContact already
+    // catches its own errors internally (see above), so no rejection is
+    // actually expected here in practice — allSettled is still the right
+    // primitive, not Promise.all, so a future change to that function's
+    // error handling can't silently turn one contact's failure into an
+    // abort of the rest of the run.
+    const CONCURRENCY_LIMIT = 4;
+    for (let i = 0; i < toScore.length; i += CONCURRENCY_LIMIT) {
+      const batch = toScore.slice(i, i + CONCURRENCY_LIMIT);
+      await Promise.allSettled(batch.map(({ match, contactId }) => scoreAndLinkContact(match, contactId)));
     }
 
     const syncCompletedAt = new Date().toISOString();

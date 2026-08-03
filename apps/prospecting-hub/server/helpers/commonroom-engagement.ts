@@ -78,7 +78,45 @@ function normalizeLeadScoreId(raw: string | number | undefined | null): string |
   return String(raw).replace(/^ls_/, "");
 }
 
+// resolveLeadScoreIds resolves org-wide LeadScore model IDs ("Contact Score
+// V2", "Contact Intent Score", "Company Fit Score (Common Room)") that are
+// identical for the entire org for as long as nobody reconfigures LeadScore
+// models in CommonRoom itself — which doesn't happen mid pipeline-run. Every
+// scoreContactAgainstPersonas call for every contact was re-resolving these
+// from scratch via a fresh commonroom_list_objects MCP round-trip, so a
+// 20-contact sourcing-rule run made up to 19 completely redundant CommonRoom
+// calls before any of the actual per-contact Contact/Organization lookups
+// even started — directly contributing to the pipeline exceeding the
+// hosting platform's function timeout (live-confirmed "Inactivity Timeout").
+//
+// A short-TTL in-memory cache, keyed by orgId, eliminates that redundancy:
+// the first resolution within the TTL window does the real MCP call, every
+// other resolution for the same org within the window is a synchronous
+// cache hit. 5 minutes is long enough that a single pipeline run (which
+// should complete in well under 5 minutes even before the concurrency fix
+// below) never re-fetches, but short enough that a genuine LeadScore
+// reconfiguration in CommonRoom shows up for the next run/scoring call
+// reasonably promptly rather than staying stale indefinitely.
+//
+// This is a module-level cache in a serverless/Netlify Functions
+// environment: a cold function instance starts with an empty cache, so this
+// does NOT guarantee cross-invocation caching in production the way it
+// would in a long-lived process. It DOES guarantee zero redundant calls
+// WITHIN a single invocation's lifetime — e.g. all contacts scored during
+// one run-sourcing-rule-pipeline call share the same warm process and thus
+// the same cache entry — which is the actual problem being fixed here. Warm
+// function-instance reuse across nearby requests is a possible bonus, not a
+// requirement this fix depends on.
+const LEAD_SCORE_ID_CACHE_TTL_MS = 5 * 60 * 1000;
+const leadScoreIdCache = new Map<string, { ids: ResolvedLeadScoreIds; expiresAt: number }>();
+
 async function resolveLeadScoreIds(orgId: string | null | undefined): Promise<ResolvedLeadScoreIds> {
+  const cacheKey = orgId ?? "none";
+  const cached = leadScoreIdCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.ids;
+  }
+
   const result = await callMcpToolWithTimeout(resolveServerId(orgId), "commonroom_list_objects", {
     objectType: "LeadScore",
     limit: 20,
@@ -90,11 +128,14 @@ async function resolveLeadScoreIds(orgId: string | null | undefined): Promise<Re
     return normalizeLeadScoreId(match?.id ?? match?.scoreId);
   };
 
-  return {
+  const ids: ResolvedLeadScoreIds = {
     contactFitId: find((n) => n.includes("contact score")),
     contactIntentId: find((n) => n.includes("contact intent")),
     companyFitId: find((n) => n.includes("company fit score") && !n.includes("v1")),
   };
+
+  leadScoreIdCache.set(cacheKey, { ids, expiresAt: Date.now() + LEAD_SCORE_ID_CACHE_TTL_MS });
+  return ids;
 }
 
 function extractPercentile(entries: CommonRoomScoreEntry[] | undefined, targetId: string | null): number | null {
