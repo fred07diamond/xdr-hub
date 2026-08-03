@@ -371,8 +371,19 @@ function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): strin
   if (run.scored) parts.push(`${run.scored} scored`);
   const base = parts.length > 0 ? parts.join(" · ") : "No progress recorded";
   const extras: string[] = [];
-  if (run.imported && run.imported > 0) extras.push(`${run.imported} new`);
-  if (run.alreadyKnown && run.alreadyKnown > 0) extras.push(`${run.alreadyKnown} already known`);
+  // A run's `imported` count only means "genuinely new" under the fixed
+  // resolveContact classification, which also always writes `alreadyKnown`
+  // to metadata. A run recorded before that fix has `alreadyKnown`
+  // undefined and its `imported` value conflated new + same-source
+  // rematches — labeling it "N new" would retroactively apply a meaning the
+  // run never actually measured. Gate the new/already-known pair on
+  // `alreadyKnown !== undefined` so only runs that ran under the fixed code
+  // get this more specific breakdown; older rows fall back to the original
+  // found/scored/deduped summary they always had.
+  if (run.alreadyKnown !== undefined) {
+    if (run.imported && run.imported > 0) extras.push(`${run.imported} new`);
+    if (run.alreadyKnown > 0) extras.push(`${run.alreadyKnown} already known`);
+  }
   if (run.deduped && run.deduped > 0) extras.push(`${run.deduped} deduped`);
   if (run.scoringErrorCount && run.scoringErrorCount > 0) {
     extras.push(`${run.scoringErrorCount} error${run.scoringErrorCount === 1 ? "" : "s"}`);
