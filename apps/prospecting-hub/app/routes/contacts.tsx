@@ -41,11 +41,33 @@ const PAGE_SIZE = 50;
 // out with no partial result.
 const RESCORE_CHUNK_SIZE = 12;
 const RESCORE_CHUNK_TIMEOUT_MS = 150_000;
+// Draft generation needs up to 2 completeText() calls per contact (the
+// compliance-guard retry from draft-outreach.ts's post-generation check),
+// each with a longer max output than scoring's — live-confirmed in
+// production that a 12-contact chunk here can exceed the hosting platform's
+// server-side function timeout, surfacing as a raw HTML "Inactivity Timeout"
+// error page instead of a clean action error. A smaller chunk keeps worst-
+// case sequential LLM calls per invocation comfortably bounded.
+const DRAFT_CHUNK_SIZE = 3;
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
   return chunks;
+}
+
+// A request that times out at the hosting platform's infrastructure layer
+// (a load balancer or edge proxy, not this app's own server code) can come
+// back as a raw HTML error page instead of a JSON action error — callAction
+// surfaces that page's full markup as `err.message` verbatim. Detect that
+// case and show a clean, actionable message instead of dumping raw HTML
+// into the UI.
+function sanitizeActionError(err: unknown, fallback: string): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/<(!doctype|html)[\s>]/i.test(message)) {
+    return "The request took too long and timed out — try again with a smaller selection.";
+  }
+  return message || fallback;
 }
 
 type SortableColumn =
@@ -251,7 +273,7 @@ export default function ContactsRoute() {
         );
         targetIds = all.contacts.map((c) => c.id);
       } catch (err) {
-        setRescoreError(err instanceof Error ? err.message : "Couldn't load contacts to refresh.");
+        setRescoreError(sanitizeActionError(err, "Couldn't load contacts to refresh."));
         return;
       }
     }
@@ -273,7 +295,7 @@ export default function ContactsRoute() {
         if (result?.error) errors.push(result.error);
         if (result?.errors?.length) errors.push(...result.errors);
       } catch (err) {
-        errors.push(err instanceof Error ? err.message : "A batch failed to refresh.");
+        errors.push(sanitizeActionError(err, "A batch failed to refresh."));
       }
       done += chunk.length;
       setRefreshProgress({ done, total: targetIds.length });
@@ -287,9 +309,10 @@ export default function ContactsRoute() {
     refetch();
   }
 
-  // Same chunked-callAction pattern as handleRefreshScores above — draft
-  // generation is a completeText() call per contact, similar cost profile to
-  // scoring, so it reuses the exact same chunk size/timeout constants.
+  // Same chunked-callAction pattern as handleRefreshScores above, but with a
+  // smaller chunk size — draft generation can need up to 2 completeText()
+  // calls per contact (see DRAFT_CHUNK_SIZE's comment), unlike scoring's
+  // single, shorter call.
   async function handleGenerateOutreach() {
     setDraftError(null);
 
@@ -305,14 +328,14 @@ export default function ContactsRoute() {
         );
         targetIds = all.contacts.map((c) => c.id);
       } catch (err) {
-        setDraftError(err instanceof Error ? err.message : "Couldn't load contacts to draft for.");
+        setDraftError(sanitizeActionError(err, "Couldn't load contacts to draft for."));
         return;
       }
     }
 
     if (targetIds.length === 0) return;
 
-    const chunks = chunkArray(targetIds, RESCORE_CHUNK_SIZE);
+    const chunks = chunkArray(targetIds, DRAFT_CHUNK_SIZE);
     setDraftProgress({ done: 0, total: targetIds.length });
     const errors: string[] = [];
     let done = 0;
@@ -326,7 +349,7 @@ export default function ContactsRoute() {
         );
         if (result?.errors?.length) errors.push(...result.errors);
       } catch (err) {
-        errors.push(err instanceof Error ? err.message : "A batch failed to generate drafts.");
+        errors.push(sanitizeActionError(err, "A batch failed to generate drafts."));
       }
       done += chunk.length;
       setDraftProgress({ done, total: targetIds.length });
