@@ -224,4 +224,13 @@ export const syncRecords = table("sync_records", {
   status: text("status", { enum: ["success", "failed", "running"] }).notNull(),
   error: text("error"),
   metadata: text("metadata"),
+  // First-class rule scope for run-sourcing-rule-pipeline.ts's own rows —
+  // added alongside genuine progress-checkpoint writes (Run History feature)
+  // so "find all runs for rule X" is a plain indexed-free column match
+  // instead of requiring JSON extraction from `metadata` (this app's
+  // cross-backend SQLite/Postgres portability convention doesn't use JSON
+  // extraction anywhere else). Nullable: every other existing writer
+  // (sync-hubspot.ts, sync-commonroom.ts, import-prospects-to-segment.ts)
+  // isn't rule-scoped and never sets this.
+  sourcingRuleId: text("sourcing_rule_id"),
 });

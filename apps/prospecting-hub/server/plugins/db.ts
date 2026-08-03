@@ -248,6 +248,11 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 27,
+      name: "sync-records-sourcing-rule-id-column",
+      sql: `ALTER TABLE sync_records ADD COLUMN sourcing_rule_id TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

@@ -6,6 +6,8 @@ import {
 import {
   IconArrowLeft,
   IconChevronRight,
+  IconCircleCheck,
+  IconCircleX,
   IconClock,
   IconFlag3,
   IconListDetails,
@@ -138,6 +140,30 @@ interface SourcingRule {
   contactCount: number;
 }
 
+// Run History (Fred's "where is this pulling from, and I need to be able to
+// track that — I need to see progression" ask): one row per
+// run-sourcing-rule-pipeline.ts invocation, from list-sourcing-rule-runs.ts.
+// Older rows written before checkpoint instrumentation shipped won't have
+// most of these fields at all — every field below except id/source/status/
+// startedAt is optional/nullable for exactly that reason.
+interface SourcingRuleRun {
+  id: string;
+  source: "hubspot" | "commonroom" | "notion" | "gdocs" | "prospector";
+  status: "success" | "failed" | "running";
+  startedAt: string | null;
+  completedAt: string | null;
+  recordsPulled: number | null;
+  error: string | null;
+  imported?: number;
+  scored?: number;
+  deduped?: number;
+  scoringErrorCount?: number;
+  companiesConsidered?: number;
+  icpQualifiedZeroCompanies?: boolean;
+  phase?: string;
+  recordsFound?: number;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // Only these values divide evenly into 24, guaranteeing a predictable,
@@ -264,6 +290,130 @@ function StatusBadge({ status }: { status: RuleStatus }) {
     >
       {isActive ? "Running" : "Paused"}
     </span>
+  );
+}
+
+// ── Recent runs (run history) ───────────────────────────────────────────────
+
+// A run genuinely still in progress should complete (or get killed by the
+// hosting platform's own infrastructure timeout) well within this window —
+// used to distinguish a "running" row that's actually still going from one
+// that's stuck (the platform killed the process mid-flight, and the row was
+// simply left in "running" at whatever its last completed checkpoint was).
+const RUN_TIMED_OUT_AFTER_MS = 6 * 60_000;
+
+type DerivedRunStatus = "success" | "failed" | "timedOut" | "running";
+
+function deriveRunStatus(run: SourcingRuleRun): DerivedRunStatus {
+  if (run.status === "success") return "success";
+  if (run.status === "failed") return "failed";
+  // run.status === "running" — the only status left to disambiguate.
+  const startedMs = run.startedAt ? new Date(run.startedAt).getTime() : NaN;
+  const isStale = !Number.isNaN(startedMs) && Date.now() - startedMs > RUN_TIMED_OUT_AFTER_MS;
+  return isStale ? "timedOut" : "running";
+}
+
+function formatRunTimestamp(iso: string | null) {
+  if (!iso) return "Unknown time";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "Unknown time";
+  const diffMs = Math.max(0, Date.now() - then);
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// Builds the compact outcome summary shown next to each run — e.g.
+// "12 found · 8 scored, 2 deduped" for a success, or "12 found, 8 scored"
+// for a still-partial timed-out run. Any count that's missing/zero (a run
+// that died before even reaching that checkpoint) is simply omitted rather
+// than shown as a misleading "0 found".
+function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): string {
+  const foundCount = derived === "success" ? run.recordsPulled ?? undefined : run.recordsFound;
+  const parts: string[] = [];
+  if (foundCount) parts.push(`${foundCount} found`);
+  if (run.scored) parts.push(`${run.scored} scored`);
+  const base = parts.length > 0 ? parts.join(" · ") : "No progress recorded";
+  const extras: string[] = [];
+  if (run.deduped && run.deduped > 0) extras.push(`${run.deduped} deduped`);
+  if (run.scoringErrorCount && run.scoringErrorCount > 0) {
+    extras.push(`${run.scoringErrorCount} error${run.scoringErrorCount === 1 ? "" : "s"}`);
+  }
+  return extras.length > 0 ? `${base}, ${extras.join(", ")}` : base;
+}
+
+function RunRow({ run }: { run: SourcingRuleRun }) {
+  const derived = deriveRunStatus(run);
+
+  return (
+    <div className="flex items-start gap-2.5 px-4 py-2">
+      <div className="mt-0.5 shrink-0">
+        {derived === "success" && <IconCircleCheck size={14} className="text-green-600 dark:text-green-400" />}
+        {(derived === "failed" || derived === "timedOut") && (
+          <IconCircleX size={14} className="text-destructive" />
+        )}
+        {derived === "running" && (
+          <span className="relative flex size-3.5 items-center justify-center">
+            <span className="absolute inline-flex size-2 animate-ping rounded-full bg-sky-500/70" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-sky-500" />
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-1.5 text-xs">
+          <span className="font-medium text-foreground">CommonRoom Prospector</span>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="text-muted-foreground">{formatRunTimestamp(run.startedAt)}</span>
+        </div>
+        {derived === "success" && (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{buildRunSummary(run, derived)}</p>
+        )}
+        {derived === "timedOut" && (
+          <p className="mt-0.5 text-[11px] text-destructive">Timed out · {buildRunSummary(run, derived)}</p>
+        )}
+        {derived === "failed" && (
+          <p className="mt-0.5 line-clamp-2 text-[11px] text-destructive" title={run.error ?? undefined}>
+            {run.error ?? "Failed"}
+          </p>
+        )}
+        {derived === "running" && (
+          <p className="mt-0.5 text-[11px] text-sky-600 dark:text-sky-400">Running…</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecentRunsSection({ ruleId }: { ruleId: string }) {
+  const { data } = useActionQuery(
+    "list-sourcing-rule-runs",
+    { ruleId },
+    { refetchInterval: 30000, staleTime: 25000 },
+  );
+  const runs: SourcingRuleRun[] = (data as { runs?: SourcingRuleRun[] })?.runs ?? [];
+
+  return (
+    <div className="border-b border-border py-3">
+      <h2 className="px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Recent runs
+      </h2>
+      <div className="mt-2">
+        {runs.length === 0 ? (
+          <p className="px-4 text-xs text-muted-foreground/60">No runs yet</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-border/60">
+            {runs.map((run) => (
+              <RunRow key={run.id} run={run} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1438,6 +1588,10 @@ function ListDetailView({
             </>
           )}
         </div>
+      )}
+
+      {!isLoading && segment && segment.owningSourcingRuleId && (
+        <RecentRunsSection ruleId={segment.owningSourcingRuleId} />
       )}
 
       {!isLoading && segment && (isAdmin || segment.assignedToEmail) && (
