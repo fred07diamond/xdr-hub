@@ -80,11 +80,12 @@ const WORKSPACE_APPS = [
   { name: "LinkedIn Agent", badge: "BLI", color: "#0a66c2", href: "/li-agent" },
   { name: "XDR Booking", badge: "BK", color: "#6366f1", href: "/booking" },
   { name: "Dispatch", badge: "XDR", color: "#64748b", href: "/dispatch" },
+  { name: "Prospecting Hub", badge: "PH", color: "#f97316", href: "/prospecting-hub" },
 ] as const;
 
 function AppSwitcher({ collapsed }: { collapsed: boolean }) {
   const current = WORKSPACE_APPS[1];
-  const others = [WORKSPACE_APPS[0], WORKSPACE_APPS[2]];
+  const others = [WORKSPACE_APPS[0], WORKSPACE_APPS[2], WORKSPACE_APPS[3]];
   const trigger = (
     <DropdownMenuTrigger asChild>
       <button

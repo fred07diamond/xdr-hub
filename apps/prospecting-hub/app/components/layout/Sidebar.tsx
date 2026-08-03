@@ -3,7 +3,6 @@ import {
   useChatThreads,
   type ChatThreadSummary,
 } from "@agent-native/core/client/agent-chat";
-import { appPath } from "@agent-native/core/client/api-path";
 import { LanguagePicker, useT } from "@agent-native/core/client/i18n";
 import { openCommandMenu } from "@agent-native/core/client/navigation";
 import { OrgSwitcher } from "@agent-native/core/client/org";
@@ -16,6 +15,8 @@ import {
 import {
   IconBuildingSkyscraper,
   IconChartBar,
+  IconCheck,
+  IconChevronDown,
   IconFlag3,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
@@ -32,12 +33,96 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
+
+// Mirrors the identical WORKSPACE_APPS/AppSwitcher pattern already shipped in
+// li-agent's and booking's own Sidebar.tsx — kept as a plain duplicated
+// constant per that same established convention (no shared cross-app
+// component exists for this yet), not a new pattern introduced here.
+const WORKSPACE_APPS = [
+  { name: "LinkedIn Agent", badge: "BLI", color: "#0a66c2", href: "/li-agent" },
+  { name: "XDR Booking", badge: "BK", color: "#6366f1", href: "/booking" },
+  { name: "Dispatch", badge: "XDR", color: "#64748b", href: "/dispatch" },
+  { name: "Prospecting Hub", badge: "PH", color: "#f97316", href: "/prospecting-hub" },
+] as const;
+
+function AppSwitcher({ collapsed }: { collapsed: boolean }) {
+  const current = WORKSPACE_APPS[3];
+  const others = [WORKSPACE_APPS[0], WORKSPACE_APPS[1], WORKSPACE_APPS[2]];
+  const trigger = (
+    <DropdownMenuTrigger asChild>
+      <button
+        type="button"
+        className={cn(
+          "flex min-w-0 items-center rounded outline-none focus-visible:ring-2 focus-visible:ring-ring hover:bg-sidebar-accent/50 transition-colors",
+          collapsed ? "size-7 justify-center" : "flex-1 gap-3 px-0.5 py-0.5",
+        )}
+        aria-label={collapsed ? `Switch app (${current.name})` : undefined}
+      >
+        <span
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-black tracking-tight text-white"
+          style={{ backgroundColor: current.color }}
+        >
+          {current.badge}
+        </span>
+        <span className={cn("flex min-w-0 flex-1 items-center gap-1", collapsed && "sr-only")}>
+          <span className="truncate text-sm font-semibold text-sidebar-accent-foreground">
+            {APP_TITLE}
+          </span>
+          <IconChevronDown className="size-3.5 shrink-0 text-sidebar-foreground/50" />
+        </span>
+      </button>
+    </DropdownMenuTrigger>
+  );
+  return (
+    <DropdownMenu>
+      {collapsed ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent side="right">Switch app</TooltipContent>
+        </Tooltip>
+      ) : trigger}
+      <DropdownMenuContent align="start" side="bottom" sideOffset={8} className="w-52">
+        <DropdownMenuItem className="gap-2.5 opacity-50 cursor-default" disabled>
+          <span
+            className="shrink-0 rounded px-1 py-0.5 text-[10px] font-black tracking-tight text-white"
+            style={{ backgroundColor: current.color }}
+          >
+            {current.badge}
+          </span>
+          <span className="flex-1 text-sm">{current.name}</span>
+          <IconCheck className="size-3.5 shrink-0" />
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {others.map((app) => (
+          <DropdownMenuItem key={app.href} asChild>
+            <a href={app.href} className="flex items-center gap-2.5">
+              <span
+                className="shrink-0 rounded px-1 py-0.5 text-[10px] font-black tracking-tight text-white"
+                style={{ backgroundColor: app.color }}
+              >
+                {app.badge}
+              </span>
+              <span className="flex-1 text-sm">{app.name}</span>
+            </a>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 // `label` is a literal display string rendered as-is. `labelKey` is only
 // consulted (via `t(item.labelKey)`) when `label` is omitted, i.e. for
@@ -425,32 +510,7 @@ export function Sidebar({
           collapsed ? "h-12 justify-center px-0" : "h-14 px-3",
         )}
       >
-        <Link
-          to="/"
-          className={cn(
-            "flex min-w-0 items-center rounded outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            collapsed ? "size-7 justify-center" : "flex-1 gap-3",
-          )}
-          aria-label={collapsed ? APP_TITLE : undefined}
-        >
-          <img
-            src={appPath("/agent-native-icon-light.svg")}
-            alt=""
-            aria-hidden="true"
-            className="block h-4 w-auto shrink-0 dark:hidden"
-          />
-          <img
-            src={appPath("/agent-native-icon-dark.svg")}
-            alt=""
-            aria-hidden="true"
-            className="hidden h-4 w-auto shrink-0 dark:block"
-          />
-          <div className={cn("min-w-0", collapsed && "sr-only")}>
-            <p className="truncate text-sm font-semibold text-sidebar-accent-foreground">
-              {APP_TITLE}
-            </p>
-          </div>
-        </Link>
+        <AppSwitcher collapsed={collapsed} />
       </div>
 
       <nav
