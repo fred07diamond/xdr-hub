@@ -122,6 +122,22 @@ export const contactSubPersonas = table("contact_sub_personas", {
   subPersonaId: text("sub_persona_id").notNull(),
 });
 
+// One row per file uploaded to a persona's knowledge base. Tracked
+// individually for display/management (a list the user can add to and
+// remove from), but the persona's own `criteria` column stays the single
+// source of truth every scoring/grounding code path reads — it's a derived
+// concatenation of all of a persona's documents, recomputed via
+// recombinePersonaCriteria() (server/helpers/persona-documents.ts) whenever
+// this table changes. No FK enforcement, matching this app's convention
+// (see contacts.personaId).
+export const personaDocuments = table("persona_documents", {
+  id: text("id").primaryKey(),
+  personaId: text("persona_id").notNull(),
+  fileName: text("file_name").notNull(),
+  content: text("content").notNull(),
+  createdAt: text("created_at").default(now()),
+});
+
 // Adoption/usage tracking — the app's own success metric depends on this.
 export const analyticsEvents = table("analytics_events", {
   id: text("id").primaryKey(),

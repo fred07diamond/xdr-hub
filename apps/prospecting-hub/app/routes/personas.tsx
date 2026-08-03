@@ -74,6 +74,12 @@ interface SubPersona {
   createdAt: string | null;
 }
 
+interface PersonaDocument {
+  id: string;
+  fileName: string;
+  createdAt: string | null;
+}
+
 // ── Color swatch picker ──────────────────────────────────────────────────────
 
 function ColorPicker({
@@ -293,12 +299,19 @@ function PersonaCard({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const updatePersona = useActionMutation("update-persona");
   const deletePersona = useActionMutation("delete-persona");
+  const addPersonaDocument = useActionMutation("add-persona-document");
+  const deletePersonaDocument = useActionMutation("delete-persona-document");
+
+  const { data: docsData, refetch: refetchDocs } = useActionQuery("list-persona-documents", {
+    personaId: persona.id,
+  });
+  const documents: PersonaDocument[] = (docsData as { documents?: PersonaDocument[] })?.documents ?? [];
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(persona.name);
   const [dragOver, setDragOver] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
 
   const color = persona.color ?? PERSONA_COLORS[0];
 
@@ -318,31 +331,47 @@ function PersonaCard({
     onRefetch();
   }
 
-  async function loadFile(file: File) {
-    if (!isAccepted(file)) return;
-    setUploading(true);
+  // Files are added additively, one at a time, awaiting each add before
+  // starting the next — each add-persona-document call recomputes the
+  // combined criteria from ALL current documents, so concurrent adds could
+  // race against each other's recombination step and produce a lossy result.
+  async function loadFiles(files: File[]) {
+    const accepted = files.filter(isAccepted);
+    if (accepted.length === 0) return;
+    setUploadProgress({ done: 0, total: accepted.length });
     try {
-      const text = await readFileAsText(file);
-      if (text.trim()) {
-        await updatePersona.mutateAsync({ id: persona.id, text });
-        onRefetch();
+      for (let i = 0; i < accepted.length; i++) {
+        const file = accepted[i];
+        const text = await readFileAsText(file);
+        if (text.trim()) {
+          await addPersonaDocument.mutateAsync({ personaId: persona.id, fileName: file.name, text });
+        }
+        setUploadProgress({ done: i + 1, total: accepted.length });
       }
+      refetchDocs();
+      onRefetch();
     } finally {
-      setUploading(false);
+      setUploadProgress(null);
     }
   }
 
   async function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) await loadFile(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) await loadFiles(files);
     e.target.value = "";
   }
 
   async function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) await loadFile(file);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length) await loadFiles(files);
+  }
+
+  async function handleDeleteDocument(docId: string) {
+    await deletePersonaDocument.mutateAsync({ id: docId });
+    refetchDocs();
+    onRefetch();
   }
 
   async function handleDelete() {
@@ -364,6 +393,7 @@ function PersonaCard({
         ref={fileInputRef}
         type="file"
         accept={ACCEPTED_INPUT}
+        multiple
         className="hidden"
         onChange={handleFileInput}
       />
@@ -421,7 +451,35 @@ function PersonaCard({
 
         {isAdmin && <ColorPicker value={color} onChange={handleColorChange} />}
 
-        {persona.wordCount === 0 && isAdmin && (
+        {documents.length > 0 && (
+          <div className="flex flex-col gap-1">
+            {documents.map((doc) => (
+              <div key={doc.id} className="flex items-center justify-between gap-2 rounded bg-muted/30 px-2 py-1">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <IconFileText size={12} className="shrink-0 text-muted-foreground" />
+                  <p className="truncate text-[11px] text-foreground">{doc.fileName}</p>
+                </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteDocument(doc.id)}
+                    disabled={deletePersonaDocument.isPending}
+                    className="shrink-0 rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-destructive"
+                    aria-label={`Remove ${doc.fileName}`}
+                  >
+                    <IconX size={11} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {documents.length === 0 && !isAdmin && (
+          <p className="text-xs text-muted-foreground/50 italic">No document uploaded yet</p>
+        )}
+
+        {isAdmin && (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
@@ -433,16 +491,13 @@ function PersonaCard({
                 : "border-border/60 text-muted-foreground/60 hover:border-border hover:text-muted-foreground"
             }`}
           >
-            {uploading ? (
+            {uploadProgress ? (
               <IconLoader2 size={13} className="animate-spin" />
             ) : (
-              <IconUpload size={13} />
+              <IconPlus size={13} />
             )}
-            {uploading ? "Uploading…" : "Drop or click to upload doc"}
+            {uploadProgress ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…` : "Drop or click to add files"}
           </div>
-        )}
-        {persona.wordCount === 0 && !isAdmin && (
-          <p className="text-xs text-muted-foreground/50 italic">No document uploaded yet</p>
         )}
       </div>
 
@@ -451,17 +506,7 @@ function PersonaCard({
       <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
         {isAdmin ? (
           <>
-            <div className="flex items-center gap-2">
-              {persona.wordCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  Replace doc
-                </button>
-              )}
-            </div>
+            <div className="flex items-center gap-2" />
 
             <div>
               {confirmDelete ? (
@@ -501,25 +546,6 @@ function PersonaCard({
           </div>
         )}
       </div>
-
-      {isAdmin && persona.wordCount > 0 && (
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          className={`absolute inset-0 rounded-xl border-2 border-dashed transition-all pointer-events-none ${
-            dragOver ? "border-primary bg-primary/10 pointer-events-auto" : "border-transparent"
-          }`}
-        >
-          {dragOver && (
-            <div className="flex h-full items-center justify-center">
-              <p className="rounded-lg bg-background/90 px-4 py-2 text-sm font-medium text-primary shadow">
-                Drop to replace document
-              </p>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

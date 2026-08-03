@@ -237,6 +237,17 @@ export default runMigrations(
       name: "sourcing-rules-interval-hours-column",
       sql: `ALTER TABLE sourcing_rules ADD COLUMN interval_hours INTEGER`,
     },
+    {
+      version: 26,
+      name: "persona-documents-table",
+      sql: `CREATE TABLE IF NOT EXISTS persona_documents (
+        id TEXT PRIMARY KEY,
+        persona_id TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );
