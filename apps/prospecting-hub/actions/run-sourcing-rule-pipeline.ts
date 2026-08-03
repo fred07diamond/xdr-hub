@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { and, desc, eq, or, sql } from "@agent-native/core/db/schema";
+import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -92,6 +92,24 @@ function parseMetadata(raw: string | null): Record<string, unknown> {
   }
 }
 
+// Detects a unique-constraint violation across both SQLite and Postgres
+// (this app's two supported dialects) — used to catch the fresh-start
+// "running" row INSERT losing a race against a concurrent invocation that
+// won the `sync_records_running_per_rule_idx` partial unique index first
+// (migration v29), so that call can attach to the winner's row instead of
+// erroring out to the caller. Postgres reports SQLSTATE 23505
+// ("unique_violation"); SQLite's extended result code for a UNIQUE
+// constraint is 2067, and its driver-level error message consistently
+// contains "UNIQUE constraint failed" (confirmed live against this app's
+// actual dev DB/driver during this fix's verification — see the report).
+function isUniqueConstraintError(err: unknown): boolean {
+  const code = String((err as { code?: unknown } | null)?.code ?? "");
+  const message = String((err as { message?: unknown } | null)?.message ?? err)
+    .toLowerCase()
+    .trim();
+  return code === "23505" || code === "2067" || message.includes("unique constraint") || message.includes("duplicate key");
+}
+
 export default defineAction({
   description:
     "Run (or resume) a sourcing rule's Prospector pipeline: qualify companies against its ICP (if any), derive persona-based Prospector search filters, search CommonRoom Prospector, upsert + score + segment-link every match, and log the sync run. Resumable and chunked — a single invocation does ONE bounded unit of work (a few more search pages, or a chunk of scoring) and returns {done: false, syncRecordId, ...} if more remains; the caller passes that syncRecordId back in to continue the SAME run instead of starting a new one. Pass no syncRecordId to start a fresh run (or attach to an already-in-progress one for this rule).",
@@ -164,6 +182,31 @@ export default defineAction({
         syncRecordId = runningRow.id;
         runMetadata = parseMetadata(runningRow.metadata);
       } else {
+        if (runningRow && isStale) {
+          // A genuinely abandoned run (the hosting platform's own
+          // infrastructure killed a prior invocation mid-flight, and nothing
+          // ever reached finishRun's cleanup) — resolve it explicitly rather
+          // than leaving a permanent "running" zombie row sitting alongside
+          // the new one this branch is about to start. This also frees up
+          // the `sync_records_running_per_rule_idx` partial unique index
+          // slot for this rule BEFORE the fresh insert below, and drops its
+          // now-meaningless work-queue rows (this table is ephemeral,
+          // in-progress-run state only — never a permanent log).
+          await db
+            .update(syncRecords)
+            .set({
+              status: "failed",
+              completedAt: new Date().toISOString(),
+              error: "Run abandoned — exceeded execution window without completing.",
+            })
+            .where(eq(syncRecords.id, runningRow.id));
+          try {
+            await db.delete(sourcingRuleRunTargets).where(eq(sourcingRuleRunTargets.syncRecordId, runningRow.id));
+          } catch {
+            // best-effort, ignore
+          }
+        }
+
         isFreshStart = true;
 
         // Defense-in-depth existence checks mirroring create-sourcing-rule.ts's
@@ -198,25 +241,61 @@ export default defineAction({
         // manage) the segment this rule writes into.
         await assertSegmentWritable(rule.segmentId, rule.ownerEmail, db);
 
-        syncRecordId = nanoid();
+        const candidateSyncRecordId = nanoid();
         const runStartedAt = new Date().toISOString();
-        await db.insert(syncRecords).values({
-          id: syncRecordId,
-          source: "prospector",
-          sourcingRuleId: ruleId,
-          startedAt: runStartedAt,
-          completedAt: null,
-          recordsPulled: null,
-          status: "running",
-          metadata: JSON.stringify({
+        try {
+          await db.insert(syncRecords).values({
+            id: candidateSyncRecordId,
+            source: "prospector",
             sourcingRuleId: ruleId,
-            phase: "searching",
-            searchCursor: null,
-            targetVolume: rule.desiredVolume,
-            recordsFound: 0,
-          }),
-        });
-        runMetadata = { phase: "searching" };
+            startedAt: runStartedAt,
+            completedAt: null,
+            recordsPulled: null,
+            status: "running",
+            metadata: JSON.stringify({
+              sourcingRuleId: ruleId,
+              phase: "searching",
+              searchCursor: null,
+              targetVolume: rule.desiredVolume,
+              recordsFound: 0,
+            }),
+          });
+          syncRecordId = candidateSyncRecordId;
+          runMetadata = { phase: "searching" };
+        } catch (err) {
+          if (!isUniqueConstraintError(err)) throw err;
+          // Lost a genuine concurrent race: another invocation's own
+          // fresh-start INSERT for this same ruleId won
+          // `sync_records_running_per_rule_idx` a moment before this one —
+          // both calls' SELECT-for-an-existing-running-row check can pass
+          // before either INSERTs (the exact TOCTOU gap this index exists
+          // to close). Attach to the WINNER's row instead of erroring out to
+          // the caller — same as the ordinary non-stale-running-row branch
+          // above, just reached via a lost race instead of an initial SELECT
+          // hit. isFreshStart is reset to false so this invocation dispatches
+          // on the winner's real phase (resume search or scoring) instead of
+          // re-running fresh-start bootstrapping.
+          const winnerRows = await db
+            .select({ id: syncRecords.id, metadata: syncRecords.metadata })
+            .from(syncRecords)
+            .where(and(eq(syncRecords.sourcingRuleId, ruleId), eq(syncRecords.status, "running")))
+            .orderBy(desc(syncRecords.startedAt))
+            .limit(1);
+          const winner = winnerRows[0];
+          if (!winner) {
+            // Extremely unlikely (the winner would have to have already
+            // finished/failed in the instant between our failed INSERT and
+            // this re-query) — surface a clear, retryable error rather than
+            // silently proceeding with no row to attach to.
+            throw Object.assign(
+              new Error("Another run just started for this rule but couldn't be found to attach to — please try again."),
+              { statusCode: 409 },
+            );
+          }
+          isFreshStart = false;
+          syncRecordId = winner.id;
+          runMetadata = parseMetadata(winner.metadata);
+        }
       }
     }
 
@@ -729,13 +808,6 @@ export default defineAction({
     // scored/errored/remaining, since nothing in-memory survives between
     // invocations.
     async function runScoringChunk(): Promise<PipelineResult> {
-      const pendingRows = await db
-        .select({ id: sourcingRuleRunTargets.id, contactId: sourcingRuleRunTargets.contactId })
-        .from(sourcingRuleRunTargets)
-        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "pending")))
-        .orderBy(sourcingRuleRunTargets.createdAt)
-        .limit(SCORING_CHUNK_SIZE);
-
       const currentMetaRows = await db
         .select({ metadata: syncRecords.metadata })
         .from(syncRecords)
@@ -747,8 +819,87 @@ export default defineAction({
       const deduped = (currentMeta.deduped as number | undefined) ?? 0;
       const companiesConsidered = (currentMeta.companiesConsidered as number | null | undefined) ?? null;
 
-      if (pendingRows.length === 0) {
+      // "Outstanding" = pending OR claimed — NOT just pending. This matters
+      // once the atomic claim below exists: a concurrent invocation can hold
+      // a batch of rows "claimed" (mid-processing, not yet scored/errored)
+      // at the exact moment this invocation checks in. If "is the run done"
+      // only asked "are there zero PENDING rows", a concurrent claim in
+      // progress elsewhere would make this invocation wrongly conclude the
+      // run is complete and call finishRun — which deletes ALL of this run's
+      // queue rows (including the ones still being actively scored by that
+      // other invocation) and reports `done: true` before scoring genuinely
+      // finished. Counting "claimed" rows as still-outstanding avoids that.
+      const [outstandingCountRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(sourcingRuleRunTargets)
+        .where(
+          and(
+            eq(sourcingRuleRunTargets.syncRecordId, syncRecordId),
+            inArray(sourcingRuleRunTargets.status, ["pending", "claimed"]),
+          ),
+        );
+      const outstandingBeforeThisChunk = Number(outstandingCountRow?.count ?? 0);
+
+      if (outstandingBeforeThisChunk === 0) {
         return await finishRun({ recordsFound, imported, deduped, companiesConsidered });
+      }
+
+      const candidateRows = await db
+        .select({ id: sourcingRuleRunTargets.id, contactId: sourcingRuleRunTargets.contactId })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "pending")))
+        .orderBy(sourcingRuleRunTargets.createdAt)
+        .limit(SCORING_CHUNK_SIZE);
+
+      // Atomic claim: two concurrent scoring-chunk calls against the SAME
+      // syncRecordId (a real possibility on this app's serverless host — a
+      // double-click, a manual run overlapping a scheduled fire, a network
+      // retry) could otherwise both run the `candidateRows` SELECT above
+      // before either processes anything, both select the SAME pending
+      // rows, and both score/link them — doubled contact writes, doubled
+      // segment-link attempts, doubled real LLM spend. Flipping
+      // "pending" -> "claimed" via an UPDATE re-guarded by
+      // `status = "pending"` is atomic per row at the database level: if a
+      // concurrent call already claimed one of these ids first, THIS
+      // invocation's UPDATE simply won't touch that row (its status no
+      // longer matches the guard), so re-selecting only the rows THIS
+      // invocation's own claim actually flipped tells us exactly (and only)
+      // what's safe for us to process. A fresh per-invocation `claimToken`
+      // (written into the otherwise-idle `error` column while a row is
+      // "claimed") is what lets that re-select distinguish "claimed by MY
+      // update" from "coincidentally already claimed by a different
+      // concurrent invocation moments earlier" — a plain re-select for
+      // status = "claimed" alone couldn't tell those apart. No RETURNING
+      // clause used (not portably available across this app's SQLite/
+      // Postgres backends) — this is plain UPDATE + SELECT, fully
+      // expressible in Drizzle's portable query builder.
+      // candidateRows can legitimately be empty here even though
+      // outstandingBeforeThisChunk > 0 — every currently-outstanding row
+      // might be "claimed" by a different concurrent invocation right now,
+      // with none left in "pending" for THIS invocation to claim. In that
+      // case there's simply nothing for this invocation to do this round;
+      // skip the claim/select/process work entirely rather than passing an
+      // empty id list into `inArray` (an empty IN-list is invalid/
+      // undefined-behavior SQL on some backends).
+      let claimedRows: { id: string; contactId: string }[] = [];
+      if (candidateRows.length > 0) {
+        const candidateIds = candidateRows.map((r) => r.id);
+        const claimToken = nanoid();
+        await db
+          .update(sourcingRuleRunTargets)
+          .set({ status: "claimed", error: claimToken })
+          .where(and(inArray(sourcingRuleRunTargets.id, candidateIds), eq(sourcingRuleRunTargets.status, "pending")));
+
+        claimedRows = await db
+          .select({ id: sourcingRuleRunTargets.id, contactId: sourcingRuleRunTargets.contactId })
+          .from(sourcingRuleRunTargets)
+          .where(
+            and(
+              inArray(sourcingRuleRunTargets.id, candidateIds),
+              eq(sourcingRuleRunTargets.status, "claimed"),
+              eq(sourcingRuleRunTargets.error, claimToken),
+            ),
+          );
       }
 
       // Same pool of scorable personas import-prospects-to-segment.ts
@@ -855,10 +1006,15 @@ export default defineAction({
         }
       }
 
-      // Bounded-concurrency batches, same CONCURRENCY_LIMIT/Promise.allSettled
-      // reasoning as the original perf fix.
-      for (let i = 0; i < pendingRows.length; i += CONCURRENCY_LIMIT) {
-        const batch = pendingRows.slice(i, i + CONCURRENCY_LIMIT);
+      // Bounded-concurrency batches over only the rows THIS invocation
+      // genuinely claimed (may be fewer than candidateRows.length if a
+      // concurrent invocation won some of them first) — same
+      // CONCURRENCY_LIMIT/Promise.allSettled reasoning as the original perf
+      // fix. If a concurrent call won every candidate id, claimedRows is
+      // empty and this loop is simply a no-op for this round; the aggregate
+      // counts below still reflect the true current state either way.
+      for (let i = 0; i < claimedRows.length; i += CONCURRENCY_LIMIT) {
+        const batch = claimedRows.slice(i, i + CONCURRENCY_LIMIT);
         await Promise.allSettled(batch.map((target) => scoreAndLinkTarget(target)));
       }
 
@@ -870,14 +1026,24 @@ export default defineAction({
         .select({ count: sql<number>`count(*)` })
         .from(sourcingRuleRunTargets)
         .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "errored")));
-      const [pendingCountRow] = await db
+      // "pending" OR "claimed" — same "outstanding" definition as
+      // outstandingBeforeThisChunk above, and for the same reason: a
+      // concurrent invocation could still be mid-processing a claimed batch
+      // right now, and that work isn't done just because it isn't "pending"
+      // anymore.
+      const [outstandingAfterCountRow] = await db
         .select({ count: sql<number>`count(*)` })
         .from(sourcingRuleRunTargets)
-        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "pending")));
+        .where(
+          and(
+            eq(sourcingRuleRunTargets.syncRecordId, syncRecordId),
+            inArray(sourcingRuleRunTargets.status, ["pending", "claimed"]),
+          ),
+        );
 
       const scored = Number(scoredCountRow?.count ?? 0);
       const scoringErrorCount = Number(erroredCountRow?.count ?? 0);
-      const remaining = Number(pendingCountRow?.count ?? 0);
+      const remaining = Number(outstandingAfterCountRow?.count ?? 0);
 
       if (remaining === 0) {
         return await finishRun({ recordsFound, imported, deduped, companiesConsidered });

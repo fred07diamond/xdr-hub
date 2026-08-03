@@ -265,6 +265,27 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    {
+      version: 29,
+      name: "sync-records-running-per-rule-unique-index",
+      // Database-level guarantee that at most one sync_records row can be
+      // status:"running" for a given sourcing_rule_id at any time — closes a
+      // real TOCTOU race in run-sourcing-rule-pipeline.ts's "attach to an
+      // existing running run, or start fresh" logic (a fresh-start check-then-
+      // insert with no lock between the two, which two concurrent
+      // no-syncRecordId calls for the same rule could both pass before either
+      // INSERTs). A PARTIAL unique index (only applies to rows where
+      // status = 'running') rather than a plain unique column, since every
+      // OTHER sync source (sync-hubspot.ts, sync-commonroom.ts,
+      // import-prospects-to-segment.ts) writes sourcing_rule_id: NULL and
+      // must remain free to have any number of non-"running" (or NULL-ruleId)
+      // rows — NULLs are never considered equal to each other under a unique
+      // index in either SQLite or Postgres, so those writers are unaffected
+      // regardless. Verified this exact syntax is valid, portable DDL on both
+      // SQLite (partial indexes supported since 3.8.0) and Postgres (partial
+      // indexes are a longstanding core feature) — no dialect gating needed.
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS sync_records_running_per_rule_idx ON sync_records(sourcing_rule_id) WHERE status = 'running'`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

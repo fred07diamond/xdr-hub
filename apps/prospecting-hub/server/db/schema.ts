@@ -255,7 +255,15 @@ export const sourcingRuleRunTargets = table("sourcing_rule_run_targets", {
   id: text("id").primaryKey(),
   syncRecordId: text("sync_record_id").notNull(),
   contactId: text("contact_id").notNull(),
-  status: text("status", { enum: ["pending", "scored", "errored"] }).notNull().default("pending"),
+  // "claimed" (fix round 1): a short-lived intermediate state a scoring-chunk
+  // invocation atomically flips a row into before processing it — see
+  // run-sourcing-rule-pipeline.ts's runScoringChunk for why this is needed to
+  // make concurrent scoring-chunk calls against the same sync_record_id
+  // race-safe (two concurrent calls can no longer both select and score the
+  // same "pending" row). `error` doubles as a one-shot claim token while a
+  // row is "claimed" (overwritten with the real error message, or cleared to
+  // null, once the row reaches its terminal "scored"/"errored" state).
+  status: text("status", { enum: ["pending", "claimed", "scored", "errored"] }).notNull().default("pending"),
   error: text("error"),
   createdAt: text("created_at").default(now()),
 });

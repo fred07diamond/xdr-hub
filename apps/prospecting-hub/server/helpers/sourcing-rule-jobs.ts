@@ -40,7 +40,12 @@ enabled: ${enabled}
 createdBy: ${createdBy}
 runAs: creator
 ---
-Execute prospecting-hub sourcing rule ${ruleId}: call the run-sourcing-rule-pipeline action with { ruleId: "${ruleId}" }, then report a short summary of how many prospects were found and imported.
+Execute prospecting-hub sourcing rule ${ruleId}. The run-sourcing-rule-pipeline action is resumable and chunked — ONE call only ever does a small bounded unit of work (a few Prospector search pages, or a small chunk of contact scoring) and returns { done, syncRecordId, phase, recordsFound, scored, remaining, imported, deduped }. You MUST loop it to completion, in this exact sequence:
+
+1. Call run-sourcing-rule-pipeline with { ruleId: "${ruleId}" } (no syncRecordId on this first call).
+2. Look at the response's "done" field. If it is false, call run-sourcing-rule-pipeline AGAIN, this time with { ruleId: "${ruleId}", syncRecordId: "<the syncRecordId the previous call just returned>" } — always reuse that same syncRecordId, never omit it and never start a fresh call once you have one.
+3. Repeat step 2 — same ruleId, same syncRecordId each time — until a response comes back with "done": true. This can take many calls for a large desiredVolume; keep going as long as "done" is false.
+4. Only once "done" is true, report a short summary of how many prospects were found, imported, and scored (use the final call's recordsFound/imported/scored/deduped fields).
 `;
 }
 
