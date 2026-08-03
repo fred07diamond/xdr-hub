@@ -505,40 +505,36 @@ function PersonaCard({
 
       <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
         {isAdmin ? (
-          <>
-            <div className="flex items-center gap-2" />
-
-            <div>
-              {confirmDelete ? (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={deletePersona.isPending}
-                    className="rounded px-2 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
-                  >
-                    {deletePersona.isPending ? "Deleting…" : "Confirm"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(false)}
-                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted"
-                  >
-                    <IconX size={12} />
-                  </button>
-                </div>
-              ) : (
+          <div className="ml-auto">
+            {confirmDelete ? (
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  className="rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-destructive"
-                  aria-label="Delete persona"
+                  onClick={handleDelete}
+                  disabled={deletePersona.isPending}
+                  className="rounded px-2 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
                 >
-                  <IconTrash size={14} />
+                  {deletePersona.isPending ? "Deleting…" : "Confirm"}
                 </button>
-              )}
-            </div>
-          </>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted"
+                >
+                  <IconX size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-destructive"
+                aria-label="Delete persona"
+              >
+                <IconTrash size={14} />
+              </button>
+            )}
+          </div>
         ) : (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
             <IconLock size={11} />
