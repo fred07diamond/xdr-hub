@@ -5,7 +5,11 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { icps, personas, segmentContacts, segments, sourcingRules, subPersonas } from "../server/db/schema.js";
-import { buildSourcingRuleJobContent, computeIntervalCron } from "../server/helpers/sourcing-rule-jobs.js";
+import {
+  buildSourcingRuleJobContent,
+  computeIntervalCron,
+  VALID_INTERVAL_HOURS,
+} from "../server/helpers/sourcing-rule-jobs.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 type Db = ReturnType<typeof getDb>;
@@ -39,8 +43,8 @@ export default defineAction({
     companyDenyList: z.array(z.string()).nullish(),
     desiredVolume: z.number().int().min(1).max(200).default(20),
     intervalHours: z.number().int().refine(
-      (v) => [1, 2, 3, 4, 6, 8, 12, 24].includes(v),
-      "Must be one of 1, 2, 3, 4, 6, 8, 12, or 24 hours",
+      (v) => VALID_INTERVAL_HOURS.includes(v as (typeof VALID_INTERVAL_HOURS)[number]),
+      `Must be one of ${VALID_INTERVAL_HOURS.join(", ")} hours`,
     ),
   }),
   requiresAuth: true,

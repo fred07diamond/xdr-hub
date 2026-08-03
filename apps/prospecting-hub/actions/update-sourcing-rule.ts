@@ -6,8 +6,8 @@ import { getDb } from "../server/db/index.js";
 import { icps, sourcingRules } from "../server/db/schema.js";
 import {
   computeIntervalCron,
-  computeSourcingRuleCron,
   updateJobFrontmatterField,
+  VALID_INTERVAL_HOURS,
 } from "../server/helpers/sourcing-rule-jobs.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -24,7 +24,10 @@ export default defineAction({
     intervalHours: z
       .number()
       .int()
-      .refine((v) => [1, 2, 3, 4, 6, 8, 12, 24].includes(v), "Must be one of 1, 2, 3, 4, 6, 8, 12, or 24 hours")
+      .refine(
+        (v) => VALID_INTERVAL_HOURS.includes(v as (typeof VALID_INTERVAL_HOURS)[number]),
+        `Must be one of ${VALID_INTERVAL_HOURS.join(", ")} hours`,
+      )
       .nullish(),
     status: z.enum(["active", "paused"]).nullish(),
   }),
@@ -54,7 +57,12 @@ export default defineAction({
       }
     }
 
-    const nextIntervalHours = intervalHours ?? rule.intervalHours;
+    // scheduleChanged is only true when the caller explicitly supplies a
+    // fresh intervalHours in this call, so it's always non-null below —
+    // there's no legacy readyByTime/leadHours cron path to fall back to
+    // here. (A pre-migration rule that has never been given an
+    // intervalHours simply never hits this branch: its schedule is left
+    // untouched by this action until someone explicitly sets one.)
     const scheduleChanged = intervalHours != null;
     const statusChanged = status != null && status !== rule.status;
 
@@ -63,13 +71,7 @@ export default defineAction({
       if (resource) {
         let content = resource.content;
         if (scheduleChanged) {
-          // Prefer the new interval-hours model; fall back to the legacy
-          // readyByTime/leadHours cron only for pre-migration rules that
-          // have never been given an intervalHours value.
-          const cronExpression =
-            nextIntervalHours != null
-              ? computeIntervalCron(nextIntervalHours)
-              : computeSourcingRuleCron(rule.readyByTime, rule.leadHours);
+          const cronExpression = computeIntervalCron(intervalHours!);
           content = updateJobFrontmatterField(content, "schedule", `"${cronExpression}"`);
         }
         if (statusChanged) {
