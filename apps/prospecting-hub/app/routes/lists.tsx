@@ -169,8 +169,18 @@ function formatRelativeTime(iso: string | null) {
   return `Refreshed ${new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" })}`;
 }
 
+// A request that times out at the hosting platform's infrastructure layer
+// (a load balancer or edge proxy, not this app's own server code) can come
+// back as a raw HTML error page instead of a JSON action error — callAction
+// surfaces that page's full markup as `err.message` verbatim. Detect that
+// case and show a clean, actionable message instead of dumping raw HTML
+// into the UI.
 function errorMessage(err: unknown, fallback: string) {
-  return err instanceof Error && err.message ? err.message : fallback;
+  const message = err instanceof Error ? err.message : "";
+  if (/^\s*<(!doctype|html)/i.test(message)) {
+    return "This took too long and timed out — try again, or lower the desired volume for a faster run.";
+  }
+  return message || fallback;
 }
 
 function parseListInput(value: string): string[] {
@@ -347,7 +357,7 @@ function NewListTypeChoice({
             <IconRadar size={20} className="text-muted-foreground" />
             <p className="text-sm font-semibold text-foreground">Active list</p>
             <p className="text-xs text-muted-foreground">
-              Auto-populated on a schedule by a sourcing rule targeting a persona and companies.
+              Automatically finds and adds new prospects on a schedule, targeting a persona and companies you choose.
             </p>
           </button>
         </div>
@@ -930,7 +940,7 @@ function EditRulePanel({
       onUpdated();
       onClose();
     } catch (err) {
-      setError(errorMessage(err, "Couldn't update sourcing rule."));
+      setError(errorMessage(err, "Couldn't update the automation settings."));
     }
   }
 
@@ -1172,7 +1182,7 @@ function ListDetailView({
       refetch();
       refetchRules();
     } catch (err) {
-      setActionError(errorMessage(err, "Couldn't run the sourcing rule."));
+      setActionError(errorMessage(err, "Couldn't find new prospects."));
     } finally {
       setIsRunningSourcingRule(false);
     }
@@ -1297,7 +1307,7 @@ function ListDetailView({
                   type="button"
                   onClick={handleRunSourcingRule}
                   disabled={isRunningSourcingRule}
-                  title={`This list is populated by the sourcing rule "${segment.owningSourcingRuleName ?? "Unnamed rule"}" — run it now instead of a generic refresh`}
+                  title="Find fresh prospects for this list right now, instead of waiting for the next scheduled run"
                   className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
                 >
                   {isRunningSourcingRule ? (
@@ -1305,7 +1315,7 @@ function ListDetailView({
                   ) : (
                     <IconRefresh size={12} />
                   )}
-                  {isRunningSourcingRule ? "Running…" : "Run sourcing rule"}
+                  {isRunningSourcingRule ? "Finding prospects…" : "Find prospects now"}
                 </button>
               ) : (
                 segment.personaId && (
