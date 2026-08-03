@@ -265,5 +265,16 @@ export const sourcingRuleRunTargets = table("sourcing_rule_run_targets", {
   // null, once the row reaches its terminal "scored"/"errored" state).
   status: text("status", { enum: ["pending", "claimed", "scored", "errored"] }).notNull().default("pending"),
   error: text("error"),
+  // "claimed" (fix round 2): WHEN a row was claimed — a nullable timestamp
+  // set only while status = "claimed", used to detect and reclaim a row
+  // whose claiming invocation crashed mid-chunk (plausible on serverless)
+  // before ever reaching a terminal "scored"/"errored" state. Without this,
+  // a crashed claim would leave the row permanently unclaimable on the
+  // normal resume path (a syncRecordId-carrying call always dispatches
+  // straight into runScoringChunk, which only reclaims abandoned work for
+  // THIS run's own queue — it never hits the fresh-start/whole-run
+  // staleness path at all). See runScoringChunk's claim-staleness reclaim
+  // step for the exact threshold and reasoning.
+  claimedAt: text("claimed_at"),
   createdAt: text("created_at").default(now()),
 });

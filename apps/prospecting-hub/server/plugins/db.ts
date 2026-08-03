@@ -284,7 +284,75 @@ export default runMigrations(
       // regardless. Verified this exact syntax is valid, portable DDL on both
       // SQLite (partial indexes supported since 3.8.0) and Postgres (partial
       // indexes are a longstanding core feature) — no dialect gating needed.
-      sql: `CREATE UNIQUE INDEX IF NOT EXISTS sync_records_running_per_rule_idx ON sync_records(sourcing_rule_id) WHERE status = 'running'`,
+      //
+      // CLEANUP STATEMENT FIRST (fix round 2): production can already have
+      // 2+ "running" rows sharing the same sourcing_rule_id — that's
+      // EXACTLY the zombie state the pre-fix-round-1 scheduled-job bug was
+      // producing on every fire, before the job-prompt loop fix existed.
+      // Creating a unique index over already-violating data fails outright;
+      // on this app's migration runner that failure is caught and swallowed
+      // (never crashes the process), the failed migration is never recorded
+      // as applied, and — because migrations apply in strict list order —
+      // EVERY migration after this one would then silently never apply
+      // either, forever, with no loud failure anywhere. So this cleans up
+      // any pre-existing duplicates FIRST, in the same migration entry,
+      // before the index creation even runs: for every sourcing_rule_id with
+      // more than one "running" row, keep only the one with the latest
+      // started_at (ties broken by id, so exactly one survives even if two
+      // rows share an identical started_at) and mark every other one
+      // "failed" with a clear reason. Plain correlated EXISTS subquery — no
+      // window functions, no CTEs, no dialect-specific syntax — verified
+      // this exact shape is valid, portable SQL on both SQLite and Postgres.
+      // completed_at is set to each losing row's own started_at rather than
+      // "now" specifically to avoid needing any current-timestamp function
+      // call at all (datetime('now') is SQLite-only, NOW()/CURRENT_TIMESTAMP
+      // differ enough across drivers not to risk it in raw migration SQL).
+      sql: `UPDATE sync_records
+        SET status = 'failed',
+            completed_at = started_at,
+            error = 'Superseded by migration cleanup — duplicate running row detected for this rule'
+        WHERE status = 'running'
+          AND sourcing_rule_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM sync_records s2
+            WHERE s2.sourcing_rule_id = sync_records.sourcing_rule_id
+              AND s2.status = 'running'
+              AND (s2.started_at > sync_records.started_at
+                   OR (s2.started_at = sync_records.started_at AND s2.id > sync_records.id))
+          );
+        CREATE UNIQUE INDEX IF NOT EXISTS sync_records_running_per_rule_idx ON sync_records(sourcing_rule_id) WHERE status = 'running'`,
+    },
+    {
+      version: 30,
+      name: "sourcing-rule-run-targets-claimed-at-and-unique-index",
+      // claimed_at: nullable timestamp, set only while a row is
+      // status = "claimed" — lets runScoringChunk (run-sourcing-rule-
+      // pipeline.ts) detect and reclaim a row whose claiming invocation
+      // crashed mid-chunk before reaching a terminal scored/errored state
+      // (see that function's claim-staleness reclaim step for the exact
+      // threshold/reasoning). Also adds a UNIQUE(sync_record_id, contact_id)
+      // index — cheap, low-cost hardening against the DISCLOSED (accepted,
+      // non-blocking) residual search-phase race noted in the fix-round-1
+      // report: two concurrent invocations both resolving the same match
+      // for the same run could otherwise both insert a queue row for the
+      // same (sync_record_id, contact_id) pair. This neutralizes the
+      // duplicate-QUEUE-ROW symptom of that race cheaply, without needing
+      // to solve the race's actual root cause (resolveContact's dedup,
+      // which spans multiple tables/conditions, not a single status flip).
+      // Same defensive-cleanup-before-index pattern as v29 above, for the
+      // same reason: this table already exists (since v28) and — however
+      // unlikely, given it's the same young feature as v29's own bug — could
+      // already hold duplicate (sync_record_id, contact_id) pairs from a run
+      // that hit the disclosed race before this index existed. Keeps
+      // whichever duplicate row has the lowest id (arbitrary but
+      // deterministic — these are ephemeral work-queue rows, not a
+      // permanent record, so which literal row id survives doesn't matter).
+      sql: `ALTER TABLE sourcing_rule_run_targets ADD COLUMN claimed_at TEXT;
+        DELETE FROM sourcing_rule_run_targets
+        WHERE id NOT IN (
+          SELECT MIN(id) FROM sourcing_rule_run_targets GROUP BY sync_record_id, contact_id
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS sourcing_rule_run_targets_sync_contact_idx ON sourcing_rule_run_targets(sync_record_id, contact_id)`,
     },
   ],
   { table: "prospecting_hub_migrations" },

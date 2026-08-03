@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
+import { and, desc, eq, inArray, isNull, or, sql } from "@agent-native/core/db/schema";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -68,6 +68,25 @@ const CONCURRENCY_LIMIT = 4;
 // Reusing the exact number keeps the concept consistent between what the
 // UI displays and what the server does with a "running" row it finds.
 const RUN_STALE_AFTER_MS = 6 * 60_000;
+
+// Fix round 2: a PER-ROW liveness check, distinct from RUN_STALE_AFTER_MS
+// above (which is a WHOLE-RUN staleness check that only ever runs on the
+// no-syncRecordId fresh-start path). A syncRecordId-carrying resume call
+// always dispatches straight into runScoringChunk and never touches that
+// whole-run check at all — so if an invocation crashes after claiming rows
+// (flipping them "pending" -> "claimed") but before finishing them, those
+// specific rows would otherwise stay "claimed" forever on the normal resume
+// path, and the run could never reach `remaining: 0`. Deliberately much
+// shorter than the 6-minute whole-run window: a single scoring chunk is at
+// most SCORING_CHUNK_SIZE (16) contacts, processed in CONCURRENCY_LIMIT-wide
+// batches (4 sequential batches of 4), each contact bounded by the existing
+// ~20s CommonRoom MCP timeout plus one LLM completeText() call — a healthy
+// chunk should fully resolve in well under a minute in the worst realistic
+// case. 2 minutes gives a comfortable safety margin above that while still
+// being meaningfully shorter than the whole-run window, so a genuinely stuck
+// claim self-heals long before the surrounding run would otherwise need the
+// whole-run abandonment path to notice anything is wrong.
+const CLAIM_STALE_AFTER_MS = 2 * 60_000;
 
 interface PipelineResult {
   done: boolean;
@@ -808,6 +827,31 @@ export default defineAction({
     // scored/errored/remaining, since nothing in-memory survives between
     // invocations.
     async function runScoringChunk(): Promise<PipelineResult> {
+      // Reclaim any row for THIS run that's been stuck "claimed" longer than
+      // CLAIM_STALE_AFTER_MS — the claiming invocation almost certainly
+      // crashed mid-chunk before ever reaching a terminal scored/errored
+      // state. Runs at the very start of EVERY invocation of this function
+      // (both a fresh attach and a plain resume dispatch straight into
+      // scoring), before this invocation even looks at what's pending, so a
+      // run that's entirely stuck on abandoned claims self-heals within this
+      // same call instead of returning `done: false` with zero progress
+      // forever. Also clears the stale claimToken left in `error` so the
+      // next real claim attempt starts clean.
+      const claimStaleCutoff = new Date(Date.now() - CLAIM_STALE_AFTER_MS).toISOString();
+      await db
+        .update(sourcingRuleRunTargets)
+        .set({ status: "pending", claimedAt: null, error: null })
+        .where(
+          and(
+            eq(sourcingRuleRunTargets.syncRecordId, syncRecordId),
+            eq(sourcingRuleRunTargets.status, "claimed"),
+            or(
+              isNull(sourcingRuleRunTargets.claimedAt),
+              sql`${sourcingRuleRunTargets.claimedAt} < ${claimStaleCutoff}`,
+            ),
+          ),
+        );
+
       const currentMetaRows = await db
         .select({ metadata: syncRecords.metadata })
         .from(syncRecords)
@@ -887,7 +931,7 @@ export default defineAction({
         const claimToken = nanoid();
         await db
           .update(sourcingRuleRunTargets)
-          .set({ status: "claimed", error: claimToken })
+          .set({ status: "claimed", error: claimToken, claimedAt: new Date().toISOString() })
           .where(and(inArray(sourcingRuleRunTargets.id, candidateIds), eq(sourcingRuleRunTargets.status, "pending")));
 
         claimedRows = await db
