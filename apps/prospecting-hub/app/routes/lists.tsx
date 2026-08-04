@@ -28,9 +28,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
-import { ContactDrawer } from "@/components/ContactDrawer";
-import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
-import { SourceBadge } from "@/components/SourceBadge";
+import { ContactsTable } from "@/components/ContactsTable";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -1701,7 +1699,6 @@ function ListDetailView({
   const assignSegment = useActionMutation("assign-segment");
   const refreshSegment = useActionMutation("refresh-segment");
   const deleteSegment = useActionMutation("delete-segment");
-  const markActioned = useActionMutation("mark-contact-actioned");
   const updateSourcingRule = useActionMutation("update-sourcing-rule");
   const deleteSourcingRule = useActionMutation("delete-sourcing-rule");
 
@@ -1714,7 +1711,6 @@ function ListDetailView({
   const [isRunningSourcingRule, setIsRunningSourcingRule] = useState(false);
   const [sourcingRunProgress, setSourcingRunProgress] = useState<SourcingRunProgress | null>(null);
   const [editingRule, setEditingRule] = useState(false);
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
   async function handleToggleVisibility() {
     if (!segment) return;
@@ -1866,16 +1862,6 @@ function ListDetailView({
           : errorMessage(err, "Couldn't delete list."),
       );
       setConfirmDelete(false);
-    }
-  }
-
-  async function handleMarkActioned(contactId: string) {
-    setActionError(null);
-    try {
-      await markActioned.mutateAsync({ contactId });
-      refetch();
-    } catch (err) {
-      setActionError(errorMessage(err, "Couldn't mark contact as actioned."));
     }
   }
 
@@ -2104,86 +2090,20 @@ function ListDetailView({
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        {isLoading ? (
-          <div className="flex h-32 items-center justify-center">
-            <IconLoader2 size={20} className="animate-spin text-muted-foreground" />
-          </div>
-        ) : loadError ? null : contacts.length === 0 ? (
-          <div className="flex h-48 flex-col items-center justify-center gap-2 text-center">
-            <IconUsers size={28} className="text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No contacts in this list</p>
-          </div>
-        ) : (
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 border-b border-border bg-background text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Title</th>
-                <th className="px-4 py-2 font-medium">Company</th>
-                <th className="px-4 py-2 font-medium">Overall</th>
-                <th className="px-4 py-2 font-medium">Persona match</th>
-                <th className="px-4 py-2 font-medium">Company fit</th>
-                <th className="px-4 py-2 font-medium">Engagement</th>
-                <th className="px-4 py-2 font-medium">Reasoning</th>
-                <th className="px-4 py-2 font-medium">Source</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {contacts.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => setSelectedContactId(c.id)}
-                  className="cursor-pointer border-b border-border/60 hover:bg-muted/30"
-                >
-                  <td className="max-w-[160px] truncate px-4 py-2.5 font-medium text-foreground" title={c.name}>
-                    {c.name}
-                  </td>
-                  <td className="max-w-[140px] truncate px-4 py-2.5 text-muted-foreground" title={c.title ?? undefined}>
-                    {c.title ?? "—"}
-                  </td>
-                  <td className="max-w-[140px] truncate px-4 py-2.5 text-muted-foreground" title={c.company ?? undefined}>
-                    {c.company ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" breakdown={buildOverallScoreBreakdown(c)} /></td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.personaMatchScore} /></td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.companyFitScore} /></td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.engagementScore} /></td>
-                  <td className="max-w-[220px] truncate px-4 py-2.5 text-muted-foreground/80" title={c.scoreReasoning ?? undefined}>
-                    {c.scoreReasoning ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5"><SourceBadge source={c.source} hubspotUrl={c.hubspotUrl} /></td>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        c.status === "actioned"
-                          ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {c.status === "actioned" ? "Actioned" : "Active"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                    {c.status === "active" && (
-                      <button
-                        type="button"
-                        onClick={() => handleMarkActioned(c.id)}
-                        disabled={markActioned.isPending}
-                        className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
-                      >
-                        Mark actioned
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {isLoading ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <IconLoader2 size={20} className="animate-spin text-muted-foreground" />
+        </div>
+      ) : loadError ? null : segment ? (
+        // Sourced from list-contacts (scoped via segmentId), NOT from
+        // get-segment's own embedded `contacts` array above — that array
+        // now only backs this header's contact count/relative-refresh text.
+        // showPersonaFilter=false: a single list is usually already
+        // persona-scoped by construction (built from one persona, or by a
+        // sourcing rule targeting one), so a second persona filter here
+        // would mostly just narrow an already-narrow set.
+        <ContactsTable segmentId={id} showPersonaFilter={false} />
+      ) : null}
 
       {editingRule && rule && (
         <EditRulePanel
@@ -2192,8 +2112,6 @@ function ListDetailView({
           onUpdated={() => refetchRules()}
         />
       )}
-
-      <ContactDrawer contactId={selectedContactId} onClose={() => setSelectedContactId(null)} />
     </div>
   );
 }

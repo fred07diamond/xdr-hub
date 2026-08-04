@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, personas, segmentContacts, segments } from "../server/db/schema.js";
+import { assertSegmentReadable } from "../server/helpers/segment-access.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 const PAGE_SIZE_DEFAULT = 50;
@@ -27,6 +28,7 @@ export default defineAction({
     personaId: z.string().nullish(),
     source: z.enum(["hubspot", "commonroom", "prospector"]).nullish(),
     status: z.enum(["active", "actioned"]).nullish(),
+    segmentId: z.string().nullish().describe("Scope results to only contacts that are members of this segment (list), ANDed with any other filters"),
     sortBy: z.enum(Object.keys(SORTABLE_COLUMNS) as [keyof typeof SORTABLE_COLUMNS]).nullish(),
     sortDirection: z.enum(["asc", "desc"]).nullish(),
     limit: z.number().int().min(1).max(PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
@@ -35,14 +37,32 @@ export default defineAction({
   requiresAuth: true,
   readOnly: true,
   http: { method: "GET" },
-  run: async ({ search, personaId, source, status, sortBy, sortDirection, limit, offset }, ctx) => {
+  run: async ({ search, personaId, source, status, segmentId, sortBy, sortDirection, limit, offset }, ctx) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
+
+    // Same row-level-security check get-segment.ts already runs before
+    // handing back a segment's contacts — without it, a `segmentId` filter
+    // here would let any authenticated xdr/ae/admin read the membership of
+    // a private segment they don't own just by guessing/knowing its id,
+    // bypassing the "private unless owner/admin" rule entirely.
+    if (segmentId) {
+      await assertSegmentReadable(segmentId, ctx!.userEmail!, db);
+    }
 
     const conditions = [
       personaId ? eq(contacts.personaId, personaId) : undefined,
       source ? eq(contacts.source, source) : undefined,
       status ? eq(contacts.status, status) : undefined,
+      // Correlated EXISTS rather than resolving segment membership to an id
+      // list first — this app has hit real bugs from passing an empty id
+      // array into `inArray` (undefined-behavior SQL on some backends; see
+      // run-sourcing-rule-pipeline.ts's own note on this). EXISTS sidesteps
+      // that landmine entirely: an empty/no-match segment just yields zero
+      // rows like any other over-narrow filter, never an invalid query.
+      segmentId
+        ? sql`EXISTS (SELECT 1 FROM ${segmentContacts} WHERE ${segmentContacts.contactId} = ${contacts.id} AND ${segmentContacts.segmentId} = ${segmentId})`
+        : undefined,
       search
         ? or(
             sql`lower(${contacts.name}) LIKE ${`%${search.toLowerCase()}%`}`,
