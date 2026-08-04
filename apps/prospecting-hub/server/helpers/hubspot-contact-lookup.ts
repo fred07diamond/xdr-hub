@@ -187,6 +187,52 @@ async function findHubSpotContactId(input: {
   return match?.id ?? null;
 }
 
+// Direct account-name search — the fallback path for a contact who isn't
+// in HubSpot yet (e.g. a net-new Prospector-sourced prospect) but whose
+// COMPANY already is. Confirmed live: an account can carry real, useful
+// context (Global Region, ABX Program Type, Company/xDR Owner) in HubSpot
+// well before any specific person there becomes a tracked contact — that
+// account-level context is worth showing even with zero contact match.
+async function findHubSpotCompanyId(companyName: string): Promise<string | number | null> {
+  try {
+    const res = (await hubspotFetch("/crm/v3/objects/companies/search", {
+      method: "POST",
+      body: JSON.stringify({
+        filterGroups: [{ filters: [{ propertyName: "name", operator: "CONTAINS_TOKEN", value: companyName }] }],
+        properties: ["name"],
+        limit: 10,
+      }),
+    })) as { results?: Array<{ id: string | number; properties: { name?: string } }> };
+    const results = res.results ?? [];
+    const companyLower = companyName.trim().toLowerCase();
+    return (
+      results.find((r) => (r.properties.name ?? "").trim().toLowerCase() === companyLower)?.id ??
+      (results.length === 1 ? results[0].id : null)
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function fetchCompanyFields(companyId: string | number): Promise<HubSpotContactField[]> {
+  const companyDefs = await fetchPropertyDefs("companies");
+  const resolvedCompanyProps = resolveLabels(COMPANY_LABELS, companyDefs);
+  if (resolvedCompanyProps.length === 0) return [];
+
+  const companyRes = (await hubspotFetch(
+    `/crm/v3/objects/companies/${companyId}?properties=${resolvedCompanyProps.map((r) => r.name).join(",")}`,
+  )) as { properties?: Record<string, string | undefined> };
+  const companyProps = companyRes.properties ?? {};
+
+  const fields: HubSpotContactField[] = [];
+  for (const { label, name, options } of resolvedCompanyProps) {
+    const raw = companyProps[name];
+    if (!raw) continue;
+    fields.push({ label: `${label} (Company)`, value: await resolveField(name, raw, options) });
+  }
+  return fields;
+}
+
 export async function lookupHubSpotContactDetail(input: {
   fullName: string;
   companyName: string | null;
@@ -196,59 +242,65 @@ export async function lookupHubSpotContactDetail(input: {
   const token = await getHubSpotToken();
   if (!token) return null;
 
-  const contactId = input.knownHubspotContactId ?? (await findHubSpotContactId(input));
-  if (!contactId) return null;
-
   const fields: HubSpotContactField[] = [];
+  let hubspotUrl: string | null = null;
+  let companyId: string | number | null = null;
 
-  const contactDefs = await fetchPropertyDefs("contacts");
-  const resolvedContactProps = resolveLabels(CONTACT_LABELS, contactDefs);
+  const contactId = input.knownHubspotContactId ?? (await findHubSpotContactId(input));
 
-  const contactRes = (await hubspotFetch(
-    `/crm/v3/objects/contacts/${contactId}?properties=${resolvedContactProps.map((r) => r.name).join(",")}`,
-  )) as { properties?: Record<string, string | undefined> };
-  const contactProps = contactRes.properties ?? {};
+  if (contactId) {
+    const contactDefs = await fetchPropertyDefs("contacts");
+    const resolvedContactProps = resolveLabels(CONTACT_LABELS, contactDefs);
+    const contactRes = (await hubspotFetch(
+      `/crm/v3/objects/contacts/${contactId}?properties=${resolvedContactProps.map((r) => r.name).join(",")}`,
+    )) as { properties?: Record<string, string | undefined> };
+    const contactProps = contactRes.properties ?? {};
+    for (const { label, name, options } of resolvedContactProps) {
+      const raw = contactProps[name];
+      if (!raw) continue;
+      fields.push({ label, value: await resolveField(name, raw, options) });
+    }
 
-  for (const { label, name, options } of resolvedContactProps) {
-    const raw = contactProps[name];
-    if (!raw) continue;
-    fields.push({ label, value: await resolveField(name, raw, options) });
-  }
+    // Best-effort — a missing association or a lookup hiccup just means no
+    // company fields get appended, never a failed lookup for the contact
+    // fields already gathered above.
+    try {
+      const assocRes = (await hubspotFetch(`/crm/v4/objects/contacts/${contactId}/associations/companies`)) as {
+        results?: Array<{ toObjectId?: string | number }>;
+      };
+      companyId = assocRes.results?.[0]?.toObjectId ?? null;
+    } catch {
+      companyId = null;
+    }
 
-  // Associated company's rolled-up properties — best-effort, a missing
-  // association or a company-side fetch failure just means fewer fields,
-  // never a failed lookup for the contact fields already gathered above.
-  try {
-    const assocRes = (await hubspotFetch(`/crm/v4/objects/contacts/${contactId}/associations/companies`)) as {
-      results?: Array<{ toObjectId?: string | number }>;
-    };
-    const companyId = assocRes.results?.[0]?.toObjectId;
+    try {
+      const info = (await hubspotFetch("/account-info/v3/details")) as { portalId?: number };
+      if (info.portalId) hubspotUrl = `https://app.hubspot.com/contacts/${info.portalId}/contact/${contactId}`;
+    } catch {
+      // best-effort
+    }
+  } else if (input.companyName) {
+    // No matching contact — fall back to the account/company-level HubSpot
+    // record directly (see findHubSpotCompanyId above).
+    companyId = await findHubSpotCompanyId(input.companyName);
     if (companyId != null) {
-      const companyDefs = await fetchPropertyDefs("companies");
-      const resolvedCompanyProps = resolveLabels(COMPANY_LABELS, companyDefs);
-      if (resolvedCompanyProps.length > 0) {
-        const companyRes = (await hubspotFetch(
-          `/crm/v3/objects/companies/${companyId}?properties=${resolvedCompanyProps.map((r) => r.name).join(",")}`,
-        )) as { properties?: Record<string, string | undefined> };
-        const companyProps = companyRes.properties ?? {};
-        for (const { label, name, options } of resolvedCompanyProps) {
-          const raw = companyProps[name];
-          if (!raw) continue;
-          fields.push({ label: `${label} (Company)`, value: await resolveField(name, raw, options) });
-        }
+      try {
+        const info = (await hubspotFetch("/account-info/v3/details")) as { portalId?: number };
+        if (info.portalId) hubspotUrl = `https://app.hubspot.com/contacts/${info.portalId}/record/0-2/${companyId}`;
+      } catch {
+        // best-effort
       }
     }
-  } catch {
-    // best-effort — contact-level fields above still stand
   }
 
-  let hubspotUrl: string | null = null;
-  try {
-    const info = (await hubspotFetch("/account-info/v3/details")) as { portalId?: number };
-    if (info.portalId) hubspotUrl = `https://app.hubspot.com/contacts/${info.portalId}/contact/${contactId}`;
-  } catch {
-    // best-effort
+  if (companyId != null) {
+    try {
+      fields.push(...(await fetchCompanyFields(companyId)));
+    } catch {
+      // best-effort — whatever fields were gathered above still stand
+    }
   }
 
+  if (fields.length === 0) return null;
   return { hubspotUrl, fields };
 }
