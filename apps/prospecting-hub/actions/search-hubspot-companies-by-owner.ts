@@ -28,7 +28,7 @@ type MatchedVia = "companyOwner" | "xdrOwner" | "both";
 
 export default defineAction({
   description:
-    "Search HubSpot companies owned by a given owner (person), matching on EITHER the native Company owner (hubspot_owner_id) OR the custom xDR Owner (xdr_owner) property — an OR across both fields, not an AND. Read-only, used to browse an AE's or XDR's book of accounts before bulk-adding some as Focus Accounts. Throws if HubSpot isn't connected or the call fails — there's no local fallback for owner-scoped data.",
+    "Search HubSpot companies owned by a given owner (person), matching on EITHER the native Company owner (hubspot_owner_id) OR the custom xDR Owner (xdr_owner) property — an OR across both fields, not an AND. Read-only, used to browse an AE's or XDR's book of accounts and add some directly as company tags on a sourcing rule. Throws if HubSpot isn't connected or the call fails — there's no local fallback for owner-scoped data.",
   schema: z.object({ ownerId: z.string().min(1) }),
   requiresAuth: true,
   readOnly: true,

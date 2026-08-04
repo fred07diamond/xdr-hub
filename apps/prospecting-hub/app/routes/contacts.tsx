@@ -1,7 +1,6 @@
 import { useActionQuery } from "@agent-native/core/client";
 import { IconSparkles } from "@tabler/icons-react";
 import { useState } from "react";
-import { Link } from "react-router";
 
 import { ContactsTable } from "@/components/ContactsTable";
 import { APP_TITLE } from "@/lib/app-config";
@@ -24,9 +23,7 @@ export default function ContactsRoute() {
     refetchInterval: 60000,
     staleTime: 30000,
   });
-  const homeStats = homeStatsData as
-    | { newTodayCount: number; focusAccountsTotal: number; focusAccountsWithNewContactsToday: number }
-    | undefined;
+  const homeStats = homeStatsData as { newTodayCount: number } | undefined;
 
   return (
     <div className="flex h-full flex-col">
@@ -45,14 +42,6 @@ export default function ContactsRoute() {
               ? "No contacts synced yet"
               : `${tableStats.total.toLocaleString()} contact${tableStats.total === 1 ? "" : "s"} across HubSpot and CommonRoom`}
         </p>
-        {homeStats && homeStats.focusAccountsTotal > 0 && (
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            <Link to="/focus-accounts" className="text-primary hover:underline">
-              {homeStats.focusAccountsWithNewContactsToday} of {homeStats.focusAccountsTotal} focus accounts
-            </Link>{" "}
-            have new contacts today
-          </p>
-        )}
       </div>
 
       <ContactsTable onStatsChange={setTableStats} />

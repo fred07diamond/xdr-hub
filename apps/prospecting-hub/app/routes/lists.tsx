@@ -6,12 +6,13 @@ import {
 import {
   IconAdjustmentsHorizontal,
   IconArrowLeft,
+  IconCheck,
   IconChevronDown,
   IconChevronRight,
   IconCircleCheck,
   IconCircleX,
   IconClock,
-  IconFlag3,
+  IconCloudDownload,
   IconListDetails,
   IconLoader2,
   IconLock,
@@ -27,9 +28,9 @@ import {
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router";
 
 import { ContactsTable } from "@/components/ContactsTable";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -110,11 +111,271 @@ interface IcpOption {
   product: string | null;
 }
 
-interface FocusAccountOption {
+// ── HubSpot owner-browse (feeds the company tag input directly — see
+// BrowseByOwnerPopover below; no separate saved-entity/page, per Fred's
+// explicit "I don't need an entire page for this, just let me add the
+// company like a tag" feedback) ─────────────────────────────────────────────
+
+interface HubSpotOwnerOption {
   id: string;
-  companyName: string;
-  companyDomain: string | null;
-  tier: string | null;
+  name: string;
+}
+
+type MatchedVia = "companyOwner" | "xdrOwner" | "both";
+
+interface HubSpotOwnedCompany {
+  id: string;
+  name: string;
+  domain: string | null;
+  matchedVia: MatchedVia;
+}
+
+function MatchedViaBadge({ matchedVia }: { matchedVia: MatchedVia }) {
+  const label =
+    matchedVia === "both" ? "Both" : matchedVia === "xdrOwner" ? "xDR Owner" : "Company Owner";
+  const colorClasses =
+    matchedVia === "both"
+      ? "bg-green-500/10 text-green-600 dark:text-green-400"
+      : matchedVia === "xdrOwner"
+        ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
+        : "bg-sky-500/10 text-sky-600 dark:text-sky-400";
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${colorClasses}`}>
+      {label}
+    </span>
+  );
+}
+
+// Compact popover, anchored to the company tag input itself — pick a real
+// HubSpot owner (an AE via "Company owner", or an XDR via the custom
+// "xDR Owner" property; both are OR'd, and the checklist shows which one
+// matched), check the companies you want, and they're added directly as
+// tags in the SAME field a manually-typed company goes into. No separate
+// saved list, no separate page — this is genuinely just a faster way to
+// fill in the tag input.
+function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const { data: ownersData, isLoading: ownersLoading } = useActionQuery(
+    "search-hubspot-company-owners",
+    {},
+    { enabled: open },
+  );
+  const ownersResult = ownersData as
+    | { owners?: HubSpotOwnerOption[]; notConnected?: boolean; error?: string | null }
+    | undefined;
+  const owners: HubSpotOwnerOption[] = ownersResult?.owners ?? [];
+  const ownersNotConnected = ownersResult?.notConnected === true;
+  const ownersFetchError = ownersResult?.error ?? null;
+
+  const [ownerQuery, setOwnerQuery] = useState("");
+  const [showOwnerSuggestions, setShowOwnerSuggestions] = useState(false);
+  const [selectedOwner, setSelectedOwner] = useState<HubSpotOwnerOption | null>(null);
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<Set<string>>(new Set());
+
+  const { data: companiesData, isLoading: companiesLoading, error: companiesError } = useActionQuery(
+    "search-hubspot-companies-by-owner",
+    { ownerId: selectedOwner?.id ?? "" },
+    { enabled: !!selectedOwner },
+  );
+  const companiesResult = companiesData as
+    | { companies?: HubSpotOwnedCompany[]; total?: number; truncated?: boolean }
+    | undefined;
+  const companies: HubSpotOwnedCompany[] = companiesResult?.companies ?? [];
+  const companiesTruncated = companiesResult?.truncated ?? false;
+  const companiesTotal = companiesResult?.total ?? companies.length;
+
+  const filteredOwners = owners.filter((o) =>
+    o.name.toLowerCase().includes(ownerQuery.trim().toLowerCase()),
+  );
+  const allSelected = companies.length > 0 && selectedCompanyIds.size === companies.length;
+
+  function reset() {
+    setOwnerQuery("");
+    setShowOwnerSuggestions(false);
+    setSelectedOwner(null);
+    setSelectedCompanyIds(new Set());
+  }
+
+  function pickOwner(owner: HubSpotOwnerOption) {
+    setSelectedOwner(owner);
+    setOwnerQuery(owner.name);
+    setShowOwnerSuggestions(false);
+    setSelectedCompanyIds(new Set());
+  }
+
+  function toggleCompany(id: string) {
+    setSelectedCompanyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedCompanyIds((prev) =>
+      prev.size === companies.length ? new Set() : new Set(companies.map((c) => c.id)),
+    );
+  }
+
+  function handleAdd() {
+    const chosen = companies.filter((c) => selectedCompanyIds.has(c.id)).map((c) => c.name);
+    if (chosen.length === 0) return;
+    onAdd(chosen);
+    setOpen(false);
+    reset();
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <IconCloudDownload size={12} />
+          Browse by owner
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start">
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+          {selectedOwner && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedOwner(null);
+                setSelectedCompanyIds(new Set());
+                setOwnerQuery("");
+                setShowOwnerSuggestions(false);
+              }}
+              className="rounded p-1 text-muted-foreground hover:bg-muted"
+              aria-label="Back"
+            >
+              <IconArrowLeft size={14} />
+            </button>
+          )}
+          <span className="text-xs font-medium text-foreground">
+            {selectedOwner ? `${selectedOwner.name}'s companies` : "Browse by owner"}
+          </span>
+        </div>
+
+        <div className="max-h-72 overflow-y-auto p-3">
+          {!selectedOwner ? (
+            ownersLoading ? (
+              <div className="flex h-9 items-center text-xs text-muted-foreground">
+                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading HubSpot owners…
+              </div>
+            ) : ownersFetchError ? (
+              <p className="text-xs text-destructive">Couldn't load HubSpot owners: {ownersFetchError}.</p>
+            ) : owners.length === 0 && ownersNotConnected ? (
+              <p className="text-xs text-muted-foreground/60">
+                HubSpot isn't connected — connect it to browse by owner.
+              </p>
+            ) : owners.length === 0 ? (
+              <p className="text-xs text-muted-foreground/60">No HubSpot owners found.</p>
+            ) : (
+              <div className="relative">
+                <input
+                  autoFocus
+                  value={ownerQuery}
+                  onChange={(e) => {
+                    setOwnerQuery(e.target.value);
+                    setShowOwnerSuggestions(true);
+                  }}
+                  onFocus={() => setShowOwnerSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowOwnerSuggestions(false), 150)}
+                  placeholder="Search owners (Company owner or xDR Owner)…"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                {showOwnerSuggestions && filteredOwners.length > 0 && (
+                  <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+                    {filteredOwners.map((owner) => (
+                      <button
+                        key={owner.id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          pickOwner(owner);
+                        }}
+                        className="flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
+                      >
+                        {owner.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          ) : companiesLoading ? (
+            <div className="flex h-20 items-center justify-center text-xs text-muted-foreground">
+              <IconLoader2 size={16} className="mr-1.5 animate-spin" /> Loading companies…
+            </div>
+          ) : companiesError ? (
+            <p className="text-xs text-destructive">
+              {errorMessage(companiesError, "Couldn't load companies for this owner.")}
+            </p>
+          ) : companies.length === 0 ? (
+            <p className="text-xs text-muted-foreground/60">{selectedOwner.name} has no companies in HubSpot.</p>
+          ) : (
+            <div>
+              {companiesTruncated && (
+                <p className="mb-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  Showing the first {companies.length} of {companiesTotal.toLocaleString()} companies —
+                  "Select all" won't cover this owner's full book of business.
+                </p>
+              )}
+              <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+                {companies.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-foreground hover:bg-muted/50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCompanyIds.has(c.id)}
+                      onChange={() => toggleCompany(c.id)}
+                      className="size-3.5 shrink-0 rounded border-border"
+                    />
+                    <span className="min-w-0 flex-1 truncate" title={c.name}>
+                      {c.name}
+                    </span>
+                    <MatchedViaBadge matchedVia={c.matchedVia} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {selectedOwner && companies.length > 0 && (
+          <div className="flex items-center justify-between border-t border-border px-3 py-2">
+            <button
+              type="button"
+              onClick={toggleSelectAll}
+              className="text-[11px] font-medium text-primary hover:underline"
+            >
+              {allSelected ? "Deselect all" : "Select all"}
+            </button>
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={selectedCompanyIds.size === 0}
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-40"
+            >
+              <IconCheck size={12} />
+              Add {selectedCompanyIds.size || ""}
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 interface SourcingRule {
@@ -305,10 +566,16 @@ function CompanyTagInput({
   values,
   onChange,
   placeholder,
+  allowOwnerBrowse,
 }: {
   values: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
+  // Only meaningful for an ALLOW-list usage — "browse who owns this
+  // company" doesn't make sense for a deny-list, so callers opt in
+  // explicitly rather than this defaulting on everywhere CompanyTagInput
+  // is used.
+  allowOwnerBrowse?: boolean;
 }) {
   const [text, setText] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -349,42 +616,57 @@ function CompanyTagInput({
     }
   }
 
+  function addFromOwnerBrowse(companyNames: string[]) {
+    const merged = [...values];
+    for (const name of companyNames) {
+      if (!merged.some((v) => v.toLowerCase() === name.toLowerCase())) merged.push(name);
+    }
+    onChange(merged);
+  }
+
   return (
-    <div className="relative">
-      <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring">
-        {values.map((v, i) => (
-          <TagChip key={`${v}-${i}`} label={v} onRemove={() => onChange(values.filter((_, idx) => idx !== i))} />
-        ))}
-        <input
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setShowSuggestions(true);
-          }}
-          onFocus={() => setShowSuggestions(true)}
-          onKeyDown={handleKeyDown}
-          // Delay hiding so a suggestion button's onMouseDown still fires
-          // before blur would otherwise unmount the dropdown first.
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-          placeholder={values.length === 0 ? placeholder : undefined}
-          className="min-w-[80px] flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-        />
-      </div>
-      {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                commit(s);
-              }}
-              className="flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
-            >
-              {s}
-            </button>
+    <div>
+      <div className="relative">
+        <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring">
+          {values.map((v, i) => (
+            <TagChip key={`${v}-${i}`} label={v} onRemove={() => onChange(values.filter((_, idx) => idx !== i))} />
           ))}
+          <input
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setShowSuggestions(true);
+            }}
+            onFocus={() => setShowSuggestions(true)}
+            onKeyDown={handleKeyDown}
+            // Delay hiding so a suggestion button's onMouseDown still fires
+            // before blur would otherwise unmount the dropdown first.
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            placeholder={values.length === 0 ? placeholder : undefined}
+            className="min-w-[80px] flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+          />
+        </div>
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commit(s);
+                }}
+                className="flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {allowOwnerBrowse && (
+        <div className="mt-1">
+          <BrowseByOwnerPopover onAdd={addFromOwnerBrowse} />
         </div>
       )}
     </div>
@@ -567,94 +849,14 @@ function sameList(a: string[], b: string[]) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-// Order- and case-insensitive variant — needed specifically for the company
-// allow-list once Focus Accounts became toggleable inside EditRulePanel: that
-// list is now reconstructed each save by merging the manual chip-input list
-// with whichever Focus Accounts are checked, and that merge doesn't preserve
-// the original stored order OR casing (the partition step that recognizes an
-// existing allow-list entry as "this is really Focus Account X" matches
-// case-insensitively, then re-emits the Focus Account's own canonical-cased
-// name — so a rule with an old lowercase manual entry like "apple" that
-// happens to match a Focus Account named "Apple" would otherwise read as
-// "changed" purely from that casing swap, spuriously enabling Save and
-// silently rewriting stored casing with zero real user action). Lowercasing
-// before sorting means the effective SET of companies (not their exact
-// stored casing) is what determines "did this field actually change".
-function sameSet(a: string[], b: string[]) {
-  const normalize = (list: string[]) => list.map((s) => s.toLowerCase()).sort();
-  return sameList(normalize(a), normalize(b));
-}
-
 // Section header used to group the New Active List / Edit Rule panels' many
-// fields into "what am I actually configuring here" chunks (Fred's own
-// feedback: the old flat field list buried Focus Accounts as one plain
-// checkbox section among ~8 others with no visual weight) — same uppercase-
+// fields into "what am I actually configuring here" chunks — same uppercase-
 // label style already used elsewhere on this page (e.g. "Automation").
 function FormSectionHeader({ children }: { children: ReactNode }) {
   return (
     <h3 className="mb-0.5 mt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
       {children}
     </h3>
-  );
-}
-
-// Shared between NewActiveListPanel and EditRulePanel so the two can't drift
-// apart again the way the Contacts/List-detail tables once did. Given real
-// visual weight (bordered card, icon, one-line explanation, a direct link to
-// manage accounts) instead of a plain label — this is the field Fred said was
-// easy to miss entirely in the old flat layout.
-function FocusAccountsPicker({
-  focusAccounts,
-  isLoading,
-  selectedIds,
-  onToggle,
-}: {
-  focusAccounts: FocusAccountOption[];
-  isLoading: boolean;
-  selectedIds: Set<string>;
-  onToggle: (id: string) => void;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/20 p-3">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-          <IconFlag3 size={13} className="text-primary" />
-          Focus Accounts
-        </span>
-        <Link to="/focus-accounts" className="text-[11px] text-primary hover:underline">
-          Manage →
-        </Link>
-      </div>
-      <p className="mb-2 text-[11px] text-muted-foreground">
-        Check the accounts you want this list to search within — pulled from your curated Focus Accounts.
-      </p>
-      {isLoading ? (
-        <div className="flex h-9 items-center text-xs text-muted-foreground">
-          <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading focus accounts…
-        </div>
-      ) : focusAccounts.length === 0 ? (
-        <p className="text-xs text-muted-foreground/60">
-          No focus accounts yet — add some on the Focus Accounts page to target them here.
-        </p>
-      ) : (
-        <div className="flex max-h-36 flex-col gap-1 overflow-y-auto rounded-md border border-border/60 bg-background p-1.5">
-          {focusAccounts.map((a) => (
-            <label
-              key={a.id}
-              className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-foreground hover:bg-muted/50"
-            >
-              <input
-                type="checkbox"
-                checked={selectedIds.has(a.id)}
-                onChange={() => onToggle(a.id)}
-                className="size-3.5 rounded border-border"
-              />
-              <span className="truncate">{a.companyName}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1168,13 +1370,6 @@ function NewActiveListPanel({
   const icps: IcpOption[] =
     (icpData as { icps?: IcpOption[] })?.icps ?? [];
 
-  const { data: focusAccountData, isLoading: focusAccountsLoading } = useActionQuery(
-    "list-focus-accounts",
-    {},
-  );
-  const focusAccounts: FocusAccountOption[] =
-    (focusAccountData as { focusAccounts?: FocusAccountOption[] })?.focusAccounts ?? [];
-
   const createSourcingRule = useActionMutation("create-sourcing-rule");
 
   const [name, setName] = useState("");
@@ -1183,7 +1378,6 @@ function NewActiveListPanel({
   const [icpId, setIcpId] = useState("");
   const [allowList, setAllowList] = useState<string[]>([]);
   const [denyList, setDenyList] = useState<string[]>([]);
-  const [selectedFocusAccountIds, setSelectedFocusAccountIds] = useState<Set<string>>(new Set());
   const [desiredVolume, setDesiredVolume] = useState(20);
   const [intervalHours, setIntervalHours] = useState<number | "">("");
   const [titleKeywords, setTitleKeywords] = useState<string[]>([]);
@@ -1214,34 +1408,18 @@ function NewActiveListPanel({
     });
   }
 
-  function toggleFocusAccount(id: string) {
-    setSelectedFocusAccountIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   const canCreate = Boolean(name.trim() && personaId && intervalHours);
 
   async function handleCreate() {
     setError(null);
     if (!canCreate) return;
-    // Focus-Accounts-based targeting is an alternative/addition to the
-    // manually-picked allow-list, not a replacement — merge both into one
-    // array and dedupe so a company picked both ways isn't sent twice.
-    const focusAccountNames = focusAccounts
-      .filter((a) => selectedFocusAccountIds.has(a.id))
-      .map((a) => a.companyName);
-    const mergedAllowList = Array.from(new Set([...allowList, ...focusAccountNames]));
     try {
       await createSourcingRule.mutateAsync({
         name: name.trim(),
         personaId,
         subPersonaId: subPersonaId || undefined,
         icpId: icpId || undefined,
-        companyAllowList: mergedAllowList.length ? mergedAllowList : undefined,
+        companyAllowList: allowList.length ? allowList : undefined,
         companyDenyList: denyList.length ? denyList : undefined,
         manualTitleKeywords: titleKeywords.length ? titleKeywords : undefined,
         manualSeniorities: selectedSeniorities.size > 0 ? Array.from(selectedSeniorities) : undefined,
@@ -1382,21 +1560,19 @@ function NewActiveListPanel({
             )}
           </div>
 
-          <FocusAccountsPicker
-            focusAccounts={focusAccounts}
-            isLoading={focusAccountsLoading}
-            selectedIds={selectedFocusAccountIds}
-            onToggle={toggleFocusAccount}
-          />
-
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Additional companies (optional)
+              Companies (optional)
             </label>
-            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
+            <CompanyTagInput
+              values={allowList}
+              onChange={setAllowList}
+              placeholder="Search or type a company…"
+              allowOwnerBrowse
+            />
             <p className="mt-1 text-[11px] text-muted-foreground/60">
-              Companies to search alongside anything checked above — search your HubSpot companies, or type a
-              new one and press Enter.
+              Search your HubSpot companies, type a new one and press Enter, or browse by owner (AE or xDR) to
+              add several at once.
             </p>
           </div>
 
@@ -1509,13 +1685,6 @@ function EditRulePanel({
   const icps: IcpOption[] =
     (icpData as { icps?: IcpOption[] })?.icps ?? [];
 
-  const { data: focusAccountData, isLoading: focusAccountsLoading } = useActionQuery(
-    "list-focus-accounts",
-    {},
-  );
-  const focusAccounts: FocusAccountOption[] =
-    (focusAccountData as { focusAccounts?: FocusAccountOption[] })?.focusAccounts ?? [];
-
   const initialAllowList = safeParseList(rule.companyAllowList);
   const initialDenyList = safeParseList(rule.companyDenyList);
   const initialIcpId = rule.icpId ?? "";
@@ -1524,15 +1693,7 @@ function EditRulePanel({
 
   const [name, setName] = useState(rule.name);
   const [icpId, setIcpId] = useState(initialIcpId);
-  // companyAllowList is stored as one flat, already-merged array (Focus
-  // Account names + manually-typed ones combined at save time, same as
-  // NewActiveListPanel) — there's no stored distinction between the two.
-  // `allowList` here starts as that FULL list and gets split down to just
-  // the manual portion once Focus Accounts load (see the effect below),
-  // letting an existing rule's Focus-Account-sourced entries show up as
-  // checked accounts instead of opaque manual chips.
   const [allowList, setAllowList] = useState<string[]>(initialAllowList);
-  const [selectedFocusAccountIds, setSelectedFocusAccountIds] = useState<Set<string>>(new Set());
   const [denyList, setDenyList] = useState<string[]>(initialDenyList);
   const [desiredVolume, setDesiredVolume] = useState(rule.desiredVolume);
   // Rules created before this feature shipped have no intervalHours yet —
@@ -1547,29 +1708,6 @@ function EditRulePanel({
   const [previousCompanyName, setPreviousCompanyName] = useState(rule.previousCompanyName ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  // Runs exactly once, as soon as Focus Accounts finish their first load —
-  // NOT a plain useState initializer, since focusAccounts is empty until
-  // that query resolves and a naive initial split would permanently lock in
-  // "nothing pre-checked" even after the real data arrives.
-  const partitionedRef = useRef(false);
-  useEffect(() => {
-    if (partitionedRef.current || focusAccountsLoading) return;
-    partitionedRef.current = true;
-    const focusAccountNamesLower = new Set(focusAccounts.map((a) => a.companyName.toLowerCase()));
-    const matchedIds = new Set(
-      focusAccounts
-        .filter((a) => initialAllowList.some((n) => n.toLowerCase() === a.companyName.toLowerCase()))
-        .map((a) => a.id),
-    );
-    setSelectedFocusAccountIds(matchedIds);
-    setAllowList(initialAllowList.filter((n) => !focusAccountNamesLower.has(n.toLowerCase())));
-    // initialAllowList is a fresh array every render (derived from `rule`,
-    // not memoized) — the ref guard above is what actually prevents re-runs
-    // after the first successful split, so omitting it here is safe and
-    // avoids this effect re-firing on every unrelated re-render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusAccountsLoading, focusAccounts]);
-
   function toggleSeniority(level: string) {
     setSelectedSeniorities((prev) => {
       const next = new Set(prev);
@@ -1579,21 +1717,7 @@ function EditRulePanel({
     });
   }
 
-  function toggleFocusAccount(id: string) {
-    setSelectedFocusAccountIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  // Same merge NewActiveListPanel's handleCreate does — Focus-Account-based
-  // targeting is additive to, not a replacement for, the manual list.
-  const focusAccountNames = focusAccounts
-    .filter((a) => selectedFocusAccountIds.has(a.id))
-    .map((a) => a.companyName);
-  const nextAllowList = Array.from(new Set([...allowList, ...focusAccountNames]));
+  const nextAllowList = allowList;
   const nextDenyList = denyList;
   const nextTitleKeywords = titleKeywords;
   const nextSeniorities = Array.from(selectedSeniorities);
@@ -1603,7 +1727,7 @@ function EditRulePanel({
   const hasChanges =
     name.trim() !== rule.name ||
     icpId !== initialIcpId ||
-    !sameSet(nextAllowList, initialAllowList) ||
+    !sameList(nextAllowList, initialAllowList) ||
     !sameList(nextDenyList, initialDenyList) ||
     !sameList(nextTitleKeywords, initialTitleKeywords) ||
     !sameList(nextSeniorities, initialSeniorities) ||
@@ -1622,7 +1746,7 @@ function EditRulePanel({
       id: rule.id,
       ...(name.trim() !== rule.name ? { name: name.trim() } : {}),
       ...(icpId !== initialIcpId ? { icpId: icpId || null } : {}),
-      ...(!sameSet(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
+      ...(!sameList(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
       ...(!sameList(nextDenyList, initialDenyList) ? { companyDenyList: nextDenyList } : {}),
       ...(!sameList(nextTitleKeywords, initialTitleKeywords) ? { manualTitleKeywords: nextTitleKeywords } : {}),
       ...(!sameList(nextSeniorities, initialSeniorities) ? { manualSeniorities: nextSeniorities } : {}),
@@ -1709,20 +1833,19 @@ function EditRulePanel({
             )}
           </div>
 
-          <FocusAccountsPicker
-            focusAccounts={focusAccounts}
-            isLoading={focusAccountsLoading}
-            selectedIds={selectedFocusAccountIds}
-            onToggle={toggleFocusAccount}
-          />
-
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Additional companies (optional)
+              Companies (optional)
             </label>
-            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
+            <CompanyTagInput
+              values={allowList}
+              onChange={setAllowList}
+              placeholder="Search or type a company…"
+              allowOwnerBrowse
+            />
             <p className="mt-1 text-[11px] text-muted-foreground/60">
-              Companies to search alongside anything checked above.
+              Search your HubSpot companies, type a new one and press Enter, or browse by owner (AE or xDR) to
+              add several at once.
             </p>
           </div>
 

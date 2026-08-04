@@ -17,7 +17,6 @@ import {
   IconChartBar,
   IconCheck,
   IconChevronDown,
-  IconFlag3,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLibrary,
@@ -160,13 +159,6 @@ const navItems = [
     labelKey: "Company Criteria",
     href: "/icps",
     view: "icps",
-  },
-  {
-    icon: IconFlag3,
-    label: "Focus Accounts",
-    labelKey: "Focus Accounts",
-    href: "/focus-accounts",
-    view: "focus-accounts",
   },
   {
     icon: IconLibrary,
