@@ -7,11 +7,15 @@ import {
   type CommonRoomContactEnrichment,
   lookupCommonRoomContactEnrichment,
 } from "../server/helpers/commonroom-engagement.js";
+import {
+  type HubSpotContactEnrichment,
+  lookupHubSpotContactDetail,
+} from "../server/helpers/hubspot-contact-lookup.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
   description:
-    "Get a single contact's full detail row, its list (segment) memberships, and a best-effort live CommonRoom enrichment (recent activities, recently visited web pages, job history, and an AI-generated spark summary) — for the contact detail drawer's hover/click deep-dive view.",
+    "Get a single contact's full detail row, its list (segment) memberships, a best-effort live CommonRoom enrichment (recent activities, recently visited web pages, job history, and an AI-generated spark summary), and a best-effort live HubSpot detail lookup (this portal's own custom contact/company properties) — for the contact detail drawer's hover/click deep-dive view.",
   schema: z.object({ contactId: z.string().min(1) }),
   requiresAuth: true,
   readOnly: true,
@@ -42,6 +46,7 @@ export default defineAction({
         linkedinUrl: contacts.linkedinUrl,
         hubspotUrl: contacts.hubspotUrl,
         source: contacts.source,
+        externalId: contacts.externalId,
         personaId: contacts.personaId,
         country: contacts.country,
         employees: contacts.employees,
@@ -91,10 +96,29 @@ export default defineAction({
       commonRoomEnrichment = null;
     }
 
+    // Best-effort live HubSpot detail lookup — same "external hiccup must
+    // never fail this action" discipline as the CommonRoom enrichment above.
+    // Contacts already synced from HubSpot use their real externalId
+    // directly; contacts from any other source (CommonRoom, Prospector) get
+    // a live name+company match attempt, mirroring li-agent's own proven
+    // check-hubspot-contact.ts matching discipline.
+    let hubspotEnrichment: HubSpotContactEnrichment | null = null;
+    try {
+      hubspotEnrichment = await lookupHubSpotContactDetail({
+        fullName: contact.name,
+        companyName: contact.company,
+        email: contact.email,
+        knownHubspotContactId: contact.source === "hubspot" ? contact.externalId : null,
+      });
+    } catch {
+      hubspotEnrichment = null;
+    }
+
     return {
       contact,
       segments: contactSegments,
       commonRoomEnrichment,
+      hubspotEnrichment,
     };
   },
 });

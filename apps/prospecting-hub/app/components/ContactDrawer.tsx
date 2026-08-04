@@ -62,6 +62,16 @@ interface CommonRoomEnrichment {
   sparkSummary: string | null;
 }
 
+interface HubSpotField {
+  label: string;
+  value: string;
+}
+
+interface HubSpotEnrichment {
+  hubspotUrl: string | null;
+  fields: HubSpotField[];
+}
+
 interface PersonaOption {
   id: string;
   name: string;
@@ -168,6 +178,8 @@ export function ContactDrawer({
   const segments: SegmentMembership[] = (data as { segments?: SegmentMembership[] })?.segments ?? [];
   const commonRoomEnrichment: CommonRoomEnrichment | null =
     (data as { commonRoomEnrichment?: CommonRoomEnrichment | null })?.commonRoomEnrichment ?? null;
+  const hubspotEnrichment: HubSpotEnrichment | null =
+    (data as { hubspotEnrichment?: HubSpotEnrichment | null })?.hubspotEnrichment ?? null;
 
   const persona = contact?.personaId ? personaById.get(contact.personaId) : undefined;
 
@@ -279,6 +291,42 @@ export function ContactDrawer({
               </div>
               {contact.scoreReasoning && (
                 <p className="mt-2 text-xs text-muted-foreground/80">{contact.scoreReasoning}</p>
+              )}
+            </div>
+
+            {/* HubSpot detail — this portal's own custom contact/company
+                properties (Fred's ask: "give me hubspot information like
+                [the HubSpot record panel]"). Best-effort live lookup —
+                contacts not yet linked to HubSpot get a live name+company
+                match attempt (hubspot-contact-lookup.ts), same discipline
+                as the CommonRoom enrichment below. */}
+            <div>
+              <SectionHeading>HubSpot</SectionHeading>
+              {!hubspotEnrichment || hubspotEnrichment.fields.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground/60">
+                  No HubSpot record found
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {hubspotEnrichment.hubspotUrl && !contact.hubspotUrl && (
+                    <a
+                      href={hubspotEnrichment.hubspotUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex w-fit items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                    >
+                      <IconExternalLink size={12} /> View in HubSpot
+                    </a>
+                  )}
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                    {hubspotEnrichment.fields.map((field) => (
+                      <div key={field.label} className="min-w-0">
+                        <p className="truncate text-[10px] text-muted-foreground/70">{field.label}</p>
+                        <p className="truncate font-medium text-foreground">{field.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
