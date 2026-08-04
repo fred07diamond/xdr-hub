@@ -374,6 +374,16 @@ export default runMigrations(
         ALTER TABLE sourcing_rules ADD COLUMN min_linkedin_followers INTEGER;
         ALTER TABLE sourcing_rules ADD COLUMN previous_company_name TEXT`,
     },
+    {
+      version: 32,
+      name: "contacts-hubspot-breeze-fit-score-column",
+      // HubSpot Breeze AI's own "Company Fit Score - Breeze" contact
+      // property (live range 0-20, normalized to 0-100 at sync time in
+      // sync-hubspot.ts) — a real external fit signal that now takes
+      // precedence over both the AI-judged and deterministic
+      // country/employees companyFitScore in score-contact.ts.
+      sql: `ALTER TABLE contacts ADD COLUMN hubspot_breeze_fit_score INTEGER`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

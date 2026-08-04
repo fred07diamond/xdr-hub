@@ -18,23 +18,45 @@ import { getHubSpotToken, hubspotFetch } from "@xdr-hub/shared/server";
 // a real property with these exact display labels. A label that doesn't
 // exist is silently skipped — never an error, just one fewer field shown.
 
-const CONTACT_LABELS = [
-  "Contact owner",
-  "Lifecycle Stage",
-  "CAE/EAE Level Company",
-  "QL Score - Contact",
-  "First Conversion",
-  "Time Last Seen",
-  "Last Active in Builder App",
-  "Recent Conversion",
-  "Field Event",
-  "Last Program Name",
-  "Last Program Status",
-  "Last Program Status Date",
-  "Recycle Reason",
+// `lookup` is the property's real HubSpot label to search for; `display` is
+// what the drawer shows. They differ only when HubSpot's own label reads
+// awkwardly out of context (e.g. "Country/Region" on a company record —
+// shown here simply as "Country").
+interface TargetLabel {
+  display: string;
+  lookup: string;
+}
+
+function label(display: string, lookup?: string): TargetLabel {
+  return { display, lookup: lookup ?? display };
+}
+
+const CONTACT_LABELS: TargetLabel[] = [
+  label("Contact owner"),
+  label("Lifecycle Stage"),
+  label("CAE/EAE Level Company"),
+  label("QL Score - Contact"),
+  label("Company Fit Score", "Company Fit Score - Breeze"),
+  label("First Conversion"),
+  label("Time Last Seen"),
+  label("Last Active in Builder App"),
+  label("Recent Conversion"),
+  label("Field Event"),
+  label("Last Program Name"),
+  label("Last Program Status"),
+  label("Last Program Status Date"),
+  label("Recycle Reason"),
 ];
 
-const COMPANY_LABELS = ["Global Region", "ABX Program Type", "Company Owner", "xDR Owner"];
+const COMPANY_LABELS: TargetLabel[] = [
+  label("Global Region"),
+  label("Country", "Country/Region"),
+  label("Number of Employees"),
+  label("Ideal Customer Profile Tier"),
+  label("ABX Program Type"),
+  label("Company Owner"),
+  label("xDR Owner"),
+];
 
 export interface HubSpotContactField {
   label: string;
@@ -64,16 +86,16 @@ async function fetchPropertyDefs(objectType: "contacts" | "companies"): Promise<
 // a human label instead of a raw internal enum value — e.g. lifecyclestage's
 // stored "152478579" needs its option map to show as "QL").
 function resolveLabels(
-  labels: string[],
+  targets: TargetLabel[],
   defs: HubSpotPropertyDef[],
 ): Array<{ label: string; name: string; options?: Map<string, string> }> {
   const byLabel = new Map(defs.map((d) => [d.label.trim().toLowerCase(), d]));
   const resolved: Array<{ label: string; name: string; options?: Map<string, string> }> = [];
-  for (const label of labels) {
-    const def = byLabel.get(label.trim().toLowerCase());
+  for (const target of targets) {
+    const def = byLabel.get(target.lookup.trim().toLowerCase());
     if (!def) continue;
     resolved.push({
-      label,
+      label: target.display,
       name: def.name,
       options: def.options ? new Map(def.options.map((o) => [o.value, o.label])) : undefined,
     });

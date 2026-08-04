@@ -1066,6 +1066,7 @@ export default defineAction({
               company: contacts.company,
               country: contacts.country,
               employees: contacts.employees,
+              hubspotBreezeFitScore: contacts.hubspotBreezeFitScore,
             })
             .from(contacts)
             .where(eq(contacts.id, target.contactId))
@@ -1086,6 +1087,7 @@ export default defineAction({
               company: contact.company,
               country: contact.country,
               employees: contact.employees,
+              hubspotBreezeFitScore: contact.hubspotBreezeFitScore,
             },
             personas: personaRowsForScoring,
             userEmail: rule.ownerEmail,

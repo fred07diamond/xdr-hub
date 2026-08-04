@@ -8,7 +8,17 @@ import { hubspotFetch } from "@xdr-hub/shared/server";
 import { requireRole } from "../server/helpers/require-role.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 
-const CONTACT_PROPERTIES = ["firstname", "lastname", "jobtitle", "company", "email", "phone", "hs_linkedin_url", "ql_score"];
+const CONTACT_PROPERTIES = [
+  "firstname",
+  "lastname",
+  "jobtitle",
+  "company",
+  "email",
+  "phone",
+  "hs_linkedin_url",
+  "ql_score",
+  "company_fit_score___breeze",
+];
 // Hard cap per run so a single sync can't run away — matches the pattern
 // import-hubspot-queue.ts already uses (IMPORT_LIMIT) for the same reason.
 const MAX_CONTACTS_PER_RUN = 1000;
@@ -155,6 +165,15 @@ export default defineAction({
         const rawQlScore = p.ql_score != null && p.ql_score !== "" ? Number(p.ql_score) : NaN;
         const hubspotQlScore = Number.isFinite(rawQlScore) ? Math.max(0, Math.min(100, Math.round(rawQlScore))) : null;
 
+        // HubSpot Breeze AI's own "Company Fit Score - Breeze" — live-
+        // observed range is 0-20 (confirmed against a 720k-contact sample:
+        // min 0, max 20), so normalize onto this app's 0-100 scale rather
+        // than clamping directly like ql_score above.
+        const rawBreezeFit = p.company_fit_score___breeze != null && p.company_fit_score___breeze !== "" ? Number(p.company_fit_score___breeze) : NaN;
+        const hubspotBreezeFitScore = Number.isFinite(rawBreezeFit)
+          ? Math.max(0, Math.min(100, Math.round((rawBreezeFit / 20) * 100)))
+          : null;
+
         if (existing[0]) {
           await db
             .update(contacts)
@@ -169,6 +188,7 @@ export default defineAction({
               country,
               employees,
               hubspotQlScore,
+              hubspotBreezeFitScore,
               syncedAt: now,
               updatedAt: now,
             })
@@ -187,6 +207,7 @@ export default defineAction({
             country,
             employees,
             hubspotQlScore,
+            hubspotBreezeFitScore,
             source: "hubspot",
             externalId: hsContact.id,
             status: "active",

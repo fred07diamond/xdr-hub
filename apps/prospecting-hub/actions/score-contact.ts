@@ -34,6 +34,7 @@ export default defineAction({
         country: contact.country,
         employees: contact.employees,
         hubspotQlScore: contact.hubspotQlScore,
+        hubspotBreezeFitScore: contact.hubspotBreezeFitScore,
       },
       personas: personaRows,
       userEmail: ctx!.userEmail!,

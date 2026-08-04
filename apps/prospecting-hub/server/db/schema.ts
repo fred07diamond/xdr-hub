@@ -25,6 +25,14 @@ export const contacts = table("contacts", {
   // (Fred's explicit call, not deduplicated away).
   engagementScore: integer("engagement_score"),
   hubspotQlScore: integer("hubspot_ql_score"), // HubSpot's real `ql_score` contact property ("QL Score - Contact"), clamped to 0-100
+  // HubSpot Breeze AI's own "Company Fit Score - Breeze" contact property —
+  // live-observed range is 0-20, normalized here to 0-100 like every other
+  // score in this app. Takes precedence over both the AI-judged and the
+  // deterministic country/employees companyFitScore in score-contact.ts
+  // when present — see computeDeterministicCompanyFit's own "real data
+  // wins over a guess" precedent, extended one step further here since
+  // this is HubSpot's own live-computed signal, not this app's formula.
+  hubspotBreezeFitScore: integer("hubspot_breeze_fit_score"),
   commonRoomIntentScore: integer("commonroom_intent_score"), // CommonRoom's "Contact Intent Score" LeadScore percentile
   commonRoomCompanyFitScore: integer("commonroom_company_fit_score"), // CommonRoom's org-level "Company Fit Score (Common Room)" LeadScore percentile
   overallScore: integer("overall_score"),

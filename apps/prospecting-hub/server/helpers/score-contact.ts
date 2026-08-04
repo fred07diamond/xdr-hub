@@ -27,6 +27,10 @@ export interface ContactForScoring {
   // overallScore blend below without this function needing to know how it
   // was derived.
   hubspotQlScore?: number | null;
+  // HubSpot Breeze AI's own "Company Fit Score - Breeze" (sync-hubspot.ts,
+  // already normalized to 0-100). When present, this REPLACES companyFitScore
+  // entirely — see the precedence note below computeDeterministicCompanyFit.
+  hubspotBreezeFitScore?: number | null;
 }
 
 export interface ContactScoreResult {
@@ -164,6 +168,18 @@ export async function scoreContactAgainstPersonas(options: {
   });
   if (deterministicCompanyFit !== null) {
     companyFitScore = deterministicCompanyFit;
+  }
+
+  // HubSpot Breeze's own "Company Fit Score - Breeze" — a real, live signal
+  // from HubSpot's own AI, computed with richer inputs than this app has
+  // access to. Takes final precedence over both the AI-judged guess above
+  // AND the deterministic country/employees formula, per Fred's explicit
+  // ask that it be "included in... the company fit score for the
+  // application" — feeds overallScore's Fit bucket automatically below
+  // since companyFitScore is already one of its inputs, no separate line
+  // item needed.
+  if (options.contact.hubspotBreezeFitScore != null) {
+    companyFitScore = options.contact.hubspotBreezeFitScore;
   }
 
   // Best-effort: a CommonRoom hiccup (no org-scoped connection configured,
