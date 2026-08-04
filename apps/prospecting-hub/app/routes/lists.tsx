@@ -1410,6 +1410,39 @@ function NewSegmentPanel({
   );
 }
 
+// Drives a brand-new rule's very first run immediately after creation,
+// fire-and-forget — see the call site's comment in NewActiveListPanel's
+// handleCreate for why. Deliberately a standalone module-level function
+// (not a closure inside the panel component): the panel unmounts the moment
+// the modal closes, but a plain async function keeps executing in this
+// browser tab's event loop regardless of what React components come and go,
+// exactly like ListDetailView's own handleRunSourcingRule loop already
+// relies on for the "stays running while you navigate away" behavior. No
+// component state to update here since nothing is guaranteed to still be
+// mounted to show it — ListDetailView reads the run's live server-side
+// state (via list-sourcing-rules/list-sourcing-rule-runs) whenever the XDR
+// actually looks at the list, regardless of which loop is driving it.
+async function runNewRuleInBackground(ruleId: string): Promise<void> {
+  let syncRecordId: string | undefined;
+  try {
+    for (;;) {
+      const result = (await callAction(
+        "run-sourcing-rule-pipeline",
+        { ruleId, syncRecordId },
+        { timeoutMs: 90_000 },
+      )) as { done: boolean; syncRecordId: string };
+      syncRecordId = result.syncRecordId;
+      if (result.done) break;
+    }
+  } catch {
+    // Best-effort only. A failure here (including the tab closing mid-run)
+    // isn't surfaced anywhere — the rule's own recurring schedule will still
+    // pick it up on its next fire, and "Find prospects now" on the list
+    // detail view lets the XDR retry manually with a real visible error the
+    // moment they notice, same as any other run.
+  }
+}
+
 function NewActiveListPanel({
   onClose,
   onCreated,
@@ -1477,7 +1510,7 @@ function NewActiveListPanel({
     setError(null);
     if (!canCreate) return;
     try {
-      await createSourcingRule.mutateAsync({
+      const result = (await createSourcingRule.mutateAsync({
         name: name.trim(),
         personaId,
         subPersonaId: subPersonaId || undefined,
@@ -1490,7 +1523,18 @@ function NewActiveListPanel({
         previousCompanyName: previousCompanyName.trim() || undefined,
         desiredVolume,
         intervalHours: intervalHours as number,
-      });
+      })) as { id: string };
+      // Fire-and-forget, deliberately not awaited: the recurring schedule's
+      // cron is anchored to wall-clock hour marks ("0 */N * * *"), so its
+      // first real fire can land anywhere up to a full interval away from
+      // creation -- leaving a brand-new list empty for no good reason when
+      // nothing stops it from searching right now. This drives the exact
+      // same resumable pipeline "Find prospects now" uses, in the
+      // background, for as long as this tab stays open, so the list is
+      // already populated (or has a real error to show) by the time the XDR
+      // clicks into it, instead of an empty list ticking down to the first
+      // scheduled run.
+      runNewRuleInBackground(result.id);
       onCreated();
       onClose();
     } catch (err) {
