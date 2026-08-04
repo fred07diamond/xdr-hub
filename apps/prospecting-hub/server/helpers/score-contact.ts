@@ -123,10 +123,14 @@ export async function scoreContactAgainstPersonas(options: {
     // a real response ("...giving a partial match to the Design person" with
     // no closing quote/brace), most likely because this model spends part of
     // its output budget on internal reasoning before emitting the visible
-    // JSON. Bumped generously rather than nudged, since a reasoning model's
-    // internal token consumption isn't predictable from the visible prompt
-    // alone.
-    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 800 });
+    // JSON. Bumped to 800, then live-confirmed truncating again under
+    // concurrent load (mapWithConcurrency scores up to 8 contacts at once —
+    // see concurrency.ts) — bumped further and backed by the same
+    // regex-fallback parser apps/li-agent/server/helpers/draft-profile.ts
+    // already uses for this exact class of problem, since a reasoning
+    // model's internal token consumption isn't predictable from the visible
+    // prompt alone no matter how generous the budget.
+    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 1200 });
     const result = await runWithRequestContext(
       { userEmail: options.userEmail, orgId: options.orgId ?? undefined },
       call,
@@ -138,7 +142,34 @@ export async function scoreContactAgainstPersonas(options: {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      throw new Error(`Unparseable scoring response: ${raw.slice(0, 200)}`);
+      // The scores are the load-bearing data here; reasoning is
+      // supplementary. Salvage whichever fields the regex can find even
+      // from a truncated/malformed response (e.g. cut off mid-reasoning-
+      // string with no closing quote) rather than failing the whole
+      // contact — only give up if neither score field is recoverable.
+      const str = (re: RegExp) => re.exec(raw)?.[1] ?? null;
+      const num = (re: RegExp) => {
+        const m = re.exec(raw);
+        return m ? Number(m[1]) : null;
+      };
+      const fallbackPersonaId = str(/"personaId"\s*:\s*"([^"]*)"/);
+      const fallbackPersonaMatchScore = num(/"personaMatchScore"\s*:\s*(\d+)/);
+      const fallbackCompanyFitScore = num(/"companyFitScore"\s*:\s*(\d+)/);
+      const fallbackReasoning = str(/"reasoning"\s*:\s*"([^"]*)/); // no closing quote required — captures a truncated tail too
+
+      if (fallbackPersonaMatchScore == null && fallbackCompanyFitScore == null) {
+        throw new Error(`Unparseable scoring response: ${raw.slice(0, 500)}`);
+      }
+      parsed = {
+        personaId: fallbackPersonaId,
+        // 50 (neutral), not 0, for whichever score the regex still
+        // couldn't find — matches this prompt's own "no clear signal ->
+        // score 50, don't guess" semantics rather than implying a
+        // confidently bad fit.
+        personaMatchScore: fallbackPersonaMatchScore ?? 50,
+        companyFitScore: fallbackCompanyFitScore ?? 50,
+        reasoning: fallbackReasoning ?? "Reasoning was truncated in the model's response.",
+      };
     }
 
     const parsedPersonaId = typeof parsed.personaId === "string" && parsed.personaId !== "null" ? parsed.personaId : null;
