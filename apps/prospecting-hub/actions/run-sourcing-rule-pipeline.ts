@@ -506,7 +506,11 @@ export default defineAction({
           orgId: ctx?.orgId,
           extraContext,
         });
-        if (manualTitleKeywords.length === 0 && filters.titleKeyword) titleKeywords = [filters.titleKeyword];
+        // filters.titleKeywords is now itself a small OR'd set of realistic
+        // phrasings (not one rigid phrase) — see derive-prospector-filters.ts
+        // for why a single derived phrase was too brittle against
+        // CommonRoom's literal-substring title match.
+        if (manualTitleKeywords.length === 0 && filters.titleKeywords.length > 0) titleKeywords = filters.titleKeywords;
         if (manualSeniorities.length === 0 && filters.seniority) seniorities = [filters.seniority];
       }
 

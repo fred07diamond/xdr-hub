@@ -5,7 +5,21 @@ import { personas, subPersonas } from "../db/schema.js";
 import { decodePersonaCriteria } from "./persona-sync.js";
 
 export interface DerivedProspectorFilters {
+  // Kept for the two existing single-value callers (search-commonroom-
+  // prospects.ts, import-prospects-to-segment.ts) — always the first entry
+  // of `titleKeywords` below, so neither needs to change.
   titleKeyword: string | null;
+  // Real matches for the same underlying role often DON'T share one exact
+  // phrase — "VP of Design", "Head of Design", and "Design Director" are all
+  // the same role, but a single rigid substring like "Director of Design"
+  // misses two of the three. CommonRoom's title filter is a literal
+  // contiguous-substring match (confirmed live), not a fuzzy/word-order/
+  // synonym-tolerant one, so a single derived phrase is brittle exactly
+  // where it matters most — a narrow company allow-list has little room to
+  // absorb a near-miss. run-sourcing-rule-pipeline.ts OR's these together
+  // (the same mechanism already proven for manual multi-keyword overrides)
+  // instead of using titleKeyword alone.
+  titleKeywords: string[];
   seniority: string | null;
 }
 
@@ -74,11 +88,11 @@ export async function deriveProspectorFilters(options: {
         `${options.extraContext.slice(0, 4000)}\n\n`
       : "") +
     "Propose:\n" +
-    '- titleKeyword: a short job-title keyword or phrase (e.g. "VP Engineering") that best captures the target title(s) this persona describes. Base this ONLY on what the criteria text actually says — never invent a title the doc doesn\'t support.\n' +
+    '- titleKeywords: an array of 2-4 short job-title phrases that together cover realistic real-world variations of the target title(s) this persona describes — different word order, punctuation, and common synonyms real people actually use in their titles (e.g. for a persona targeting engineering leadership: ["VP Engineering", "VP of Engineering", "Head of Engineering"]). This will be matched as a literal, case-insensitive SUBSTRING search — each candidate you list is checked independently, so word-order/synonym variants must be listed as SEPARATE entries, not combined into one longer phrase. Base every entry ONLY on what the criteria text actually says — never invent a title the doc doesn\'t support, and never pad the list with a variation the text doesn\'t justify just to reach 4 entries — 2 focused entries beat 4 padded ones.\n' +
     `- seniority: one of ${SENIORITY_LEVELS.map((s) => `"${s}"`).join(", ")}, or null if the criteria text gives no clear seniority signal — never guess a seniority level the doc doesn't support.\n\n` +
-    'Reply with valid JSON only: { "titleKeyword": "<short title keyword or phrase>", "seniority": "<one of the levels above, or null>" }';
+    'Reply with valid JSON only: { "titleKeywords": ["<phrase 1>", "<phrase 2>", ...], "seniority": "<one of the levels above, or null>" }';
 
-  const call = () => completeText({ systemPrompt, input: "Derive Prospector search parameters.", maxOutputTokens: 200 });
+  const call = () => completeText({ systemPrompt, input: "Derive Prospector search parameters.", maxOutputTokens: 300 });
   const result = await runWithRequestContext(
     { userEmail: options.userEmail, orgId: options.orgId ?? undefined },
     call,
@@ -93,10 +107,11 @@ export async function deriveProspectorFilters(options: {
     throw new Error(`Unparseable Prospector filter response: ${raw.slice(0, 200)}`);
   }
 
-  const titleKeyword =
-    typeof parsed.titleKeyword === "string" && parsed.titleKeyword.trim() ? parsed.titleKeyword.trim() : null;
+  const titleKeywords = Array.isArray(parsed.titleKeywords)
+    ? parsed.titleKeywords.filter((t): t is string => typeof t === "string" && t.trim().length > 0).map((t) => t.trim())
+    : [];
   const seniority =
     typeof parsed.seniority === "string" && SENIORITY_LEVELS.includes(parsed.seniority) ? parsed.seniority : null;
 
-  return { titleKeyword, seniority };
+  return { titleKeyword: titleKeywords[0] ?? null, titleKeywords, seniority };
 }
