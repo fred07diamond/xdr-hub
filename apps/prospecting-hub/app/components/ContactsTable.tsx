@@ -20,7 +20,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { ContactDrawer } from "@/components/ContactDrawer";
-import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
+import { buildOverallScoreBreakdown, SCORE_INFO, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -606,9 +606,21 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
                     )}
                   </td>
                   <td className="px-4 py-2.5"><ScorePill score={c.overallScore} size="lg" breakdown={buildOverallScoreBreakdown(c)} /></td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.personaMatchScore} /></td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.companyFitScore} /></td>
-                  <td className="px-4 py-2.5"><ScorePill score={c.engagementScore} /></td>
+                  <td className="px-4 py-2.5">
+                    <ScorePill
+                      score={c.personaMatchScore}
+                      info={{ ...SCORE_INFO.personaMatch, reasoning: c.scoreReasoning }}
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <ScorePill
+                      score={c.companyFitScore}
+                      info={{ ...SCORE_INFO.companyFit, reasoning: c.scoreReasoning }}
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <ScorePill score={c.engagementScore} info={SCORE_INFO.engagement} />
+                  </td>
                   <td className="px-4 py-2.5"><SourceBadge source={c.source} hubspotUrl={c.hubspotUrl} /></td>
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${c.status === "actioned" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>

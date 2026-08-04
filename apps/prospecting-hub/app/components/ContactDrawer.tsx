@@ -12,7 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
 
-import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
+import { buildOverallScoreBreakdown, SCORE_INFO, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -248,27 +248,33 @@ export function ContactDrawer({
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
                   <span className="text-muted-foreground">Persona Match</span>
-                  <ScorePill score={contact.personaMatchScore} />
+                  <ScorePill
+                    score={contact.personaMatchScore}
+                    info={{ ...SCORE_INFO.personaMatch, reasoning: contact.scoreReasoning }}
+                  />
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
                   <span className="text-muted-foreground">Company Fit</span>
-                  <ScorePill score={contact.companyFitScore} />
+                  <ScorePill
+                    score={contact.companyFitScore}
+                    info={{ ...SCORE_INFO.companyFit, reasoning: contact.scoreReasoning }}
+                  />
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
                   <span className="text-muted-foreground">Engagement</span>
-                  <ScorePill score={contact.engagementScore} />
+                  <ScorePill score={contact.engagementScore} info={SCORE_INFO.engagement} />
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
                   <span className="text-muted-foreground">HubSpot QL</span>
-                  <ScorePill score={contact.hubspotQlScore} />
+                  <ScorePill score={contact.hubspotQlScore} info={SCORE_INFO.hubspotQl} />
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
                   <span className="text-muted-foreground">CR Intent</span>
-                  <ScorePill score={contact.commonRoomIntentScore} />
+                  <ScorePill score={contact.commonRoomIntentScore} info={SCORE_INFO.commonRoomIntent} />
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
                   <span className="text-muted-foreground">CR Company Fit</span>
-                  <ScorePill score={contact.commonRoomCompanyFitScore} />
+                  <ScorePill score={contact.commonRoomCompanyFitScore} info={SCORE_INFO.commonRoomCompanyFit} />
                 </div>
               </div>
               {contact.scoreReasoning && (
