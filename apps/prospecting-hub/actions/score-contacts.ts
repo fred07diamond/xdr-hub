@@ -3,13 +3,18 @@ import { and, eq, isNull, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, personas } from "../server/db/schema.js";
+import { mapWithConcurrency } from "../server/helpers/concurrency.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 
-// Sequential, not parallel — completeText() calls should stay easy to reason
-// about and rate-limit-friendly for v1. Same order-of-magnitude cap as the
-// sync actions' page sizes.
+// Same order-of-magnitude cap as the sync actions' page sizes.
 const MAX_CONTACTS_PER_RUN = 50;
+// Bounded concurrency, not strictly sequential — see concurrency.ts for why:
+// a single CommonRoom lookup alone can take ~16-20s during a real CommonRoom
+// slowdown, and this loop used to run one contact at a time, which made
+// rescore-contacts.ts's identical pattern blow past the hosting platform's
+// 75s function timeout in production.
+const SCORING_CONCURRENCY = 8;
 
 export default defineAction({
   description: "Score all not-yet-scored active contacts (up to a cap) against personas with synced criteria. Re-run to pick up more.",
@@ -37,11 +42,9 @@ export default defineAction({
       .where(and(eq(contacts.status, "active"), isNull(contacts.personaMatchScore)))
       .limit(limit);
 
-    let scored = 0;
-    const errors: string[] = [];
     const now = () => new Date().toISOString();
 
-    for (const contact of unscored) {
+    const results = await mapWithConcurrency(unscored, SCORING_CONCURRENCY, async (contact) => {
       try {
         const score = await scoreContactAgainstPersonas({
           contact: {
@@ -72,11 +75,14 @@ export default defineAction({
             updatedAt: now(),
           })
           .where(eq(contacts.id, contact.id));
-        scored++;
+        return { ok: true as const };
       } catch (err) {
-        errors.push(`${contact.id}: ${err instanceof Error ? err.message : String(err)}`);
+        return { ok: false as const, error: `${contact.id}: ${err instanceof Error ? err.message : String(err)}` };
       }
-    }
+    });
+
+    const scored = results.filter((r) => r.ok).length;
+    const errors = results.filter((r): r is { ok: false; error: string } => !r.ok).map((r) => r.error);
 
     return { scored, attempted: unscored.length, errors };
   },

@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, personas } from "../server/db/schema.js";
+import { mapWithConcurrency } from "../server/helpers/concurrency.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 
@@ -13,6 +14,12 @@ import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js"
 // bug in an older code path left some score columns unpopulated (e.g.
 // import-prospects-to-segment.ts predates engagementScore/overallScore).
 const MAX_CONTACTS_PER_RUN = 200;
+// Contacts are scored concurrently (mapWithConcurrency), not one at a time —
+// see concurrency.ts for the live-confirmed incident that made this
+// necessary (a single CommonRoom lookup alone can take ~16-20s). Capped
+// well below MAX_CONTACTS_PER_RUN so a large direct `contactIds` call can't
+// fire off hundreds of simultaneous completeText()/CommonRoom calls.
+const SCORING_CONCURRENCY = 8;
 
 export default defineAction({
   description:
@@ -45,11 +52,9 @@ export default defineAction({
       )
       .limit(MAX_CONTACTS_PER_RUN);
 
-    let rescored = 0;
-    const errors: string[] = [];
     const now = () => new Date().toISOString();
 
-    for (const contact of targets) {
+    const results = await mapWithConcurrency(targets, SCORING_CONCURRENCY, async (contact) => {
       try {
         const score = await scoreContactAgainstPersonas({
           contact: {
@@ -80,11 +85,14 @@ export default defineAction({
             updatedAt: now(),
           })
           .where(eq(contacts.id, contact.id));
-        rescored++;
+        return { ok: true as const };
       } catch (err) {
-        errors.push(`${contact.id}: ${err instanceof Error ? err.message : String(err)}`);
+        return { ok: false as const, error: `${contact.id}: ${err instanceof Error ? err.message : String(err)}` };
       }
-    }
+    });
+
+    const rescored = results.filter((r) => r.ok).length;
+    const errors = results.filter((r): r is { ok: false; error: string } => !r.ok).map((r) => r.error);
 
     return { rescored, attempted: targets.length, errors };
   },
