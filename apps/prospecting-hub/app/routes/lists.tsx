@@ -26,7 +26,8 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 
 import { ContactsTable } from "@/components/ContactsTable";
 import { APP_TITLE } from "@/lib/app-config";
@@ -564,6 +565,97 @@ function safeParseList(json: string | null): string[] {
 
 function sameList(a: string[], b: string[]) {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// Order- and case-insensitive variant — needed specifically for the company
+// allow-list once Focus Accounts became toggleable inside EditRulePanel: that
+// list is now reconstructed each save by merging the manual chip-input list
+// with whichever Focus Accounts are checked, and that merge doesn't preserve
+// the original stored order OR casing (the partition step that recognizes an
+// existing allow-list entry as "this is really Focus Account X" matches
+// case-insensitively, then re-emits the Focus Account's own canonical-cased
+// name — so a rule with an old lowercase manual entry like "apple" that
+// happens to match a Focus Account named "Apple" would otherwise read as
+// "changed" purely from that casing swap, spuriously enabling Save and
+// silently rewriting stored casing with zero real user action). Lowercasing
+// before sorting means the effective SET of companies (not their exact
+// stored casing) is what determines "did this field actually change".
+function sameSet(a: string[], b: string[]) {
+  const normalize = (list: string[]) => list.map((s) => s.toLowerCase()).sort();
+  return sameList(normalize(a), normalize(b));
+}
+
+// Section header used to group the New Active List / Edit Rule panels' many
+// fields into "what am I actually configuring here" chunks (Fred's own
+// feedback: the old flat field list buried Focus Accounts as one plain
+// checkbox section among ~8 others with no visual weight) — same uppercase-
+// label style already used elsewhere on this page (e.g. "Automation").
+function FormSectionHeader({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="mb-0.5 mt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {children}
+    </h3>
+  );
+}
+
+// Shared between NewActiveListPanel and EditRulePanel so the two can't drift
+// apart again the way the Contacts/List-detail tables once did. Given real
+// visual weight (bordered card, icon, one-line explanation, a direct link to
+// manage accounts) instead of a plain label — this is the field Fred said was
+// easy to miss entirely in the old flat layout.
+function FocusAccountsPicker({
+  focusAccounts,
+  isLoading,
+  selectedIds,
+  onToggle,
+}: {
+  focusAccounts: FocusAccountOption[];
+  isLoading: boolean;
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-3">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+          <IconFlag3 size={13} className="text-primary" />
+          Focus Accounts
+        </span>
+        <Link to="/focus-accounts" className="text-[11px] text-primary hover:underline">
+          Manage →
+        </Link>
+      </div>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        Check the accounts you want this list to search within — pulled from your curated Focus Accounts.
+      </p>
+      {isLoading ? (
+        <div className="flex h-9 items-center text-xs text-muted-foreground">
+          <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading focus accounts…
+        </div>
+      ) : focusAccounts.length === 0 ? (
+        <p className="text-xs text-muted-foreground/60">
+          No focus accounts yet — add some on the Focus Accounts page to target them here.
+        </p>
+      ) : (
+        <div className="flex max-h-36 flex-col gap-1 overflow-y-auto rounded-md border border-border/60 bg-background p-1.5">
+          {focusAccounts.map((a) => (
+            <label
+              key={a.id}
+              className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-foreground hover:bg-muted/50"
+            >
+              <input
+                type="checkbox"
+                checked={selectedIds.has(a.id)}
+                onChange={() => onToggle(a.id)}
+                className="size-3.5 rounded border-border"
+              />
+              <span className="truncate">{a.companyName}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Small UI bits ────────────────────────────────────────────────────────────
@@ -1179,6 +1271,11 @@ function NewActiveListPanel({
         </div>
 
         <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto p-5">
+          <p className="text-xs text-muted-foreground">
+            Searches CommonRoom for people matching your persona at the companies you choose below, on a
+            recurring schedule.
+          </p>
+
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Name</label>
             <input
@@ -1244,17 +1341,30 @@ function NewActiveListPanel({
             </div>
           )}
 
+          <AdvancedProspectorFilters
+            titleKeywords={titleKeywords}
+            onTitleKeywordsChange={setTitleKeywords}
+            selectedSeniorities={selectedSeniorities}
+            onToggleSeniority={toggleSeniority}
+            minFollowersText={minFollowersText}
+            onMinFollowersChange={setMinFollowersText}
+            previousCompanyName={previousCompanyName}
+            onPreviousCompanyNameChange={setPreviousCompanyName}
+          />
+
+          <FormSectionHeader>Target companies</FormSectionHeader>
+
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              ICP (optional)
+              Company Criteria (optional)
             </label>
             {icpsLoading ? (
               <div className="flex h-9 items-center text-xs text-muted-foreground">
-                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading ICPs…
+                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading Company Criteria…
               </div>
             ) : icps.length === 0 ? (
               <p className="text-xs text-muted-foreground/60">
-                No ICPs yet — create one on the ICPs page to add company-level criteria.
+                No Company Criteria yet — create one on the Company Criteria page.
               </p>
             ) : (
               <select
@@ -1262,7 +1372,7 @@ function NewActiveListPanel({
                 onChange={(e) => setIcpId(e.target.value)}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               >
-                <option value="">No ICP</option>
+                <option value="">No Company Criteria</option>
                 {icps.map((icp) => (
                   <option key={icp.id} value={icp.id}>
                     {icp.name}
@@ -1271,6 +1381,33 @@ function NewActiveListPanel({
               </select>
             )}
           </div>
+
+          <FocusAccountsPicker
+            focusAccounts={focusAccounts}
+            isLoading={focusAccountsLoading}
+            selectedIds={selectedFocusAccountIds}
+            onToggle={toggleFocusAccount}
+          />
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Additional companies (optional)
+            </label>
+            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              Companies to search alongside anything checked above — search your HubSpot companies, or type a
+              new one and press Enter.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Exclude companies (optional)
+            </label>
+            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
+          </div>
+
+          <FormSectionHeader>Volume &amp; schedule</FormSectionHeader>
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
@@ -1311,70 +1448,6 @@ function NewActiveListPanel({
               The pipeline runs on this recurring cadence to keep the list topped up.
             </p>
           </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Company allow-list (optional)
-            </label>
-            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
-            <p className="mt-1 text-[11px] text-muted-foreground/60">
-              Search your HubSpot companies, or type a new one and press Enter.
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <IconFlag3 size={13} />
-              Focus Accounts (optional)
-            </label>
-            {focusAccountsLoading ? (
-              <div className="flex h-9 items-center text-xs text-muted-foreground">
-                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading focus accounts…
-              </div>
-            ) : focusAccounts.length === 0 ? (
-              <p className="text-xs text-muted-foreground/60">
-                No focus accounts yet — add some on the Focus Accounts page to target them here.
-              </p>
-            ) : (
-              <div className="flex max-h-36 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
-                {focusAccounts.map((a) => (
-                  <label
-                    key={a.id}
-                    className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-foreground hover:bg-muted/50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedFocusAccountIds.has(a.id)}
-                      onChange={() => toggleFocusAccount(a.id)}
-                      className="size-3.5 rounded border-border"
-                    />
-                    <span className="truncate">{a.companyName}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-            <p className="mt-1 text-[11px] text-muted-foreground/60">
-              Checked accounts are merged into the company allow-list above alongside any manual entries.
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Company deny-list (optional)
-            </label>
-            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
-          </div>
-
-          <AdvancedProspectorFilters
-            titleKeywords={titleKeywords}
-            onTitleKeywordsChange={setTitleKeywords}
-            selectedSeniorities={selectedSeniorities}
-            onToggleSeniority={toggleSeniority}
-            minFollowersText={minFollowersText}
-            onMinFollowersChange={setMinFollowersText}
-            previousCompanyName={previousCompanyName}
-            onPreviousCompanyNameChange={setPreviousCompanyName}
-          />
 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
@@ -1436,6 +1509,13 @@ function EditRulePanel({
   const icps: IcpOption[] =
     (icpData as { icps?: IcpOption[] })?.icps ?? [];
 
+  const { data: focusAccountData, isLoading: focusAccountsLoading } = useActionQuery(
+    "list-focus-accounts",
+    {},
+  );
+  const focusAccounts: FocusAccountOption[] =
+    (focusAccountData as { focusAccounts?: FocusAccountOption[] })?.focusAccounts ?? [];
+
   const initialAllowList = safeParseList(rule.companyAllowList);
   const initialDenyList = safeParseList(rule.companyDenyList);
   const initialIcpId = rule.icpId ?? "";
@@ -1444,7 +1524,15 @@ function EditRulePanel({
 
   const [name, setName] = useState(rule.name);
   const [icpId, setIcpId] = useState(initialIcpId);
+  // companyAllowList is stored as one flat, already-merged array (Focus
+  // Account names + manually-typed ones combined at save time, same as
+  // NewActiveListPanel) — there's no stored distinction between the two.
+  // `allowList` here starts as that FULL list and gets split down to just
+  // the manual portion once Focus Accounts load (see the effect below),
+  // letting an existing rule's Focus-Account-sourced entries show up as
+  // checked accounts instead of opaque manual chips.
   const [allowList, setAllowList] = useState<string[]>(initialAllowList);
+  const [selectedFocusAccountIds, setSelectedFocusAccountIds] = useState<Set<string>>(new Set());
   const [denyList, setDenyList] = useState<string[]>(initialDenyList);
   const [desiredVolume, setDesiredVolume] = useState(rule.desiredVolume);
   // Rules created before this feature shipped have no intervalHours yet —
@@ -1459,6 +1547,29 @@ function EditRulePanel({
   const [previousCompanyName, setPreviousCompanyName] = useState(rule.previousCompanyName ?? "");
   const [error, setError] = useState<string | null>(null);
 
+  // Runs exactly once, as soon as Focus Accounts finish their first load —
+  // NOT a plain useState initializer, since focusAccounts is empty until
+  // that query resolves and a naive initial split would permanently lock in
+  // "nothing pre-checked" even after the real data arrives.
+  const partitionedRef = useRef(false);
+  useEffect(() => {
+    if (partitionedRef.current || focusAccountsLoading) return;
+    partitionedRef.current = true;
+    const focusAccountNamesLower = new Set(focusAccounts.map((a) => a.companyName.toLowerCase()));
+    const matchedIds = new Set(
+      focusAccounts
+        .filter((a) => initialAllowList.some((n) => n.toLowerCase() === a.companyName.toLowerCase()))
+        .map((a) => a.id),
+    );
+    setSelectedFocusAccountIds(matchedIds);
+    setAllowList(initialAllowList.filter((n) => !focusAccountNamesLower.has(n.toLowerCase())));
+    // initialAllowList is a fresh array every render (derived from `rule`,
+    // not memoized) — the ref guard above is what actually prevents re-runs
+    // after the first successful split, so omitting it here is safe and
+    // avoids this effect re-firing on every unrelated re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusAccountsLoading, focusAccounts]);
+
   function toggleSeniority(level: string) {
     setSelectedSeniorities((prev) => {
       const next = new Set(prev);
@@ -1468,7 +1579,21 @@ function EditRulePanel({
     });
   }
 
-  const nextAllowList = allowList;
+  function toggleFocusAccount(id: string) {
+    setSelectedFocusAccountIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Same merge NewActiveListPanel's handleCreate does — Focus-Account-based
+  // targeting is additive to, not a replacement for, the manual list.
+  const focusAccountNames = focusAccounts
+    .filter((a) => selectedFocusAccountIds.has(a.id))
+    .map((a) => a.companyName);
+  const nextAllowList = Array.from(new Set([...allowList, ...focusAccountNames]));
   const nextDenyList = denyList;
   const nextTitleKeywords = titleKeywords;
   const nextSeniorities = Array.from(selectedSeniorities);
@@ -1478,7 +1603,7 @@ function EditRulePanel({
   const hasChanges =
     name.trim() !== rule.name ||
     icpId !== initialIcpId ||
-    !sameList(nextAllowList, initialAllowList) ||
+    !sameSet(nextAllowList, initialAllowList) ||
     !sameList(nextDenyList, initialDenyList) ||
     !sameList(nextTitleKeywords, initialTitleKeywords) ||
     !sameList(nextSeniorities, initialSeniorities) ||
@@ -1497,7 +1622,7 @@ function EditRulePanel({
       id: rule.id,
       ...(name.trim() !== rule.name ? { name: name.trim() } : {}),
       ...(icpId !== initialIcpId ? { icpId: icpId || null } : {}),
-      ...(!sameList(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
+      ...(!sameSet(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
       ...(!sameList(nextDenyList, initialDenyList) ? { companyDenyList: nextDenyList } : {}),
       ...(!sameList(nextTitleKeywords, initialTitleKeywords) ? { manualTitleKeywords: nextTitleKeywords } : {}),
       ...(!sameList(nextSeniorities, initialSeniorities) ? { manualSeniorities: nextSeniorities } : {}),
@@ -1543,17 +1668,30 @@ function EditRulePanel({
             />
           </div>
 
+          <AdvancedProspectorFilters
+            titleKeywords={titleKeywords}
+            onTitleKeywordsChange={setTitleKeywords}
+            selectedSeniorities={selectedSeniorities}
+            onToggleSeniority={toggleSeniority}
+            minFollowersText={minFollowersText}
+            onMinFollowersChange={setMinFollowersText}
+            previousCompanyName={previousCompanyName}
+            onPreviousCompanyNameChange={setPreviousCompanyName}
+          />
+
+          <FormSectionHeader>Target companies</FormSectionHeader>
+
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              ICP (optional)
+              Company Criteria (optional)
             </label>
             {icpsLoading ? (
               <div className="flex h-9 items-center text-xs text-muted-foreground">
-                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading ICPs…
+                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading Company Criteria…
               </div>
             ) : icps.length === 0 ? (
               <p className="text-xs text-muted-foreground/60">
-                No ICPs yet — create one on the ICPs page to add company-level criteria.
+                No Company Criteria yet — create one on the Company Criteria page.
               </p>
             ) : (
               <select
@@ -1561,7 +1699,7 @@ function EditRulePanel({
                 onChange={(e) => setIcpId(e.target.value)}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               >
-                <option value="">No ICP</option>
+                <option value="">No Company Criteria</option>
                 {icps.map((icp) => (
                   <option key={icp.id} value={icp.id}>
                     {icp.name}
@@ -1570,6 +1708,32 @@ function EditRulePanel({
               </select>
             )}
           </div>
+
+          <FocusAccountsPicker
+            focusAccounts={focusAccounts}
+            isLoading={focusAccountsLoading}
+            selectedIds={selectedFocusAccountIds}
+            onToggle={toggleFocusAccount}
+          />
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Additional companies (optional)
+            </label>
+            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              Companies to search alongside anything checked above.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Exclude companies (optional)
+            </label>
+            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
+          </div>
+
+          <FormSectionHeader>Volume &amp; schedule</FormSectionHeader>
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
@@ -1604,31 +1768,6 @@ function EditRulePanel({
               ))}
             </select>
           </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Company allow-list
-            </label>
-            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Company deny-list
-            </label>
-            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
-          </div>
-
-          <AdvancedProspectorFilters
-            titleKeywords={titleKeywords}
-            onTitleKeywordsChange={setTitleKeywords}
-            selectedSeniorities={selectedSeniorities}
-            onToggleSeniority={toggleSeniority}
-            minFollowersText={minFollowersText}
-            onMinFollowersChange={setMinFollowersText}
-            previousCompanyName={previousCompanyName}
-            onPreviousCompanyNameChange={setPreviousCompanyName}
-          />
 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
