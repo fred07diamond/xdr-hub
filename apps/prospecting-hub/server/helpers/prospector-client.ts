@@ -138,14 +138,51 @@ export async function searchProspectorContacts(options: {
   // lastOrgChange only; "seniority" is a returned/sortable COLUMN, not a
   // filter). Pushing a seniority stringFilter into the MCP call itself
   // throws "Unknown filter field: seniority" — seniority is applied as a
-  // post-filter below instead, same as the company allow/deny lists.
+  // post-filter below instead.
 
-  // ProspectorContact has no direct company-list filter matching companyName
-  // by name-list, so allow/deny is applied as a post-filter below rather
-  // than pushed into the MCP call. Request more than `options.limit` from
-  // the MCP call itself (3x, capped at 200 — CommonRoom's own apparent
-  // per-call ceiling) to leave headroom for the post-filter to still return
-  // close to the requested count for THIS page.
+  // Company ALLOW-list: pushed into the MCP call itself as an OR'd
+  // companyName `eq` group (live-verified: `eq` is a case-insensitive exact
+  // match, confirmed matching "Gopuff"/"SeatGeek" against allow-list entries
+  // typed as "goPuff"/"Seatgeek"). This used to be a POST-filter only,
+  // applied after an otherwise-unconstrained title-only search — for a
+  // small, specific allow-list (exactly what the "browse by owner" picker
+  // produces, e.g. 6 named companies) that meant searching CommonRoom's
+  // entire ~51M-contact Prospector pool by title alone and hoping enough of
+  // any single raw page happened to land at one of those 6 companies by
+  // chance — for all practical purposes never happening within the
+  // pipeline's bounded per-invocation page budget, so the run would look
+  // "stuck" (no error, `recordsFound` staying at/near 0) rather than
+  // completing or failing. Pushing the filter server-side makes CommonRoom
+  // itself do the narrowing. The post-filter below is KEPT as a defensive
+  // second layer (cheap, harmless) rather than removed.
+  const effectiveAllowList = options.companyAllowList?.filter(Boolean) ?? [];
+  if (effectiveAllowList.length > 0) {
+    clauses.push({
+      type: "or",
+      target: null,
+      objectConfigId: null,
+      targetAssocPaths: null,
+      clauses: effectiveAllowList.map((name) => ({
+        type: "stringFilter",
+        field: "companyName",
+        params: { op: "eq", value: name },
+      })),
+    });
+  }
+  // Company DENY-list has NO server-side equivalent: stringFilter's only
+  // operators are eq/like/empty/notEmpty (confirmed live — "ne" is rejected
+  // by MCP-side input validation), and there's no negation combinator in
+  // this filter grammar (only "and"/"or" groups), so "companyName is NOT one
+  // of these" can't be expressed as a CommonRoom-side filter. Deny stays a
+  // post-filter only. This is a much smaller problem than allow was: deny
+  // only ever narrows an ALREADY-reasonably-scoped result set (by title, and
+  // now also by the allow-list above when both are set) rather than needing
+  // to find a needle in the entire unconstrained pool.
+
+  // Request more than `options.limit` from the MCP call itself (3x, capped
+  // at 200 — CommonRoom's own apparent per-call ceiling) to leave headroom
+  // for the deny-list/seniority post-filters below to still return close to
+  // the requested count for THIS page.
   const mcpLimit = Math.min(200, Math.max(1, options.limit * 3));
 
   const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
