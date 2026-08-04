@@ -184,7 +184,16 @@ function AddFromHubSpotPanel({
     "search-hubspot-company-owners",
     {},
   );
-  const owners: HubSpotOwnerOption[] = (ownersData as { owners?: HubSpotOwnerOption[] } | undefined)?.owners ?? [];
+  const ownersResult = ownersData as
+    | { owners?: HubSpotOwnerOption[]; notConnected?: boolean; error?: string | null }
+    | undefined;
+  const owners: HubSpotOwnerOption[] = ownersResult?.owners ?? [];
+  // Distinguishes "genuinely not connected" from "connected, but the last
+  // request to HubSpot's Owners API failed" — these used to look identical
+  // (an empty owners list either way), which told an XDR to "connect
+  // HubSpot" even when the real problem was a transient API failure.
+  const ownersNotConnected = ownersResult?.notConnected === true;
+  const ownersFetchError = ownersResult?.error ?? null;
 
   const [ownerQuery, setOwnerQuery] = useState("");
   const [showOwnerSuggestions, setShowOwnerSuggestions] = useState(false);
@@ -202,8 +211,12 @@ function AddFromHubSpotPanel({
     { ownerId: selectedOwner?.id ?? "" },
     { enabled: !!selectedOwner },
   );
-  const companies: HubSpotOwnedCompany[] =
-    (companiesData as { companies?: HubSpotOwnedCompany[] } | undefined)?.companies ?? [];
+  const companiesResult = companiesData as
+    | { companies?: HubSpotOwnedCompany[]; total?: number; truncated?: boolean }
+    | undefined;
+  const companies: HubSpotOwnedCompany[] = companiesResult?.companies ?? [];
+  const companiesTruncated = companiesResult?.truncated ?? false;
+  const companiesTotal = companiesResult?.total ?? companies.length;
 
   const bulkCreate = useActionMutation("bulk-create-focus-accounts");
 
@@ -286,10 +299,18 @@ function AddFromHubSpotPanel({
                 <div className="flex h-9 items-center text-xs text-muted-foreground">
                   <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading HubSpot owners…
                 </div>
-              ) : owners.length === 0 ? (
+              ) : ownersFetchError ? (
+                <p className="text-xs text-destructive">
+                  Couldn't load HubSpot owners: {ownersFetchError}. Try again, or add accounts manually.
+                </p>
+              ) : owners.length === 0 && ownersNotConnected ? (
                 <p className="text-xs text-muted-foreground/60">
                   HubSpot isn't connected, so there are no owners to browse. Connect HubSpot to bulk-add
                   focus accounts this way, or add accounts manually.
+                </p>
+              ) : owners.length === 0 ? (
+                <p className="text-xs text-muted-foreground/60">
+                  No HubSpot owners found. Add accounts manually instead.
                 </p>
               ) : (
                 <div className="relative">
@@ -383,25 +404,34 @@ function AddFromHubSpotPanel({
                   </p>
                 </div>
               ) : (
-                <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
-                  {companies.map((c) => (
-                    <label
-                      key={c.id}
-                      className="flex items-center gap-2 rounded px-1.5 py-1.5 text-xs text-foreground hover:bg-muted/50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedCompanyIds.has(c.id)}
-                        onChange={() => toggleCompany(c.id)}
-                        className="size-3.5 shrink-0 rounded border-border"
-                      />
-                      <span className="min-w-0 flex-1 truncate" title={c.name}>
-                        {c.name}
-                        {c.domain && <span className="ml-1.5 text-muted-foreground/60">{c.domain}</span>}
-                      </span>
-                      <MatchedViaBadge matchedVia={c.matchedVia} />
-                    </label>
-                  ))}
+                <div>
+                  {companiesTruncated && (
+                    <p className="mb-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                      Showing the first {companies.length} of {companiesTotal.toLocaleString()} companies for
+                      this owner — narrowing by additional criteria isn't supported yet, so "Select all" here
+                      won't cover this owner's full book of business.
+                    </p>
+                  )}
+                  <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
+                    {companies.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-2 rounded px-1.5 py-1.5 text-xs text-foreground hover:bg-muted/50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCompanyIds.has(c.id)}
+                          onChange={() => toggleCompany(c.id)}
+                          className="size-3.5 shrink-0 rounded border-border"
+                        />
+                        <span className="min-w-0 flex-1 truncate" title={c.name}>
+                          {c.name}
+                          {c.domain && <span className="ml-1.5 text-muted-foreground/60">{c.domain}</span>}
+                        </span>
+                        <MatchedViaBadge matchedVia={c.matchedVia} />
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
 

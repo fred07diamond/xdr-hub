@@ -21,6 +21,7 @@ interface HubSpotCompanyResult {
 
 interface HubSpotCompanySearchResponse {
   results?: HubSpotCompanyResult[];
+  total?: number;
 }
 
 type MatchedVia = "companyOwner" | "xdrOwner" | "both";
@@ -74,6 +75,12 @@ export default defineAction({
       };
     });
 
-    return { companies };
+    // HubSpot's own `total` (the real count matching the filter, independent
+    // of this call's page size) lets the UI tell an XDR when this owner's
+    // book of business is bigger than the single page fetched here —
+    // otherwise "Select all" silently selects only the first MAX_RESULTS
+    // companies with no indication anything was left out.
+    const total = typeof parsed.total === "number" ? parsed.total : companies.length;
+    return { companies, total, truncated: total > companies.length };
   },
 });

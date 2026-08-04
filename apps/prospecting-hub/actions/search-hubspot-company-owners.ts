@@ -43,16 +43,29 @@ export default defineAction({
     const byId = new Map<string, string>();
     let after: string | undefined;
     let page = 0;
+    // Distinguishes "genuinely not connected" (accurate to tell the XDR to
+    // connect HubSpot) from "connected, but a request actually failed"
+    // (rate limit, expired token mid-session, transient 5xx) — these two
+    // previously both surfaced as an identical empty/partial owner list with
+    // no signal, so a real-but-broken connection told the XDR to do the
+    // wrong troubleshooting step ("connect HubSpot") instead of the right
+    // one ("something's wrong with the connection, try again").
+    let fetchError: string | null = null;
 
     for (;;) {
       const path = after ? `/crm/v3/owners?limit=${PAGE_LIMIT}&after=${after}` : `/crm/v3/owners?limit=${PAGE_LIMIT}`;
       let connected: { token: string; data: unknown } | null;
       try {
         connected = await hubspotFetchIfConnected(path);
-      } catch {
-        break; // transient failure mid-pagination — return whatever was gathered so far
+      } catch (err) {
+        // A real, connected request failed mid-pagination — keep whatever
+        // owners were already gathered (still useful for the picker) but
+        // flag it so the UI shows an accurate message instead of "not
+        // connected".
+        fetchError = err instanceof Error ? err.message : String(err);
+        break;
       }
-      if (!connected) return { owners: [] }; // HubSpot not connected at all
+      if (!connected) return { owners: [], notConnected: true }; // HubSpot genuinely not connected
       const parsed = connected.data as HubSpotOwnersResponse;
       for (const owner of parsed.results ?? []) {
         if (!owner.id || owner.archived) continue;
@@ -68,6 +81,6 @@ export default defineAction({
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    return { owners };
+    return { owners, notConnected: false, error: fetchError };
   },
 });
