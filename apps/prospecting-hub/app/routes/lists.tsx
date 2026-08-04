@@ -171,6 +171,7 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
   const [showOwnerSuggestions, setShowOwnerSuggestions] = useState(false);
   const [selectedOwner, setSelectedOwner] = useState<HubSpotOwnerOption | null>(null);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<Set<string>>(new Set());
+  const [companyQuery, setCompanyQuery] = useState("");
 
   const { data: companiesData, isLoading: companiesLoading, error: companiesError } = useActionQuery(
     "search-hubspot-companies-by-owner",
@@ -183,17 +184,28 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
   const companies: HubSpotOwnedCompany[] = companiesResult?.companies ?? [];
   const companiesTruncated = companiesResult?.truncated ?? false;
   const companiesTotal = companiesResult?.total ?? companies.length;
+  // Client-side filter over the fetched page only — this owner's companies
+  // are all already loaded in one call (search-hubspot-companies-by-owner
+  // has no server-side search param), so this narrows what's ALREADY here
+  // rather than re-querying. Still genuinely useful even when truncated
+  // (see the banner below) — it's strictly better than no way to search at
+  // all across up to 100 rows.
+  const filteredCompanies = companies.filter((c) =>
+    c.name.toLowerCase().includes(companyQuery.trim().toLowerCase()),
+  );
 
   const filteredOwners = owners.filter((o) =>
     o.name.toLowerCase().includes(ownerQuery.trim().toLowerCase()),
   );
-  const allSelected = companies.length > 0 && selectedCompanyIds.size === companies.length;
+  const allFilteredSelected =
+    filteredCompanies.length > 0 && filteredCompanies.every((c) => selectedCompanyIds.has(c.id));
 
   function reset() {
     setOwnerQuery("");
     setShowOwnerSuggestions(false);
     setSelectedOwner(null);
     setSelectedCompanyIds(new Set());
+    setCompanyQuery("");
   }
 
   function pickOwner(owner: HubSpotOwnerOption) {
@@ -201,6 +213,7 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
     setOwnerQuery(owner.name);
     setShowOwnerSuggestions(false);
     setSelectedCompanyIds(new Set());
+    setCompanyQuery("");
   }
 
   function toggleCompany(id: string) {
@@ -212,10 +225,20 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
     });
   }
 
+  // Operates on whatever the search box currently narrows to, not the full
+  // fetched page — "Select all" after typing "acme" selects only the
+  // filtered Acme-matching rows, not everything this owner has.
   function toggleSelectAll() {
-    setSelectedCompanyIds((prev) =>
-      prev.size === companies.length ? new Set() : new Set(companies.map((c) => c.id)),
-    );
+    setSelectedCompanyIds((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        filteredCompanies.forEach((c) => next.delete(c.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filteredCompanies.forEach((c) => next.add(c.id));
+      return next;
+    });
   }
 
   function handleAdd() {
@@ -243,9 +266,9 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
           Browse by owner
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-          {selectedOwner && (
+      <PopoverContent className="w-96 p-0" align="start" sideOffset={6}>
+        {selectedOwner && (
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
             <button
               type="button"
               onClick={() => {
@@ -253,65 +276,69 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
                 setSelectedCompanyIds(new Set());
                 setOwnerQuery("");
                 setShowOwnerSuggestions(false);
+                setCompanyQuery("");
               }}
               className="rounded p-1 text-muted-foreground hover:bg-muted"
               aria-label="Back"
             >
               <IconArrowLeft size={14} />
             </button>
-          )}
-          <span className="text-xs font-medium text-foreground">
-            {selectedOwner ? `${selectedOwner.name}'s companies` : "Browse by owner"}
-          </span>
-        </div>
+            <span className="text-xs font-medium text-foreground">{selectedOwner.name}'s companies</span>
+          </div>
+        )}
 
         <div className="max-h-72 overflow-y-auto p-3">
           {!selectedOwner ? (
-            ownersLoading ? (
-              <div className="flex h-9 items-center text-xs text-muted-foreground">
-                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading HubSpot owners…
-              </div>
-            ) : ownersFetchError ? (
-              <p className="text-xs text-destructive">Couldn't load HubSpot owners: {ownersFetchError}.</p>
-            ) : owners.length === 0 && ownersNotConnected ? (
-              <p className="text-xs text-muted-foreground/60">
-                HubSpot isn't connected — connect it to browse by owner.
-              </p>
-            ) : owners.length === 0 ? (
-              <p className="text-xs text-muted-foreground/60">No HubSpot owners found.</p>
-            ) : (
-              <div className="relative">
-                <input
-                  autoFocus
-                  value={ownerQuery}
-                  onChange={(e) => {
-                    setOwnerQuery(e.target.value);
-                    setShowOwnerSuggestions(true);
-                  }}
-                  onFocus={() => setShowOwnerSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowOwnerSuggestions(false), 150)}
-                  placeholder="Search owners (Company owner or xDR Owner)…"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-                {showOwnerSuggestions && filteredOwners.length > 0 && (
-                  <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
-                    {filteredOwners.map((owner) => (
-                      <button
-                        key={owner.id}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          pickOwner(owner);
-                        }}
-                        className="flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
-                      >
-                        {owner.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                Owner (Company owner or xDR Owner)
+              </label>
+              {ownersLoading ? (
+                <div className="flex h-9 items-center text-xs text-muted-foreground">
+                  <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading HubSpot owners…
+                </div>
+              ) : ownersFetchError ? (
+                <p className="text-xs text-destructive">Couldn't load HubSpot owners: {ownersFetchError}.</p>
+              ) : owners.length === 0 && ownersNotConnected ? (
+                <p className="text-xs text-muted-foreground/60">
+                  HubSpot isn't connected — connect it to browse by owner.
+                </p>
+              ) : owners.length === 0 ? (
+                <p className="text-xs text-muted-foreground/60">No HubSpot owners found.</p>
+              ) : (
+                <div className="relative">
+                  <input
+                    autoFocus
+                    value={ownerQuery}
+                    onChange={(e) => {
+                      setOwnerQuery(e.target.value);
+                      setShowOwnerSuggestions(true);
+                    }}
+                    onFocus={() => setShowOwnerSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowOwnerSuggestions(false), 150)}
+                    placeholder="Search owners…"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  {showOwnerSuggestions && filteredOwners.length > 0 && (
+                    <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+                      {filteredOwners.map((owner) => (
+                        <button
+                          key={owner.id}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            pickOwner(owner);
+                          }}
+                          className="flex w-full items-center px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
+                        >
+                          {owner.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           ) : companiesLoading ? (
             <div className="flex h-20 items-center justify-center text-xs text-muted-foreground">
               <IconLoader2 size={16} className="mr-1.5 animate-spin" /> Loading companies…
@@ -324,43 +351,54 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
             <p className="text-xs text-muted-foreground/60">{selectedOwner.name} has no companies in HubSpot.</p>
           ) : (
             <div>
+              <input
+                autoFocus
+                value={companyQuery}
+                onChange={(e) => setCompanyQuery(e.target.value)}
+                placeholder={`Search ${selectedOwner.name}'s companies…`}
+                className="mb-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
+              />
               {companiesTruncated && (
                 <p className="mb-1.5 text-[11px] text-amber-600 dark:text-amber-400">
                   Showing the first {companies.length} of {companiesTotal.toLocaleString()} companies —
                   "Select all" won't cover this owner's full book of business.
                 </p>
               )}
-              <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-                {companies.map((c) => (
-                  <label
-                    key={c.id}
-                    className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-foreground hover:bg-muted/50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedCompanyIds.has(c.id)}
-                      onChange={() => toggleCompany(c.id)}
-                      className="size-3.5 shrink-0 rounded border-border"
-                    />
-                    <span className="min-w-0 flex-1 truncate" title={c.name}>
-                      {c.name}
-                    </span>
-                    <MatchedViaBadge matchedVia={c.matchedVia} />
-                  </label>
-                ))}
-              </div>
+              {filteredCompanies.length === 0 ? (
+                <p className="py-2 text-xs text-muted-foreground/60">No companies match "{companyQuery}".</p>
+              ) : (
+                <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+                  {filteredCompanies.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-foreground hover:bg-muted/50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCompanyIds.has(c.id)}
+                        onChange={() => toggleCompany(c.id)}
+                        className="size-3.5 shrink-0 rounded border-border"
+                      />
+                      <span className="min-w-0 flex-1 truncate" title={c.name}>
+                        {c.name}
+                      </span>
+                      <MatchedViaBadge matchedVia={c.matchedVia} />
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {selectedOwner && companies.length > 0 && (
+        {selectedOwner && filteredCompanies.length > 0 && (
           <div className="flex items-center justify-between border-t border-border px-3 py-2">
             <button
               type="button"
               onClick={toggleSelectAll}
               className="text-[11px] font-medium text-primary hover:underline"
             >
-              {allSelected ? "Deselect all" : "Select all"}
+              {allFilteredSelected ? "Deselect all" : "Select all"}
             </button>
             <button
               type="button"
