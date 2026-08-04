@@ -1,5 +1,30 @@
 import { callMcpToolWithTimeout, parseMcpToolResult, resolveServerId } from "./commonroom-client.js";
 
+// One bounded retry, specifically for this search call — not a change to
+// callMcpToolWithTimeout itself, which also backs the scoring phase's
+// per-contact CommonRoom engagement lookups; those already have a
+// carefully-reasoned timing margin against the platform's 75s function
+// timeout (see run-sourcing-rule-pipeline.ts's CLAIM_STALE_AFTER_MS
+// comment), and doubling THEIR worst case is a different, riskier trade
+// than doubling it here. Live in production: a single 20s timeout on one
+// search page (commonroom-client.ts's own comment documents this as a
+// confirmed, real occurrence, not hypothetical) previously had no recovery
+// path anywhere in this call chain — run-sourcing-rule-pipeline.ts's
+// top-level catch treats ANY thrown error as fatal, marking the whole run
+// "failed" and deleting its work queue, requiring the XDR to notice and
+// manually restart from scratch over one transient hiccup. Retrying once
+// here is safe because this is a pure read with no side effects.
+async function callProspectorSearchWithRetry(
+  serverId: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  try {
+    return await callMcpToolWithTimeout(serverId, "commonroom_list_objects", args);
+  } catch {
+    return await callMcpToolWithTimeout(serverId, "commonroom_list_objects", args);
+  }
+}
+
 // CommonRoom Prospector contacts are queried through the exact same
 // org-scoped MCP connection as the rest of commonroom-client.ts (the vendor
 // exposes Prospector data as another `objectType` on the same
@@ -185,7 +210,7 @@ export async function searchProspectorContacts(options: {
   // the requested count for THIS page.
   const mcpLimit = Math.min(200, Math.max(1, options.limit * 3));
 
-  const result = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
+  const result = await callProspectorSearchWithRetry(resolveServerId(options.orgId), {
     objectType: "ProspectorContact",
     ...(clauses.length > 0 ? { filter: { type: "and", clauses } } : {}),
     properties: PROSPECTOR_PROPERTIES,
