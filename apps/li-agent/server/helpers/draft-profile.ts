@@ -1,4 +1,5 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
+import { getOutreachVoiceGuidelines } from "@xdr-hub/shared/server";
 import { getOwnerCtx } from "./get-owner-ctx.js";
 
 export interface DraftResult {
@@ -27,11 +28,18 @@ export async function draftProfile({
   try {
     const ownerCtx = await getOwnerCtx();
     const messagingBlock = messagingContext ? `\n${messagingContext}\n\n` : "";
+    // Shared workspace-wide voice/tone guidelines (also used by Prospecting
+    // Hub's own email/LinkedIn drafting) — see outreach-voice.ts. Keeps
+    // messaging consistent across apps without merging either app's own
+    // grounding data or generation logic.
+    const voiceGuidelines = await getOutreachVoiceGuidelines(ownerCtx?.userEmail ?? "", ownerCtx?.orgId ?? null);
+    const voiceBlock = `Voice and tone guidelines:\n${voiceGuidelines}\n\n`;
 
     const systemPrompt = icpText
       ? "You are a LinkedIn outreach assistant. Score fit and draft a personalized connection note.\n\n" +
         `ICP document:\n${icpText.slice(0, 3000)}\n\n` +
         messagingBlock +
+        voiceBlock +
         "Scoring rubric — be decisive, don't hedge:\n" +
         "- strong: title + seniority match the ICP, OR clear behavioral signals (sharing/praising tools, vendors, or themes in the space — even a single specific post counts). If evidence points to strong, score it strong.\n" +
         "- possible: genuine uncertainty only — title is adjacent OR seniority is one level off, AND no behavioral signals exist.\n" +
@@ -42,6 +50,7 @@ export async function draftProfile({
         '"draftFollowUp": "<follow-up to send after they accept, max 100 chars>" }'
       : "You are a LinkedIn outreach assistant. No ICP document has been uploaded, so you cannot score fit.\n\n" +
         messagingBlock +
+        voiceBlock +
         'Reply with valid JSON only: { "fitVerdict": "inconclusive", "fitReason": "No ICP document uploaded — add ICP criteria on the ICP tab to enable fit scoring.", ' +
         '"draftNote": "<a brief, generic, professional connection note based only on the profile, max 200 chars — do not reference any ICP or scoring criteria>", ' +
         '"draftFollowUp": "<a short generic follow-up, max 100 chars>" }';

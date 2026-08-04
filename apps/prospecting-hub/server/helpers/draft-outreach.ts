@@ -1,5 +1,6 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { desc, eq } from "@agent-native/core/db/schema";
+import { getOutreachVoiceGuidelines } from "@xdr-hub/shared/server";
 import { getDb } from "../db/index.js";
 import { contacts, libraryDocs } from "../db/schema.js";
 
@@ -260,11 +261,18 @@ export async function draftOutreach(options: {
     .filter(Boolean)
     .join("\n");
 
+  // Shared workspace-wide voice/tone guidelines (also used by LinkedIn
+  // Agent's own connection-note drafting) — see outreach-voice.ts. Keeps
+  // messaging consistent across apps without merging either app's own
+  // grounding data or generation logic.
+  const voiceGuidelines = await getOutreachVoiceGuidelines(userEmail, orgId);
+
   const systemPrompt =
     "You are a sales development rep drafting personalized outbound outreach for a single contact.\n\n" +
     `Persona-linked messaging context:\n${groundingBlock}\n\n` +
     `${evidenceBlock}\n\n` +
     `Contact:\n${contactBlock}\n\n` +
+    `Voice and tone guidelines (apply to both the email and the LinkedIn note):\n${voiceGuidelines}\n\n` +
     "Draft a personalized cold email (subject + body) AND a separate, SHORTER LinkedIn connection note. " +
     "Ground everything ONLY in the persona/messaging context and the contact's own fields supplied above — " +
     "never invent a fact about the contact or their company that isn't already present in this input " +
