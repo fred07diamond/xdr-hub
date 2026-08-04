@@ -24,6 +24,7 @@ import { Link } from "react-router";
 import { ContactDrawer } from "@/components/ContactDrawer";
 import { buildOverallScoreBreakdown, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { APP_TITLE } from "@/lib/app-config";
 
 const DEFAULT_PERSONA_COLOR = "#94a3b8";
@@ -475,25 +476,39 @@ export default function ContactsRoute() {
             );
           })}
         </div>
-        <select
-          value={source}
-          onChange={(e) => { setSource(e.target.value as "" | ContactRow["source"]); resetToFirstPage(); }}
-          className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        <Select
+          value={source || "all"}
+          onValueChange={(v) => {
+            setSource(v === "all" ? "" : (v as ContactRow["source"]));
+            resetToFirstPage();
+          }}
         >
-          <option value="">All sources</option>
-          <option value="hubspot">HubSpot</option>
-          <option value="commonroom">CommonRoom</option>
-          <option value="prospector">Prospector</option>
-        </select>
-        <select
-          value={status}
-          onChange={(e) => { setStatus(e.target.value as "" | ContactRow["status"]); resetToFirstPage(); }}
-          className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          <SelectTrigger className="h-auto w-auto gap-1.5 rounded-md border-border px-2 py-1.5 text-xs">
+            <SelectValue placeholder="All sources" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All sources</SelectItem>
+            <SelectItem value="hubspot">HubSpot</SelectItem>
+            <SelectItem value="commonroom">CommonRoom</SelectItem>
+            <SelectItem value="prospector">Prospector</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={status || "all"}
+          onValueChange={(v) => {
+            setStatus(v === "all" ? "" : (v as ContactRow["status"]));
+            resetToFirstPage();
+          }}
         >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="actioned">Actioned</option>
-        </select>
+          <SelectTrigger className="h-auto w-auto gap-1.5 rounded-md border-border px-2 py-1.5 text-xs">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="actioned">Actioned</SelectItem>
+          </SelectContent>
+        </Select>
         {selected.size > 0 && (
           <span className="ml-auto text-xs text-muted-foreground">
             {selected.size} selected
