@@ -43,7 +43,8 @@ export interface HubSpotContactField {
 
 export interface HubSpotContactEnrichment {
   hubspotUrl: string | null;
-  fields: HubSpotContactField[];
+  contactFields: HubSpotContactField[];
+  companyFields: HubSpotContactField[];
 }
 
 interface HubSpotPropertyDef {
@@ -108,8 +109,20 @@ function formatValue(raw: string, options?: Map<string, string>): string {
   return raw;
 }
 
+// HubSpot's bulk /crm/v3/properties/{objectType} list appears to truncate
+// the `options` array for very large enumerations (confirmed live: the
+// portal's ~49-person owner picklist resolves fine for hubspot_owner_id
+// via the resolveOwnerValue live-lookup fallback below, but a *different*
+// property drawing from that same 49-person list — xdr_owner — showed a
+// bare numeric id instead of a name until treated the same way). Route any
+// "owner"-shaped property through the same live-fallback path rather than
+// hardcoding every specific internal name that happens to store an owner id.
+function looksLikeOwnerProperty(name: string): boolean {
+  return name === "hubspot_owner_id" || name.toLowerCase().includes("owner");
+}
+
 async function resolveField(name: string, raw: string, options?: Map<string, string>): Promise<string> {
-  return name === "hubspot_owner_id" ? resolveOwnerValue(raw, options) : formatValue(raw, options);
+  return looksLikeOwnerProperty(name) ? resolveOwnerValue(raw, options) : formatValue(raw, options);
 }
 
 async function findHubSpotContactId(input: {
@@ -228,7 +241,7 @@ async function fetchCompanyFields(companyId: string | number): Promise<HubSpotCo
   for (const { label, name, options } of resolvedCompanyProps) {
     const raw = companyProps[name];
     if (!raw) continue;
-    fields.push({ label: `${label} (Company)`, value: await resolveField(name, raw, options) });
+    fields.push({ label, value: await resolveField(name, raw, options) });
   }
   return fields;
 }
@@ -242,7 +255,8 @@ export async function lookupHubSpotContactDetail(input: {
   const token = await getHubSpotToken();
   if (!token) return null;
 
-  const fields: HubSpotContactField[] = [];
+  const contactFields: HubSpotContactField[] = [];
+  const companyFields: HubSpotContactField[] = [];
   let hubspotUrl: string | null = null;
   let companyId: string | number | null = null;
 
@@ -258,7 +272,7 @@ export async function lookupHubSpotContactDetail(input: {
     for (const { label, name, options } of resolvedContactProps) {
       const raw = contactProps[name];
       if (!raw) continue;
-      fields.push({ label, value: await resolveField(name, raw, options) });
+      contactFields.push({ label, value: await resolveField(name, raw, options) });
     }
 
     // Best-effort — a missing association or a lookup hiccup just means no
@@ -295,12 +309,12 @@ export async function lookupHubSpotContactDetail(input: {
 
   if (companyId != null) {
     try {
-      fields.push(...(await fetchCompanyFields(companyId)));
+      companyFields.push(...(await fetchCompanyFields(companyId)));
     } catch {
       // best-effort — whatever fields were gathered above still stand
     }
   }
 
-  if (fields.length === 0) return null;
-  return { hubspotUrl, fields };
+  if (contactFields.length === 0 && companyFields.length === 0) return null;
+  return { hubspotUrl, contactFields, companyFields };
 }

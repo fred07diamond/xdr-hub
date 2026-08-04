@@ -69,7 +69,8 @@ interface HubSpotField {
 
 interface HubSpotEnrichment {
   hubspotUrl: string | null;
-  fields: HubSpotField[];
+  contactFields: HubSpotField[];
+  companyFields: HubSpotField[];
 }
 
 interface PersonaOption {
@@ -99,6 +100,28 @@ function formatDate(value: unknown): string | null {
 
 function SectionHeading({ children }: { children: ReactNode }) {
   return <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</h3>;
+}
+
+// Bordered-cell grid matching the Score section's own cell style, so the
+// HubSpot section reads as one more data panel rather than plain stacked
+// label/value text. `caption` labels a sub-group (e.g. "Contact" vs.
+// "Company") only when both are present at once — otherwise the section
+// heading alone already says "HubSpot" and a repeated per-field suffix
+// like "(Company)" would just be noise.
+function HubSpotFieldGrid({ caption, fields }: { caption?: string; fields: HubSpotField[] }) {
+  return (
+    <div>
+      {caption && <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{caption}</p>}
+      <div className="grid grid-cols-2 gap-1.5">
+        {fields.map((field) => (
+          <div key={field.label} className="min-w-0 rounded-md border border-border px-2.5 py-1.5">
+            <p className="truncate text-[10px] text-muted-foreground/70">{field.label}</p>
+            <p className="truncate text-xs font-medium text-foreground">{field.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // No shared relative-time helper is importable here (contacts.tsx's own
@@ -298,34 +321,40 @@ export function ContactDrawer({
                 properties (Fred's ask: "give me hubspot information like
                 [the HubSpot record panel]"). Best-effort live lookup —
                 contacts not yet linked to HubSpot get a live name+company
-                match attempt (hubspot-contact-lookup.ts), same discipline
-                as the CommonRoom enrichment below. */}
+                match attempt, and even without a contact match at all, a
+                matched account's own company-level fields still show
+                (hubspot-contact-lookup.ts) — same discipline as the
+                CommonRoom enrichment below. */}
             <div>
               <SectionHeading>HubSpot</SectionHeading>
-              {!hubspotEnrichment || hubspotEnrichment.fields.length === 0 ? (
+              {!hubspotEnrichment || (hubspotEnrichment.contactFields.length === 0 && hubspotEnrichment.companyFields.length === 0) ? (
                 <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground/60">
                   No HubSpot record found
                 </p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-3">
                   {hubspotEnrichment.hubspotUrl && !contact.hubspotUrl && (
                     <a
                       href={hubspotEnrichment.hubspotUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex w-fit items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                      className="inline-flex w-fit items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
-                      <IconExternalLink size={12} /> View in HubSpot
+                      <IconExternalLink size={13} /> View in HubSpot
                     </a>
                   )}
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                    {hubspotEnrichment.fields.map((field) => (
-                      <div key={field.label} className="min-w-0">
-                        <p className="truncate text-[10px] text-muted-foreground/70">{field.label}</p>
-                        <p className="truncate font-medium text-foreground">{field.value}</p>
-                      </div>
-                    ))}
-                  </div>
+                  {hubspotEnrichment.contactFields.length > 0 && (
+                    <HubSpotFieldGrid
+                      caption={hubspotEnrichment.companyFields.length > 0 ? "Contact" : undefined}
+                      fields={hubspotEnrichment.contactFields}
+                    />
+                  )}
+                  {hubspotEnrichment.companyFields.length > 0 && (
+                    <HubSpotFieldGrid
+                      caption={hubspotEnrichment.contactFields.length > 0 ? "Company" : undefined}
+                      fields={hubspotEnrichment.companyFields}
+                    />
+                  )}
                 </div>
               )}
             </div>
