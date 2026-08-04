@@ -690,6 +690,8 @@ export default defineAction({
           deduped: 0,
           alreadyKnown: 0,
           companiesConsidered: params.companiesConsidered,
+          titleKeywords: params.titleKeywords,
+          seniorities: params.seniorities,
         });
       }
 
@@ -755,6 +757,14 @@ export default defineAction({
             companiesConsidered: params.companiesConsidered,
             scored: 0,
             scoringErrorCount: 0,
+            // Carried through to finishRun's own persisted metadata so the
+            // run-history UI can show exactly what was searched for — the
+            // single most opaque input here is the auto-derived title
+            // keyword (an LLM call output, not something visible anywhere
+            // else on the rule), which made a "why did this find nobody"
+            // question genuinely unanswerable without this.
+            titleKeywords: params.titleKeywords,
+            seniorities: params.seniorities,
           }),
         })
         .where(eq(syncRecords.id, syncRecordId));
@@ -939,6 +949,8 @@ export default defineAction({
       const deduped = (currentMeta.deduped as number | undefined) ?? 0;
       const alreadyKnown = (currentMeta.alreadyKnown as number | undefined) ?? 0;
       const companiesConsidered = (currentMeta.companiesConsidered as number | null | undefined) ?? null;
+      const titleKeywords = (currentMeta.titleKeywords as string[] | undefined) ?? null;
+      const seniorities = (currentMeta.seniorities as string[] | undefined) ?? null;
 
       // "Outstanding" = pending OR claimed — NOT just pending. This matters
       // once the atomic claim below exists: a concurrent invocation can hold
@@ -962,7 +974,7 @@ export default defineAction({
       const outstandingBeforeThisChunk = Number(outstandingCountRow?.count ?? 0);
 
       if (outstandingBeforeThisChunk === 0) {
-        return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered });
+        return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered, titleKeywords, seniorities });
       }
 
       const candidateRows = await db
@@ -1167,7 +1179,7 @@ export default defineAction({
       const remaining = Number(outstandingAfterCountRow?.count ?? 0);
 
       if (remaining === 0) {
-        return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered });
+        return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered, titleKeywords, seniorities });
       }
 
       // Checkpoint after every chunk — same pattern as the original
@@ -1222,6 +1234,8 @@ export default defineAction({
       deduped: number;
       alreadyKnown: number;
       companiesConsidered: number | null;
+      titleKeywords?: string[] | null;
+      seniorities?: string[] | null;
     }): Promise<PipelineResult> {
       const [scoredCountRow] = await db
         .select({ count: sql<number>`count(*)` })
@@ -1254,6 +1268,8 @@ export default defineAction({
             scoringErrorCount,
             deduped: counts.deduped,
             alreadyKnown: counts.alreadyKnown,
+            titleKeywords: counts.titleKeywords ?? null,
+            seniorities: counts.seniorities ?? null,
             phase: "complete",
             recordsFound: counts.recordsFound,
             imported: counts.imported,

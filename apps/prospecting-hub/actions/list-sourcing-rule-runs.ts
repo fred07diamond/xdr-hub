@@ -95,6 +95,12 @@ export default defineAction({
         icpQualifiedZeroCompanies: parsedMetadata.icpQualifiedZeroCompanies as boolean | undefined,
         phase: parsedMetadata.phase as string | undefined,
         recordsFound: parsedMetadata.recordsFound as number | undefined,
+        // What this run actually searched CommonRoom for — the auto-derived
+        // title keyword especially is otherwise completely opaque (an LLM
+        // call output not visible anywhere else on the rule), which made a
+        // zero-result run genuinely undiagnosable without this.
+        titleKeywords: parsedMetadata.titleKeywords as string[] | undefined,
+        seniorities: parsedMetadata.seniorities as string[] | undefined,
       };
     });
 

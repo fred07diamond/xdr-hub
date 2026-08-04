@@ -468,6 +468,8 @@ interface SourcingRuleRun {
   icpQualifiedZeroCompanies?: boolean;
   phase?: string;
   recordsFound?: number;
+  titleKeywords?: string[];
+  seniorities?: string[];
 }
 
 // Live progress for an in-flight "Find prospects now" run — populated from
@@ -1030,6 +1032,20 @@ function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): strin
   return extras.length > 0 ? `${base}, ${extras.join(", ")}` : base;
 }
 
+// Surfaces exactly what a run searched CommonRoom for — the auto-derived
+// title keyword especially is otherwise completely opaque (an LLM call
+// output that isn't shown anywhere else on the rule), which made a
+// zero-result run genuinely undiagnosable without this. Older runs
+// (recorded before this checkpoint shipped) simply have no titleKeywords
+// and show nothing here rather than a misleading blank/placeholder.
+function describeSearchCriteria(run: SourcingRuleRun): string | null {
+  const titles = run.titleKeywords?.filter(Boolean) ?? [];
+  if (titles.length === 0) return null;
+  const titleText = titles.length === 1 ? `"${titles[0]}"` : titles.map((t) => `"${t}"`).join(" or ");
+  const seniorityText = run.seniorities && run.seniorities.length > 0 ? ` · ${run.seniorities.join(", ")}` : "";
+  return `Searched for ${titleText}${seniorityText}`;
+}
+
 function RunStatusIcon({ derived }: { derived: DerivedRunStatus }) {
   if (derived === "success") return <IconCircleCheck size={14} className="text-green-600 dark:text-green-400" />;
   if (derived === "failed" || derived === "timedOut") return <IconCircleX size={14} className="text-destructive" />;
@@ -1056,7 +1072,16 @@ function RunRow({ run }: { run: SourcingRuleRun }) {
           <span className="text-muted-foreground">{formatRunTimestamp(run.startedAt)}</span>
         </div>
         {derived === "success" && (
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{buildRunSummary(run, derived)}</p>
+          <>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{buildRunSummary(run, derived)}</p>
+            {/* Only shown for a zero-result run — this is precisely the
+                "why did this find nobody" case where the auto-derived title
+                keyword (otherwise invisible) is the one piece of context
+                that actually explains it. */}
+            {!run.recordsPulled && describeSearchCriteria(run) && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground/70">{describeSearchCriteria(run)}</p>
+            )}
+          </>
         )}
         {derived === "timedOut" && (
           <p className="mt-0.5 text-[11px] text-destructive">Timed out · {buildRunSummary(run, derived)}</p>
