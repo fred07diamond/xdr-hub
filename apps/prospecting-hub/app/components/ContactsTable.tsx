@@ -35,12 +35,17 @@ const DEFAULT_PERSONA_COLOR = "#94a3b8";
 const PAGE_SIZE = 50;
 
 // Each rescored contact needs a completeText() call plus (when applicable)
-// several CommonRoom MCP round-trips — a single "refresh all" call over
-// dozens of contacts routinely exceeds the framework's 60s default action
-// timeout. Chunking keeps each individual request comfortably bounded and
-// lets the UI show real progress instead of one long spinner that can time
-// out with no partial result.
-export const RESCORE_CHUNK_SIZE = 12;
+// two now-parallelized CommonRoom MCP round-trips (commonroom-engagement.ts)
+// — a single "refresh all" call over dozens of contacts routinely exceeds
+// the framework's 60s default action timeout. Chunking keeps each
+// individual request comfortably bounded and lets the UI show real
+// progress instead of one long spinner that can time out with no partial
+// result. Reduced from 12 after a live production timeout on a 12-contact
+// chunk ("1 batch had errors: the request took too long") — even with the
+// two CommonRoom calls now parallelized per contact, worst-case latency
+// across enough sequential contacts can still approach the hosting
+// platform's 75s function limit; this leaves more headroom.
+export const RESCORE_CHUNK_SIZE = 8;
 export const RESCORE_CHUNK_TIMEOUT_MS = 150_000;
 // Draft generation needs up to 2 completeText() calls per contact (the
 // compliance-guard retry from draft-outreach.ts's post-generation check),

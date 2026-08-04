@@ -229,6 +229,57 @@ export async function lookupCommonRoomContactEnrichment(options: {
   };
 }
 
+async function lookupContactLeadScores(
+  options: { orgId: string | null | undefined; fullName: string; companyName?: string | null },
+  ids: { contactFitId: string | null; contactIntentId: string | null },
+): Promise<{ commonRoomFitScore: number | null; commonRoomIntentScore: number | null }> {
+  const contactResult = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
+    objectType: "Contact",
+    filter: {
+      type: "and",
+      clauses: [{ type: "stringFilter", field: "fullName", params: { op: "eq", value: options.fullName } }],
+    },
+    properties: ["fullName", "companyName", "leadScores"],
+    limit: 5,
+  });
+  const contactRecords = (parseMcpToolResult(contactResult) as CommonRoomContactListResult).records ?? [];
+  const companyLower = options.companyName?.toLowerCase().trim() || undefined;
+  // Same best-effort match cascade as the rest of this app's fuzzy identity
+  // matching: prefer a company match, fall back to a single unambiguous
+  // result, otherwise no match (not an error).
+  const match =
+    (companyLower
+      ? contactRecords.find((c) => (c.companyName ?? "").toLowerCase().trim() === companyLower)
+      : undefined) ?? (contactRecords.length === 1 ? contactRecords[0] : undefined);
+  if (!match) return { commonRoomFitScore: null, commonRoomIntentScore: null };
+  return {
+    commonRoomFitScore: extractPercentile(match.leadScores, ids.contactFitId),
+    commonRoomIntentScore: extractPercentile(match.leadScores, ids.contactIntentId),
+  };
+}
+
+async function lookupCompanyLeadScore(
+  options: { orgId: string | null | undefined },
+  companyLower: string,
+  companyFitId: string,
+): Promise<number | null> {
+  const orgResult = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
+    objectType: "Organization",
+    filter: {
+      type: "and",
+      clauses: [{ type: "stringFilter", field: "companyName", params: { op: "eq", value: companyLower } }],
+    },
+    properties: ["name", "leadScores"],
+    limit: 5,
+  });
+  const orgRecords = (parseMcpToolResult(orgResult) as CommonRoomOrganizationListResult).records ?? [];
+  // companyName is an exact-match filter, so a single result is already the
+  // disambiguated match; multiple results with no further signal to pick
+  // one -> no match (not an error), same discipline as the contact lookup.
+  const orgMatch = orgRecords.length === 1 ? orgRecords[0] : undefined;
+  return orgMatch ? extractPercentile(orgMatch.leadScores, companyFitId) : null;
+}
+
 export async function lookupCommonRoomSignals(options: {
   orgId: string | null | undefined;
   fullName: string;
@@ -237,53 +288,29 @@ export async function lookupCommonRoomSignals(options: {
   const ids = await resolveLeadScoreIds(options.orgId);
   if (!ids.contactFitId && !ids.contactIntentId && !ids.companyFitId) return NO_SIGNALS;
 
-  let commonRoomFitScore: number | null = null;
-  let commonRoomIntentScore: number | null = null;
-  if (ids.contactFitId || ids.contactIntentId) {
-    const contactResult = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
-      objectType: "Contact",
-      filter: {
-        type: "and",
-        clauses: [{ type: "stringFilter", field: "fullName", params: { op: "eq", value: options.fullName } }],
-      },
-      properties: ["fullName", "companyName", "leadScores"],
-      limit: 5,
-    });
-    const contactRecords = (parseMcpToolResult(contactResult) as CommonRoomContactListResult).records ?? [];
-    const companyLower = options.companyName?.toLowerCase().trim() || undefined;
-    // Same best-effort match cascade as the rest of this app's fuzzy
-    // identity matching: prefer a company match, fall back to a single
-    // unambiguous result, otherwise no match (not an error).
-    const match =
-      (companyLower
-        ? contactRecords.find((c) => (c.companyName ?? "").toLowerCase().trim() === companyLower)
-        : undefined) ?? (contactRecords.length === 1 ? contactRecords[0] : undefined);
-    if (match) {
-      commonRoomFitScore = extractPercentile(match.leadScores, ids.contactFitId);
-      commonRoomIntentScore = extractPercentile(match.leadScores, ids.contactIntentId);
-    }
-  }
-
-  let commonRoomCompanyFitScore: number | null = null;
   const companyLower = options.companyName?.trim();
-  if (ids.companyFitId && companyLower) {
-    const orgResult = await callMcpToolWithTimeout(resolveServerId(options.orgId), "commonroom_list_objects", {
-      objectType: "Organization",
-      filter: {
-        type: "and",
-        clauses: [{ type: "stringFilter", field: "companyName", params: { op: "eq", value: companyLower } }],
-      },
-      properties: ["name", "leadScores"],
-      limit: 5,
-    });
-    const orgRecords = (parseMcpToolResult(orgResult) as CommonRoomOrganizationListResult).records ?? [];
-    // companyName is an exact-match filter, so a single result is already
-    // the disambiguated match; multiple results with no further signal to
-    // pick one -> no match (not an error), same discipline as the contact
-    // lookup above.
-    const orgMatch = orgRecords.length === 1 ? orgRecords[0] : undefined;
-    if (orgMatch) commonRoomCompanyFitScore = extractPercentile(orgMatch.leadScores, ids.companyFitId);
-  }
 
-  return { commonRoomFitScore, commonRoomIntentScore, commonRoomCompanyFitScore };
+  // These two lookups are fully independent (neither depends on the
+  // other's result) but each carries its own 20s MCP timeout ceiling —
+  // running them sequentially meant a single contact's worst-case
+  // CommonRoom latency was ~40s. With rescore-contacts.ts processing up to
+  // RESCORE_CHUNK_SIZE contacts sequentially per request, that was enough
+  // to blow past the hosting platform's 75s function timeout on a single
+  // batch (live-confirmed: "1 batch had errors: the request took too long
+  // and timed out" on a 12-contact chunk). Running them concurrently halves
+  // the worst-case per-contact latency.
+  const [contactScores, commonRoomCompanyFitScore] = await Promise.all([
+    ids.contactFitId || ids.contactIntentId
+      ? lookupContactLeadScores(options, { contactFitId: ids.contactFitId, contactIntentId: ids.contactIntentId })
+      : Promise.resolve({ commonRoomFitScore: null, commonRoomIntentScore: null }),
+    ids.companyFitId && companyLower
+      ? lookupCompanyLeadScore(options, companyLower, ids.companyFitId)
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    commonRoomFitScore: contactScores.commonRoomFitScore,
+    commonRoomIntentScore: contactScores.commonRoomIntentScore,
+    commonRoomCompanyFitScore,
+  };
 }
