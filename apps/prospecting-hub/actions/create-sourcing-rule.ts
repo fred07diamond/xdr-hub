@@ -125,6 +125,7 @@ export default defineAction({
       enabled: true,
       createdBy: userEmail,
       ruleId,
+      orgId: ctx?.orgId,
     });
 
     try {

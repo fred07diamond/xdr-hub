@@ -32,13 +32,22 @@ export function buildSourcingRuleJobContent(params: {
   enabled: boolean;
   createdBy: string;
   ruleId: string;
+  // The scheduler's runWithRequestContext only carries whatever orgId is in
+  // this frontmatter (executeJob reads meta.orgId) — omitting it left every
+  // scheduled sourcing-rule run with no org context at all, while a live
+  // "Find prospects now" click gets orgId from the real authenticated
+  // session. commonroom-client.ts's org-scoped MCP connection requires a
+  // real orgId to resolve, so without this a scheduled run's CommonRoom
+  // calls fail (confirmed live: "MCP tool is not available in this request
+  // scope") in a way a manual click never would.
+  orgId?: string | null;
 }): string {
-  const { cron, enabled, createdBy, ruleId } = params;
+  const { cron, enabled, createdBy, ruleId, orgId } = params;
   return `---
 schedule: "${cron}"
 enabled: ${enabled}
 createdBy: ${createdBy}
-runAs: creator
+${orgId ? `orgId: ${orgId}\n` : ""}runAs: creator
 ---
 Execute prospecting-hub sourcing rule ${ruleId}. The run-sourcing-rule-pipeline action is resumable and chunked — ONE call only ever does a small bounded unit of work (a few Prospector search pages, or a small chunk of contact scoring) and returns { done, syncRecordId, phase, recordsFound, scored, remaining, imported, deduped }. You MUST loop it to completion, in this exact sequence:
 
@@ -63,5 +72,25 @@ export function updateJobFrontmatterField(content: string, key: "schedule" | "en
     throw new Error(`Job resource frontmatter is missing a "${key}" field`);
   }
   const newYamlBlock = yamlBlock.replace(lineRe, `${key}: ${value}`);
+  return `---\n${newYamlBlock}\n---\n${body}`;
+}
+
+/**
+ * Best-effort backfill for a rule's job resource created before orgId was
+ * written at all (see buildSourcingRuleJobContent) — those jobs' SCHEDULED
+ * runs have no org context, so their CommonRoom MCP calls fail, even though
+ * a live "Find prospects now" click (which always carries a real orgId) still
+ * succeeds. Called opportunistically from a live-request invocation to patch
+ * the job in place so its NEXT scheduled run also has one. No-ops (returns
+ * content unchanged) if orgId is already present or the frontmatter is
+ * malformed — this must never be the reason a real pipeline run fails.
+ */
+export function backfillJobOrgId(content: string, orgId: string): string {
+  if (/^orgId:/m.test(content)) return content;
+  const match = content.match(FRONTMATTER_RE);
+  if (!match) return content;
+  const [, yamlBlock, body] = match;
+  if (!/^runAs:/m.test(yamlBlock)) return content;
+  const newYamlBlock = yamlBlock.replace(/^runAs:/m, `orgId: ${orgId}\nrunAs:`);
   return `---\n${newYamlBlock}\n---\n${body}`;
 }
