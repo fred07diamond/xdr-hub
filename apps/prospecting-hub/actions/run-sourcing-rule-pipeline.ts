@@ -51,20 +51,22 @@ const GROUNDING_DOC_EXCERPT_LENGTH = 3000;
 // the returned `syncRecordId` until `done: true`.
 //
 // Two phases, tracked in `sync_records.metadata.phase`:
-//   "searching" — accumulating post-filtered Prospector matches across
-//     however many invocations it takes to reach the rule's desiredVolume
-//     (or CommonRoom genuinely running out of matches). The accumulated raw
-//     matches themselves are round-tripped through metadata (JSON) between
-//     invocations, since nothing else durable holds them — this table only
-//     tracks post-resolution contactIds (see below).
-//   "scoring" — once search + the existing dedup/insert loop have both
-//     completed (exactly once, over ALL accumulated matches), each resulting
-//     contactId gets one `sourcing_rule_run_targets` row. Each invocation
-//     claims a small chunk of `pending` rows, scores/links them with the
-//     existing bounded-concurrency logic, and flips them to `scored`/
-//     `errored` — that queue table (not an in-memory counter) is the
-//     durable source of truth for "how much scoring is left", since nothing
-//     in-memory survives between invocations.
+//   "searching" — paging Prospector across however many invocations it
+//     takes to find `desiredVolume` GENUINELY NEW prospects (or CommonRoom
+//     genuinely running out of matches), not just `desiredVolume` raw
+//     matches. Each page's matches are resolved (dedup/insert-or-update)
+//     IMMEDIATELY as they arrive, not deferred to a separate step — a
+//     resulting `imported`/`deduped`/`alreadyKnown` contactId gets one
+//     `sourcing_rule_run_targets` row right away. Running imported/deduped/
+//     alreadyKnown totals round-trip through metadata (JSON) between
+//     invocations; no raw match data needs to, since resolution already
+//     happened.
+//   "scoring" — once search is done, each queued contactId gets scored.
+//     Each invocation claims a small chunk of `pending` rows, scores/links
+//     them with the existing bounded-concurrency logic, and flips them to
+//     `scored`/`errored` — that queue table (not an in-memory counter) is
+//     the durable source of truth for "how much scoring is left", since
+//     nothing in-memory survives between invocations.
 const MAX_SEARCH_PAGES_PER_INVOCATION = 4;
 const SCORING_CHUNK_SIZE = 16;
 const CONCURRENCY_LIMIT = 4;
@@ -576,7 +578,9 @@ export default defineAction({
         cursor: undefined,
         targetVolume: rule.desiredVolume,
         recordsFoundSoFar: 0,
-        accumulatedMatches: [],
+        importedSoFar: 0,
+        dedupedSoFar: 0,
+        alreadyKnownSoFar: 0,
         titleKeywords,
         seniorities,
         minLinkedinFollowers: rule.minLinkedinFollowers ?? null,
@@ -597,7 +601,9 @@ export default defineAction({
       const cursor = (meta.searchCursor as string | null | undefined) ?? undefined;
       const targetVolume = (meta.targetVolume as number | undefined) ?? rule.desiredVolume;
       const recordsFoundSoFar = (meta.recordsFound as number | undefined) ?? 0;
-      const accumulatedMatches = (meta.accumulatedMatches as ProspectorMatch[] | undefined) ?? [];
+      let importedSoFar = (meta.imported as number | undefined) ?? 0;
+      let dedupedSoFar = (meta.deduped as number | undefined) ?? 0;
+      let alreadyKnownSoFar = (meta.alreadyKnown as number | undefined) ?? 0;
       // Fallback to the OLD singular keys (titleKeyword/seniority, string |
       // null) for a run whose metadata was checkpointed by the code BEFORE
       // this manual-filter commit renamed them to plural arrays — a
@@ -619,11 +625,35 @@ export default defineAction({
       const companiesConsidered = (meta.companiesConsidered as number | null | undefined) ?? null;
       const companyEmployeesByName = (meta.companyEmployeesByName as Record<string, number> | undefined) ?? {};
 
+      // Migration fallback: a row checkpointed by the code BEFORE this
+      // per-page-resolve restructuring can still have unresolved raw matches
+      // sitting in `accumulatedMatches` (the OLD deferred-resolution scheme)
+      // instead of running imported/deduped/alreadyKnown totals. Resolve
+      // them now, once, before continuing to page — otherwise they'd be
+      // silently dropped, never imported. New rows never populate this key,
+      // so this is a no-op for every run started under the new code.
+      const legacyAccumulatedMatches = meta.accumulatedMatches as ProspectorMatch[] | undefined;
+      if (legacyAccumulatedMatches && legacyAccumulatedMatches.length > 0) {
+        const migrationNow = new Date().toISOString();
+        for (const match of legacyAccumulatedMatches) {
+          const { contactId, resolutionKind } = await resolveContact(match, companyEmployeesByName, migrationNow);
+          if (resolutionKind === "deduped") dedupedSoFar++;
+          else if (resolutionKind === "alreadyKnown") alreadyKnownSoFar++;
+          else importedSoFar++;
+          await db
+            .insert(sourcingRuleRunTargets)
+            .values({ id: nanoid(), syncRecordId, contactId, status: "pending" })
+            .onConflictDoNothing();
+        }
+      }
+
       return await runSearchRound({
         cursor,
         targetVolume,
         recordsFoundSoFar,
-        accumulatedMatches,
+        importedSoFar,
+        dedupedSoFar,
+        alreadyKnownSoFar,
         titleKeywords,
         seniorities,
         minLinkedinFollowers,
@@ -635,19 +665,32 @@ export default defineAction({
       });
     }
 
-    // ── One bounded round of search-page-fetching (phase "searching") ──────
+    // ── One bounded round of search-page-fetching + resolution (phase
+    // "searching") ──────────────────────────────────────────────────────────
     //
     // Fetches up to MAX_SEARCH_PAGES_PER_INVOCATION pages, following
-    // `nextCursor` between them within THIS SAME invocation, accumulating
-    // post-filtered matches until either the target volume is reached,
-    // CommonRoom reports genuinely no more matches, or the page cap is hit
-    // (in which case this invocation checkpoints and returns `done: false`
-    // so the caller invokes again to continue).
+    // `nextCursor` between them within THIS SAME invocation, and resolves
+    // (dedup/insert-or-update — see resolveContact) each page's matches
+    // IMMEDIATELY as they arrive, instead of deferring all resolution to one
+    // batch once search "finishes". That lets the loop stop once it has
+    // found `targetVolume` GENUINELY NEW prospects, not `targetVolume` raw
+    // CommonRoom matches regardless of how many of those turn out to already
+    // be in this list. The old raw-count stop condition meant a rule whose
+    // easy top matches were already all-known would "complete" having
+    // imported 0 new people, without ever paging further to look past
+    // them — live-confirmed: a rule stuck re-finding the same known 20
+    // people, run after run, reporting success each time. Resolution stays
+    // strictly sequential in original match order across pages/invocations —
+    // see resolveContact's own comment for why — since pages are already
+    // fetched and processed in strict cursor order, resolving per-page
+    // instead of in one final batch preserves that same ordering guarantee.
     async function runSearchRound(params: {
       cursor: string | undefined;
       targetVolume: number;
       recordsFoundSoFar: number;
-      accumulatedMatches: ProspectorMatch[];
+      importedSoFar: number;
+      dedupedSoFar: number;
+      alreadyKnownSoFar: number;
       titleKeywords: string[];
       seniorities: string[];
       minLinkedinFollowers: number | null;
@@ -658,12 +701,17 @@ export default defineAction({
       companyEmployeesByName: Record<string, number>;
     }): Promise<PipelineResult> {
       let cursor = params.cursor;
-      const newMatches: ProspectorMatch[] = [];
-      let newCount = 0;
+      let recordsFound = params.recordsFoundSoFar;
+      let imported = params.importedSoFar;
+      let deduped = params.dedupedSoFar;
+      let alreadyKnown = params.alreadyKnownSoFar;
       let searchDone = false;
+      const now = new Date().toISOString();
 
       for (let page = 0; page < MAX_SEARCH_PAGES_PER_INVOCATION; page++) {
-        const remainingNeeded = params.targetVolume - (params.recordsFoundSoFar + newCount);
+        // Gated on GENUINELY NEW prospects found so far, not raw records —
+        // the entire point of this restructuring.
+        const remainingNeeded = params.targetVolume - imported;
         if (remainingNeeded <= 0) {
           searchDone = true;
           break;
@@ -690,8 +738,27 @@ export default defineAction({
           cursor,
         });
 
-        newMatches.push(...pageResult.records);
-        newCount += pageResult.records.length;
+        recordsFound += pageResult.records.length;
+
+        // Resolve this page's matches immediately, sequentially, in order —
+        // see this function's own top comment for why this replaces the old
+        // "accumulate everything, resolve once at the very end" scheme.
+        for (const match of pageResult.records) {
+          const { contactId, resolutionKind } = await resolveContact(match, params.companyEmployeesByName, now);
+          if (resolutionKind === "deduped") deduped++;
+          else if (resolutionKind === "alreadyKnown") alreadyKnown++;
+          else imported++;
+          // onConflictDoNothing guards the v30 UNIQUE(sync_record_id,
+          // contact_id) index — two matches resolving to the same contactId
+          // (cross-source dedup, or a concurrent invocation racing on this
+          // same syncRecordId) degrade to a harmless no-op instead of a
+          // unique-constraint violation that would fail the whole run.
+          await db
+            .insert(sourcingRuleRunTargets)
+            .values({ id: nanoid(), syncRecordId, contactId, status: "pending" })
+            .onConflictDoNothing();
+        }
+
         cursor = pageResult.nextCursor;
 
         // Genuinely exhausted (CommonRoom says no more, or gave no cursor to
@@ -701,19 +768,18 @@ export default defineAction({
           searchDone = true;
           break;
         }
-        if (params.recordsFoundSoFar + newCount >= params.targetVolume) {
+        if (imported >= params.targetVolume) {
           searchDone = true;
           break;
         }
       }
 
-      const totalRecordsFound = params.recordsFoundSoFar + newCount;
-      const allMatches = [...params.accumulatedMatches, ...newMatches];
-
       if (!searchDone) {
         // Stopped only because this invocation hit its own page cap, not
         // because the search is actually finished — checkpoint progress and
-        // ask the caller to invoke again to keep paging.
+        // ask the caller to invoke again to keep paging. Nothing unresolved
+        // to carry forward: every match seen so far has already been
+        // resolved and queued above.
         await db
           .update(syncRecords)
           .set({
@@ -722,8 +788,10 @@ export default defineAction({
               phase: "searching",
               searchCursor: cursor ?? null,
               targetVolume: params.targetVolume,
-              recordsFound: totalRecordsFound,
-              accumulatedMatches: allMatches,
+              recordsFound,
+              imported,
+              deduped,
+              alreadyKnown,
               titleKeywords: params.titleKeywords,
               seniorities: params.seniorities,
               minLinkedinFollowers: params.minLinkedinFollowers,
@@ -740,12 +808,12 @@ export default defineAction({
           done: false,
           syncRecordId,
           phase: "searching",
-          recordsFound: totalRecordsFound,
+          recordsFound,
           scored: 0,
           remaining: 0,
-          imported: 0,
-          deduped: 0,
-          alreadyKnown: 0,
+          imported,
+          deduped,
+          alreadyKnown,
           scoringErrors: [],
           companiesConsidered: params.companiesConsidered,
         };
@@ -753,8 +821,8 @@ export default defineAction({
 
       // Search is genuinely complete (target reached, or CommonRoom
       // exhausted). If nothing was ever found at all, this run is actually
-      // complete right now — no contacts to resolve or score.
-      if (allMatches.length === 0) {
+      // complete right now — no contacts to score.
+      if (recordsFound === 0) {
         return await finishRun({
           recordsFound: 0,
           imported: 0,
@@ -766,54 +834,16 @@ export default defineAction({
         });
       }
 
-      // Phase 1 — the EXISTING sequential dedup/insert-or-update decision,
-      // reused byte-for-byte, now running exactly once over ALL matches
-      // accumulated across however many invocations it took to gather them.
-      // Must stay strictly sequential in original match order — see
-      // resolveContact's own comment for why.
-      const now = new Date().toISOString();
-      let imported = 0;
-      let deduped = 0;
-      let alreadyKnown = 0;
-      const resolvedContactIds: string[] = [];
-      for (const match of allMatches) {
-        const { contactId, resolutionKind } = await resolveContact(match, params.companyEmployeesByName, now);
-        if (resolutionKind === "deduped") {
-          deduped++;
-        } else if (resolutionKind === "alreadyKnown") {
-          alreadyKnown++;
-        } else {
-          imported++;
-        }
-        resolvedContactIds.push(contactId);
-      }
-
-      // De-duplicate by contactId before handing off to scoring — two
-      // DIFFERENT Prospector matches can legitimately resolve (via
-      // cross-source dedup) to the SAME existing contact row; each real
-      // contact should only get one scoring work-queue row.
-      const seenContactIds = new Set<string>();
-      const uniqueContactIds = resolvedContactIds.filter((id) => {
-        if (seenContactIds.has(id)) return false;
-        seenContactIds.add(id);
-        return true;
-      });
-
-      for (const contactId of uniqueContactIds) {
-        // onConflictDoNothing guards the v30 UNIQUE(sync_record_id, contact_id)
-        // index: under the disclosed, accepted search-phase race (two
-        // concurrent invocations both attached to this syncRecordId reaching
-        // Phase 1 for the same contact), the second insert would otherwise
-        // throw a unique-constraint violation, which the top-level catch
-        // turns into a whole-run failure — wiping the queue out from under
-        // the invocation that's still actively progressing. Degrading to a
-        // no-op instead makes the second invocation's redundant insert
-        // harmless rather than destructive.
-        await db
-          .insert(sourcingRuleRunTargets)
-          .values({ id: nanoid(), syncRecordId, contactId, status: "pending" })
-          .onConflictDoNothing();
-      }
+      // Every match seen across however many invocations this took has
+      // already been resolved and queued (as sourcingRuleRunTargets rows)
+      // incrementally above — count what's actually pending from the DB
+      // itself rather than an in-memory counter, since those inserts may
+      // have happened across several earlier invocations, not just this one.
+      const [pendingCountRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(sourcingRuleRunTargets)
+        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "pending")));
+      const pendingCount = Number(pendingCountRow?.count ?? 0);
 
       await db
         .update(syncRecords)
@@ -821,7 +851,7 @@ export default defineAction({
           metadata: JSON.stringify({
             sourcingRuleId: ruleId,
             phase: "scoring",
-            recordsFound: totalRecordsFound,
+            recordsFound,
             imported,
             deduped,
             alreadyKnown,
@@ -844,9 +874,9 @@ export default defineAction({
         done: false,
         syncRecordId,
         phase: "scoring",
-        recordsFound: totalRecordsFound,
+        recordsFound,
         scored: 0,
-        remaining: uniqueContactIds.length,
+        remaining: pendingCount,
         imported,
         deduped,
         alreadyKnown,
