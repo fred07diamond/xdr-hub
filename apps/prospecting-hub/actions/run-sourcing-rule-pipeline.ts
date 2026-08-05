@@ -25,7 +25,11 @@ import { searchProspectorContacts, type ProspectorMatch } from "../server/helper
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 import { assertSegmentWritable } from "../server/helpers/segment-access.js";
-import { backfillJobOrgId } from "../server/helpers/sourcing-rule-jobs.js";
+import {
+  backfillJobOrgId,
+  buildRunContinuationJobContent,
+  runContinuationJobName,
+} from "../server/helpers/sourcing-rule-jobs.js";
 
 // Library-doc categories preferred as grounding context for the persona-
 // filter derivation prompt — a simple "prefer these categories" heuristic
@@ -321,6 +325,31 @@ export default defineAction({
           });
           syncRecordId = candidateSyncRecordId;
           runMetadata = { phase: "searching" };
+
+          // Server-side safety net: only for a run a live human just started
+          // (caller: "frontend" — the "Find prospects now" button), never
+          // for the rule's own scheduled automation, which is already being
+          // driven by its own recurring job and needs no second one. See
+          // buildRunContinuationJobContent's own comment for why this
+          // exists. Best-effort — a failure here must never fail the run
+          // that's actually in progress.
+          if (ctx?.caller === "frontend") {
+            try {
+              await resourcePut(
+                rule.ownerEmail,
+                `jobs/${runContinuationJobName(ruleId)}.md`,
+                buildRunContinuationJobContent({
+                  ruleId,
+                  syncRecordId: candidateSyncRecordId,
+                  createdBy: rule.ownerEmail,
+                  orgId: ctx?.orgId,
+                }),
+                "text/markdown",
+              );
+            } catch {
+              // best-effort, ignore
+            }
+          }
         } catch (err) {
           if (!isUniqueConstraintError(err)) throw err;
           // Lost a genuine concurrent race: another invocation's own

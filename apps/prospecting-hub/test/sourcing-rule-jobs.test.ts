@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { backfillJobOrgId, buildSourcingRuleJobContent } from "../server/helpers/sourcing-rule-jobs.js";
+import {
+  backfillJobOrgId,
+  buildRunContinuationJobContent,
+  buildSourcingRuleJobContent,
+  runContinuationJobName,
+} from "../server/helpers/sourcing-rule-jobs.js";
 
 describe("buildSourcingRuleJobContent", () => {
   it("embeds orgId in the frontmatter when provided", () => {
@@ -72,5 +77,47 @@ describe("backfillJobOrgId", () => {
   it("is a no-op on malformed frontmatter instead of throwing", () => {
     const malformed = "not a job file";
     expect(backfillJobOrgId(malformed, "org-abc")).toBe(malformed);
+  });
+});
+
+describe("runContinuationJobName", () => {
+  it("is deterministic per rule", () => {
+    expect(runContinuationJobName("rule-123")).toBe("sourcing-rule-rule-123-continuation");
+    expect(runContinuationJobName("rule-123")).toBe(runContinuationJobName("rule-123"));
+  });
+
+  it("differs between rules", () => {
+    expect(runContinuationJobName("rule-a")).not.toBe(runContinuationJobName("rule-b"));
+  });
+});
+
+describe("buildRunContinuationJobContent", () => {
+  const base = {
+    ruleId: "rule-123",
+    syncRecordId: "sync-abc",
+    createdBy: "xdr@builder.io",
+    orgId: "org-xyz",
+  };
+
+  it("fires every minute and embeds the exact ruleId/syncRecordId pair to resume", () => {
+    const content = buildRunContinuationJobContent(base);
+    expect(content).toContain('schedule: "* * * * *"');
+    expect(content).toContain('{ ruleId: "rule-123", syncRecordId: "sync-abc" }');
+  });
+
+  it("instructs the job to delete itself by its own deterministic name", () => {
+    const content = buildRunContinuationJobContent(base);
+    expect(content).toContain(`name: "${runContinuationJobName("rule-123")}"`);
+  });
+
+  it("instructs the job to stop (not retry) when the run already finished", () => {
+    const content = buildRunContinuationJobContent(base);
+    expect(content.toLowerCase()).toContain("already finished");
+    expect(content).toMatch(/do not retry/i);
+  });
+
+  it("embeds orgId, and omits it when not provided", () => {
+    expect(buildRunContinuationJobContent(base)).toMatch(/^orgId: org-xyz$/m);
+    expect(buildRunContinuationJobContent({ ...base, orgId: null })).not.toMatch(/orgId:/);
   });
 });

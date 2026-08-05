@@ -94,3 +94,58 @@ export function backfillJobOrgId(content: string, orgId: string): string {
   const newYamlBlock = yamlBlock.replace(/^runAs:/m, `orgId: ${orgId}\nrunAs:`);
   return `---\n${newYamlBlock}\n---\n${body}`;
 }
+
+/**
+ * Job name (used as both the `manage-jobs` tool's `name` param and the
+ * `jobs/<name>.md` resource path) for a single run's server-side safety
+ * net — see buildRunContinuationJobContent's own comment for why this
+ * exists. Deterministic per rule so a second manual click while one is
+ * already active safely overwrites rather than leaking a duplicate file.
+ */
+export function runContinuationJobName(ruleId: string): string {
+  return `sourcing-rule-${ruleId}-continuation`;
+}
+
+/**
+ * A ONE-OFF safety-net job for a single "Find prospects now" run.
+ *
+ * run-sourcing-rule-pipeline.ts's continuation ("call me again with this
+ * syncRecordId until done") is normally driven by the browser tab that
+ * started it — a `for(;;)` loop in lists.tsx. That loop dies the moment the
+ * tab closes, refreshes, or gets backgrounded/throttled, silently orphaning
+ * the run: its sync_records row just sits at status="running" forever,
+ * since nothing else ever calls back in to continue or reap it (live-
+ * confirmed: a run that found 20/18 new sat "running" for over an hour
+ * with nobody driving it).
+ *
+ * This job fires every minute via the SAME scheduler that already reliably
+ * drives the hourly automation, and explicitly passes the run's own
+ * syncRecordId — never omitting it — so if the run already finished (by
+ * the tab's own loop, or a previous tick of this very job) by the time it
+ * fires, run-sourcing-rule-pipeline's existing requestedSyncRecordId
+ * validation throws ("not a resumable, in-progress run") instead of
+ * silently starting a wasteful new run. That error is the expected,
+ * correct signal to stop and self-delete, not something to retry.
+ */
+export function buildRunContinuationJobContent(params: {
+  ruleId: string;
+  syncRecordId: string;
+  createdBy: string;
+  orgId?: string | null;
+}): string {
+  const { ruleId, syncRecordId, createdBy, orgId } = params;
+  const jobName = runContinuationJobName(ruleId);
+  return `---
+schedule: "* * * * *"
+enabled: true
+createdBy: ${createdBy}
+${orgId ? `orgId: ${orgId}\n` : ""}runAs: creator
+---
+Resume ONE specific in-progress prospecting-hub sourcing-rule run — a server-side safety net for a "Find prospects now" click whose browser tab may have closed mid-run. This job only exists because that one run might still need driving forward; it is NOT the rule's own recurring schedule.
+
+1. Call run-sourcing-rule-pipeline with EXACTLY { ruleId: "${ruleId}", syncRecordId: "${syncRecordId}" } — always include this exact syncRecordId, never omit it and never start a fresh call without it.
+2. If the call throws an error (e.g. "not a resumable, in-progress run"), the run already finished — possibly the browser tab that started it finished driving it, or a previous tick of this same job did. This is success, not a failure: skip to step 4 immediately. Do not retry, do not call run-sourcing-rule-pipeline again, and do not start a new run.
+3. If it returns done:false, call it again with the exact same { ruleId: "${ruleId}", syncRecordId: "${syncRecordId}" } — repeat until it returns done:true.
+4. This is an unattended background job with no user present — once you reach done:true, an error confirming the run already finished, or done:true was already reached, call manage-jobs with { action: "delete", name: "${jobName}" } to remove this one-off job. Do this without asking for confirmation; there is no one here to confirm with, and leaving the job in place would just fire again every minute for nothing.
+`;
+}
