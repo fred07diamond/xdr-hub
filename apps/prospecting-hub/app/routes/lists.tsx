@@ -168,7 +168,12 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
   const ownersFetchError = ownersResult?.error ?? null;
 
   const [ownerQuery, setOwnerQuery] = useState("");
-  const [showOwnerSuggestions, setShowOwnerSuggestions] = useState(false);
+  // Starts true (not false) so the full, unfiltered owner list is already
+  // browsable the instant the popover opens — matching "Browse by owner"'s
+  // own intent — instead of depending on the input's autoFocus reliably
+  // firing a React onFocus event, which can race with Radix Popover's own
+  // focus-into-content management on open and silently never fire.
+  const [showOwnerSuggestions, setShowOwnerSuggestions] = useState(true);
   const [selectedOwner, setSelectedOwner] = useState<HubSpotOwnerOption | null>(null);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<Set<string>>(new Set());
   const [companyQuery, setCompanyQuery] = useState("");
@@ -202,7 +207,7 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
 
   function reset() {
     setOwnerQuery("");
-    setShowOwnerSuggestions(false);
+    setShowOwnerSuggestions(true);
     setSelectedOwner(null);
     setSelectedCompanyIds(new Set());
     setCompanyQuery("");
@@ -306,7 +311,7 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
               ) : owners.length === 0 ? (
                 <p className="text-xs text-muted-foreground/60">No HubSpot owners found.</p>
               ) : (
-                <div className="relative">
+                <div>
                   <input
                     autoFocus
                     value={ownerQuery}
@@ -319,8 +324,12 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
                     placeholder="Search owners…"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
                   />
+                  {/* In normal flow, not absolutely positioned — this is the
+                      only content in this branch, so there's nothing below it
+                      to overlay, and staying in flow avoids it ever getting
+                      visually clipped by (or overlapping) anything else. */}
                   {showOwnerSuggestions && filteredOwners.length > 0 && (
-                    <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+                    <div className="mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
                       {filteredOwners.map((owner) => (
                         <button
                           key={owner.id}
