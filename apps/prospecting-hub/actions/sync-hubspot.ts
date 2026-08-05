@@ -5,20 +5,10 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, syncRecords } from "../server/db/schema.js";
 import { hubspotFetch } from "@xdr-hub/shared/server";
+import { HUBSPOT_CONTACT_PROPERTIES } from "../server/helpers/hubspot-contact-properties.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 
-const CONTACT_PROPERTIES = [
-  "firstname",
-  "lastname",
-  "jobtitle",
-  "company",
-  "email",
-  "phone",
-  "hs_linkedin_url",
-  "ql_score",
-  "company_fit_score___breeze",
-];
 // Hard cap per run so a single sync can't run away — matches the pattern
 // import-hubspot-queue.ts already uses (IMPORT_LIMIT) for the same reason.
 const MAX_CONTACTS_PER_RUN = 1000;
@@ -78,7 +68,7 @@ export default defineAction({
         const pageSize = Math.min(PAGE_SIZE, limit - pulled.length);
         const params = new URLSearchParams({
           limit: String(pageSize),
-          properties: CONTACT_PROPERTIES.join(","),
+          properties: HUBSPOT_CONTACT_PROPERTIES.join(","),
         });
         if (after) params.set("after", after);
 
@@ -189,6 +179,7 @@ export default defineAction({
               employees,
               hubspotQlScore,
               hubspotBreezeFitScore,
+              lifecycleStage: p.lifecyclestage ?? null,
               syncedAt: now,
               updatedAt: now,
             })
@@ -208,6 +199,7 @@ export default defineAction({
             employees,
             hubspotQlScore,
             hubspotBreezeFitScore,
+            lifecycleStage: p.lifecyclestage ?? null,
             source: "hubspot",
             externalId: hsContact.id,
             status: "active",

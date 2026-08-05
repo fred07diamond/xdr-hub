@@ -44,6 +44,31 @@ describe("buildSourcingRuleJobContent", () => {
     expect(content).toContain("runAs: creator");
     expect(content).toContain("Execute prospecting-hub sourcing rule rule-456");
   });
+
+  it("defaults to run-sourcing-rule-pipeline wording when actionName/ruleLabel are omitted", () => {
+    const content = buildSourcingRuleJobContent({
+      cron: "0 */1 * * *",
+      enabled: true,
+      createdBy: "xdr@builder.io",
+      ruleId: "rule-123",
+    });
+    expect(content).toContain("Call run-sourcing-rule-pipeline with");
+    expect(content).toContain("Execute prospecting-hub sourcing rule rule-123");
+  });
+
+  it("swaps in a different action/rule label for a different pipeline kind", () => {
+    const content = buildSourcingRuleJobContent({
+      cron: "0 */1 * * *",
+      enabled: true,
+      createdBy: "xdr@builder.io",
+      ruleId: "rule-123",
+      actionName: "run-marketing-rule-pipeline",
+      ruleLabel: "marketing rule",
+    });
+    expect(content).toContain("Execute prospecting-hub marketing rule rule-123");
+    expect(content).toContain("Call run-marketing-rule-pipeline with");
+    expect(content).not.toContain("run-sourcing-rule-pipeline");
+  });
 });
 
 describe("backfillJobOrgId", () => {
@@ -119,5 +144,22 @@ describe("buildRunContinuationJobContent", () => {
   it("embeds orgId, and omits it when not provided", () => {
     expect(buildRunContinuationJobContent(base)).toMatch(/^orgId: org-xyz$/m);
     expect(buildRunContinuationJobContent({ ...base, orgId: null })).not.toMatch(/orgId:/);
+  });
+
+  it("defaults to run-sourcing-rule-pipeline wording when actionName/ruleLabel are omitted", () => {
+    const content = buildRunContinuationJobContent(base);
+    expect(content).toContain("Call run-sourcing-rule-pipeline with EXACTLY");
+    expect(content).toContain("prospecting-hub sourcing-rule run");
+  });
+
+  it("swaps in a different action/rule label for a different pipeline kind", () => {
+    const content = buildRunContinuationJobContent({
+      ...base,
+      actionName: "run-marketing-rule-pipeline",
+      ruleLabel: "marketing-rule",
+    });
+    expect(content).toContain("Call run-marketing-rule-pipeline with EXACTLY");
+    expect(content).toContain("prospecting-hub marketing-rule run");
+    expect(content).not.toContain("run-sourcing-rule-pipeline");
   });
 });

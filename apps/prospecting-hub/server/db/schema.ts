@@ -52,6 +52,13 @@ export const contacts = table("contacts", {
   source: text("source", { enum: ["hubspot", "commonroom", "prospector"] }).notNull(),
   externalId: text("external_id"), // the source system's own record id, for de-duping re-syncs
   personaId: text("persona_id"), // exactly one persona per contact once matched
+  // HubSpot's `lifecyclestage` contact property (RAW/MEL/QL/SAL/S0/S1/Closed,
+  // plus terminal Recycle/Excluded/Disqualified — this portal's actual
+  // funnel, confirmed live). Populated by both sync-hubspot.ts and
+  // run-marketing-rule-pipeline.ts so a HubSpot contact shows the same stage
+  // regardless of which path synced it. Null for commonroom/prospector-
+  // sourced contacts — they have no HubSpot lifecycle stage at all.
+  lifecycleStage: text("lifecycle_stage"),
   status: text("status", { enum: ["active", "actioned"] }).notNull().default("active"),
   syncedAt: text("synced_at").default(now()),
   createdAt: text("created_at").default(now()),
@@ -186,6 +193,29 @@ export const sourcingRules = table("sourcing_rules", {
   createdAt: text("created_at").default(now()),
 });
 
+// Per-XDR configuration for the scheduled HubSpot-lifecycle-stage pipeline
+// ("Marketing" lists in the UI, alongside sourcingRules' "Prospected" lists)
+// — mirrors sourcingRules' shape but drops every Prospector-only field (no
+// title/seniority/LinkedIn-follower/previous-company/ICP/desiredVolume) and
+// adds lifecycleStages, since a lifecycle-stage filter over one HubSpot
+// portal's contacts is a bounded pool: the point of a run is "sync every
+// currently-qualifying contact," not "find N new ones." Same create-once
+// stable segment convention as sourcingRules.
+export const marketingRules = table("marketing_rules", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  ownerEmail: text("owner_email").notNull(),
+  personaId: text("persona_id").notNull(),
+  lifecycleStages: text("lifecycle_stages"), // JSON-encoded string array, e.g. ["RAW","MEL","QL"]
+  companyAllowList: text("company_allow_list"), // JSON-encoded string array
+  companyDenyList: text("company_deny_list"), // JSON-encoded string array
+  intervalHours: integer("interval_hours"), // recurring cadence in hours (1/2/3/4/6/8/12/24)
+  segmentId: text("segment_id").notNull(),
+  jobResourcePath: text("job_resource_path"),
+  status: text("status", { enum: ["active", "paused"] }).notNull().default("active"),
+  createdAt: text("created_at").default(now()),
+});
+
 // Sales Library — reference material (call scripts, ICP notes, positioning
 // docs, etc.) any XDR/AE can contribute. `content` stores the raw text
 // directly (not JSON-wrapped like persona/ICP criteria). `category`/`tags`
@@ -234,6 +264,9 @@ export const syncRecords = table("sync_records", {
   // (sync-hubspot.ts, sync-commonroom.ts, import-prospects-to-segment.ts)
   // isn't rule-scoped and never sets this.
   sourcingRuleId: text("sourcing_rule_id"),
+  // Same convention, for run-marketing-rule-pipeline.ts's rows — exactly one
+  // of sourcingRuleId/marketingRuleId is set per rule-scoped row, never both.
+  marketingRuleId: text("marketing_rule_id"),
 });
 
 // Per-run work queue for run-sourcing-rule-pipeline.ts's resumable, chunked

@@ -16,6 +16,7 @@ import {
   IconListDetails,
   IconLoader2,
   IconLock,
+  IconMail,
   IconPencil,
   IconPlayerPause,
   IconPlayerPlay,
@@ -42,6 +43,8 @@ export function meta() {
 type Visibility = "private" | "public";
 type RuleStatus = "active" | "paused";
 
+type ListKind = "prospected" | "marketing" | "static";
+
 interface SegmentListRow {
   id: string;
   name: string;
@@ -55,8 +58,9 @@ interface SegmentListRow {
   personaName: string | null;
   personaColor: string | null;
   contactCount: number;
-  isActive: boolean;
+  kind: ListKind;
   sourcingRuleId: string | null;
+  marketingRuleId: string | null;
 }
 
 interface SegmentDetail {
@@ -71,6 +75,8 @@ interface SegmentDetail {
   createdAt: string | null;
   owningSourcingRuleId: string | null;
   owningSourcingRuleName: string | null;
+  owningMarketingRuleId: string | null;
+  owningMarketingRuleName: string | null;
 }
 
 interface SegmentContact {
@@ -454,12 +460,36 @@ interface SourcingRule {
   contactCount: number;
 }
 
+// The HubSpot-lifecycle-stage analog of SourcingRule — same create-once-
+// segment/schedule shape, but its own filter set (lifecycleStages instead of
+// title/seniority/ICP/desiredVolume, since a Marketing run syncs every
+// currently-qualifying contact rather than searching for N new ones).
+interface MarketingRule {
+  id: string;
+  name: string;
+  ownerEmail: string;
+  personaId: string;
+  lifecycleStages: string | null; // JSON-encoded string array
+  companyAllowList: string | null;
+  companyDenyList: string | null;
+  intervalHours: number | null;
+  segmentId: string;
+  jobResourcePath: string | null;
+  status: RuleStatus;
+  createdAt: string | null;
+  personaName: string | null;
+  contactCount: number;
+}
+
 // Run History (Fred's "where is this pulling from, and I need to be able to
-// track that — I need to see progression" ask): one row per
-// run-sourcing-rule-pipeline.ts invocation, from list-sourcing-rule-runs.ts.
-// Older rows written before checkpoint instrumentation shipped won't have
-// most of these fields at all — every field below except id/source/status/
-// startedAt is optional/nullable for exactly that reason.
+// track that — I need to see progression" ask): one row per pipeline
+// invocation — shared by both run-sourcing-rule-pipeline.ts (Prospected,
+// from list-sourcing-rule-runs.ts) and run-marketing-rule-pipeline.ts
+// (Marketing, from list-marketing-rule-runs.ts). Older rows written before
+// checkpoint instrumentation shipped won't have most of these fields at
+// all — every field below except id/source/status/startedAt is optional/
+// nullable for exactly that reason; titleKeywords/seniorities/
+// companiesConsidered are Prospected-only, lifecycleStages is Marketing-only.
 interface SourcingRuleRun {
   id: string;
   source: "hubspot" | "commonroom" | "notion" | "gdocs" | "prospector";
@@ -479,6 +509,7 @@ interface SourcingRuleRun {
   recordsFound?: number;
   titleKeywords?: string[];
   seniorities?: string[];
+  lifecycleStages?: string[];
 }
 
 // Live progress for an in-flight "Find prospects now" run — populated from
@@ -527,6 +558,15 @@ const INTERVAL_HOURS_OPTIONS: { value: number; label: string }[] = [
 // constrained to, so a manual override picks from the same set of values
 // the auto-derived path could have produced.
 const SENIORITY_LEVELS = ["Intern", "Junior IC", "Senior IC", "Manager", "Director", "VP", "C-Level"];
+
+// This portal's actual HubSpot lifecycle-stage funnel, in order (confirmed
+// live) — Recycle/Excluded/Disqualified are deliberately NOT offered here:
+// they're terminal/negative states that should never qualify for a Marketing
+// list, per Fred's explicit call. create-marketing-rule.ts defaults to
+// RAW/MEL/QL (never-sequenced or engaged-but-not-yet-responded/qualified)
+// when a rule doesn't override it.
+const HUBSPOT_LIFECYCLE_STAGES = ["RAW", "MEL", "QL", "SAL", "S0", "S1", "Closed"];
+const DEFAULT_LIFECYCLE_STAGES = ["RAW", "MEL", "QL"];
 
 function parseFollowerCount(text: string): number | undefined {
   const trimmed = text.trim();
@@ -926,19 +966,24 @@ function VisibilityBadge({ visibility }: { visibility: Visibility }) {
   );
 }
 
-// Deliberately a different color scheme from VisibilityBadge (violet/amber
-// vs. sky/muted) so Static/Active never gets visually confused with
+// Deliberately a different color scheme from VisibilityBadge (violet/teal/
+// amber vs. sky/muted) so a list's kind never gets visually confused with
 // Private/Public — the two are unrelated axes on the same list.
-function ListTypeBadge({ isActive }: { isActive: boolean }) {
+const LIST_KIND_LABEL: Record<ListKind, string> = {
+  prospected: "Prospected",
+  marketing: "Marketing",
+  static: "Static",
+};
+const LIST_KIND_CLASSNAME: Record<ListKind, string> = {
+  prospected: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  marketing: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+  static: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+};
+
+function ListTypeBadge({ kind }: { kind: ListKind }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-        isActive
-          ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
-          : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-      }`}
-    >
-      {isActive ? "Active" : "Static"}
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${LIST_KIND_CLASSNAME[kind]}`}>
+      {LIST_KIND_LABEL[kind]}
     </span>
   );
 }
@@ -1061,10 +1106,16 @@ function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): strin
 // and show nothing here rather than a misleading blank/placeholder.
 function describeSearchCriteria(run: SourcingRuleRun): string | null {
   const titles = run.titleKeywords?.filter(Boolean) ?? [];
-  if (titles.length === 0) return null;
-  const titleText = titles.length === 1 ? `"${titles[0]}"` : titles.map((t) => `"${t}"`).join(" or ");
-  const seniorityText = run.seniorities && run.seniorities.length > 0 ? ` · ${run.seniorities.join(", ")}` : "";
-  return `Searched for ${titleText}${seniorityText}`;
+  if (titles.length > 0) {
+    const titleText = titles.length === 1 ? `"${titles[0]}"` : titles.map((t) => `"${t}"`).join(" or ");
+    const seniorityText = run.seniorities && run.seniorities.length > 0 ? ` · ${run.seniorities.join(", ")}` : "";
+    return `Searched for ${titleText}${seniorityText}`;
+  }
+  const lifecycleStages = run.lifecycleStages?.filter(Boolean) ?? [];
+  if (lifecycleStages.length > 0) {
+    return `Synced lifecycle stages: ${lifecycleStages.join(", ")}`;
+  }
+  return null;
 }
 
 function RunStatusIcon({ derived }: { derived: DerivedRunStatus }) {
@@ -1078,7 +1129,7 @@ function RunStatusIcon({ derived }: { derived: DerivedRunStatus }) {
   );
 }
 
-function RunRow({ run }: { run: SourcingRuleRun }) {
+function RunRow({ run, sourceLabel }: { run: SourcingRuleRun; sourceLabel: string }) {
   const derived = deriveRunStatus(run);
 
   return (
@@ -1088,7 +1139,7 @@ function RunRow({ run }: { run: SourcingRuleRun }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-1.5 text-xs">
-          <span className="font-medium text-foreground">CommonRoom Prospector</span>
+          <span className="font-medium text-foreground">{sourceLabel}</span>
           <span className="text-muted-foreground/60">·</span>
           <span className="text-muted-foreground">{formatRunTimestamp(run.startedAt)}</span>
         </div>
@@ -1120,7 +1171,17 @@ function RunRow({ run }: { run: SourcingRuleRun }) {
   );
 }
 
-function RecentRunsSection({ ruleId }: { ruleId: string }) {
+function RecentRunsSection({
+  ruleId,
+  actionName,
+  sourceLabel,
+}: {
+  ruleId: string;
+  // "list-sourcing-rule-runs" for a Prospected rule, "list-marketing-rule-
+  // runs" for a Marketing rule — both return the exact same run-row shape.
+  actionName: "list-sourcing-rule-runs" | "list-marketing-rule-runs";
+  sourceLabel: string;
+}) {
   // Collapsed by default — same disclosure pattern as "Advanced Prospector
   // filters" above. A rule running every few hours accumulates run rows
   // fast (each one ~3 lines tall), pushing the actual contact table below
@@ -1129,7 +1190,7 @@ function RecentRunsSection({ ruleId }: { ruleId: string }) {
   // default, only the historical tail.
   const [open, setOpen] = useState(false);
   const { data } = useActionQuery(
-    "list-sourcing-rule-runs",
+    actionName,
     { ruleId },
     { refetchInterval: 30000, staleTime: 25000 },
   );
@@ -1170,7 +1231,7 @@ function RecentRunsSection({ ruleId }: { ruleId: string }) {
           ) : (
             <div className="flex flex-col divide-y divide-border/60">
               {runs.map((run) => (
-                <RunRow key={run.id} run={run} />
+                <RunRow key={run.id} run={run} sourceLabel={sourceLabel} />
               ))}
             </div>
           )}
@@ -1204,7 +1265,7 @@ function ListCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <ListTypeBadge isActive={list.isActive} />
+        <ListTypeBadge kind={list.kind} />
         <VisibilityBadge visibility={list.visibility} />
         {list.personaName && (
           <PersonaBadge name={list.personaName} color={list.personaColor} />
@@ -1231,7 +1292,7 @@ function ListCard({
 
 // ── New list flow ────────────────────────────────────────────────────────────
 
-type NewListType = "static" | "active";
+type NewListType = "static" | "prospected" | "marketing";
 
 function NewListTypeChoice({
   onClose,
@@ -1242,7 +1303,7 @@ function NewListTypeChoice({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-2xl">
+      <div className="w-full max-w-lg rounded-2xl bg-card border border-border shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-sm font-semibold text-foreground">New list</h2>
           <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted">
@@ -1250,7 +1311,31 @@ function NewListTypeChoice({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => onChoose("marketing")}
+            className="flex flex-col items-start gap-2 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-muted/30"
+          >
+            <IconMail size={20} className="text-muted-foreground" />
+            <p className="text-sm font-semibold text-foreground">Marketing list</p>
+            <p className="text-xs text-muted-foreground">
+              Every HubSpot lead matching your chosen lifecycle stages (default: never-sequenced or not yet
+              responded), kept in sync on a schedule.
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => onChoose("prospected")}
+            className="flex flex-col items-start gap-2 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-muted/30"
+          >
+            <IconRadar size={20} className="text-muted-foreground" />
+            <p className="text-sm font-semibold text-foreground">Prospected list</p>
+            <p className="text-xs text-muted-foreground">
+              Automatically finds and adds new prospects from CommonRoom on a schedule, targeting a persona and
+              companies you choose.
+            </p>
+          </button>
           <button
             type="button"
             onClick={() => onChoose("static")}
@@ -1260,17 +1345,6 @@ function NewListTypeChoice({
             <p className="text-sm font-semibold text-foreground">Static list</p>
             <p className="text-xs text-muted-foreground">
               Manually curated from a persona and a minimum match score. Contacts only change when you refresh it.
-            </p>
-          </button>
-          <button
-            type="button"
-            onClick={() => onChoose("active")}
-            className="flex flex-col items-start gap-2 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-muted/30"
-          >
-            <IconRadar size={20} className="text-muted-foreground" />
-            <p className="text-sm font-semibold text-foreground">Active list</p>
-            <p className="text-xs text-muted-foreground">
-              Automatically finds and adds new prospects on a schedule, targeting a persona and companies you choose.
             </p>
           </button>
         </div>
@@ -1434,23 +1508,27 @@ function NewSegmentPanel({
 }
 
 // Drives a brand-new rule's very first run immediately after creation,
-// fire-and-forget — see the call site's comment in NewActiveListPanel's
-// handleCreate for why. Deliberately a standalone module-level function
-// (not a closure inside the panel component): the panel unmounts the moment
-// the modal closes, but a plain async function keeps executing in this
-// browser tab's event loop regardless of what React components come and go,
-// exactly like ListDetailView's own handleRunSourcingRule loop already
-// relies on for the "stays running while you navigate away" behavior. No
-// component state to update here since nothing is guaranteed to still be
-// mounted to show it — ListDetailView reads the run's live server-side
-// state (via list-sourcing-rules/list-sourcing-rule-runs) whenever the XDR
-// actually looks at the list, regardless of which loop is driving it.
-async function runNewRuleInBackground(ruleId: string): Promise<void> {
+// fire-and-forget — see the call site's comment in NewActiveListPanel's/
+// NewMarketingRulePanel's handleCreate for why. Deliberately a standalone
+// module-level function (not a closure inside the panel component): the
+// panel unmounts the moment the modal closes, but a plain async function
+// keeps executing in this browser tab's event loop regardless of what React
+// components come and go, exactly like ListDetailView's own handleRunRule
+// loops already rely on for the "stays running while you navigate away"
+// behavior. No component state to update here since nothing is guaranteed
+// to still be mounted to show it — ListDetailView reads the run's live
+// server-side state whenever the XDR actually looks at the list, regardless
+// of which loop is driving it. Shared by both Prospected and Marketing rule
+// creation — the resumable {done, syncRecordId} contract is identical.
+async function runNewRuleInBackground(
+  actionName: "run-sourcing-rule-pipeline" | "run-marketing-rule-pipeline",
+  ruleId: string,
+): Promise<void> {
   let syncRecordId: string | undefined;
   try {
     for (;;) {
       const result = (await callAction(
-        "run-sourcing-rule-pipeline",
+        actionName,
         { ruleId, syncRecordId },
         { timeoutMs: 90_000 },
       )) as { done: boolean; syncRecordId: string };
@@ -1460,9 +1538,9 @@ async function runNewRuleInBackground(ruleId: string): Promise<void> {
   } catch {
     // Best-effort only. A failure here (including the tab closing mid-run)
     // isn't surfaced anywhere — the rule's own recurring schedule will still
-    // pick it up on its next fire, and "Find prospects now" on the list
-    // detail view lets the XDR retry manually with a real visible error the
-    // moment they notice, same as any other run.
+    // pick it up on its next fire, and "Find prospects now"/"Sync now" on
+    // the list detail view lets the XDR retry manually with a real visible
+    // error the moment they notice, same as any other run.
   }
 }
 
@@ -1557,11 +1635,11 @@ function NewActiveListPanel({
       // already populated (or has a real error to show) by the time the XDR
       // clicks into it, instead of an empty list ticking down to the first
       // scheduled run.
-      runNewRuleInBackground(result.id);
+      runNewRuleInBackground("run-sourcing-rule-pipeline", result.id);
       onCreated();
       onClose();
     } catch (err) {
-      setError(errorMessage(err, "Couldn't create active list."));
+      setError(errorMessage(err, "Couldn't create Prospected list."));
     }
   }
 
@@ -1572,7 +1650,7 @@ function NewActiveListPanel({
           <button type="button" onClick={onBack} className="rounded p-1 text-muted-foreground hover:bg-muted" aria-label="Back">
             <IconArrowLeft size={16} />
           </button>
-          <h2 className="flex-1 text-sm font-semibold text-foreground">New active list</h2>
+          <h2 className="flex-1 text-sm font-semibold text-foreground">New Prospected list</h2>
           <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted">
             <IconX size={16} />
           </button>
@@ -1769,7 +1847,205 @@ function NewActiveListPanel({
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
           >
             {createSourcingRule.isPending && <IconLoader2 size={12} className="animate-spin" />}
-            Create active list
+            Create Prospected list
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewMarketingRulePanel({
+  onClose,
+  onCreated,
+  onBack,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+  onBack: () => void;
+}) {
+  const { data: personaData, isLoading: personasLoading } = useActionQuery("list-personas", {});
+  const personas: PersonaOption[] = (personaData as { personas?: PersonaOption[] })?.personas ?? [];
+
+  const createMarketingRule = useActionMutation("create-marketing-rule");
+
+  const [name, setName] = useState("");
+  const [personaId, setPersonaId] = useState("");
+  const [selectedStages, setSelectedStages] = useState<Set<string>>(new Set(DEFAULT_LIFECYCLE_STAGES));
+  const [allowList, setAllowList] = useState<string[]>([]);
+  const [denyList, setDenyList] = useState<string[]>([]);
+  const [intervalHours, setIntervalHours] = useState<number | "">("");
+  const [error, setError] = useState<string | null>(null);
+
+  function toggleStage(stage: string) {
+    setSelectedStages((prev) => {
+      const next = new Set(prev);
+      if (next.has(stage)) next.delete(stage);
+      else next.add(stage);
+      return next;
+    });
+  }
+
+  const canCreate = Boolean(name.trim() && personaId && intervalHours && selectedStages.size > 0);
+
+  async function handleCreate() {
+    setError(null);
+    if (!canCreate) return;
+    try {
+      const result = (await createMarketingRule.mutateAsync({
+        name: name.trim(),
+        personaId,
+        lifecycleStages: Array.from(selectedStages),
+        companyAllowList: allowList.length ? allowList : undefined,
+        companyDenyList: denyList.length ? denyList : undefined,
+        intervalHours: intervalHours as number,
+      })) as { id: string };
+      // Fire-and-forget — same reasoning as NewActiveListPanel's own
+      // handleCreate: the recurring schedule's cron is anchored to
+      // wall-clock hour marks, so don't leave a brand-new list empty until
+      // its first scheduled fire when nothing stops it from syncing now.
+      runNewRuleInBackground("run-marketing-rule-pipeline", result.id);
+      onCreated();
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err, "Couldn't create Marketing list."));
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+          <button type="button" onClick={onBack} className="rounded p-1 text-muted-foreground hover:bg-muted" aria-label="Back">
+            <IconArrowLeft size={16} />
+          </button>
+          <h2 className="flex-1 text-sm font-semibold text-foreground">New Marketing list</h2>
+          <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted">
+            <IconX size={16} />
+          </button>
+        </div>
+
+        <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto p-5">
+          <p className="text-xs text-muted-foreground">
+            Syncs every HubSpot contact matching your chosen lifecycle stages and persona, on a recurring
+            schedule.
+          </p>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Name</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Never-sequenced Eng leads"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Persona</label>
+            {personasLoading ? (
+              <div className="flex h-9 items-center text-xs text-muted-foreground">
+                <IconLoader2 size={13} className="mr-1.5 animate-spin" /> Loading personas…
+              </div>
+            ) : personas.length === 0 ? (
+              <p className="text-xs text-muted-foreground/60">
+                No personas yet — create one on the Personas page first.
+              </p>
+            ) : (
+              <select
+                value={personaId}
+                onChange={(e) => setPersonaId(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="" disabled>
+                  Select a persona…
+                </option>
+                {personas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Lifecycle stages</label>
+            <div className="flex flex-wrap gap-1.5">
+              {HUBSPOT_LIFECYCLE_STAGES.map((stage) => (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => toggleStage(stage)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    selectedStages.has(stage)
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {stage}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              Default (RAW/MEL/QL) covers never-sequenced or engaged-but-not-yet-qualified leads. SAL and later
+              have already been handed off past prospecting.
+            </p>
+          </div>
+
+          <FormSectionHeader>Target companies</FormSectionHeader>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Companies (optional)</label>
+            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" allowOwnerBrowse />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Exclude companies (optional)
+            </label>
+            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
+          </div>
+
+          <FormSectionHeader>Schedule</FormSectionHeader>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Run every</label>
+            <select
+              value={intervalHours}
+              onChange={(e) => setIntervalHours(e.target.value ? Number(e.target.value) : "")}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="" disabled>
+                Select a cadence…
+              </option>
+              {INTERVAL_HOURS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              The pipeline runs on this recurring cadence to keep the list synced with HubSpot.
+            </p>
+          </div>
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={!canCreate || createMarketingRule.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          >
+            {createMarketingRule.isPending && <IconLoader2 size={12} className="animate-spin" />}
+            Create Marketing list
           </button>
         </div>
       </div>
@@ -1791,6 +2067,9 @@ function NewListPanel({
   }
   if (type === "static") {
     return <NewSegmentPanel onClose={onClose} onCreated={onCreated} onBack={() => setType(null)} />;
+  }
+  if (type === "marketing") {
+    return <NewMarketingRulePanel onClose={onClose} onCreated={onCreated} onBack={() => setType(null)} />;
   }
   return <NewActiveListPanel onClose={onClose} onCreated={onCreated} onBack={() => setType(null)} />;
 }
@@ -2044,6 +2323,171 @@ function EditRulePanel({
   );
 }
 
+function EditMarketingRulePanel({
+  rule,
+  onClose,
+  onUpdated,
+}: {
+  rule: MarketingRule;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const updateMarketingRule = useActionMutation("update-marketing-rule");
+
+  const initialAllowList = safeParseList(rule.companyAllowList);
+  const initialDenyList = safeParseList(rule.companyDenyList);
+  const initialStages = safeParseList(rule.lifecycleStages);
+
+  const [name, setName] = useState(rule.name);
+  const [selectedStages, setSelectedStages] = useState<Set<string>>(new Set(initialStages));
+  const [allowList, setAllowList] = useState<string[]>(initialAllowList);
+  const [denyList, setDenyList] = useState<string[]>(initialDenyList);
+  const initialIntervalHours = rule.intervalHours ?? 4;
+  const [intervalHours, setIntervalHours] = useState(initialIntervalHours);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggleStage(stage: string) {
+    setSelectedStages((prev) => {
+      const next = new Set(prev);
+      if (next.has(stage)) next.delete(stage);
+      else next.add(stage);
+      return next;
+    });
+  }
+
+  const nextStages = Array.from(selectedStages);
+  const nextAllowList = allowList;
+  const nextDenyList = denyList;
+
+  const hasChanges =
+    name.trim() !== rule.name ||
+    !sameList(nextStages, initialStages) ||
+    !sameList(nextAllowList, initialAllowList) ||
+    !sameList(nextDenyList, initialDenyList) ||
+    intervalHours !== rule.intervalHours;
+
+  const canSave = Boolean(name.trim() && intervalHours && selectedStages.size > 0) && hasChanges;
+
+  async function handleSave() {
+    setError(null);
+    if (!canSave) return;
+
+    const payload = {
+      id: rule.id,
+      ...(name.trim() !== rule.name ? { name: name.trim() } : {}),
+      ...(!sameList(nextStages, initialStages) ? { lifecycleStages: nextStages } : {}),
+      ...(!sameList(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
+      ...(!sameList(nextDenyList, initialDenyList) ? { companyDenyList: nextDenyList } : {}),
+      ...(intervalHours !== rule.intervalHours ? { intervalHours } : {}),
+    };
+
+    try {
+      const result = await updateMarketingRule.mutateAsync(payload);
+      if ((result as { ok?: boolean; error?: string })?.ok === false) {
+        setError((result as { error: string }).error);
+        return;
+      }
+      onUpdated();
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err, "Couldn't update the automation settings."));
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-2xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="text-sm font-semibold text-foreground">Edit automation settings</h2>
+          <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted">
+            <IconX size={16} />
+          </button>
+        </div>
+
+        <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto p-5">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Name</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Lifecycle stages</label>
+            <div className="flex flex-wrap gap-1.5">
+              {HUBSPOT_LIFECYCLE_STAGES.map((stage) => (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => toggleStage(stage)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    selectedStages.has(stage)
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {stage}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <FormSectionHeader>Target companies</FormSectionHeader>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Companies (optional)</label>
+            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" allowOwnerBrowse />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Exclude companies (optional)
+            </label>
+            <CompanyTagInput values={denyList} onChange={setDenyList} placeholder="Search or type a company…" />
+          </div>
+
+          <FormSectionHeader>Schedule</FormSectionHeader>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Run every</label>
+            <select
+              value={intervalHours}
+              onChange={(e) => setIntervalHours(Number(e.target.value))}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {INTERVAL_HOURS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!canSave || updateMarketingRule.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          >
+            {updateMarketingRule.isPending && <IconLoader2 size={12} className="animate-spin" />}
+            Save changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── List detail view ─────────────────────────────────────────────────────────
 
 function ListDetailView({
@@ -2064,10 +2508,11 @@ function ListDetailView({
     ? errorMessage(error, "Couldn't load this list.")
     : null;
 
-  // When this list is Active, the owning sourcing rule's own fields (target,
-  // schedule, filters, status) live in list-sourcing-rules rather than
-  // get-segment — fetched only when needed, and cached/shared with any other
-  // place on this page that queries the same action.
+  // When this list is Prospected, the owning sourcing rule's own fields
+  // (target, schedule, filters, status) live in list-sourcing-rules rather
+  // than get-segment — fetched only when needed, and cached/shared with any
+  // other place on this page that queries the same action. Marketing lists
+  // are the same shape, one level down: list-marketing-rules.
   const { data: rulesData, refetch: refetchRules } = useActionQuery(
     "list-sourcing-rules",
     {},
@@ -2078,10 +2523,26 @@ function ListDetailView({
     ? rules.find((r) => r.id === segment.owningSourcingRuleId) ?? null
     : null;
 
+  const { data: marketingRulesData, refetch: refetchMarketingRules } = useActionQuery(
+    "list-marketing-rules",
+    {},
+    { enabled: !!segment?.owningMarketingRuleId, refetchInterval: 30000, staleTime: 25000 },
+  );
+  const marketingRules: MarketingRule[] = (marketingRulesData as { rules?: MarketingRule[] })?.rules ?? [];
+  const marketingRule = segment?.owningMarketingRuleId
+    ? marketingRules.find((r) => r.id === segment.owningMarketingRuleId) ?? null
+    : null;
+
+  const listKind: ListKind = segment?.owningSourcingRuleId
+    ? "prospected"
+    : segment?.owningMarketingRuleId
+      ? "marketing"
+      : "static";
+
   const { data: personaData } = useActionQuery(
     "list-personas",
     {},
-    { enabled: !!segment?.owningSourcingRuleId },
+    { enabled: !!segment?.owningSourcingRuleId || !!segment?.owningMarketingRuleId },
   );
   const personaColorById = new Map(
     ((personaData as { personas?: PersonaOption[] })?.personas ?? []).map((p) => [p.id, p.color]),
@@ -2093,6 +2554,8 @@ function ListDetailView({
   const deleteSegment = useActionMutation("delete-segment");
   const updateSourcingRule = useActionMutation("update-sourcing-rule");
   const deleteSourcingRule = useActionMutation("delete-sourcing-rule");
+  const updateMarketingRule = useActionMutation("update-marketing-rule");
+  const deleteMarketingRule = useActionMutation("delete-marketing-rule");
 
   const queryClient = useQueryClient();
 
@@ -2102,6 +2565,8 @@ function ListDetailView({
   const [ruleActionError, setRuleActionError] = useState<string | null>(null);
   const [isRunningSourcingRule, setIsRunningSourcingRule] = useState(false);
   const [sourcingRunProgress, setSourcingRunProgress] = useState<SourcingRunProgress | null>(null);
+  const [isRunningMarketingRule, setIsRunningMarketingRule] = useState(false);
+  const [marketingRunProgress, setMarketingRunProgress] = useState<SourcingRunProgress | null>(null);
   const [editingRule, setEditingRule] = useState(false);
 
   async function handleToggleVisibility() {
@@ -2194,6 +2659,48 @@ function ListDetailView({
     }
   }
 
+  async function handleRunMarketingRule() {
+    if (!segment?.owningMarketingRuleId) return;
+    setActionError(null);
+    setIsRunningMarketingRule(true);
+    setMarketingRunProgress(null);
+    // Same resumable, chunked state-machine contract as
+    // handleRunSourcingRule above — see run-marketing-rule-pipeline.ts.
+    let syncRecordId: string | undefined;
+    try {
+      for (;;) {
+        const result = (await callAction(
+          "run-marketing-rule-pipeline",
+          { ruleId: segment.owningMarketingRuleId, syncRecordId },
+          { timeoutMs: 90_000 },
+        )) as {
+          done: boolean;
+          syncRecordId: string;
+          phase: "searching" | "scoring" | "complete";
+          recordsFound: number;
+          scored: number;
+          remaining: number;
+        };
+        syncRecordId = result.syncRecordId;
+        setMarketingRunProgress({
+          phase: result.phase,
+          recordsFound: result.recordsFound,
+          scored: result.scored,
+          remaining: result.remaining,
+        });
+        if (result.done) break;
+      }
+      refetch();
+      refetchMarketingRules();
+      queryClient.invalidateQueries({ queryKey: ["action", "list-marketing-rule-runs"] });
+    } catch (err) {
+      setActionError(errorMessage(err, "Couldn't sync HubSpot contacts."));
+    } finally {
+      setIsRunningMarketingRule(false);
+      setMarketingRunProgress(null);
+    }
+  }
+
   async function handleToggleRuleStatus() {
     if (!rule) return;
     setRuleActionError(null);
@@ -2210,19 +2717,36 @@ function ListDetailView({
     }
   }
 
-  // Deleting an Active list is two independent mutations with no shared
-  // transaction between them — delete-sourcing-rule (stop automation + drop
-  // the job resource) then delete-segment (drop the segment/contacts). If
-  // the first succeeds but the second then fails (network blip, a future
-  // writability check, etc.), the rule is already gone but the segment
-  // survives. ruleDeletedRef records that so a retry skips straight to
-  // deleteSegment instead of re-attempting a delete against a now-nonexistent
-  // rule id — which would otherwise soft-fail with a confusing "not found"
-  // error and never reach the segment delete at all. (Without this ref,
-  // navigating away and back would eventually self-heal too, since a
-  // fresh get-segment fetch reports owningSourcingRuleId: null once the rule
-  // is gone — but that recovery path is invisible to the user in the
-  // moment, so we make the retry work correctly immediately instead.)
+  async function handleToggleMarketingRuleStatus() {
+    if (!marketingRule) return;
+    setRuleActionError(null);
+    const nextStatus: RuleStatus = marketingRule.status === "active" ? "paused" : "active";
+    try {
+      const result = await updateMarketingRule.mutateAsync({ id: marketingRule.id, status: nextStatus });
+      if ((result as { ok?: boolean; error?: string })?.ok === false) {
+        setRuleActionError((result as { error: string }).error);
+        return;
+      }
+      refetchMarketingRules();
+    } catch (err) {
+      setRuleActionError(errorMessage(err, "Couldn't update the rule's status."));
+    }
+  }
+
+  // Deleting a rule-owned list is two independent mutations with no shared
+  // transaction between them — delete-sourcing-rule/delete-marketing-rule
+  // (stop automation + drop the job resource) then delete-segment (drop the
+  // segment/contacts). If the first succeeds but the second then fails
+  // (network blip, a future writability check, etc.), the rule is already
+  // gone but the segment survives. ruleDeletedRef records that so a retry
+  // skips straight to deleteSegment instead of re-attempting a delete
+  // against a now-nonexistent rule id — which would otherwise soft-fail
+  // with a confusing "not found" error and never reach the segment delete
+  // at all. (Without this ref, navigating away and back would eventually
+  // self-heal too, since a fresh get-segment fetch reports
+  // owningSourcingRuleId/owningMarketingRuleId: null once the rule is
+  // gone — but that recovery path is invisible to the user in the moment,
+  // so we make the retry work correctly immediately instead.)
   const ruleDeletedRef = useRef(false);
 
   async function handleDelete() {
@@ -2231,6 +2755,20 @@ function ListDetailView({
     if (segment?.owningSourcingRuleId && !ruleDeletedRef.current) {
       try {
         const ruleResult = await deleteSourcingRule.mutateAsync({ id: segment.owningSourcingRuleId });
+        if ((ruleResult as { ok?: boolean; error?: string })?.ok === false) {
+          setActionError((ruleResult as { error: string }).error);
+          setConfirmDelete(false);
+          return;
+        }
+        ruleDeletedRef.current = true;
+      } catch (err) {
+        setActionError(errorMessage(err, "Couldn't stop this list's automation."));
+        setConfirmDelete(false);
+        return;
+      }
+    } else if (segment?.owningMarketingRuleId && !ruleDeletedRef.current) {
+      try {
+        const ruleResult = await deleteMarketingRule.mutateAsync({ id: segment.owningMarketingRuleId });
         if ((ruleResult as { ok?: boolean; error?: string })?.ok === false) {
           setActionError((ruleResult as { error: string }).error);
           setConfirmDelete(false);
@@ -2257,7 +2795,7 @@ function ListDetailView({
     }
   }
 
-  const isDeleting = deleteSegment.isPending || deleteSourcingRule.isPending;
+  const isDeleting = deleteSegment.isPending || deleteSourcingRule.isPending || deleteMarketingRule.isPending;
 
   return (
     <div className="flex h-full flex-col">
@@ -2280,7 +2818,7 @@ function ListDetailView({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-sm font-semibold text-foreground">{segment.name}</h1>
-                <ListTypeBadge isActive={!!segment.owningSourcingRuleId} />
+                <ListTypeBadge kind={listKind} />
                 <VisibilityBadge visibility={segment.visibility} />
               </div>
               <p className="text-xs text-muted-foreground">
@@ -2312,6 +2850,21 @@ function ListDetailView({
                     <IconRefresh size={12} />
                   )}
                   {isRunningSourcingRule ? buildSourcingRunLabel(sourcingRunProgress) : "Find prospects now"}
+                </button>
+              ) : segment.owningMarketingRuleId ? (
+                <button
+                  type="button"
+                  onClick={handleRunMarketingRule}
+                  disabled={isRunningMarketingRule}
+                  title="Sync fresh HubSpot contacts for this list right now, instead of waiting for the next scheduled run"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                >
+                  {isRunningMarketingRule ? (
+                    <IconLoader2 size={12} className="animate-spin" />
+                  ) : (
+                    <IconRefresh size={12} />
+                  )}
+                  {isRunningMarketingRule ? buildSourcingRunLabel(marketingRunProgress) : "Sync now"}
                 </button>
               ) : (
                 segment.personaId && (
@@ -2449,8 +3002,76 @@ function ListDetailView({
         </div>
       )}
 
+      {!isLoading && segment && segment.owningMarketingRuleId && (
+        <div className="border-b border-border px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Automation
+            </h2>
+            {marketingRule && (
+              <div className="flex items-center gap-1.5">
+                <StatusBadge status={marketingRule.status} />
+                <button
+                  type="button"
+                  onClick={handleToggleMarketingRuleStatus}
+                  disabled={updateMarketingRule.isPending}
+                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  aria-label={marketingRule.status === "active" ? "Pause rule" : "Resume rule"}
+                  title={marketingRule.status === "active" ? "Pause rule" : "Resume rule"}
+                >
+                  {marketingRule.status === "active" ? <IconPlayerPause size={14} /> : <IconPlayerPlay size={14} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingRule(true)}
+                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Edit automation settings"
+                  title="Edit automation settings"
+                >
+                  <IconPencil size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {ruleActionError && <p className="mb-2 text-xs text-destructive">{ruleActionError}</p>}
+
+          {!marketingRule ? (
+            <p className="text-xs text-muted-foreground/60">Loading automation settings…</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                {marketingRule.personaName && (
+                  <PersonaBadge name={marketingRule.personaName} color={personaColorById.get(marketingRule.personaId) ?? null} />
+                )}
+                {marketingRule.intervalHours != null && (
+                  <span className="inline-flex items-center gap-1">
+                    <IconClock size={12} /> Runs every {marketingRule.intervalHours} hour{marketingRule.intervalHours === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] text-muted-foreground/70">
+                {safeParseList(marketingRule.lifecycleStages).length > 0 && (
+                  <p>Lifecycle stages: {safeParseList(marketingRule.lifecycleStages).join(", ")}</p>
+                )}
+                {safeParseList(marketingRule.companyAllowList).length > 0 && (
+                  <p>Allow: {safeParseList(marketingRule.companyAllowList).join(", ")}</p>
+                )}
+                {safeParseList(marketingRule.companyDenyList).length > 0 && (
+                  <p>Deny: {safeParseList(marketingRule.companyDenyList).join(", ")}</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {!isLoading && segment && segment.owningSourcingRuleId && (
-        <RecentRunsSection ruleId={segment.owningSourcingRuleId} />
+        <RecentRunsSection ruleId={segment.owningSourcingRuleId} actionName="list-sourcing-rule-runs" sourceLabel="CommonRoom Prospector" />
+      )}
+
+      {!isLoading && segment && segment.owningMarketingRuleId && (
+        <RecentRunsSection ruleId={segment.owningMarketingRuleId} actionName="list-marketing-rule-runs" sourceLabel="HubSpot Marketing" />
       )}
 
       {!isLoading && segment && (isAdmin || segment.assignedToEmail) && (
@@ -2504,6 +3125,14 @@ function ListDetailView({
           onUpdated={() => refetchRules()}
         />
       )}
+
+      {editingRule && marketingRule && (
+        <EditMarketingRulePanel
+          rule={marketingRule}
+          onClose={() => setEditingRule(false)}
+          onUpdated={() => refetchMarketingRules()}
+        />
+      )}
     </div>
   );
 }
@@ -2549,7 +3178,7 @@ export default function ListsRoute() {
             {isLoading
               ? "Loading…"
               : lists.length === 0
-                ? "No lists yet — create a static list from a persona, or an active list on a schedule"
+                ? "No lists yet — create a Marketing or Prospected list to auto-populate on a schedule, or a static list from a persona"
                 : `${lists.length} list${lists.length === 1 ? "" : "s"}`}
           </p>
         </div>
@@ -2577,7 +3206,7 @@ export default function ListsRoute() {
             <div>
               <p className="text-sm font-medium text-muted-foreground">No lists yet</p>
               <p className="mt-1 text-xs text-muted-foreground/60">
-                Create a static list from a persona, or an active list to auto-populate on a schedule
+                Create a Marketing or Prospected list to auto-populate on a schedule, or a static list from a persona
               </p>
             </div>
           </div>

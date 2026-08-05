@@ -41,19 +41,27 @@ export function buildSourcingRuleJobContent(params: {
   // calls fail (confirmed live: "MCP tool is not available in this request
   // scope") in a way a manual click never would.
   orgId?: string | null;
+  // Which resumable/chunked pipeline action this job drives, and how to
+  // describe it in the instructions body — added so run-marketing-rule-
+  // pipeline.ts's HubSpot-lifecycle-stage rules can reuse this exact
+  // frontmatter+loop-instructions template instead of a second near-
+  // duplicate file. Defaults preserve today's CommonRoom-Prospector wording
+  // exactly for every existing call site that doesn't pass these.
+  actionName?: string;
+  ruleLabel?: string;
 }): string {
-  const { cron, enabled, createdBy, ruleId, orgId } = params;
+  const { cron, enabled, createdBy, ruleId, orgId, actionName = "run-sourcing-rule-pipeline", ruleLabel = "sourcing rule" } = params;
   return `---
 schedule: "${cron}"
 enabled: ${enabled}
 createdBy: ${createdBy}
 ${orgId ? `orgId: ${orgId}\n` : ""}runAs: creator
 ---
-Execute prospecting-hub sourcing rule ${ruleId}. The run-sourcing-rule-pipeline action is resumable and chunked — ONE call only ever does a small bounded unit of work (a few Prospector search pages, or a small chunk of contact scoring) and returns { done, syncRecordId, phase, recordsFound, scored, remaining, imported, deduped }. You MUST loop it to completion, in this exact sequence:
+Execute prospecting-hub ${ruleLabel} ${ruleId}. The ${actionName} action is resumable and chunked — ONE call only ever does a small bounded unit of work and returns { done, syncRecordId, phase, recordsFound, scored, remaining, imported, deduped }. You MUST loop it to completion, in this exact sequence:
 
-1. Call run-sourcing-rule-pipeline with { ruleId: "${ruleId}" } (no syncRecordId on this first call).
-2. Look at the response's "done" field. If it is false, call run-sourcing-rule-pipeline AGAIN, this time with { ruleId: "${ruleId}", syncRecordId: "<the syncRecordId the previous call just returned>" } — always reuse that same syncRecordId, never omit it and never start a fresh call once you have one.
-3. Repeat step 2 — same ruleId, same syncRecordId each time — until a response comes back with "done": true. This can take many calls for a large desiredVolume; keep going as long as "done" is false.
+1. Call ${actionName} with { ruleId: "${ruleId}" } (no syncRecordId on this first call).
+2. Look at the response's "done" field. If it is false, call ${actionName} AGAIN, this time with { ruleId: "${ruleId}", syncRecordId: "<the syncRecordId the previous call just returned>" } — always reuse that same syncRecordId, never omit it and never start a fresh call once you have one.
+3. Repeat step 2 — same ruleId, same syncRecordId each time — until a response comes back with "done": true. This can take many calls; keep going as long as "done" is false.
 4. Only once "done" is true, report a short summary of how many prospects were found, imported, and scored (use the final call's recordsFound/imported/scored/deduped fields).
 `;
 }
@@ -132,8 +140,14 @@ export function buildRunContinuationJobContent(params: {
   syncRecordId: string;
   createdBy: string;
   orgId?: string | null;
+  // Same reasoning as buildSourcingRuleJobContent's own actionName/ruleLabel
+  // params — lets run-marketing-rule-pipeline.ts reuse this exact safety-net
+  // template instead of a second near-duplicate file. Defaults preserve
+  // today's CommonRoom-Prospector wording exactly.
+  actionName?: string;
+  ruleLabel?: string;
 }): string {
-  const { ruleId, syncRecordId, createdBy, orgId } = params;
+  const { ruleId, syncRecordId, createdBy, orgId, actionName = "run-sourcing-rule-pipeline", ruleLabel = "sourcing-rule" } = params;
   const jobName = runContinuationJobName(ruleId);
   return `---
 schedule: "* * * * *"
@@ -141,10 +155,10 @@ enabled: true
 createdBy: ${createdBy}
 ${orgId ? `orgId: ${orgId}\n` : ""}runAs: creator
 ---
-Resume ONE specific in-progress prospecting-hub sourcing-rule run — a server-side safety net for a "Find prospects now" click whose browser tab may have closed mid-run. This job only exists because that one run might still need driving forward; it is NOT the rule's own recurring schedule.
+Resume ONE specific in-progress prospecting-hub ${ruleLabel} run — a server-side safety net for a "Find prospects now"/"Sync now" click whose browser tab may have closed mid-run. This job only exists because that one run might still need driving forward; it is NOT the rule's own recurring schedule.
 
-1. Call run-sourcing-rule-pipeline with EXACTLY { ruleId: "${ruleId}", syncRecordId: "${syncRecordId}" } — always include this exact syncRecordId, never omit it and never start a fresh call without it.
-2. If the call throws an error (e.g. "not a resumable, in-progress run"), the run already finished — possibly the browser tab that started it finished driving it, or a previous tick of this same job did. This is success, not a failure: skip to step 4 immediately. Do not retry, do not call run-sourcing-rule-pipeline again, and do not start a new run.
+1. Call ${actionName} with EXACTLY { ruleId: "${ruleId}", syncRecordId: "${syncRecordId}" } — always include this exact syncRecordId, never omit it and never start a fresh call without it.
+2. If the call throws an error (e.g. "not a resumable, in-progress run"), the run already finished — possibly the browser tab that started it finished driving it, or a previous tick of this same job did. This is success, not a failure: skip to step 4 immediately. Do not retry, do not call ${actionName} again, and do not start a new run.
 3. If it returns done:false, call it again with the exact same { ruleId: "${ruleId}", syncRecordId: "${syncRecordId}" } — repeat until it returns done:true.
 4. This is an unattended background job with no user present — once you reach done:true, an error confirming the run already finished, or done:true was already reached, call manage-jobs with { action: "delete", name: "${jobName}" } to remove this one-off job. Do this without asking for confirmation; there is no one here to confirm with, and leaving the job in place would just fire again every minute for nothing.
 `;

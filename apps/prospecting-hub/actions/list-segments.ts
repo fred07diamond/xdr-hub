@@ -2,12 +2,12 @@ import { defineAction } from "@agent-native/core";
 import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { personas, segmentContacts, segments, sourcingRules } from "../server/db/schema.js";
+import { marketingRules, personas, segmentContacts, segments, sourcingRules } from "../server/db/schema.js";
 import { getUserRole, requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
   description:
-    "List segments (\"Lists\") visible to the caller — owned or public, plus every segment if the caller is an admin — with contact counts, persona name/color, and whether the list is Active (auto-populated by a sourcing rule) or Static (manually curated).",
+    "List segments (\"Lists\") visible to the caller — owned or public, plus every segment if the caller is an admin — with contact counts, persona name/color, and its kind: \"prospected\" (auto-populated by a CommonRoom-Prospector rule), \"marketing\" (auto-populated by a HubSpot-lifecycle-stage rule), or \"static\" (manually curated).",
   schema: z.object({}),
   requiresAuth: true,
   readOnly: true,
@@ -23,11 +23,12 @@ export default defineAction({
         ? notArchived
         : and(notArchived, or(eq(segments.ownerEmail, ctx!.userEmail!), eq(segments.visibility, "public")));
 
-    // LEFT JOIN sourcingRules the reverse direction of list-sourcing-rules.ts's
-    // own persona/sub-persona/ICP joins: each sourcing rule owns exactly one
-    // segment (1:1 via sourcingRules.segmentId), so this join returns at most
-    // one rule row per segment — its presence is what makes a list "Active"
-    // rather than "Static".
+    // LEFT JOIN both rule tables the reverse direction of list-sourcing-
+    // rules.ts/list-marketing-rules.ts's own joins: each rule owns exactly
+    // one segment (1:1 via <table>.segmentId), so each join returns at most
+    // one rule row per segment — whichever one is present (never both, by
+    // construction — a segment is created by exactly one rule-creation
+    // action) determines the list's kind.
     const rows = await db
       .select({
         id: segments.id,
@@ -42,10 +43,12 @@ export default defineAction({
         personaName: personas.name,
         personaColor: personas.color,
         sourcingRuleId: sourcingRules.id,
+        marketingRuleId: marketingRules.id,
       })
       .from(segments)
       .leftJoin(personas, eq(segments.personaId, personas.id))
       .leftJoin(sourcingRules, eq(sourcingRules.segmentId, segments.id))
+      .leftJoin(marketingRules, eq(marketingRules.segmentId, segments.id))
       .where(whereClause)
       .orderBy(desc(segments.createdAt));
 
@@ -61,7 +64,7 @@ export default defineAction({
     return {
       segments: rows.map((r) => ({
         ...r,
-        isActive: r.sourcingRuleId != null,
+        kind: r.sourcingRuleId != null ? ("prospected" as const) : r.marketingRuleId != null ? ("marketing" as const) : ("static" as const),
         contactCount: countMap.get(r.id) ?? 0,
       })),
     };

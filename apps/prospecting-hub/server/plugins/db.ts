@@ -402,6 +402,42 @@ export default runMigrations(
       sql: `CREATE INDEX IF NOT EXISTS contacts_external_id_source_idx ON contacts(external_id, source);
         CREATE INDEX IF NOT EXISTS contacts_email_lower_idx ON contacts(LOWER(email))`,
     },
+    {
+      version: 34,
+      name: "marketing-rules-table-and-lifecycle-stage",
+      // Marketing lists: a new HubSpot-lifecycle-stage-driven rule kind
+      // alongside sourcing_rules' CommonRoom-Prospector rules (renamed
+      // "Prospected" in the UI) — see run-marketing-rule-pipeline.ts. Mirrors
+      // sourcing_rules' shape but drops every Prospector-only field (title/
+      // seniority/LinkedIn-follower/previous-company/ICP/desired-volume) and
+      // adds lifecycle_stages (JSON string array, e.g. ["RAW","MEL","QL"]) —
+      // there's no Prospector-side analog for that filter.
+      // sync_records.marketing_rule_id mirrors the existing sourcing_rule_id
+      // column exactly (plain nullable text, no FK — this app's convention):
+      // exactly one of the two is set per rule-scoped run, both null for
+      // every non-rule-scoped writer. sourcing_rule_run_targets needs NO
+      // change — it was already rule-agnostic (only sync_record_id/
+      // contact_id), so it's shared as-is by both pipelines' scoring queues.
+      // contacts.lifecycle_stage is populated by both the new pipeline and
+      // sync-hubspot.ts, so a HubSpot contact shows the same stage regardless
+      // of which path synced it.
+      sql: `CREATE TABLE IF NOT EXISTS marketing_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        owner_email TEXT NOT NULL,
+        persona_id TEXT NOT NULL,
+        lifecycle_stages TEXT,
+        company_allow_list TEXT,
+        company_deny_list TEXT,
+        interval_hours INTEGER,
+        segment_id TEXT NOT NULL,
+        job_resource_path TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+        ALTER TABLE sync_records ADD COLUMN marketing_rule_id TEXT;
+        ALTER TABLE contacts ADD COLUMN lifecycle_stage TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

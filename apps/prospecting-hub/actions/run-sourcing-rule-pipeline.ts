@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { and, desc, eq, inArray, isNull, or, sql } from "@agent-native/core/db/schema";
+import { and, desc, eq, or, sql } from "@agent-native/core/db/schema";
 import { resourceGetByPath, resourcePut } from "@agent-native/core/resources";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -9,7 +9,6 @@ import {
   icps,
   libraryDocs,
   personas,
-  segmentContacts,
   segments,
   sourcingRuleRunTargets,
   sourcingRules,
@@ -17,14 +16,13 @@ import {
   syncRecords,
 } from "../server/db/schema.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
-import { warmLeadScoreIdCache } from "../server/helpers/commonroom-engagement.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { searchIcpCompanies } from "../server/helpers/icp-filters.js";
-import { SCORING_TIME_BUDGET_MS, SEARCH_TIME_BUDGET_MS, withinTimeBudget } from "../server/helpers/invocation-budget.js";
-import { escapeLikePattern, normalizeLinkedinUrl } from "../server/helpers/normalize-linkedin-url.js";
+import { SEARCH_TIME_BUDGET_MS, withinTimeBudget } from "../server/helpers/invocation-budget.js";
 import { searchProspectorContacts, type ProspectorMatch } from "../server/helpers/prospector-client.js";
+import { findCrossSourceMatch } from "../server/helpers/resolve-contact-dedup.js";
 import { requireRole } from "../server/helpers/require-role.js";
-import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
+import { runScoringBatch } from "../server/helpers/scoring-chunk.js";
 import { assertSegmentWritable } from "../server/helpers/segment-access.js";
 import {
   backfillJobOrgId,
@@ -81,8 +79,9 @@ const MAX_SEARCH_PAGES_PER_INVOCATION = 4;
 // check meaningful — it now fires far more often, after much smaller chunks
 // of work, instead of being blindsided by one oversized page.
 const SEARCH_PAGE_SIZE = 25;
-const SCORING_CHUNK_SIZE = 16;
-const CONCURRENCY_LIMIT = 4;
+// SCORING_CHUNK_SIZE/CONCURRENCY_LIMIT/CLAIM_STALE_AFTER_MS now live in
+// server/helpers/scoring-chunk.ts, shared with run-marketing-rule-
+// pipeline.ts — see that file for the reasoning.
 
 // Same threshold and reasoning as the run-history UI's own `deriveRunStatus`
 // (lists.tsx) — a "running" sync_records row whose startedAt is older than
@@ -91,28 +90,6 @@ const CONCURRENCY_LIMIT = 4;
 // Reusing the exact number keeps the concept consistent between what the
 // UI displays and what the server does with a "running" row it finds.
 const RUN_STALE_AFTER_MS = 6 * 60_000;
-
-// Fix round 2: a PER-ROW liveness check, distinct from RUN_STALE_AFTER_MS
-// above (which is a WHOLE-RUN staleness check that only ever runs on the
-// no-syncRecordId fresh-start path). A syncRecordId-carrying resume call
-// always dispatches straight into runScoringChunk and never touches that
-// whole-run check at all — so if an invocation crashes after claiming rows
-// (flipping them "pending" -> "claimed") but before finishing them, those
-// specific rows would otherwise stay "claimed" forever on the normal resume
-// path, and the run could never reach `remaining: 0`. Deliberately much
-// shorter than the 6-minute whole-run window: a single scoring chunk is at
-// most SCORING_CHUNK_SIZE (16) contacts, processed in CONCURRENCY_LIMIT-wide
-// batches (4 sequential batches of 4), each contact bounded by the existing
-// ~20s CommonRoom MCP timeout plus one LLM completeText() call. Under
-// degraded CommonRoom latency this could plausibly exceed a minute — but
-// what actually bounds a single invocation's lifetime is the platform's own
-// [functions."*"] timeout = 75 in the repo-root netlify.toml, which hard-kills
-// any one HTTP call to this action (manual or scheduled-job-driven — both go
-// through the same function boundary) well before 120s. So a "claimed" row
-// still owned by a genuinely-alive invocation can never age past this
-// threshold in production; only a crashed/killed invocation's rows ever will,
-// which is exactly the case this reclaim is meant to self-heal.
-const CLAIM_STALE_AFTER_MS = 2 * 60_000;
 
 interface PipelineResult {
   done: boolean;
@@ -954,38 +931,7 @@ export default defineAction({
         // DIFFERENT source. Check by email and by normalized LinkedIn
         // vanity-slug before deciding this is truly a new person.
         const matchEmail = (match as { email?: string | null }).email ?? null;
-        const linkedinSlug = normalizeLinkedinUrl(linkedinUrl);
-
-        const dedupConditions = [];
-        if (matchEmail) {
-          dedupConditions.push(sql`LOWER(${contacts.email}) = LOWER(${matchEmail})`);
-        }
-        if (linkedinSlug) {
-          // Coarse SQL-level candidate filter only — see the LIKE-vs-exact
-          // comment this mirrors from the original implementation.
-          dedupConditions.push(
-            sql`LOWER(${contacts.linkedinUrl}) LIKE LOWER(${`%${escapeLikePattern(linkedinSlug)}%`}) ESCAPE '\\'`,
-          );
-        }
-
-        const dedupCandidates =
-          dedupConditions.length > 0
-            ? await db
-                .select({ id: contacts.id, email: contacts.email, linkedinUrl: contacts.linkedinUrl })
-                .from(contacts)
-                .where(or(...dedupConditions))
-                .limit(25)
-            : [];
-
-        const crossSourceMatch = dedupCandidates.find((candidate) => {
-          if (matchEmail && candidate.email && candidate.email.toLowerCase() === matchEmail.toLowerCase()) {
-            return true;
-          }
-          if (linkedinSlug && normalizeLinkedinUrl(candidate.linkedinUrl) === linkedinSlug) {
-            return true;
-          }
-          return false;
-        });
+        const crossSourceMatch = await findCrossSourceMatch(db, { email: matchEmail, linkedinUrl });
 
         if (crossSourceMatch) {
           // Belongs to a different sync pipeline that owns its own
@@ -1020,38 +966,14 @@ export default defineAction({
 
     // ── One bounded chunk of scoring (phase "scoring") ──────────────────────
     //
-    // Claims up to SCORING_CHUNK_SIZE `pending` rows from the work queue,
-    // scores/links them with the existing bounded-concurrency logic, and
-    // flips each to `scored`/`errored`. The queue table's own aggregate
-    // counts (not an in-memory counter) are the source of truth for
-    // scored/errored/remaining, since nothing in-memory survives between
-    // invocations.
+    // Reads this run's own rule-specific counts from sync_records.metadata,
+    // delegates the actual claim/score/reclaim work to the shared
+    // runScoringBatch helper (server/helpers/scoring-chunk.ts — also used by
+    // run-marketing-rule-pipeline.ts), then decides what to do with the
+    // result: finishRun if nothing's left, or checkpoint this rule's own
+    // metadata shape (titleKeywords/seniorities/companiesConsidered, none of
+    // which the shared helper knows or cares about) and return.
     async function runScoringChunk(): Promise<PipelineResult> {
-      // Reclaim any row for THIS run that's been stuck "claimed" longer than
-      // CLAIM_STALE_AFTER_MS — the claiming invocation almost certainly
-      // crashed mid-chunk before ever reaching a terminal scored/errored
-      // state. Runs at the very start of EVERY invocation of this function
-      // (both a fresh attach and a plain resume dispatch straight into
-      // scoring), before this invocation even looks at what's pending, so a
-      // run that's entirely stuck on abandoned claims self-heals within this
-      // same call instead of returning `done: false` with zero progress
-      // forever. Also clears the stale claimToken left in `error` so the
-      // next real claim attempt starts clean.
-      const claimStaleCutoff = new Date(Date.now() - CLAIM_STALE_AFTER_MS).toISOString();
-      await db
-        .update(sourcingRuleRunTargets)
-        .set({ status: "pending", claimedAt: null, error: null })
-        .where(
-          and(
-            eq(sourcingRuleRunTargets.syncRecordId, syncRecordId),
-            eq(sourcingRuleRunTargets.status, "claimed"),
-            or(
-              isNull(sourcingRuleRunTargets.claimedAt),
-              sql`${sourcingRuleRunTargets.claimedAt} < ${claimStaleCutoff}`,
-            ),
-          ),
-        );
-
       const currentMetaRows = await db
         .select({ metadata: syncRecords.metadata })
         .from(syncRecords)
@@ -1066,269 +988,22 @@ export default defineAction({
       const titleKeywords = (currentMeta.titleKeywords as string[] | undefined) ?? null;
       const seniorities = (currentMeta.seniorities as string[] | undefined) ?? null;
 
-      // "Outstanding" = pending OR claimed — NOT just pending. This matters
-      // once the atomic claim below exists: a concurrent invocation can hold
-      // a batch of rows "claimed" (mid-processing, not yet scored/errored)
-      // at the exact moment this invocation checks in. If "is the run done"
-      // only asked "are there zero PENDING rows", a concurrent claim in
-      // progress elsewhere would make this invocation wrongly conclude the
-      // run is complete and call finishRun — which deletes ALL of this run's
-      // queue rows (including the ones still being actively scored by that
-      // other invocation) and reports `done: true` before scoring genuinely
-      // finished. Counting "claimed" rows as still-outstanding avoids that.
-      const [outstandingCountRow] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(sourcingRuleRunTargets)
-        .where(
-          and(
-            eq(sourcingRuleRunTargets.syncRecordId, syncRecordId),
-            inArray(sourcingRuleRunTargets.status, ["pending", "claimed"]),
-          ),
-        );
-      const outstandingBeforeThisChunk = Number(outstandingCountRow?.count ?? 0);
+      const batch = await runScoringBatch({
+        db,
+        syncRecordId,
+        segmentId: rule.segmentId,
+        ownerEmail: rule.ownerEmail,
+        orgId: ctx?.orgId,
+        invocationStartedAt,
+      });
 
-      if (outstandingBeforeThisChunk === 0) {
+      if (batch.remaining === 0) {
         return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered, titleKeywords, seniorities });
       }
 
-      const candidateRows = await db
-        .select({ id: sourcingRuleRunTargets.id, contactId: sourcingRuleRunTargets.contactId })
-        .from(sourcingRuleRunTargets)
-        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "pending")))
-        .orderBy(sourcingRuleRunTargets.createdAt)
-        .limit(SCORING_CHUNK_SIZE);
-
-      // Atomic claim: two concurrent scoring-chunk calls against the SAME
-      // syncRecordId (a real possibility on this app's serverless host — a
-      // double-click, a manual run overlapping a scheduled fire, a network
-      // retry) could otherwise both run the `candidateRows` SELECT above
-      // before either processes anything, both select the SAME pending
-      // rows, and both score/link them — doubled contact writes, doubled
-      // segment-link attempts, doubled real LLM spend. Flipping
-      // "pending" -> "claimed" via an UPDATE re-guarded by
-      // `status = "pending"` is atomic per row at the database level: if a
-      // concurrent call already claimed one of these ids first, THIS
-      // invocation's UPDATE simply won't touch that row (its status no
-      // longer matches the guard), so re-selecting only the rows THIS
-      // invocation's own claim actually flipped tells us exactly (and only)
-      // what's safe for us to process. A fresh per-invocation `claimToken`
-      // (written into the otherwise-idle `error` column while a row is
-      // "claimed") is what lets that re-select distinguish "claimed by MY
-      // update" from "coincidentally already claimed by a different
-      // concurrent invocation moments earlier" — a plain re-select for
-      // status = "claimed" alone couldn't tell those apart. No RETURNING
-      // clause used (not portably available across this app's SQLite/
-      // Postgres backends) — this is plain UPDATE + SELECT, fully
-      // expressible in Drizzle's portable query builder.
-      // candidateRows can legitimately be empty here even though
-      // outstandingBeforeThisChunk > 0 — every currently-outstanding row
-      // might be "claimed" by a different concurrent invocation right now,
-      // with none left in "pending" for THIS invocation to claim. In that
-      // case there's simply nothing for this invocation to do this round;
-      // skip the claim/select/process work entirely rather than passing an
-      // empty id list into `inArray` (an empty IN-list is invalid/
-      // undefined-behavior SQL on some backends).
-      let claimedRows: { id: string; contactId: string }[] = [];
-      if (candidateRows.length > 0) {
-        const candidateIds = candidateRows.map((r) => r.id);
-        const claimToken = nanoid();
-        await db
-          .update(sourcingRuleRunTargets)
-          .set({ status: "claimed", error: claimToken, claimedAt: new Date().toISOString() })
-          .where(and(inArray(sourcingRuleRunTargets.id, candidateIds), eq(sourcingRuleRunTargets.status, "pending")));
-
-        claimedRows = await db
-          .select({ id: sourcingRuleRunTargets.id, contactId: sourcingRuleRunTargets.contactId })
-          .from(sourcingRuleRunTargets)
-          .where(
-            and(
-              inArray(sourcingRuleRunTargets.id, candidateIds),
-              eq(sourcingRuleRunTargets.status, "claimed"),
-              eq(sourcingRuleRunTargets.error, claimToken),
-            ),
-          );
-      }
-
-      // Same pool of scorable personas import-prospects-to-segment.ts
-      // queries — re-fetched fresh each invocation (cheap) rather than
-      // cached, since nothing in-memory survives between invocations
-      // anyway.
-      const personaRowsForScoring = await db
-        .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
-        .from(personas)
-        .where(sql`${personas.criteria} IS NOT NULL`);
-
-      // Scoring and everything that depends on it is wrapped so a single
-      // contact's bad AI response or a CommonRoom lookup failure can't abort
-      // any other contact in this chunk — mirrors the original
-      // scoreAndLinkContact exactly, just sourcing its contact fields from
-      // the `contacts` table (country/employees persisted there by
-      // resolveContact above) instead of a live Prospector match object,
-      // and writing its outcome to the work-queue row instead of an
-      // in-memory counter.
-      async function scoreAndLinkTarget(target: { id: string; contactId: string }): Promise<void> {
-        try {
-          const contactRows = await db
-            .select({
-              id: contacts.id,
-              name: contacts.name,
-              title: contacts.title,
-              company: contacts.company,
-              country: contacts.country,
-              employees: contacts.employees,
-              hubspotBreezeFitScore: contacts.hubspotBreezeFitScore,
-            })
-            .from(contacts)
-            .where(eq(contacts.id, target.contactId))
-            .limit(1);
-          const contact = contactRows[0];
-          if (!contact) {
-            await db
-              .update(sourcingRuleRunTargets)
-              .set({ status: "errored", error: `Contact ${target.contactId} no longer exists.` })
-              .where(eq(sourcingRuleRunTargets.id, target.id));
-            return;
-          }
-
-          const score = await scoreContactAgainstPersonas({
-            contact: {
-              name: contact.name,
-              title: contact.title,
-              company: contact.company,
-              country: contact.country,
-              employees: contact.employees,
-              hubspotBreezeFitScore: contact.hubspotBreezeFitScore,
-            },
-            personas: personaRowsForScoring,
-            userEmail: rule.ownerEmail,
-            orgId: ctx?.orgId,
-          });
-          await db
-            .update(contacts)
-            .set({
-              personaId: score.personaId,
-              personaMatchScore: score.personaMatchScore,
-              companyFitScore: score.companyFitScore,
-              engagementScore: score.engagementScore,
-              commonRoomIntentScore: score.commonRoomIntentScore,
-              commonRoomCompanyFitScore: score.commonRoomCompanyFitScore,
-              overallScore: score.overallScore,
-              scoreReasoning: score.reasoning,
-              updatedAt: new Date().toISOString(),
-            })
-            .where(eq(contacts.id, target.contactId));
-
-          const existingLink = await db
-            .select({ id: segmentContacts.id })
-            .from(segmentContacts)
-            .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, target.contactId)))
-            .limit(1);
-          if (!existingLink[0]) {
-            await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId: target.contactId });
-          }
-
-          await db
-            .update(sourcingRuleRunTargets)
-            .set({ status: "scored", error: null })
-            .where(eq(sourcingRuleRunTargets.id, target.id));
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          // Still link the contact into the segment even when scoring
-          // failed — best-effort, a failure here doesn't matter for the
-          // pipeline's overall outcome.
-          try {
-            const existingLink = await db
-              .select({ id: segmentContacts.id })
-              .from(segmentContacts)
-              .where(and(eq(segmentContacts.segmentId, rule.segmentId), eq(segmentContacts.contactId, target.contactId)))
-              .limit(1);
-            if (!existingLink[0]) {
-              await db.insert(segmentContacts).values({ id: nanoid(), segmentId: rule.segmentId, contactId: target.contactId });
-            }
-          } catch {
-            // best-effort, ignore
-          }
-          await db
-            .update(sourcingRuleRunTargets)
-            .set({ status: "errored", error: message })
-            .where(eq(sourcingRuleRunTargets.id, target.id));
-        }
-      }
-
-      // Pay the LeadScore-id resolution cost ONCE, sequentially, before the
-      // concurrent batch loop below — not per-contact. See
-      // warmLeadScoreIdCache's own comment for why: without this, every
-      // contact in a batch races to resolve it while the cache is cold,
-      // each independently paying the same ~20s MCP round-trip, which
-      // stacked on top of scoreContactAgainstPersonas' own now-bounded
-      // completeText() call could push a single batch's worst case close to
-      // the platform's function timeout. Best-effort — a failure here just
-      // means scoring falls back to resolving the cache per-contact as
-      // before, never a reason to fail the run.
-      if (claimedRows.length > 0) {
-        try {
-          await warmLeadScoreIdCache(ctx?.orgId);
-        } catch {
-          // best-effort, ignore
-        }
-      }
-
-      // Bounded-concurrency batches over only the rows THIS invocation
-      // genuinely claimed (may be fewer than candidateRows.length if a
-      // concurrent invocation won some of them first) — same
-      // CONCURRENCY_LIMIT/Promise.allSettled reasoning as the original perf
-      // fix. If a concurrent call won every candidate id, claimedRows is
-      // empty and this loop is simply a no-op for this round; the aggregate
-      // counts below still reflect the true current state either way.
-      for (let i = 0; i < claimedRows.length; i += CONCURRENCY_LIMIT) {
-        // SCORING_CHUNK_SIZE/CONCURRENCY_LIMIT bound batch COUNT, not
-        // wall-clock time — same risk as the search loop above (see
-        // invocation-budget.ts). Stop scoring more of this invocation's
-        // claimed batch; unprocessed rows stay "claimed" and
-        // CLAIM_STALE_AFTER_MS above reclaims them on a later invocation,
-        // so no work is lost, just deferred.
-        if (!withinTimeBudget(invocationStartedAt, SCORING_TIME_BUDGET_MS)) {
-          break;
-        }
-        const batch = claimedRows.slice(i, i + CONCURRENCY_LIMIT);
-        await Promise.allSettled(batch.map((target) => scoreAndLinkTarget(target)));
-      }
-
-      const [scoredCountRow] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(sourcingRuleRunTargets)
-        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "scored")));
-      const [erroredCountRow] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(sourcingRuleRunTargets)
-        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "errored")));
-      // "pending" OR "claimed" — same "outstanding" definition as
-      // outstandingBeforeThisChunk above, and for the same reason: a
-      // concurrent invocation could still be mid-processing a claimed batch
-      // right now, and that work isn't done just because it isn't "pending"
-      // anymore.
-      const [outstandingAfterCountRow] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(sourcingRuleRunTargets)
-        .where(
-          and(
-            eq(sourcingRuleRunTargets.syncRecordId, syncRecordId),
-            inArray(sourcingRuleRunTargets.status, ["pending", "claimed"]),
-          ),
-        );
-
-      const scored = Number(scoredCountRow?.count ?? 0);
-      const scoringErrorCount = Number(erroredCountRow?.count ?? 0);
-      const remaining = Number(outstandingAfterCountRow?.count ?? 0);
-
-      if (remaining === 0) {
-        return await finishRun({ recordsFound, imported, deduped, alreadyKnown, companiesConsidered, titleKeywords, seniorities });
-      }
-
-      // Checkpoint after every chunk — same pattern as the original
-      // per-batch checkpoint, just sourcing the running totals from the
-      // queue table's aggregate state instead of in-memory counters that
-      // don't persist across invocations.
+      // Checkpoint after every chunk — same pattern as before, just sourcing
+      // scored/scoringErrorCount from the shared helper's own queue-table
+      // aggregate state instead of computing them here.
       await db
         .update(syncRecords)
         .set({
@@ -1340,29 +1015,23 @@ export default defineAction({
             deduped,
             alreadyKnown,
             companiesConsidered,
-            scored,
-            scoringErrorCount,
+            scored: batch.scored,
+            scoringErrorCount: batch.scoringErrorCount,
           }),
         })
         .where(eq(syncRecords.id, syncRecordId));
-
-      const errorRows = await db
-        .select({ error: sourcingRuleRunTargets.error })
-        .from(sourcingRuleRunTargets)
-        .where(and(eq(sourcingRuleRunTargets.syncRecordId, syncRecordId), eq(sourcingRuleRunTargets.status, "errored")));
-      const scoringErrors = errorRows.map((r) => r.error).filter((e): e is string => !!e);
 
       return {
         done: false,
         syncRecordId,
         phase: "scoring",
         recordsFound,
-        scored,
-        remaining,
+        scored: batch.scored,
+        remaining: batch.remaining,
         imported,
         deduped,
         alreadyKnown,
-        scoringErrors,
+        scoringErrors: batch.scoringErrors,
         companiesConsidered,
       };
     }
