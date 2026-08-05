@@ -68,6 +68,18 @@ const GROUNDING_DOC_EXCERPT_LENGTH = 3000;
 //     the durable source of truth for "how much scoring is left", since
 //     nothing in-memory survives between invocations.
 const MAX_SEARCH_PAGES_PER_INVOCATION = 4;
+// Caps how many raw records a single CommonRoom page — and therefore a
+// single page's now-immediate resolveContact() loop — can ever return,
+// regardless of how large the genuinely-new gap (targetVolume - imported)
+// still is. Before this cap, an exhausted-pool rule (most matches already
+// known) could ask for and receive a page of up to 200 records (searchProspector
+// Contacts' own ceiling) and resolve all 200 sequentially in one go — even
+// indexed, that's real per-record DB latency that adds up within a SINGLE
+// page, un-checked by SEARCH_TIME_BUDGET_MS (which only reconsiders budget
+// BETWEEN pages, not mid-page). Keeping pages small keeps that between-page
+// check meaningful — it now fires far more often, after much smaller chunks
+// of work, instead of being blindsided by one oversized page.
+const SEARCH_PAGE_SIZE = 25;
 const SCORING_CHUNK_SIZE = 16;
 const CONCURRENCY_LIMIT = 4;
 
@@ -734,7 +746,7 @@ export default defineAction({
           previousCompanyName: params.previousCompanyName ?? undefined,
           companyAllowList: params.effectiveAllowList,
           companyDenyList: params.effectiveDenyList,
-          limit: remainingNeeded,
+          limit: Math.min(remainingNeeded, SEARCH_PAGE_SIZE),
           cursor,
         });
 

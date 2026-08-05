@@ -384,6 +384,24 @@ export default runMigrations(
       // country/employees companyFitScore in score-contact.ts.
       sql: `ALTER TABLE contacts ADD COLUMN hubspot_breeze_fit_score INTEGER`,
     },
+    {
+      version: 33,
+      name: "contacts-external-id-source-and-email-index",
+      // run-sourcing-rule-pipeline.ts's resolveContact() now runs on EVERY
+      // Prospector match immediately as pages arrive (not once at the end
+      // over a small accumulated batch) — its first, most-hit query is
+      // `WHERE external_id = ? AND source = ?`, an unindexed full table scan
+      // until now. Once a rule's candidate pool is mostly already-known,
+      // this query runs for every already-known match encountered while
+      // paging further to find genuinely new ones — live-confirmed: this
+      // combination is what caused a real "took too long and timed out"
+      // platform-level timeout right after that per-page-resolve change
+      // shipped. Also indexes LOWER(email) for the cross-source dedup
+      // query's email-match branch (its LIKE-based linkedin branch can't
+      // use a plain index either way — leading wildcard).
+      sql: `CREATE INDEX IF NOT EXISTS contacts_external_id_source_idx ON contacts(external_id, source);
+        CREATE INDEX IF NOT EXISTS contacts_email_lower_idx ON contacts(LOWER(email))`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );
