@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { localDatetimeValueToISO, toLocalDatetimeValue } from "@/lib/utils";
 
 export function meta() {
   return [{ title: "XDR Booking Agent" }];
@@ -305,8 +306,13 @@ export default function WorkflowRoute() {
                 </Label>
                 <Input
                   type="datetime-local"
-                  value={draft.meetingDatetime?.slice(0, 16) ?? ""}
-                  onChange={(e) => setDraft({ ...draft, meetingDatetime: e.target.value })}
+                  value={toLocalDatetimeValue(draft.meetingDatetime)}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      meetingDatetime: localDatetimeValueToISO(e.target.value) ?? "",
+                    })
+                  }
                   disabled={!isReview}
                 />
               </div>
