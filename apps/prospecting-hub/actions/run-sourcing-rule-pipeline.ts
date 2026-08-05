@@ -19,6 +19,7 @@ import {
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { searchIcpCompanies } from "../server/helpers/icp-filters.js";
+import { SCORING_TIME_BUDGET_MS, SEARCH_TIME_BUDGET_MS, withinTimeBudget } from "../server/helpers/invocation-budget.js";
 import { escapeLikePattern, normalizeLinkedinUrl } from "../server/helpers/normalize-linkedin-url.js";
 import { searchProspectorContacts, type ProspectorMatch } from "../server/helpers/prospector-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
@@ -149,6 +150,11 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async ({ ruleId, syncRecordId: requestedSyncRecordId }, ctx) => {
+    // Wall-clock budget for THIS invocation's own paging/scoring loops — see
+    // invocation-budget.ts for why count-based bounding (MAX_SEARCH_PAGES_
+    // PER_INVOCATION / SCORING_CHUNK_SIZE) alone isn't enough to stay under
+    // the platform's function timeout.
+    const invocationStartedAt = Date.now();
     const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
 
@@ -631,6 +637,15 @@ export default defineAction({
         const remainingNeeded = params.targetVolume - (params.recordsFoundSoFar + newCount);
         if (remainingNeeded <= 0) {
           searchDone = true;
+          break;
+        }
+        // MAX_SEARCH_PAGES_PER_INVOCATION bounds page COUNT, not wall-clock
+        // time — a slow (not failing) CommonRoom page can still blow the
+        // platform's function timeout well within that cap (see
+        // invocation-budget.ts). Stop and checkpoint instead of starting
+        // another page; searchDone stays false so this falls into the same
+        // early-checkpoint path as hitting the page cap.
+        if (!withinTimeBudget(invocationStartedAt, SEARCH_TIME_BUDGET_MS)) {
           break;
         }
 
@@ -1176,6 +1191,15 @@ export default defineAction({
       // empty and this loop is simply a no-op for this round; the aggregate
       // counts below still reflect the true current state either way.
       for (let i = 0; i < claimedRows.length; i += CONCURRENCY_LIMIT) {
+        // SCORING_CHUNK_SIZE/CONCURRENCY_LIMIT bound batch COUNT, not
+        // wall-clock time — same risk as the search loop above (see
+        // invocation-budget.ts). Stop scoring more of this invocation's
+        // claimed batch; unprocessed rows stay "claimed" and
+        // CLAIM_STALE_AFTER_MS above reclaims them on a later invocation,
+        // so no work is lost, just deferred.
+        if (!withinTimeBudget(invocationStartedAt, SCORING_TIME_BUDGET_MS)) {
+          break;
+        }
         const batch = claimedRows.slice(i, i + CONCURRENCY_LIMIT);
         await Promise.allSettled(batch.map((target) => scoreAndLinkTarget(target)));
       }
