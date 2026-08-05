@@ -1019,26 +1019,38 @@ function buildRunSummary(run: SourcingRuleRun, derived: DerivedRunStatus): strin
   const parts: string[] = [];
   if (foundCount) parts.push(`${foundCount} found`);
   if (run.scored) parts.push(`${run.scored} scored`);
-  const base = parts.length > 0 ? parts.join(" · ") : "No progress recorded";
+  const detail = parts.length > 0 ? parts.join(" · ") : "No progress recorded";
+
   const extras: string[] = [];
-  // A run's `imported` count only means "genuinely new" under the fixed
-  // resolveContact classification, which also always writes `alreadyKnown`
-  // to metadata. A run recorded before that fix has `alreadyKnown`
-  // undefined and its `imported` value conflated new + same-source
-  // rematches — labeling it "N new" would retroactively apply a meaning the
-  // run never actually measured. Gate the new/already-known pair on
-  // `alreadyKnown !== undefined` so only runs that ran under the fixed code
-  // get this more specific breakdown; older rows fall back to the original
-  // found/scored/deduped summary they always had.
-  if (run.alreadyKnown !== undefined) {
-    if (run.imported && run.imported > 0) extras.push(`${run.imported} new`);
-    if (run.alreadyKnown > 0) extras.push(`${run.alreadyKnown} already known`);
+  // A run's `imported`/`alreadyKnown` counts only mean what the labels below
+  // claim under the fixed resolveContact classification, which also always
+  // writes `alreadyKnown` to metadata. A run recorded before that fix has
+  // `alreadyKnown` undefined — gate on that so only runs that ran under the
+  // fixed code get this more specific breakdown.
+  if (run.alreadyKnown !== undefined && run.alreadyKnown > 0) {
+    extras.push(
+      foundCount != null && run.alreadyKnown === foundCount ? "all already known" : `${run.alreadyKnown} already known`,
+    );
   }
   if (run.deduped && run.deduped > 0) extras.push(`${run.deduped} deduped`);
   if (run.scoringErrorCount && run.scoringErrorCount > 0) {
     extras.push(`${run.scoringErrorCount} error${run.scoringErrorCount === 1 ? "" : "s"}`);
   }
-  return extras.length > 0 ? `${base}, ${extras.join(", ")}` : base;
+  const detailWithExtras = extras.length > 0 ? `${detail}, ${extras.join(", ")}` : detail;
+
+  if (run.alreadyKnown === undefined) return detailWithExtras;
+
+  // Lead with the ONE number people actually care about — is this run
+  // growing the list — instead of burying it after found/scored, where "N
+  // found · N scored" alone reads as forward progress even when 0 of those
+  // N were new. CommonRoom legitimately re-finds mostly-the-same people on
+  // every run once a rule's criteria pool is exhausted — that's expected,
+  // not a bug, but it needs to be obvious at a glance, not something you
+  // have to notice by comparing two numbers yourself.
+  const imported = run.imported ?? 0;
+  return imported === 0
+    ? `No new prospects — ${detailWithExtras}`
+    : `${imported} new prospect${imported === 1 ? "" : "s"} added — ${detailWithExtras}`;
 }
 
 // Surfaces exactly what a run searched CommonRoom for — the auto-derived
@@ -1138,7 +1150,9 @@ function RecentRunsSection({ ruleId }: { ruleId: string }) {
         {latest && latestDerived && (
           <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
             <RunStatusIcon derived={latestDerived} />
-            <span className="truncate">{formatRunTimestamp(latest.startedAt)}</span>
+            <span className="truncate">
+              {formatRunTimestamp(latest.startedAt)} · {buildRunSummary(latest, latestDerived)}
+            </span>
           </span>
         )}
         <span className="flex-1" />
