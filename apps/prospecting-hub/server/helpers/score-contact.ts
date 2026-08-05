@@ -1,6 +1,7 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { computeDeterministicCompanyFit } from "./company-fit.js";
 import { lookupCommonRoomSignals } from "./commonroom-engagement.js";
+import { LLM_CALL_TIMEOUT_MS } from "./invocation-budget.js";
 import { decodePersonaCriteria } from "./persona-sync.js";
 
 export interface PersonaForScoring {
@@ -130,7 +131,7 @@ export async function scoreContactAgainstPersonas(options: {
     // already uses for this exact class of problem, since a reasoning
     // model's internal token consumption isn't predictable from the visible
     // prompt alone no matter how generous the budget.
-    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 1200 });
+    const call = () => completeText({ systemPrompt, input, maxOutputTokens: 1200, timeoutMs: LLM_CALL_TIMEOUT_MS });
     const result = await runWithRequestContext(
       { userEmail: options.userEmail, orgId: options.orgId ?? undefined },
       call,

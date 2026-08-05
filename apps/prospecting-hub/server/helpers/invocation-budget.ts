@@ -18,16 +18,46 @@
 //     25s budget + ~40s worst-case page ≈ 65s, ~10s under the platform's
 //     75s function timeout for the checkpoint DB write and response.
 //   - Scoring: one batch runs CONCURRENCY_LIMIT contacts concurrently; each
-//     contact's CommonRoom cost is ~20s (warm lead-score-id cache) to ~40s
-//     (cold cache — only the first batch in a 5-minute window pays this).
-//     25s budget + ~40s worst-case batch ≈ 65s, same margin. This does NOT
-//     bound the LLM completeText() call each contact also makes — that has
-//     no explicit timeout anywhere in this codebase today, so a
-//     sufficiently slow model response can still exceed 75s regardless of
-//     this budget. That's a separate, pre-existing risk this fix doesn't
-//     attempt to close.
+//     contact makes a completeText() call (bounded to LLM_CALL_TIMEOUT_MS,
+//     20s — see below) followed by a CommonRoom engagement lookup, ~20s once
+//     the run-sourcing-rule-pipeline.ts scoring loop pre-warms the
+//     LeadScore-id cache once up front (see warmLeadScoreIdCache) instead of
+//     every contact separately racing to resolve it cold. Worst case per
+//     contact ≈ 20s (LLM) + 20s (warm-cache CommonRoom lookups) = 40s; since
+//     the batch runs those concurrently, the batch's own worst case is the
+//     same ~40s, not a multiple of it. 25s budget + ~40s worst-case batch ≈
+//     65s, same margin as search.
 export const SEARCH_TIME_BUDGET_MS = 25_000;
 export const SCORING_TIME_BUDGET_MS = 25_000;
+
+// completeText() (the LLM call underneath deriveProspectorFilters,
+// deriveIcpCompanyFilters, and scoreContactAgainstPersonas) accepts an
+// optional `timeoutMs`, but none of this pipeline's three call sites passed
+// one — live-confirmed: completeText has NO default internal timeout, so an
+// omitted timeoutMs leaves the call fully at the mercy of the model
+// provider's own response time, with no upper bound at all. Unlike the
+// CommonRoom search/scoring budgets above, this isn't "checked before
+// starting one more unit of work" — it's a genuinely unbounded hang that sits
+// entirely OUTSIDE SEARCH_TIME_BUDGET_MS's accounting: deriveProspectorFilters
+// runs once, in the fresh-start preamble, BEFORE the search loop's first
+// withinTimeBudget check even happens, so a slow model response there can by
+// itself consume the platform's entire 75s function timeout with recordsFound
+// still at 0 — exactly the "No progress recorded" timeout symptom seen live,
+// even after the search-page/DB-index fixes. Bounding every completeText()
+// call in this pipeline converts that indefinite hang into a fast, honest,
+// catchable error instead. Bounding these calls doesn't make the fresh-start
+// preamble itself budget-checked (searchIcpCompanies' own ICP-derivation
+// completeText() call, its ProspectorCompany MCP lookup, and
+// deriveProspectorFilters' completeText() call can all run before the search
+// loop's first withinTimeBudget check) — but it does make that preamble's
+// worst case a known, finite number (up to ~60s for an ICP-qualified rule
+// needing full auto-derivation: 20s + 20s + 20s) instead of unbounded. The
+// loop's own first budget check, comparing against invocationStartedAt (set
+// at the true top of the action, before any of this), correctly accounts for
+// whatever the preamble already spent: if it ran long, the loop simply
+// refuses to start a page and checkpoints immediately rather than compounding
+// on top of an already-large elapsed time.
+export const LLM_CALL_TIMEOUT_MS = 20_000;
 
 /** True while there's still budget left to start one more unit of work. */
 export function withinTimeBudget(

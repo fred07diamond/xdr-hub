@@ -17,6 +17,7 @@ import {
   syncRecords,
 } from "../server/db/schema.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
+import { warmLeadScoreIdCache } from "../server/helpers/commonroom-engagement.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { searchIcpCompanies } from "../server/helpers/icp-filters.js";
 import { SCORING_TIME_BUDGET_MS, SEARCH_TIME_BUDGET_MS, withinTimeBudget } from "../server/helpers/invocation-budget.js";
@@ -1251,6 +1252,24 @@ export default defineAction({
             .update(sourcingRuleRunTargets)
             .set({ status: "errored", error: message })
             .where(eq(sourcingRuleRunTargets.id, target.id));
+        }
+      }
+
+      // Pay the LeadScore-id resolution cost ONCE, sequentially, before the
+      // concurrent batch loop below — not per-contact. See
+      // warmLeadScoreIdCache's own comment for why: without this, every
+      // contact in a batch races to resolve it while the cache is cold,
+      // each independently paying the same ~20s MCP round-trip, which
+      // stacked on top of scoreContactAgainstPersonas' own now-bounded
+      // completeText() call could push a single batch's worst case close to
+      // the platform's function timeout. Best-effort — a failure here just
+      // means scoring falls back to resolving the cache per-contact as
+      // before, never a reason to fail the run.
+      if (claimedRows.length > 0) {
+        try {
+          await warmLeadScoreIdCache(ctx?.orgId);
+        } catch {
+          // best-effort, ignore
         }
       }
 

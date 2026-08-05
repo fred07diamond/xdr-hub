@@ -138,6 +138,28 @@ async function resolveLeadScoreIds(orgId: string | null | undefined): Promise<Re
   return ids;
 }
 
+// Pre-populates the LeadScore-id cache for `orgId` before a batch of
+// concurrent scoreContactAgainstPersonas calls starts. Without this, every
+// contact scored while the cache is still cold independently pays
+// resolveLeadScoreIds' own ~20s MCP round-trip (they're launched
+// concurrently, so they all race to resolve before any of them can cache the
+// result for the others) — stacked on top of scoreContactAgainstPersonas' own
+// now-bounded completeText() call, that pushed a single scoring batch's true
+// worst case to ~60s (20s LLM + 20s resolveLeadScoreIds + 20s concurrent
+// Contact/Organization lookups), too close to the platform's 75s function
+// timeout for run-sourcing-rule-pipeline.ts's SCORING_TIME_BUDGET_MS pre-
+// check to leave a safe margin. Calling this once, sequentially, before the
+// batch loop starts pays that ~20s cost exactly once per invocation instead
+// of once per concurrent contact, dropping the per-contact worst case back to
+// ~40s (20s LLM + 20s warm-cache CommonRoom lookups) — the same margin
+// invocation-budget.ts already documents for the search phase. Best-effort:
+// the caller should swallow a failure here and let scoring fall back to its
+// original per-contact resolution behavior rather than fail the whole run
+// over a cache-warming hiccup.
+export async function warmLeadScoreIdCache(orgId: string | null | undefined): Promise<void> {
+  await resolveLeadScoreIds(orgId);
+}
+
 function extractPercentile(entries: CommonRoomScoreEntry[] | undefined, targetId: string | null): number | null {
   if (!targetId) return null;
   const entry = (entries ?? []).find((e) => e.scoreId != null && normalizeLeadScoreId(e.scoreId) === targetId);

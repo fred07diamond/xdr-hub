@@ -2,6 +2,7 @@ import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { and, eq } from "@agent-native/core/db/schema";
 import { getDb } from "../db/index.js";
 import { personas, subPersonas } from "../db/schema.js";
+import { LLM_CALL_TIMEOUT_MS } from "./invocation-budget.js";
 import { decodePersonaCriteria } from "./persona-sync.js";
 
 export interface DerivedProspectorFilters {
@@ -92,7 +93,13 @@ export async function deriveProspectorFilters(options: {
     `- seniority: one of ${SENIORITY_LEVELS.map((s) => `"${s}"`).join(", ")}, or null if the criteria text gives no clear seniority signal — never guess a seniority level the doc doesn't support. This is where level/rank belongs, not in titleKeywords.\n\n` +
     'Reply with valid JSON only: { "titleKeywords": ["<discipline keyword 1>", ...], "seniority": "<one of the levels above, or null>" }';
 
-  const call = () => completeText({ systemPrompt, input: "Derive Prospector search parameters.", maxOutputTokens: 300 });
+  const call = () =>
+    completeText({
+      systemPrompt,
+      input: "Derive Prospector search parameters.",
+      maxOutputTokens: 300,
+      timeoutMs: LLM_CALL_TIMEOUT_MS,
+    });
   const result = await runWithRequestContext(
     { userEmail: options.userEmail, orgId: options.orgId ?? undefined },
     call,

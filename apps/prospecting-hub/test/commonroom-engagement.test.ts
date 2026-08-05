@@ -25,7 +25,7 @@ vi.mock("../server/helpers/commonroom-client.js", () => ({
   resolveServerId: (orgId: string | null | undefined) => `server:${orgId ?? "none"}`,
 }));
 
-import { lookupCommonRoomSignals } from "../server/helpers/commonroom-engagement.js";
+import { lookupCommonRoomSignals, warmLeadScoreIdCache } from "../server/helpers/commonroom-engagement.js";
 
 function mockCommonRoomResponses() {
   callMcpToolWithTimeout.mockImplementation((_serverId: string, _toolName: string, args: Record<string, unknown>) => {
@@ -115,5 +115,37 @@ describe("resolveLeadScoreIds caching (via lookupCommonRoomSignals)", () => {
     vi.advanceTimersByTime(2 * 60 * 1000);
     await lookupCommonRoomSignals({ orgId, fullName: "Jane Doe", companyName: "Acme" });
     expect(leadScoreCallCount()).toBe(2);
+  });
+});
+
+describe("warmLeadScoreIdCache", () => {
+  beforeEach(() => {
+    callMcpToolWithTimeout.mockReset();
+    mockCommonRoomResponses();
+  });
+
+  it("pre-populates the cache so a subsequent lookupCommonRoomSignals call doesn't re-fetch LeadScore IDs", async () => {
+    const orgId = "org-warm-test-1";
+
+    await warmLeadScoreIdCache(orgId);
+    expect(leadScoreCallCount()).toBe(1);
+
+    await lookupCommonRoomSignals({ orgId, fullName: "Jane Doe", companyName: "Acme" });
+    // The cache was already warm — this call should only do the per-contact
+    // Contact/Organization lookups, never re-resolve LeadScore IDs.
+    expect(leadScoreCallCount()).toBe(1);
+  });
+
+  it("lets concurrent scoring calls share one resolution instead of each racing to resolve it cold", async () => {
+    const orgId = "org-warm-test-2";
+
+    await warmLeadScoreIdCache(orgId);
+    await Promise.all([
+      lookupCommonRoomSignals({ orgId, fullName: "A", companyName: "Acme" }),
+      lookupCommonRoomSignals({ orgId, fullName: "B", companyName: "Acme" }),
+      lookupCommonRoomSignals({ orgId, fullName: "C", companyName: "Acme" }),
+      lookupCommonRoomSignals({ orgId, fullName: "D", companyName: "Acme" }),
+    ]);
+    expect(leadScoreCallCount()).toBe(1);
   });
 });

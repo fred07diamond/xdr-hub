@@ -2,6 +2,7 @@ import { completeText, getRequestContext, runWithRequestContext } from "@agent-n
 import { eq } from "@agent-native/core/db/schema";
 import { getDb } from "../db/index.js";
 import { icps } from "../db/schema.js";
+import { LLM_CALL_TIMEOUT_MS } from "./invocation-budget.js";
 import { decodePersonaCriteria } from "./persona-sync.js";
 import { searchProspectorCompanies, type ProspectorCompanyMatch } from "./prospector-client.js";
 
@@ -35,7 +36,13 @@ export async function deriveIcpCompanyFilters(icpText: string): Promise<DerivedI
   // userEmail/orgId with undefined; fall back to an empty context so
   // completeText still has an AsyncLocalStorage scope to read when called
   // from a non-request context (e.g. a cron job) with no ambient context at all.
-  const call = () => completeText({ systemPrompt, input: "Derive ICP company-search parameters.", maxOutputTokens: 200 });
+  const call = () =>
+    completeText({
+      systemPrompt,
+      input: "Derive ICP company-search parameters.",
+      maxOutputTokens: 200,
+      timeoutMs: LLM_CALL_TIMEOUT_MS,
+    });
   const result = await runWithRequestContext(getRequestContext() ?? {}, call);
 
   const raw = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();

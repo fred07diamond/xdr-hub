@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LLM_CALL_TIMEOUT_MS,
   SCORING_TIME_BUDGET_MS,
   SEARCH_TIME_BUDGET_MS,
   withinTimeBudget,
@@ -36,7 +37,12 @@ describe("time budgets leave a safety margin under the platform's function timeo
   // invocation-budget.ts's own comment for how each worst case was derived.
   const NETLIFY_FUNCTION_TIMEOUT_MS = 75_000;
   const SEARCH_PAGE_WORST_CASE_MS = 40_000; // one CommonRoom call + its one retry
-  const SCORING_BATCH_WORST_CASE_MS = 40_000; // cold-cache resolveLeadScoreIds + concurrent lookups
+  // One completeText() call (now bounded to LLM_CALL_TIMEOUT_MS) followed by
+  // a warm-cache CommonRoom engagement lookup (~20s) — the LeadScore-id
+  // resolution itself is pre-warmed once per invocation, outside this
+  // per-contact/per-batch worst case, by run-sourcing-rule-pipeline.ts's
+  // scoring loop (see warmLeadScoreIdCache).
+  const SCORING_BATCH_WORST_CASE_MS = LLM_CALL_TIMEOUT_MS + 20_000;
 
   it("search budget plus one worst-case page stays under the function timeout", () => {
     expect(SEARCH_TIME_BUDGET_MS + SEARCH_PAGE_WORST_CASE_MS).toBeLessThan(NETLIFY_FUNCTION_TIMEOUT_MS);
@@ -44,5 +50,9 @@ describe("time budgets leave a safety margin under the platform's function timeo
 
   it("scoring budget plus one worst-case batch stays under the function timeout", () => {
     expect(SCORING_TIME_BUDGET_MS + SCORING_BATCH_WORST_CASE_MS).toBeLessThan(NETLIFY_FUNCTION_TIMEOUT_MS);
+  });
+
+  it("the LLM call timeout itself is bounded and well under the function timeout", () => {
+    expect(LLM_CALL_TIMEOUT_MS).toBeLessThan(NETLIFY_FUNCTION_TIMEOUT_MS);
   });
 });
