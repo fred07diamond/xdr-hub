@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { localDatetimeValueToISO, toLocalDatetimeValue } from "@/lib/utils";
 
 export function meta() {
   return [{ title: "Meetings -- XDR Booking Agent" }];
@@ -214,17 +215,6 @@ function isCustomConferenceLink(link: string | null | undefined): boolean {
   return !!link && !/meet\.google\.com|calendar\.google\.com/.test(link);
 }
 
-function toLocalDatetimeValue(iso: string | null): string {
-  if (!iso) return "";
-  // datetime-local needs "YYYY-MM-DDTHH:mm" in LOCAL time. Slicing the UTC
-  // ISO string showed UTC in the form, which save re-interpreted as local —
-  // shifting the meeting by the UTC offset on every edit round-trip.
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 function MeetingCard({
   meeting: m,
   isExpanded,
@@ -309,9 +299,7 @@ function MeetingCard({
         prospectName: draft.prospectName || undefined,
         company: draft.company || undefined,
         prospectEmail: draft.prospectEmail || null,
-        meetingDatetime: draft.meetingDatetime
-          ? new Date(draft.meetingDatetime).toISOString()
-          : null,
+        meetingDatetime: localDatetimeValueToISO(draft.meetingDatetime),
         aeUserEmail: draft.aeUserEmail || undefined,
         // Zoom: leave the stored link alone — the booking action creates or
         // patches the Zoom meeting and saves its join link. Meet: clear it so
