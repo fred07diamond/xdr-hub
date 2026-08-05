@@ -1,5 +1,6 @@
 import { defineAction } from "@agent-native/core";
 import { and, desc, eq, inArray, isNull, or, sql } from "@agent-native/core/db/schema";
+import { resourceGetByPath, resourcePut } from "@agent-native/core/resources";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -23,6 +24,7 @@ import { searchProspectorContacts, type ProspectorMatch } from "../server/helper
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 import { assertSegmentWritable } from "../server/helpers/segment-access.js";
+import { backfillJobOrgId } from "../server/helpers/sourcing-rule-jobs.js";
 
 // Library-doc categories preferred as grounding context for the persona-
 // filter derivation prompt — a simple "prefer these categories" heuristic
@@ -163,6 +165,27 @@ export default defineAction({
       throw Object.assign(new Error("Only the sourcing rule's owner or a manager can run this rule's pipeline."), {
         statusCode: 403,
       });
+    }
+
+    // Self-heal rules whose job resource predates orgId being written at
+    // creation time (see create-sourcing-rule.ts): those jobs' SCHEDULED runs
+    // have no org context, so their CommonRoom MCP calls fail with "MCP tool
+    // is not available in this request scope" even though THIS invocation —
+    // reached via a live "Find prospects now" click — has a real ctx.orgId.
+    // Patch the job in place so its next scheduled run also has one. Never
+    // allowed to block the actual pipeline run.
+    if (ctx?.orgId && rule.jobResourcePath) {
+      try {
+        const jobResource = await resourceGetByPath(rule.ownerEmail, rule.jobResourcePath);
+        if (jobResource) {
+          const patched = backfillJobOrgId(jobResource.content, ctx.orgId);
+          if (patched !== jobResource.content) {
+            await resourcePut(rule.ownerEmail, rule.jobResourcePath, patched, jobResource.mimeType);
+          }
+        }
+      } catch {
+        // best-effort, ignore
+      }
     }
 
     // ── Resolve which sync_records row this invocation continues ───────────
