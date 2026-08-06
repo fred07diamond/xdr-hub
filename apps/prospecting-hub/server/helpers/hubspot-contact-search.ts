@@ -87,17 +87,34 @@ export async function searchHubSpotContacts(options: {
     (stage) => stageLabelToValue.get(stage.trim().toLowerCase()) ?? stage,
   );
 
-  const result = (await hubspotFetchWithTimeout("/crm/v3/objects/contacts/search", {
-    method: "POST",
-    body: JSON.stringify({
-      filterGroups: [
-        { filters: [{ propertyName: "lifecyclestage", operator: "IN", values: resolvedStageValues }] },
-      ],
-      properties: HUBSPOT_CONTACT_PROPERTIES,
-      limit: options.limit,
-      ...(options.cursor ? { after: options.cursor } : {}),
-    }),
-  })) as { results?: HubSpotContactRecord[]; paging?: { next?: { after?: string } } };
+  const searchBody = {
+    filterGroups: [{ filters: [{ propertyName: "lifecyclestage", operator: "IN", values: resolvedStageValues }] }],
+    properties: HUBSPOT_CONTACT_PROPERTIES,
+    limit: options.limit,
+    ...(options.cursor ? { after: options.cursor } : {}),
+  };
+
+  let result: { results?: HubSpotContactRecord[]; paging?: { next?: { after?: string } } };
+  try {
+    result = (await hubspotFetchWithTimeout("/crm/v3/objects/contacts/search", {
+      method: "POST",
+      body: JSON.stringify(searchBody),
+    })) as typeof result;
+  } catch (err) {
+    // TEMPORARY diagnostic (remove once the follow-on 400 is resolved): the
+    // shared hubspotFetchWithToken helper only surfaces HubSpot's top-level
+    // `message` field in the thrown error, discarding any field-level detail
+    // (`.errors[]`/`.category`) HubSpot's 400 responses usually include —
+    // logging the exact request that triggered it (cursor value especially)
+    // since this only started failing on invocations that got far enough to
+    // exercise `after`-cursor pagination or a resolved-stage-value search,
+    // neither previously reachable while every request found 0 raw matches.
+    console.log(
+      `[hubspot-contact-search] request failed: ${err instanceof Error ? err.message : String(err)}. ` +
+        `Request body: ${JSON.stringify(searchBody)}`,
+    );
+    throw err;
+  }
 
   const rawRecords = result.results ?? [];
   const nextCursor = result.paging?.next?.after;
