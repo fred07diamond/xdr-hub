@@ -1,7 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { and, desc, eq, sql } from "@agent-native/core/db/schema";
 import { resourceGetByPath, resourcePut } from "@agent-native/core/resources";
-import { hubspotFetch } from "@xdr-hub/shared/server";
+import { hubspotFetchWithTimeout } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -348,7 +348,7 @@ export default defineAction({
       // invocation rather than threading it through metadata.
       let portalId: number | null = null;
       try {
-        const info = (await hubspotFetch("/account-info/v3/details")) as { portalId?: number };
+        const info = (await hubspotFetchWithTimeout("/account-info/v3/details")) as { portalId?: number };
         portalId = info.portalId ?? null;
       } catch {
         // best-effort
