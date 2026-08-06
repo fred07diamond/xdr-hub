@@ -11,6 +11,7 @@ import {
 import { computeDeterministicCompanyFit } from "../server/helpers/company-fit.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
+import type { ApolloOrganization, ApolloPersonMatch } from "../server/helpers/apollo-client.js";
 
 export default defineAction({
   description:
@@ -28,19 +29,52 @@ export default defineAction({
       throw Object.assign(new Error(`Contact ${contactId} not found.`), { statusCode: 404 });
     }
 
-    const person = await matchApolloPerson({
-      name: contact.name,
-      companyName: contact.company,
-      email: contact.email,
-    });
+    // Person Match and Organization Enrich are independent Apollo endpoints
+    // with independently-scoped API-key permissions (live-confirmed: a key
+    // can be authorized for one and rejected with a 403 on the other) — each
+    // is wrapped separately so a scope/permission problem on one doesn't
+    // block whichever data the other still gets, same "partial signal beats
+    // no signal, never hard-fail the whole operation" discipline as
+    // lookupCommonRoomSignals/lookupHubSpotContactDetail elsewhere in this
+    // app. Failures are collected into `warnings` and returned to the caller
+    // instead of silently swallowed, since an authorization error (misconfigured
+    // key scope) needs to be visibly different from a normal "no match found"
+    // — the drawer surfaces these so an XDR knows to go fix the Apollo key
+    // rather than assume Apollo simply has no data on this person.
+    const warnings: string[] = [];
+
+    let person: ApolloPersonMatch | null = null;
+    try {
+      person = await matchApolloPerson({
+        name: contact.name,
+        companyName: contact.company,
+        email: contact.email,
+      });
+    } catch (err) {
+      warnings.push(`Person lookup: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     // Prefer the domain the person match's own nested organization returned
     // (a stronger match signal than company name alone) over falling back to
     // a name-only organization lookup.
-    const organization = await enrichApolloOrganization({
-      companyName: contact.company,
-      domain: person?.organization?.primary_domain ?? null,
-    });
+    let organization: ApolloOrganization | null = null;
+    try {
+      organization = await enrichApolloOrganization({
+        companyName: contact.company,
+        domain: person?.organization?.primary_domain ?? null,
+      });
+    } catch (err) {
+      warnings.push(`Organization lookup: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Both endpoints failed outright (not just "no match") — most likely an
+    // invalid/unconfigured key entirely, not a per-endpoint scope gap. Surface
+    // this as a real, actionable error (statusCode tagged so it reaches the
+    // client as written, not sanitized to a generic 500 — see sync-hubspot.ts's
+    // own precedent) rather than silently "succeeding" with nothing enriched.
+    if (warnings.length === 2) {
+      throw Object.assign(new Error(`Apollo enrichment failed: ${warnings.join("; ")}`), { statusCode: 502 });
+    }
 
     const apolloCompanyFitScore = computeDeterministicCompanyFit({
       country: organization?.country,
@@ -120,6 +154,6 @@ export default defineAction({
       })
       .where(eq(contacts.id, contactId));
 
-    return { contactId, apolloEnrichedAt: now, ...score };
+    return { contactId, apolloEnrichedAt: now, warnings, ...score };
   },
 });

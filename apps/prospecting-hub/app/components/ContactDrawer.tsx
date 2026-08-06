@@ -209,7 +209,14 @@ export function ContactDrawer({
     if (!contactId) return;
     setApolloError(null);
     try {
-      await enrichApollo.mutateAsync({ contactId });
+      const result = (await enrichApollo.mutateAsync({ contactId })) as { warnings?: string[] };
+      // A per-endpoint warning (e.g. an Apollo API key missing scope for one
+      // of the two lookups) is a partial success, not a thrown error — still
+      // surface it so an XDR knows to go fix the Apollo key instead of
+      // assuming Apollo simply has no data on this person.
+      if (result.warnings && result.warnings.length > 0) {
+        setApolloError(result.warnings.join(" · "));
+      }
       refetch();
     } catch (err) {
       setApolloError(err instanceof Error ? err.message : "Couldn't enrich this contact with Apollo.");
