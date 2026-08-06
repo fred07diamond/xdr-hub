@@ -18,30 +18,35 @@ export interface HubSpotContactSearchResult {
   hasMore: boolean;
 }
 
-// TEMPORARY diagnostic (remove once the "0 contacts" report is resolved):
-// live-confirmed lifecyclestage IN ["RAW","MEL","QL"] returns 0 raw matches
-// even with no company filter applied at all — the rule's configured stage
-// values may not be this property's actual internal option values (a custom
-// enumeration property's internal `value` can differ from its displayed
-// `label` in HubSpot's UI). Fetches the property's real configured options
-// once per cold start (module-level flag, not per-page) and logs them so the
-// stored values can be compared directly against what's actually valid.
-let _loggedLifecycleStageOptions = false;
-async function logLifecycleStageOptionsOnce(): Promise<void> {
-  if (_loggedLifecycleStageOptions) return;
-  _loggedLifecycleStageOptions = true;
-  try {
-    const prop = (await hubspotFetchWithTimeout("/crm/v3/properties/contacts/lifecyclestage")) as {
-      options?: Array<{ label?: string; value?: string; hidden?: boolean }>;
-    };
-    console.log(
-      `[hubspot-contact-search] lifecyclestage property options: ${JSON.stringify(prop.options ?? [])}`,
-    );
-  } catch (err) {
-    console.log(
-      `[hubspot-contact-search] failed to fetch lifecyclestage property definition: ${err instanceof Error ? err.message : String(err)}`,
-    );
+// Live-confirmed (via HubSpot's own property-definition endpoint) that this
+// portal's `lifecyclestage` is a custom enumeration whose internal filter
+// `value` is a numeric ID completely different from its displayed `label` —
+// e.g. label "RAW" has internal value "152478580", "MEL" is "152484760", etc.
+// A normal GET/read of a contact's `lifecyclestage` (sync-hubspot.ts,
+// contacts.lifecycleStage) returns the LABEL — a known HubSpot quirk specific
+// to this one property — which is also naturally what a human configuring a
+// Marketing rule would type/select. But the Search API's `IN` filter matches
+// against the internal VALUE, not the label: sending "RAW" as a filter value
+// live-confirmed 0 matches even though contacts with that stage genuinely
+// exist. Resolving label -> value here, right before building the filter, so
+// every other part of the app (display, storage, rule configuration) keeps
+// working with the human-readable label it already uses.
+const LIFECYCLE_STAGE_MAP_CACHE_TTL_MS = 10 * 60_000;
+let _lifecycleStageMapCache: { map: Map<string, string>; expiresAt: number } | null = null;
+
+async function resolveLifecycleStageLabelToValue(): Promise<Map<string, string>> {
+  if (_lifecycleStageMapCache && Date.now() < _lifecycleStageMapCache.expiresAt) {
+    return _lifecycleStageMapCache.map;
   }
+  const prop = (await hubspotFetchWithTimeout("/crm/v3/properties/contacts/lifecyclestage")) as {
+    options?: Array<{ label?: string; value?: string }>;
+  };
+  const map = new Map<string, string>();
+  for (const opt of prop.options ?? []) {
+    if (opt.label && opt.value) map.set(opt.label.trim().toLowerCase(), opt.value);
+  }
+  _lifecycleStageMapCache = { map, expiresAt: Date.now() + LIFECYCLE_STAGE_MAP_CACHE_TTL_MS };
+  return map;
 }
 
 // Company allow/deny is deliberately NOT pushed into the server-side
@@ -71,13 +76,22 @@ export async function searchHubSpotContacts(options: {
   limit: number; // page size hint for THIS ONE call, not the overall target
   cursor?: string;
 }): Promise<HubSpotContactSearchResult> {
-  await logLifecycleStageOptionsOnce();
+  const stageLabelToValue = await resolveLifecycleStageLabelToValue();
+  // Falls back to the raw configured string when a stage isn't found in the
+  // live options map (e.g. a genuinely stale/renamed stage) rather than
+  // dropping it silently — an unresolved value still fails the same way the
+  // bug being fixed here did, but resolution failures should be visible in
+  // that stage simply never matching, not swallowed into "resolved to
+  // nothing" and quietly narrowing the filter.
+  const resolvedStageValues = options.lifecycleStages.map(
+    (stage) => stageLabelToValue.get(stage.trim().toLowerCase()) ?? stage,
+  );
 
   const result = (await hubspotFetchWithTimeout("/crm/v3/objects/contacts/search", {
     method: "POST",
     body: JSON.stringify({
       filterGroups: [
-        { filters: [{ propertyName: "lifecyclestage", operator: "IN", values: options.lifecycleStages }] },
+        { filters: [{ propertyName: "lifecyclestage", operator: "IN", values: resolvedStageValues }] },
       ],
       properties: HUBSPOT_CONTACT_PROPERTIES,
       limit: options.limit,
@@ -87,18 +101,6 @@ export async function searchHubSpotContacts(options: {
 
   const rawRecords = result.results ?? [];
   const nextCursor = result.paging?.next?.after;
-
-  // TEMPORARY diagnostic (remove once the "0 contacts" report is resolved):
-  // distinguishes "HubSpot genuinely has no lifecycle-stage matches at all"
-  // from "matches exist but the allow/deny filter is excluding all of them"
-  // — the two look identical from the run-history UI's "No new prospects"
-  // text alone, and this exact ambiguity is what's currently being debugged
-  // live.
-  if (rawRecords.length === 0) {
-    console.log(
-      `[hubspot-contact-search] lifecycleStages=${JSON.stringify(options.lifecycleStages)} returned 0 raw matches from HubSpot on this page (cursor=${options.cursor ?? "none"}).`,
-    );
-  }
 
   const allowList = new Set(
     (options.companyAllowList ?? []).map(normalizeCompanyName).filter((c): c is string => c !== null),
@@ -114,13 +116,6 @@ export async function searchHubSpotContacts(options: {
       if (denyList.size > 0 && company && denyList.has(company)) return false;
       return true;
     });
-    if (rawRecords.length > 0 && records.length === 0) {
-      console.log(
-        `[hubspot-contact-search] allow/deny filter excluded ALL ${rawRecords.length} lifecycle-stage matches on this page. ` +
-          `Sample raw company values: ${JSON.stringify(rawRecords.slice(0, 10).map((r) => r.properties.company ?? null))}. ` +
-          `Allow list (normalized, first 10): ${JSON.stringify([...allowList].slice(0, 10))}`,
-      );
-    }
   }
 
   return { records, nextCursor, hasMore: Boolean(nextCursor) };
