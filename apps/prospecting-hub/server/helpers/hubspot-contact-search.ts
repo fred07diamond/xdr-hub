@@ -57,8 +57,20 @@ export async function searchHubSpotContacts(options: {
     }),
   })) as { results?: HubSpotContactRecord[]; paging?: { next?: { after?: string } } };
 
-  let records = result.results ?? [];
+  const rawRecords = result.results ?? [];
   const nextCursor = result.paging?.next?.after;
+
+  // TEMPORARY diagnostic (remove once the "0 contacts" report is resolved):
+  // distinguishes "HubSpot genuinely has no lifecycle-stage matches at all"
+  // from "matches exist but the allow/deny filter is excluding all of them"
+  // — the two look identical from the run-history UI's "No new prospects"
+  // text alone, and this exact ambiguity is what's currently being debugged
+  // live.
+  if (rawRecords.length === 0) {
+    console.log(
+      `[hubspot-contact-search] lifecycleStages=${JSON.stringify(options.lifecycleStages)} returned 0 raw matches from HubSpot on this page (cursor=${options.cursor ?? "none"}).`,
+    );
+  }
 
   const allowList = new Set(
     (options.companyAllowList ?? []).map(normalizeCompanyName).filter((c): c is string => c !== null),
@@ -66,13 +78,21 @@ export async function searchHubSpotContacts(options: {
   const denyList = new Set(
     (options.companyDenyList ?? []).map(normalizeCompanyName).filter((c): c is string => c !== null),
   );
+  let records = rawRecords;
   if (allowList.size > 0 || denyList.size > 0) {
-    records = records.filter((r) => {
+    records = rawRecords.filter((r) => {
       const company = normalizeCompanyName(r.properties.company);
       if (allowList.size > 0 && (!company || !allowList.has(company))) return false;
       if (denyList.size > 0 && company && denyList.has(company)) return false;
       return true;
     });
+    if (rawRecords.length > 0 && records.length === 0) {
+      console.log(
+        `[hubspot-contact-search] allow/deny filter excluded ALL ${rawRecords.length} lifecycle-stage matches on this page. ` +
+          `Sample raw company values: ${JSON.stringify(rawRecords.slice(0, 10).map((r) => r.properties.company ?? null))}. ` +
+          `Allow list (normalized, first 10): ${JSON.stringify([...allowList].slice(0, 10))}`,
+      );
+    }
   }
 
   return { records, nextCursor, hasMore: Boolean(nextCursor) };
