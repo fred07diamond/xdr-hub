@@ -18,6 +18,32 @@ export interface HubSpotContactSearchResult {
   hasMore: boolean;
 }
 
+// TEMPORARY diagnostic (remove once the "0 contacts" report is resolved):
+// live-confirmed lifecyclestage IN ["RAW","MEL","QL"] returns 0 raw matches
+// even with no company filter applied at all — the rule's configured stage
+// values may not be this property's actual internal option values (a custom
+// enumeration property's internal `value` can differ from its displayed
+// `label` in HubSpot's UI). Fetches the property's real configured options
+// once per cold start (module-level flag, not per-page) and logs them so the
+// stored values can be compared directly against what's actually valid.
+let _loggedLifecycleStageOptions = false;
+async function logLifecycleStageOptionsOnce(): Promise<void> {
+  if (_loggedLifecycleStageOptions) return;
+  _loggedLifecycleStageOptions = true;
+  try {
+    const prop = (await hubspotFetchWithTimeout("/crm/v3/properties/contacts/lifecyclestage")) as {
+      options?: Array<{ label?: string; value?: string; hidden?: boolean }>;
+    };
+    console.log(
+      `[hubspot-contact-search] lifecyclestage property options: ${JSON.stringify(prop.options ?? [])}`,
+    );
+  } catch (err) {
+    console.log(
+      `[hubspot-contact-search] failed to fetch lifecyclestage property definition: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 // Company allow/deny is deliberately NOT pushed into the server-side
 // filterGroups below — live-confirmed a real rule with a ~90-company allow
 // list returned ZERO contacts despite genuinely-qualifying contacts existing
@@ -45,6 +71,8 @@ export async function searchHubSpotContacts(options: {
   limit: number; // page size hint for THIS ONE call, not the overall target
   cursor?: string;
 }): Promise<HubSpotContactSearchResult> {
+  await logLifecycleStageOptionsOnce();
+
   const result = (await hubspotFetchWithTimeout("/crm/v3/objects/contacts/search", {
     method: "POST",
     body: JSON.stringify({
