@@ -73,6 +73,14 @@ interface ApolloPersonMatchResponse {
 
 // Defensively parsed: a no-match is a normal, expected outcome (null), never
 // an error — same discipline as this app's CommonRoom/HubSpot lookups.
+//
+// Live-confirmed this workspace's currently-connected API key returns 403
+// API_INACCESSIBLE on this endpoint (scoped for organization search only,
+// not person-level lookups) — enrich-contact-with-apollo.ts's per-endpoint
+// warning handling surfaces that clearly rather than failing the whole
+// enrichment. Broadening the key's scope in Apollo's dashboard to include
+// People Match is the only way to make this endpoint work; no code change
+// here would fix a scope-denied key.
 export async function matchApolloPerson(options: {
   name: string;
   companyName?: string | null;
@@ -95,10 +103,19 @@ export interface ApolloFundingEvent {
   investors?: string[];
 }
 
-// Apollo's Organization Enrichment response (GET /organizations/enrich) —
-// fields confirmed against the live API reference. Live-confirmed there is
-// NO intent/score field anywhere in this response — see
-// extractApolloIntentScore below.
+// Sourced from POST /organizations/search, not GET /organizations/enrich —
+// live-confirmed against this workspace's actual connected API key that
+// /organizations/enrich (and /people/match, /people/search,
+// /mixed_people/search) return 403 API_INACCESSIBLE ("not authorized...
+// configured scope"), while /organizations/search is accessible. /search
+// returns the same core firmographic fields /enrich would (industry,
+// estimated_num_employees, country) plus real intent fields this session
+// didn't expect to find (see extractApolloIntentScore) — but live-confirmed
+// it does NOT return total_funding/latest_funding_stage/funding_events/
+// technology_names at all (present in /enrich's documented schema, absent
+// from every /search response observed). Those four fields stay optional
+// here and will simply read as null/undefined via this code path — only a
+// key with /organizations/enrich access would ever populate them.
 export interface ApolloOrganization {
   industry?: string;
   estimated_num_employees?: number;
@@ -110,37 +127,50 @@ export interface ApolloOrganization {
   linkedin_url?: string;
 }
 
-interface ApolloOrganizationEnrichResponse {
-  organization?: ApolloOrganization | null;
+interface ApolloOrganizationSearchResponse {
+  organizations?: ApolloOrganization[];
 }
 
+// Domain search (q_organization_domains) is a tight, effectively-exact match
+// — live-confirmed a single domain returns exactly that company. Name search
+// (q_organization_name) is a much looser substring/relevance match — live-
+// confirmed "Nike" returned 354 total results including unrelated companies
+// with "Nike" in their name, Apollo's own top-ranked result being the real
+// Nike. Preferring an exact case-insensitive name match over the raw
+// top-ranked result when one exists, falling back to the top result
+// otherwise — same "prefer exact match, fall back to the best available
+// single result" discipline as commonroom-engagement.ts's own contact/org
+// matching cascade.
 export async function enrichApolloOrganization(options: {
   companyName?: string | null;
   domain?: string | null;
 }): Promise<ApolloOrganization | null> {
-  const params = new URLSearchParams();
-  if (options.domain) params.set("domain", options.domain);
-  if (options.companyName) params.set("name", options.companyName);
-  if ([...params.keys()].length === 0) return null;
-  const result = (await apolloFetch(`/organizations/enrich?${params.toString()}`)) as ApolloOrganizationEnrichResponse;
-  return result.organization ?? null;
+  if (!options.domain && !options.companyName) return null;
+  const body: Record<string, unknown> = options.domain
+    ? { q_organization_domains: [options.domain], page: 1, per_page: 1 }
+    : { q_organization_name: options.companyName, page: 1, per_page: 5 };
+  const result = (await apolloFetch("/organizations/search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  })) as ApolloOrganizationSearchResponse;
+  const organizations = result.organizations ?? [];
+  if (organizations.length === 0) return null;
+  const companyLower = options.companyName?.trim().toLowerCase();
+  const exactMatch = companyLower
+    ? organizations.find((o) => (o as { name?: string }).name?.trim().toLowerCase() === companyLower)
+    : undefined;
+  return exactMatch ?? organizations[0];
 }
 
-// Apollo's real intent data (Bombora-powered topic-surge signals) is NOT
-// present in either /people/match's or /organizations/enrich's documented
-// response schema — confirmed via a live fetch of Apollo's own API
-// reference during this feature's design. It appears to live behind a
-// separate, higher-tier feature this environment has no way to verify
-// against a real Apollo connection. Rather than fabricate an undocumented
-// endpoint, this looks for a couple of plausible field names defensively and
-// returns null otherwise — most Apollo plans will show no Intent Score
-// rather than a guessed/invented one. If your Apollo plan does expose intent
-// data and this stays null, the actual field name will need to be confirmed
-// live and added here.
+// Apollo's Bombora-powered intent data DOES exist and IS reachable — live-
+// confirmed `intent_strength`/`show_intent`/`has_intent_signal_account` come
+// back on /organizations/search results (this session's org didn't have an
+// active intent signal, so the live example observed was null/false — the
+// field's actual populated shape/range when a real signal exists is still
+// unconfirmed). Defensively parsed regardless: a non-numeric or absent value
+// resolves to null, never a guessed/invented score.
 export function extractApolloIntentScore(organization: ApolloOrganization | null): number | null {
-  const raw =
-    (organization as unknown as { intent_strength?: unknown } | null)?.intent_strength ??
-    (organization as unknown as { intent_score?: unknown } | null)?.intent_score;
+  const raw = (organization as unknown as { intent_strength?: unknown } | null)?.intent_strength;
   if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
   return Math.max(0, Math.min(100, Math.round(raw)));
 }
