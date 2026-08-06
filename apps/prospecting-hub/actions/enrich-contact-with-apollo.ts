@@ -68,12 +68,18 @@ export default defineAction({
     }
 
     // Both endpoints failed outright (not just "no match") — most likely an
-    // invalid/unconfigured key entirely, not a per-endpoint scope gap. Surface
-    // this as a real, actionable error (statusCode tagged so it reaches the
-    // client as written, not sanitized to a generic 500 — see sync-hubspot.ts's
-    // own precedent) rather than silently "succeeding" with nothing enriched.
+    // invalid/unconfigured key entirely, not a per-endpoint scope gap.
+    // Returned as a normal response (not thrown) with the real Apollo error
+    // text in `warnings` — live-confirmed that a thrown error here reaches
+    // the client sanitized to a generic "Internal server error" regardless
+    // of statusCode, the same way rescore-contacts.ts/score-contacts.ts
+    // return an `error` field in their normal response rather than throwing
+    // for an expected "nothing to do" case. Deliberately does NOT touch
+    // apolloEnrichedAt or re-run scoring — nothing actually changed, so the
+    // drawer should keep showing the "Enrich with Apollo" CTA, not an
+    // enriched-with-zero-fields state.
     if (warnings.length === 2) {
-      throw Object.assign(new Error(`Apollo enrichment failed: ${warnings.join("; ")}`), { statusCode: 502 });
+      return { contactId, apolloEnrichedAt: contact.apolloEnrichedAt, warnings };
     }
 
     const apolloCompanyFitScore = computeDeterministicCompanyFit({
