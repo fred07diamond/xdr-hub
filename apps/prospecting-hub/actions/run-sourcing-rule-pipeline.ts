@@ -206,12 +206,46 @@ export default defineAction({
 
     if (requestedSyncRecordId) {
       const rows = await db
-        .select({ id: syncRecords.id, sourcingRuleId: syncRecords.sourcingRuleId, status: syncRecords.status, metadata: syncRecords.metadata })
+        .select({
+          id: syncRecords.id,
+          sourcingRuleId: syncRecords.sourcingRuleId,
+          status: syncRecords.status,
+          metadata: syncRecords.metadata,
+          startedAt: syncRecords.startedAt,
+        })
         .from(syncRecords)
         .where(eq(syncRecords.id, requestedSyncRecordId))
         .limit(1);
       const row = rows[0];
-      if (!row || row.sourcingRuleId !== ruleId || row.status !== "running") {
+      // Same RUN_STALE_AFTER_MS staleness formula as the no-syncRecordId
+      // branch below — without it, a genuinely stuck invocation (stuck
+      // mid-await, never reaching this action's own top-level catch to mark
+      // itself "failed") left `status` at "running" forever, so the
+      // once-a-minute continuation job (buildRunContinuationJobContent)
+      // kept re-entering runPipelineBody() on this SAME syncRecordId every
+      // tick indefinitely — stacking concurrent invocations against an
+      // already-stuck resource instead of ever giving up on it. Marking it
+      // failed here means the NEXT tick after staleness gets the same clean
+      // "not a resumable, in-progress run" error the job's own instructions
+      // already know to treat as done, not something to retry.
+      const startedMs = row?.startedAt ? new Date(row.startedAt).getTime() : NaN;
+      const isRequestedStale = !Number.isNaN(startedMs) && Date.now() - startedMs > RUN_STALE_AFTER_MS;
+      if (isRequestedStale && row) {
+        await db
+          .update(syncRecords)
+          .set({
+            status: "failed",
+            completedAt: new Date().toISOString(),
+            error: "Run abandoned — exceeded execution window without completing.",
+          })
+          .where(eq(syncRecords.id, row.id));
+        try {
+          await db.delete(sourcingRuleRunTargets).where(eq(sourcingRuleRunTargets.syncRecordId, row.id));
+        } catch {
+          // best-effort, ignore
+        }
+      }
+      if (!row || row.sourcingRuleId !== ruleId || row.status !== "running" || isRequestedStale) {
         throw Object.assign(
           new Error(`Sync record ${requestedSyncRecordId} is not a resumable, in-progress run for rule ${ruleId}.`),
           { statusCode: 404 },

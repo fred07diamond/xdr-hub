@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, syncRecords } from "../server/db/schema.js";
-import { hubspotFetch } from "@xdr-hub/shared/server";
+import { hubspotFetchWithTimeout } from "@xdr-hub/shared/server";
 import { HUBSPOT_CONTACT_PROPERTIES } from "../server/helpers/hubspot-contact-properties.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
@@ -58,7 +58,7 @@ export default defineAction({
       // Portal ID for constructing direct HubSpot links (best-effort).
       let portalId: number | null = null;
       try {
-        const info = (await hubspotFetch("/account-info/v3/details")) as { portalId?: number };
+        const info = (await hubspotFetchWithTimeout("/account-info/v3/details")) as { portalId?: number };
         portalId = info.portalId ?? null;
       } catch { /* best-effort */ }
 
@@ -72,7 +72,7 @@ export default defineAction({
         });
         if (after) params.set("after", after);
 
-        const page = (await hubspotFetch(`/crm/v3/objects/contacts?${params.toString()}`)) as {
+        const page = (await hubspotFetchWithTimeout(`/crm/v3/objects/contacts?${params.toString()}`)) as {
           results?: HubSpotContact[];
           paging?: { next?: { after?: string } };
         };
@@ -96,7 +96,7 @@ export default defineAction({
       try {
         for (const group of chunk(pulled, BATCH_SIZE)) {
           if (group.length === 0) continue;
-          const assocRes = (await hubspotFetch(`/crm/v4/associations/contacts/companies/batch/read`, {
+          const assocRes = (await hubspotFetchWithTimeout(`/crm/v4/associations/contacts/companies/batch/read`, {
             method: "POST",
             body: JSON.stringify({ inputs: group.map((c) => ({ id: c.id })) }),
           })) as { results?: Array<{ from?: { id?: string }; to?: Array<{ toObjectId?: string | number }> }> };
@@ -113,7 +113,7 @@ export default defineAction({
         const uniqueCompanyIds = Array.from(new Set(contactIdToCompanyId.values()));
         for (const group of chunk(uniqueCompanyIds, BATCH_SIZE)) {
           if (group.length === 0) continue;
-          const companyRes = (await hubspotFetch(`/crm/v3/objects/companies/batch/read`, {
+          const companyRes = (await hubspotFetchWithTimeout(`/crm/v3/objects/companies/batch/read`, {
             method: "POST",
             body: JSON.stringify({ inputs: group.map((id) => ({ id })), properties: ["country", "numberofemployees"] }),
           })) as { results?: Array<{ id: string; properties?: Record<string, string | undefined> }> };

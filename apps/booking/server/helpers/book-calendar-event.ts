@@ -6,6 +6,14 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CALENDAR_EVENTS_URL =
   "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all";
 const MEETING_DURATION_MIN = 45;
+// A Google access token is only good for ~1hr, so any request made after the
+// app has sat idle for a day always hits this refresh path — unlike
+// commonroom-client.ts's callMcpToolWithTimeout and hubspot-client.ts's
+// hubspotFetchWithTimeout, this fetch() had no timeout at all, so a stalled
+// token-endpoint request (plausible right after a long idle period) left the
+// awaiting action, and the whole page load driving it, hanging indefinitely
+// with no error. Same 20s convention as those two.
+const GOOGLE_TOKEN_TIMEOUT_MS = 20_000;
 
 async function refreshAccessToken(refreshToken: string): Promise<string | null> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -20,6 +28,7 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
       client_secret: clientSecret,
       grant_type: "refresh_token",
     }),
+    signal: AbortSignal.timeout(GOOGLE_TOKEN_TIMEOUT_MS),
   });
   if (!res.ok) return null;
   const data = (await res.json()) as { access_token?: string };
