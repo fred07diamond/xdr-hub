@@ -34,6 +34,16 @@ interface ContactDetail {
   hubspotQlScore: number | null;
   commonRoomIntentScore: number | null;
   commonRoomCompanyFitScore: number | null;
+  apolloCompanyFitScore: number | null;
+  apolloIntentScore: number | null;
+  apolloSeniority: string | null;
+  apolloTitle: string | null;
+  apolloEmailStatus: string | null;
+  apolloIndustry: string | null;
+  apolloEmployeeCount: number | null;
+  apolloFundingStage: string | null;
+  apolloTotalFunding: number | null;
+  apolloEnrichedAt: string | null;
   overallScore: number | null;
   scoreReasoning: string | null;
   status: "active" | "actioned";
@@ -103,12 +113,12 @@ function SectionHeading({ children }: { children: ReactNode }) {
 }
 
 // Bordered-cell grid matching the Score section's own cell style, so the
-// HubSpot section reads as one more data panel rather than plain stacked
-// label/value text. `caption` labels a sub-group (e.g. "Contact" vs.
+// HubSpot/Apollo sections read as one more data panel rather than plain
+// stacked label/value text. `caption` labels a sub-group (e.g. "Contact" vs.
 // "Company") only when both are present at once — otherwise the section
-// heading alone already says "HubSpot" and a repeated per-field suffix
-// like "(Company)" would just be noise.
-function HubSpotFieldGrid({ caption, fields }: { caption?: string; fields: HubSpotField[] }) {
+// heading alone already says which source it is and a repeated per-field
+// suffix like "(Company)" would just be noise.
+function FieldGrid({ caption, fields }: { caption?: string; fields: HubSpotField[] }) {
   return (
     <div>
       {caption && <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{caption}</p>}
@@ -192,6 +202,20 @@ export function ContactDrawer({
     }
   }
 
+  const enrichApollo = useActionMutation("enrich-contact-with-apollo");
+  const [apolloError, setApolloError] = useState<string | null>(null);
+
+  async function handleEnrichApollo() {
+    if (!contactId) return;
+    setApolloError(null);
+    try {
+      await enrichApollo.mutateAsync({ contactId });
+      refetch();
+    } catch (err) {
+      setApolloError(err instanceof Error ? err.message : "Couldn't enrich this contact with Apollo.");
+    }
+  }
+
   const { data: personaData } = useActionQuery("list-personas", {}, { enabled: open });
   const personaById = new Map(
     ((personaData as { personas?: PersonaOption[] })?.personas ?? []).map((p) => [p.id, p]),
@@ -205,6 +229,20 @@ export function ContactDrawer({
     (data as { hubspotEnrichment?: HubSpotEnrichment | null })?.hubspotEnrichment ?? null;
 
   const persona = contact?.personaId ? personaById.get(contact.personaId) : undefined;
+
+  const apolloFields: HubSpotField[] = contact
+    ? ([
+        contact.apolloTitle ? { label: "Title (Apollo)", value: contact.apolloTitle } : null,
+        contact.apolloSeniority ? { label: "Seniority", value: contact.apolloSeniority } : null,
+        contact.apolloEmailStatus ? { label: "Email status", value: contact.apolloEmailStatus } : null,
+        contact.apolloIndustry ? { label: "Industry", value: contact.apolloIndustry } : null,
+        contact.apolloEmployeeCount != null ? { label: "Employees", value: String(contact.apolloEmployeeCount) } : null,
+        contact.apolloFundingStage ? { label: "Funding stage", value: contact.apolloFundingStage } : null,
+        contact.apolloTotalFunding != null
+          ? { label: "Total funding", value: `$${contact.apolloTotalFunding.toLocaleString()}` }
+          : null,
+      ].filter((f): f is HubSpotField => f !== null))
+    : [];
 
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
@@ -311,6 +349,14 @@ export function ContactDrawer({
                   <span className="text-muted-foreground">CR Company Fit</span>
                   <ScorePill score={contact.commonRoomCompanyFitScore} info={SCORE_INFO.commonRoomCompanyFit} />
                 </div>
+                <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
+                  <span className="text-muted-foreground">Apollo Company Fit</span>
+                  <ScorePill score={contact.apolloCompanyFitScore} info={SCORE_INFO.apolloCompanyFit} />
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5">
+                  <span className="text-muted-foreground">Apollo Intent</span>
+                  <ScorePill score={contact.apolloIntentScore} info={SCORE_INFO.apolloIntent} />
+                </div>
               </div>
               {contact.scoreReasoning && (
                 <p className="mt-2 text-xs text-muted-foreground/80">{contact.scoreReasoning}</p>
@@ -344,19 +390,72 @@ export function ContactDrawer({
                     </a>
                   )}
                   {hubspotEnrichment.contactFields.length > 0 && (
-                    <HubSpotFieldGrid
+                    <FieldGrid
                       caption={hubspotEnrichment.companyFields.length > 0 ? "Contact" : undefined}
                       fields={hubspotEnrichment.contactFields}
                     />
                   )}
                   {hubspotEnrichment.companyFields.length > 0 && (
-                    <HubSpotFieldGrid
+                    <FieldGrid
                       caption={hubspotEnrichment.contactFields.length > 0 ? "Company" : undefined}
                       fields={hubspotEnrichment.companyFields}
                     />
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Apollo enrichment — on-demand only (never automatic), unlike
+                the HubSpot/CommonRoom sections above. A contact with no
+                apolloEnrichedAt has simply never been enriched yet, not a
+                lookup failure — so this shows a CTA rather than an empty
+                state. */}
+            <div>
+              <SectionHeading>Apollo</SectionHeading>
+              {!contact.apolloEnrichedAt ? (
+                <button
+                  type="button"
+                  onClick={handleEnrichApollo}
+                  disabled={enrichApollo.isPending}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                >
+                  {enrichApollo.isPending ? (
+                    <IconLoader2 size={13} className="animate-spin" />
+                  ) : (
+                    <IconSparkles size={13} />
+                  )}
+                  {enrichApollo.isPending ? "Enriching…" : "Enrich with Apollo"}
+                </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {apolloFields.length > 0 ? (
+                    <FieldGrid fields={apolloFields} />
+                  ) : (
+                    <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground/60">
+                      No Apollo match found for this contact.
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-muted-foreground/60">
+                      Enriched {formatRelativeTime(contact.apolloEnrichedAt)}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleEnrichApollo}
+                      disabled={enrichApollo.isPending}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                    >
+                      {enrichApollo.isPending ? (
+                        <IconLoader2 size={13} className="animate-spin" />
+                      ) : (
+                        <IconRefresh size={13} />
+                      )}
+                      {enrichApollo.isPending ? "Refreshing…" : "Refresh"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {apolloError && <p className="mt-1.5 text-xs text-destructive">{apolloError}</p>}
             </div>
 
             {/* CommonRoom activity feed */}

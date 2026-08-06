@@ -166,6 +166,10 @@ export async function runScoringBatch(params: {
           country: contacts.country,
           employees: contacts.employees,
           hubspotBreezeFitScore: contacts.hubspotBreezeFitScore,
+          apolloCompanyFitScore: contacts.apolloCompanyFitScore,
+          apolloIntentScore: contacts.apolloIntentScore,
+          apolloTitle: contacts.apolloTitle,
+          apolloSeniority: contacts.apolloSeniority,
         })
         .from(contacts)
         .where(eq(contacts.id, target.contactId))
@@ -187,6 +191,10 @@ export async function runScoringBatch(params: {
           country: contact.country,
           employees: contact.employees,
           hubspotBreezeFitScore: contact.hubspotBreezeFitScore,
+          apolloCompanyFitScore: contact.apolloCompanyFitScore,
+          apolloIntentScore: contact.apolloIntentScore,
+          apolloTitle: contact.apolloTitle,
+          apolloSeniority: contact.apolloSeniority,
         },
         personas: personaRowsForScoring,
         userEmail: ownerEmail,
@@ -202,6 +210,8 @@ export async function runScoringBatch(params: {
           engagementScore: score.engagementScore,
           commonRoomIntentScore: score.commonRoomIntentScore,
           commonRoomCompanyFitScore: score.commonRoomCompanyFitScore,
+          apolloCompanyFitScore: score.apolloCompanyFitScore,
+          apolloIntentScore: score.apolloIntentScore,
           overallScore: score.overallScore,
           scoreReasoning: score.reasoning,
           updatedAt: new Date().toISOString(),

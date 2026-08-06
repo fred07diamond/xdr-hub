@@ -438,6 +438,31 @@ export default runMigrations(
         ALTER TABLE sync_records ADD COLUMN marketing_rule_id TEXT;
         ALTER TABLE contacts ADD COLUMN lifecycle_stage TEXT`,
     },
+    {
+      version: 35,
+      name: "contacts-apollo-enrichment-columns",
+      // On-demand Apollo.io enrichment ("Enrich with Apollo" button,
+      // actions/enrich-contact-with-apollo.ts) — apollo_company_fit_score/
+      // apollo_intent_score join blendFitAndIntent() as two more independent
+      // Fit/Intent signals (score-contact.ts), mirroring
+      // commonroom_company_fit_score/commonroom_intent_score's existing role
+      // exactly, rather than overriding the existing company_fit_score
+      // precedence chain. The rest are display-only fields captured at
+      // enrichment time — apollo_enrichment_json holds the richer,
+      // less-structured payload (employment history, technologies, funding
+      // events) rather than a column each.
+      sql: `ALTER TABLE contacts ADD COLUMN apollo_company_fit_score INTEGER;
+        ALTER TABLE contacts ADD COLUMN apollo_intent_score INTEGER;
+        ALTER TABLE contacts ADD COLUMN apollo_seniority TEXT;
+        ALTER TABLE contacts ADD COLUMN apollo_title TEXT;
+        ALTER TABLE contacts ADD COLUMN apollo_email_status TEXT;
+        ALTER TABLE contacts ADD COLUMN apollo_industry TEXT;
+        ALTER TABLE contacts ADD COLUMN apollo_employee_count INTEGER;
+        ALTER TABLE contacts ADD COLUMN apollo_funding_stage TEXT;
+        ALTER TABLE contacts ADD COLUMN apollo_total_funding INTEGER;
+        ALTER TABLE contacts ADD COLUMN apollo_enrichment_json TEXT;
+        ALTER TABLE contacts ADD COLUMN apollo_enriched_at TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

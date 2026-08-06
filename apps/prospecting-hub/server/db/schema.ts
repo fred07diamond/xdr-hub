@@ -35,6 +35,27 @@ export const contacts = table("contacts", {
   hubspotBreezeFitScore: integer("hubspot_breeze_fit_score"),
   commonRoomIntentScore: integer("commonroom_intent_score"), // CommonRoom's "Contact Intent Score" LeadScore percentile
   commonRoomCompanyFitScore: integer("commonroom_company_fit_score"), // CommonRoom's org-level "Company Fit Score (Common Room)" LeadScore percentile
+  // Apollo.io enrichment (server/helpers/apollo-client.ts, actions/enrich-
+  // contact-with-apollo.ts) — on-demand only ("Enrich with Apollo" button),
+  // never populated automatically during sync/scoring, unlike everything
+  // else on this row. apolloCompanyFitScore/apolloIntentScore join
+  // blendFitAndIntent() as two more independent Fit/Intent signals
+  // (score-contact.ts), mirroring commonRoomCompanyFitScore/
+  // commonRoomIntentScore's existing role exactly — not an override of the
+  // existing companyFitScore precedence chain. The rest are display-only,
+  // captured at enrichment time. All null until a contact has been
+  // explicitly enriched at least once.
+  apolloCompanyFitScore: integer("apollo_company_fit_score"), // computeDeterministicCompanyFit() applied to Apollo's own org country/employee-count data — an independent cross-check, not a replacement for companyFitScore
+  apolloIntentScore: integer("apollo_intent_score"), // Apollo's Bombora-powered intent/topic-surge signal, when available on the connected Apollo plan — best-effort, likely null on most plans; see apollo-client.ts
+  apolloSeniority: text("apollo_seniority"), // Apollo Person Enrichment's verified seniority classification — feeds scoreContactAgainstPersonas' LLM grounding, also shown directly
+  apolloTitle: text("apollo_title"), // Apollo Person Enrichment's verified/normalized title — feeds LLM grounding, also shown directly
+  apolloEmailStatus: text("apollo_email_status"), // Apollo's email verification status for this contact — display only
+  apolloIndustry: text("apollo_industry"), // Apollo Organization Enrichment's industry classification — display only
+  apolloEmployeeCount: integer("apollo_employee_count"), // Apollo Organization Enrichment's estimated_num_employees — feeds apolloCompanyFitScore, also shown directly
+  apolloFundingStage: text("apollo_funding_stage"), // Apollo Organization Enrichment's latest_funding_stage — display only
+  apolloTotalFunding: integer("apollo_total_funding"), // Apollo Organization Enrichment's total_funding (raw currency amount) — display only
+  apolloEnrichmentJson: text("apollo_enrichment_json"), // raw blob: employment history, technology names, funding events, LinkedIn URL — richer data not worth a column each, not currently rendered
+  apolloEnrichedAt: text("apollo_enriched_at"), // when enrich-contact-with-apollo.ts last ran for this contact; null = never enriched
   overallScore: integer("overall_score"),
   scoreReasoning: text("score_reasoning"),
   country: text("country"), // firmographic signal for deterministic company-fit scoring — HubSpot's associated Company.country or CommonRoom's Contact.location; null when unavailable

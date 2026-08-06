@@ -137,6 +137,8 @@ export interface ContactRow {
   hubspotQlScore: number | null;
   commonRoomIntentScore: number | null;
   commonRoomCompanyFitScore: number | null;
+  apolloCompanyFitScore: number | null;
+  apolloIntentScore: number | null;
   overallScore: number | null;
   scoreReasoning: string | null;
   personaId: string | null;

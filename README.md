@@ -86,7 +86,7 @@ Required Netlify environment variables (see `.env.example` for the full, current
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth, used for sign-in and the Calendar integration |
 | `ANTHROPIC_API_KEY` | LLM provider for agent chat |
 
-Slack, Notion, Figma, and GitHub connectors, plus Zoom and Nooks credentials for the booking app, are optional and only needed if that integration is in use.
+Slack, Notion, Figma, and GitHub connectors, Zoom and Nooks credentials for the booking app, and Apollo.io (`APOLLO_API_KEY`) for prospecting-hub's on-demand contact enrichment, are optional and only needed if that integration is in use.
 
 ---
 

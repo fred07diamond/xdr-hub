@@ -32,6 +32,19 @@ export interface ContactForScoring {
   // already normalized to 0-100). When present, this REPLACES companyFitScore
   // entirely — see the precedence note below computeDeterministicCompanyFit.
   hubspotBreezeFitScore?: number | null;
+  // Apollo.io enrichment (apollo-client.ts, enrich-contact-with-apollo.ts) —
+  // on-demand only, so unlike the CommonRoom lookup below these are plain
+  // pass-through inputs already persisted on the contact row, not fetched
+  // live here. apolloCompanyFitScore/apolloIntentScore join blendFitAndIntent
+  // below as two more independent Fit/Intent signals, mirroring
+  // commonRoomCompanyFitScore/commonRoomIntentScore's role exactly — never an
+  // override of companyFitScore. apolloTitle/apolloSeniority (Apollo's own
+  // verified data) ground the LLM call below when present, instead of only
+  // whatever raw title synced from HubSpot/CommonRoom.
+  apolloCompanyFitScore?: number | null;
+  apolloIntentScore?: number | null;
+  apolloTitle?: string | null;
+  apolloSeniority?: string | null;
 }
 
 export interface ContactScoreResult {
@@ -42,6 +55,8 @@ export interface ContactScoreResult {
   hubspotQlScore: number | null; // echoed back from the input, for convenient one-call persistence at the DB-write call site
   commonRoomIntentScore: number | null; // CommonRoom's "Contact Intent Score"
   commonRoomCompanyFitScore: number | null; // CommonRoom's org-level "Company Fit Score (Common Room)"
+  apolloCompanyFitScore: number | null; // echoed back from the input, same convention as hubspotQlScore — computed once at enrichment time, not here
+  apolloIntentScore: number | null; // echoed back from the input, same convention as hubspotQlScore
   overallScore: number | null;
   reasoning: string;
 }
@@ -61,8 +76,9 @@ function averageAvailable(values: Array<number | null | undefined>): number | nu
 //   - Fit bucket: personaMatchScore, companyFitScore, hubspotQlScore,
 //     engagementScore (CommonRoom's Contact Score V2 — kept here as an
 //     extra fit-side signal per Fred's call, even though it already has
-//     some intent baked in on CommonRoom's side), commonRoomCompanyFitScore.
-//   - Intent bucket: commonRoomIntentScore.
+//     some intent baked in on CommonRoom's side), commonRoomCompanyFitScore,
+//     apolloCompanyFitScore.
+//   - Intent bucket: commonRoomIntentScore, apolloIntentScore.
 // Each bucket independently averages whichever of its own signals are
 // present (never inventing a missing one as zero). If only one bucket has
 // any signal at all, overallScore is just that bucket's average — never
@@ -76,9 +92,18 @@ function blendFitAndIntent(fitSignals: Array<number | null | undefined>, intentS
 }
 
 function buildContactBlurb(c: ContactForScoring): string {
-  return [c.name, c.title && c.company ? `${c.title} at ${c.company}` : (c.title ?? c.company)]
+  const base = [c.name, c.title && c.company ? `${c.title} at ${c.company}` : (c.title ?? c.company)]
     .filter(Boolean)
     .join(" — ");
+  // Apollo's verified title/seniority, when available, grounds the same
+  // personaMatchScore call with more reliable data than whatever raw title
+  // synced from HubSpot/CommonRoom — appended, not substituted, so the raw
+  // title/company context above is never lost.
+  const apolloFact =
+    c.apolloTitle || c.apolloSeniority
+      ? ` (Apollo-verified: ${[c.apolloTitle, c.apolloSeniority].filter(Boolean).join(", ")})`
+      : "";
+  return base + apolloFact;
 }
 
 // One completeText() call per contact: picks the single best-fitting persona
@@ -234,10 +259,12 @@ export async function scoreContactAgainstPersonas(options: {
   }
 
   const hubspotQlScore = options.contact.hubspotQlScore ?? null;
+  const apolloCompanyFitScore = options.contact.apolloCompanyFitScore ?? null;
+  const apolloIntentScore = options.contact.apolloIntentScore ?? null;
 
   const overallScore = blendFitAndIntent(
-    [personaMatchScore, companyFitScore, hubspotQlScore, engagementScore, commonRoomCompanyFitScore],
-    [commonRoomIntentScore],
+    [personaMatchScore, companyFitScore, hubspotQlScore, engagementScore, commonRoomCompanyFitScore, apolloCompanyFitScore],
+    [commonRoomIntentScore, apolloIntentScore],
   );
 
   return {
@@ -248,6 +275,8 @@ export async function scoreContactAgainstPersonas(options: {
     hubspotQlScore,
     commonRoomIntentScore,
     commonRoomCompanyFitScore,
+    apolloCompanyFitScore,
+    apolloIntentScore,
     overallScore,
     reasoning,
   };

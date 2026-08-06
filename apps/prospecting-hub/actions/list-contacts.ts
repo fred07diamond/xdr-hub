@@ -94,6 +94,8 @@ export default defineAction({
         hubspotQlScore: contacts.hubspotQlScore,
         commonRoomIntentScore: contacts.commonRoomIntentScore,
         commonRoomCompanyFitScore: contacts.commonRoomCompanyFitScore,
+        apolloCompanyFitScore: contacts.apolloCompanyFitScore,
+        apolloIntentScore: contacts.apolloIntentScore,
         overallScore: contacts.overallScore,
         scoreReasoning: contacts.scoreReasoning,
         personaId: contacts.personaId,

@@ -45,7 +45,14 @@ export interface ScoreInfo {
 // it's a computed blend of several of these scores rather than a single
 // judged/sourced value itself.
 export const SCORE_INFO: Record<
-  "personaMatch" | "companyFit" | "engagement" | "hubspotQl" | "commonRoomIntent" | "commonRoomCompanyFit",
+  | "personaMatch"
+  | "companyFit"
+  | "engagement"
+  | "hubspotQl"
+  | "commonRoomIntent"
+  | "commonRoomCompanyFit"
+  | "apolloCompanyFit"
+  | "apolloIntent",
   Omit<ScoreInfo, "reasoning">
 > = {
   personaMatch: {
@@ -77,6 +84,16 @@ export const SCORE_INFO: Record<
     description:
       "CommonRoom's own org-level Company Fit score — how well this contact's company matches your configured ideal customer profile on CommonRoom's side, independent of this app's own Company Fit score above.",
   },
+  apolloCompanyFit: {
+    title: "How Apollo Company Fit is scored",
+    description:
+      "Calculated from Apollo's own organization-enrichment country + employee-count data, using the same deterministic formula as this app's own Company Fit score above — an independent cross-check, not a replacement. Only set after this contact has been enriched via the Apollo section below.",
+  },
+  apolloIntent: {
+    title: "About Apollo Intent Score",
+    description:
+      "Apollo's Bombora-powered topic-surge intent signal, when available on the connected Apollo plan. Most plans will show this as unavailable (—) — it isn't part of Apollo's base enrichment data.",
+  },
 };
 
 // Overall Score's breakdown, in the same order/grouping every hover shows —
@@ -89,6 +106,8 @@ export function buildOverallScoreBreakdown(contact: {
   engagementScore: number | null;
   commonRoomCompanyFitScore: number | null;
   commonRoomIntentScore: number | null;
+  apolloCompanyFitScore: number | null;
+  apolloIntentScore: number | null;
 }): ScoreBreakdownItem[] {
   return [
     { label: "Persona Match", value: contact.personaMatchScore, bucket: "Fit" },
@@ -96,7 +115,9 @@ export function buildOverallScoreBreakdown(contact: {
     { label: "HubSpot QL Score", value: contact.hubspotQlScore, bucket: "Fit" },
     { label: "CommonRoom Fit (Contact Score V2)", value: contact.engagementScore, bucket: "Fit" },
     { label: "CommonRoom Company Fit", value: contact.commonRoomCompanyFitScore, bucket: "Fit" },
+    { label: "Apollo Company Fit", value: contact.apolloCompanyFitScore, bucket: "Fit" },
     { label: "CommonRoom Intent Score", value: contact.commonRoomIntentScore, bucket: "Intent" },
+    { label: "Apollo Intent Score", value: contact.apolloIntentScore, bucket: "Intent" },
   ];
 }
 
