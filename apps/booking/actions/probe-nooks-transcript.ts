@@ -90,7 +90,7 @@ export default defineAction({
       };
     }
 
-    const listRes = await fetch(`${NOOKS_API_BASE}/calls?page[size]=3&filter[hasTranscript]=true`, {
+    const listRes = await fetch(`${NOOKS_API_BASE}/calls?page[size]=5`, {
       headers,
     }).catch(() => null);
     const listBody = listRes ? await listRes.text() : "";
@@ -105,7 +105,7 @@ export default defineAction({
     }
 
     const results = await Promise.all([
-      probe("list-calls (hasTranscript filter)", "/calls?page[size]=3&filter[hasTranscript]=true"),
+      probe("list-calls", "/calls?page[size]=5"),
       firstCallId
         ? probe("call-detail", `/calls/${firstCallId}`)
         : Promise.resolve({ label: "call-detail", path: null, status: null, note: "no call id from list" }),
