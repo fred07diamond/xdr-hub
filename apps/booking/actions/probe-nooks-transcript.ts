@@ -83,6 +83,28 @@ export default defineAction({
     if (!token) throw new Error("Nooks token refresh failed and no access token was stored.");
     const headers = { Authorization: `Bearer ${token}` };
 
+    // Decode (not verify) the JWT payload to see what scope Nooks actually
+    // granted at consent time, vs. what auth-url.get.ts requested. A 403
+    // INSUFFICIENT_SCOPE downstream could mean either "never granted" (shows
+    // up here) or "granted but still rejected" (would NOT show up here).
+    let grantedScope: string | null = null;
+    let tokenDecodeError: string | null = null;
+    try {
+      const payloadSegment = token.split(".")[1];
+      if (payloadSegment) {
+        const json = Buffer.from(
+          payloadSegment.replace(/-/g, "+").replace(/_/g, "/"),
+          "base64",
+        ).toString("utf8");
+        const claims = JSON.parse(json) as { scope?: string; scp?: string | string[] };
+        grantedScope = claims.scope ?? (Array.isArray(claims.scp) ? claims.scp.join(" ") : claims.scp) ?? null;
+      } else {
+        tokenDecodeError = "token is not a 3-part JWT";
+      }
+    } catch (err) {
+      tokenDecodeError = err instanceof Error ? err.message : "decode failed";
+    }
+
     async function probe(label: string, path: string) {
       const res = await fetch(`${NOOKS_API_BASE}${path}`, { headers });
       const body = await res.text();
@@ -140,6 +162,14 @@ export default defineAction({
       probe("desktop-notes", "/desktopNotes"),
     ]);
 
-    return { refreshed, firstCallId, usedFallbackCallId, results };
+    return {
+      refreshed,
+      requestedScope: "calls:read call-dispositions:read coaching:read teams:read",
+      grantedScope,
+      tokenDecodeError,
+      firstCallId,
+      usedFallbackCallId,
+      results,
+    };
   },
 });
