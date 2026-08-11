@@ -8,7 +8,9 @@ const NOOKS_API_BASE = "https://partner-api.nooks.in/v1";
 const NOOKS_TOKEN_URL = "https://oauth.nooks.in/oauth/token";
 const NOOKS_TOKEN_TIMEOUT_MS = 20_000;
 
-async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+async function refreshAccessToken(
+  refreshToken: string,
+): Promise<{ access_token: string; refresh_token?: string } | null> {
   const clientId = process.env.NOOKS_CLIENT_ID;
   const clientSecret = process.env.NOOKS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
@@ -24,9 +26,14 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
     signal: AbortSignal.timeout(NOOKS_TOKEN_TIMEOUT_MS),
   });
   if (!res.ok) return null;
-  const data = (await res.json()) as { access_token?: string };
-  return data.access_token ?? null;
+  const data = (await res.json()) as { access_token?: string; refresh_token?: string };
+  if (!data.access_token) return null;
+  return { access_token: data.access_token, refresh_token: data.refresh_token };
 }
+
+// A real call known (via a different channel) to have hasTranscript: true,
+// used as a fallback when this token's /calls list comes back empty.
+const KNOWN_CALL_ID_FALLBACK = "00004e92-e92e-472c-8701-8c294271ebd8";
 
 // Temporary diagnostic — not for product use. Answers one question: does the
 // connected user's OAuth token (scopes calls:read, call-dispositions:read,
@@ -54,14 +61,21 @@ export default defineAction({
     let token = account?.tokens?.access_token as string | undefined;
     let refreshed = false;
     if (refreshToken) {
-      const newToken = await refreshAccessToken(refreshToken);
-      if (newToken) {
-        token = newToken;
+      const refreshResult = await refreshAccessToken(refreshToken);
+      if (refreshResult) {
+        token = refreshResult.access_token;
         refreshed = true;
         await saveOAuthTokens(
           "nooks",
           account!.accountId as string,
-          { ...account!.tokens, access_token: newToken },
+          {
+            ...account!.tokens,
+            access_token: refreshResult.access_token,
+            // Nooks rotates refresh tokens on every use and invalidates the
+            // old one immediately -- keep it in sync or every subsequent
+            // refresh silently fails.
+            refresh_token: refreshResult.refresh_token ?? refreshToken,
+          },
           ctx!.userEmail,
         );
       }
@@ -95,6 +109,7 @@ export default defineAction({
     }).catch(() => null);
     const listBody = listRes ? await listRes.text() : "";
     let firstCallId: string | undefined;
+    let usedFallbackCallId = false;
     if (listRes?.ok) {
       try {
         const list = JSON.parse(listBody) as { data?: Array<{ id: string }> };
@@ -102,6 +117,10 @@ export default defineAction({
       } catch {
         // ignore
       }
+    }
+    if (!firstCallId) {
+      firstCallId = KNOWN_CALL_ID_FALLBACK;
+      usedFallbackCallId = true;
     }
 
     const results = await Promise.all([
@@ -121,6 +140,6 @@ export default defineAction({
       probe("desktop-notes", "/desktopNotes"),
     ]);
 
-    return { refreshed, firstCallId, results };
+    return { refreshed, firstCallId, usedFallbackCallId, results };
   },
 });
