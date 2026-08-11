@@ -15,6 +15,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -767,9 +768,9 @@ function WeekCalendar({
         <div className="flex items-center gap-2 px-4 py-2 text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border-b border-amber-500/20">
           <IconRefresh className="h-3.5 w-3.5 shrink-0" />
           Calendar access expired.{" "}
-          <a href="/settings#google-calendar" className="underline underline-offset-2 font-medium">
+          <Link to="/settings#google-calendar" className="underline underline-offset-2 font-medium">
             Reconnect in Settings
-          </a>
+          </Link>
         </div>
       )}
       {/* Toolbar */}
