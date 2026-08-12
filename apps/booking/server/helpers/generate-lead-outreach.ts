@@ -1559,9 +1559,33 @@ Existing deals on this account: ${ctx.existingDeals ?? "none found"}
 No other research (public web, LinkedIn, other HubSpot contacts) is available in this pass -- work only from the above and flag what's missing rather than inventing it.`;
 }
 
-export async function generateLeadOutreach(ctx: LeadContext): Promise<LeadOutreach> {
-  const ownerCtx = await getOwnerCtx();
+// The gateway completeText() calls through occasionally times out waiting on
+// the model's first token (an "Inactivity Timeout" page from the upstream
+// LLM gateway) and, when it does, sometimes leaks the raw HTML of that page
+// as the error message instead of a clean sentence. Neither is our bug to
+// fix upstream, so we retry transparently and scrub any HTML that slips
+// through so the xDR never sees a wall of <HTML> tags.
+const MAX_GENERATION_ATTEMPTS = 3;
+const RETRY_DELAY_MS = [1000, 3000];
 
+function cleanErrorMessage(raw: string): string {
+  const looksHtml = /<html[\s>]|<body[\s>]|<head[\s>]/i.test(raw);
+  if (!looksHtml) return raw;
+  const text = raw
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text || "The AI gateway returned an unreadable error page.";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function attemptGenerateLeadOutreach(
+  ctx: LeadContext,
+  ownerCtx: Awaited<ReturnType<typeof getOwnerCtx>>,
+): Promise<LeadOutreach> {
   const callCompleteText = () =>
     completeText({
       systemPrompt: buildLeadOutreachSystemPrompt(),
@@ -1576,7 +1600,7 @@ export async function generateLeadOutreach(ctx: LeadContext): Promise<LeadOutrea
       : await callCompleteText();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw Object.assign(new Error(`AI generation failed: ${msg}`), { statusCode: 502 });
+    throw Object.assign(new Error(`AI generation failed: ${cleanErrorMessage(msg)}`), { statusCode: 502 });
   }
 
   const raw = result.text
@@ -1589,7 +1613,7 @@ export async function generateLeadOutreach(ctx: LeadContext): Promise<LeadOutrea
     parsed = JSON.parse(raw);
   } catch {
     throw Object.assign(
-      new Error(`AI generation failed: could not parse response as JSON. Raw response: ${raw.slice(0, 200)}`),
+      new Error(`AI generation failed: could not parse response as JSON. Raw response: ${cleanErrorMessage(raw).slice(0, 200)}`),
       { statusCode: 422 },
     );
   }
@@ -1604,4 +1628,22 @@ export async function generateLeadOutreach(ctx: LeadContext): Promise<LeadOutrea
     outreachEmail: String(parsed.outreachEmail ?? ""),
     emailSubject: String(parsed.emailSubject ?? ""),
   };
+}
+
+export async function generateLeadOutreach(ctx: LeadContext): Promise<LeadOutreach> {
+  const ownerCtx = await getOwnerCtx();
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+    try {
+      return await attemptGenerateLeadOutreach(ctx, ownerCtx);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < MAX_GENERATION_ATTEMPTS - 1) {
+        await sleep(RETRY_DELAY_MS[attempt] ?? RETRY_DELAY_MS[RETRY_DELAY_MS.length - 1]);
+      }
+    }
+  }
+
+  throw lastErr;
 }

@@ -94,7 +94,40 @@ function relativeSubmissionDate(dateStr: string | null): string {
   const days = Math.floor((Date.now() - submitted.getTime()) / (24 * 60 * 60 * 1000));
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
-  return `${days}d ago`;
+  if (days < 7) return `${days}d ago`;
+  return submitted.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function fullSubmissionDate(dateStr: string | null): string | undefined {
+  if (!dateStr) return undefined;
+  const submitted = new Date(dateStr);
+  if (Number.isNaN(submitted.getTime())) return undefined;
+  return submitted.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+// The AI sometimes appends an inline flag to the tier, e.g.
+// "Needs Further Discovery (Code) -- flag: likely internal/test lead". Split
+// that out so the badge stays a compact label and the flag reads as context
+// underneath instead of bloating the pill.
+function splitQualificationTier(tier: string): { label: string; flag: string | null } {
+  const idx = tier.indexOf(" -- ");
+  if (idx === -1) return { label: tier, flag: null };
+  return { label: tier.slice(0, idx).trim(), flag: tier.slice(idx + 4).trim() };
+}
+
+// Color is reserved for this one signal (deal-quality tier) so it stays
+// meaningful instead of washing the whole panel in a single accent.
+function tierBadgeClasses(label: string): string {
+  if (/highly qualified/i.test(label)) {
+    return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400";
+  }
+  if (/needs further discovery/i.test(label)) {
+    return "bg-amber-500/15 text-amber-700 dark:text-amber-400";
+  }
+  if (/standard/i.test(label)) {
+    return "bg-blue-500/15 text-blue-700 dark:text-blue-400";
+  }
+  return "bg-slate-500/15 text-slate-700 dark:text-slate-400";
 }
 
 function InboundLeadOutreach({ lead }: { lead: InboundLead }) {
@@ -211,11 +244,14 @@ function InboundLeadsPanel({
   }
 
   return (
-    <Card className="border-amber-500/30 bg-amber-500/[0.06] shadow-sm">
+    <Card className="shadow-sm">
       <CardContent className="space-y-3 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
-          <IconBell className="h-4 w-4" />
-          {leads.length} new inbound lead{leads.length > 1 ? "s" : ""} from Contact Sales
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <IconBell className="h-4 w-4 text-muted-foreground" />
+          <span>Inbound leads from Contact Sales</span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            {leads.length}
+          </span>
         </div>
         <div className="space-y-1.5">
           {leads.map((lead) => {
@@ -224,55 +260,71 @@ function InboundLeadsPanel({
             const isGenerating = generatingLeadId === lead.id;
             const isExpanded = expandedLeadId === lead.id;
             const hasOutreach = !!lead.qualificationTier;
+            const tier = lead.qualificationTier ? splitQualificationTier(lead.qualificationTier) : null;
+            const previewParts = [tier?.flag, lead.xdrPain].filter(Boolean) as string[];
+            const preview = previewParts.length > 0 ? previewParts.join(" — ") : null;
             return (
               <div
                 key={lead.id}
                 className={cn(
-                  "rounded-md bg-background shadow-sm transition-[opacity,transform] duration-200 ease-out",
+                  "rounded-md border bg-background shadow-sm transition-[opacity,transform] duration-200 ease-out",
                   isDismissing && "-translate-y-1 opacity-0",
                 )}
               >
                 <button
                   type="button"
                   onClick={() => setExpandedLeadId(isExpanded ? null : lead.id)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm"
+                  className="flex w-full flex-col gap-1 px-3 py-2.5 text-left text-sm"
                 >
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                      {leadInitials(lead.prospectName)}
-                    </span>
-                    <span className="min-w-0 truncate">
-                      <span className="font-medium">{lead.prospectName}</span>
-                      {lead.company && <span className="text-muted-foreground"> · {lead.company}</span>}
-                      {lead.prospectEmail && (
-                        <span className="text-muted-foreground"> · {lead.prospectEmail}</span>
-                      )}
-                    </span>
-                    {lead.qualificationTier && (
-                      <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                        {lead.qualificationTier}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground/80">
+                        {leadInitials(lead.prospectName)}
                       </span>
-                    )}
+                      <span className="min-w-0 truncate">
+                        <span className="font-medium">{lead.prospectName}</span>
+                        {lead.company && <span className="text-muted-foreground"> · {lead.company}</span>}
+                        {lead.prospectEmail && (
+                          <span className="text-muted-foreground"> · {lead.prospectEmail}</span>
+                        )}
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                          tier
+                            ? tierBadgeClasses(tier.label)
+                            : "border border-dashed text-muted-foreground",
+                        )}
+                      >
+                        {tier ? tier.label : "Not actioned"}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {isFailed && <span className="text-xs text-destructive">Failed, try again</span>}
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title={fullSubmissionDate(lead.contactSalesDate)}
+                      >
+                        {relativeSubmissionDate(lead.contactSalesDate)}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDismiss(lead.id);
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), onDismiss(lead.id))}
+                        title="Dismiss"
+                        className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.96]"
+                      >
+                        <IconX className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {isFailed && <span className="text-xs text-destructive">Failed, try again</span>}
-                    <span className="text-xs text-muted-foreground">
-                      {relativeSubmissionDate(lead.contactSalesDate)}
-                    </span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDismiss(lead.id);
-                      }}
-                      onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), onDismiss(lead.id))}
-                      title="Dismiss"
-                      className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.96]"
-                    >
-                      <IconX className="h-3.5 w-3.5" />
-                    </span>
-                  </div>
+                  <p className="truncate pl-9 text-xs text-muted-foreground">
+                    {preview ?? "Not yet reviewed — click to pull HubSpot data and draft outreach."}
+                  </p>
                 </button>
 
                 {isExpanded && (
