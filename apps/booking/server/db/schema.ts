@@ -68,14 +68,29 @@ export const inboundLeads = table("inbound_leads", {
   createdAt: text("created_at").default(now()),
 
   // Checkpoint 1 output -- populated by run-intro-call-checkpoint (the
-  // "Action lead" button). Null until an xDR actions the lead.
+  // "Action lead" button). Null until an xDR actions the lead. Facts
+  // (contact/company/deals, Enterprise Need, ICP Fit) are deterministic --
+  // stored as structured fields/JSON so the UI renders a scannable fact
+  // grid and scorecard, not paragraphs the xDR has to read. Only the
+  // judgment calls (tldr, pain, champion, recommendation) come from the LLM.
   introTldr: text("intro_tldr"),
-  introHubspotSummary: text("intro_hubspot_summary"),
-  introScorecardText: text("intro_scorecard_text"),
+  introResearchJson: text("intro_research_json"), // JSON.stringify(IntroCallResearch)
+  introProduct: text("intro_product", { enum: ["content", "code"] }),
+  introProductSignal: text("intro_product_signal"),
+  introEnterpriseNeedScore: integer("intro_enterprise_need_score"),
+  introEnterpriseNeedLabel: text("intro_enterprise_need_label"),
+  introEnterpriseNeedSignals: text("intro_enterprise_need_signals"), // JSON string[]
+  introIcpFitScore: integer("intro_icp_fit_score"),
+  introIcpFitLabel: text("intro_icp_fit_label"),
+  introIcpFitSignals: text("intro_icp_fit_signals"), // JSON string[]
+  introMaturityStage: integer("intro_maturity_stage"),
+  introMaturityStageReason: text("intro_maturity_stage_reason"),
   introPainScore: integer("intro_pain_score"),
   introPainLabel: text("intro_pain_label"),
+  introPainRationale: text("intro_pain_rationale"),
   introChampionScore: integer("intro_champion_score"),
   introChampionLabel: text("intro_champion_label"),
+  introChampionRationale: text("intro_champion_rationale"),
   introRecommendation: text("intro_recommendation", { enum: ["take_call", "pivot_ae", "disqualify"] }),
   introRecommendationRationale: text("intro_recommendation_rationale"),
   introCheckpointGeneratedAt: text("intro_checkpoint_generated_at"),

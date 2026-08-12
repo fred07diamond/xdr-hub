@@ -301,6 +301,74 @@ export default runMigrations(
       name: "inbound-leads-intro-worksheet",
       sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_worksheet TEXT`,
     },
+    // v49+ replace intro_hubspot_summary/intro_scorecard_text (still
+    // physically present, no longer referenced) with structured fields so
+    // the UI renders a fact grid + scorecard instead of LLM-written prose.
+    {
+      version: 49,
+      name: "inbound-leads-intro-research-json",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_research_json TEXT`,
+    },
+    {
+      version: 50,
+      name: "inbound-leads-intro-product",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_product TEXT`,
+    },
+    {
+      version: 51,
+      name: "inbound-leads-intro-product-signal",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_product_signal TEXT`,
+    },
+    {
+      version: 52,
+      name: "inbound-leads-intro-enterprise-need-score",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_enterprise_need_score INTEGER`,
+    },
+    {
+      version: 53,
+      name: "inbound-leads-intro-enterprise-need-label",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_enterprise_need_label TEXT`,
+    },
+    {
+      version: 54,
+      name: "inbound-leads-intro-enterprise-need-signals",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_enterprise_need_signals TEXT`,
+    },
+    {
+      version: 55,
+      name: "inbound-leads-intro-icp-fit-score",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_icp_fit_score INTEGER`,
+    },
+    {
+      version: 56,
+      name: "inbound-leads-intro-icp-fit-label",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_icp_fit_label TEXT`,
+    },
+    {
+      version: 57,
+      name: "inbound-leads-intro-icp-fit-signals",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_icp_fit_signals TEXT`,
+    },
+    {
+      version: 58,
+      name: "inbound-leads-intro-maturity-stage",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_maturity_stage INTEGER`,
+    },
+    {
+      version: 59,
+      name: "inbound-leads-intro-maturity-stage-reason",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_maturity_stage_reason TEXT`,
+    },
+    {
+      version: 60,
+      name: "inbound-leads-intro-pain-rationale",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_pain_rationale TEXT`,
+    },
+    {
+      version: 61,
+      name: "inbound-leads-intro-champion-rationale",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_champion_rationale TEXT`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );

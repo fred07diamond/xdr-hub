@@ -42,6 +42,39 @@ interface ConfirmResult {
 }
 
 type IntroCallRecommendation = "take_call" | "pivot_ae" | "disqualify";
+type PillarLabel = "Confirmed" | "Hypothesis" | "Unknown";
+
+interface ParsedIntroCallResearch {
+  contact: {
+    name: string | null;
+    jobTitle: string | null;
+    location: string | null;
+    linkedinUrl: string | null;
+    breezeFitScore: string | null;
+    signUpTimeStamp: string | null;
+    jobFunctions: string | null;
+    howHeardAboutBuilder: string | null;
+    numNotes: number;
+    messageVerbatim: string | null;
+  };
+  company: {
+    name: string | null;
+    industry: string | null;
+    employeeCount: number | null;
+    location: string | null;
+    parentCompanyName: string | null;
+  } | null;
+  otherContacts: Array<{ name: string | null; jobTitle: string | null; activeInBuilderApp: boolean }>;
+  activeInAppUserCount: number;
+  deals: Array<{
+    name: string | null;
+    stage: string | null;
+    ownerName: string | null;
+    closedLostReasonCategory: string | null;
+    closedLostReasonDetail: string | null;
+  }>;
+  notesUnreadable: boolean;
+}
 
 interface InboundLead {
   id: string;
@@ -50,8 +83,23 @@ interface InboundLead {
   company: string | null;
   contactSalesDate: string | null;
   introTldr: string | null;
-  introHubspotSummary: string | null;
-  introScorecardText: string | null;
+  introResearchJson: string | null;
+  introProduct: "content" | "code" | null;
+  introProductSignal: string | null;
+  introEnterpriseNeedScore: number | null;
+  introEnterpriseNeedLabel: PillarLabel | null;
+  introEnterpriseNeedSignals: string | null;
+  introIcpFitScore: number | null;
+  introIcpFitLabel: PillarLabel | null;
+  introIcpFitSignals: string | null;
+  introMaturityStage: number | null;
+  introMaturityStageReason: string | null;
+  introPainScore: number | null;
+  introPainLabel: PillarLabel | null;
+  introPainRationale: string | null;
+  introChampionScore: number | null;
+  introChampionLabel: PillarLabel | null;
+  introChampionRationale: string | null;
   introRecommendation: IntroCallRecommendation | null;
   introRecommendationRationale: string | null;
   introCheckpointGeneratedAt: string | null;
@@ -135,75 +183,173 @@ function recommendationBadgeClasses(rec: IntroCallRecommendation, decided: boole
   return decided ? solid[rec] : outline[rec];
 }
 
-// Renders the model's lightweight markdown (**bold** spans, "- " bullets)
-// as actual formatted text instead of showing literal asterisks. Grows with
-// content -- no fixed height, so nothing gets clipped the way a fixed-size
-// textarea would.
-function renderInlineMarkdown(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={i} className="font-semibold">
-        {part.slice(2, -2)}
-      </strong>
-    ) : (
-      <span key={i}>{part}</span>
-    ),
-  );
-}
-
-function MarkdownLiteBlock({ text }: { text: string }) {
-  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+// Headline banner: what to do, and why, in one glance -- this is the actual
+// answer the xDR opened the row for. Everything below it is supporting
+// evidence, not the point.
+function RecommendationBanner({ recommendation, rationale }: { recommendation: IntroCallRecommendation; rationale: string | null }) {
+  const wash: Record<IntroCallRecommendation, string> = {
+    take_call: "border-blue-500/30 bg-blue-500/[0.06]",
+    pivot_ae: "border-emerald-500/30 bg-emerald-500/[0.06]",
+    disqualify: "border-slate-500/30 bg-slate-500/[0.06]",
+  };
+  const text: Record<IntroCallRecommendation, string> = {
+    take_call: "text-blue-700 dark:text-blue-400",
+    pivot_ae: "text-emerald-700 dark:text-emerald-400",
+    disqualify: "text-slate-700 dark:text-slate-400",
+  };
   return (
-    <div className="space-y-1.5 rounded-md border bg-muted/30 px-3 py-2.5 text-sm leading-relaxed">
-      {lines.map((line, i) => {
-        const trimmed = line.trim();
-        const isBullet = trimmed.startsWith("- ");
-        const content = isBullet ? trimmed.slice(2) : trimmed;
-        return (
-          <div key={i} className={cn("flex gap-1.5", isBullet && "pl-0.5")}>
-            {isBullet && <span className="mt-0.5 shrink-0 text-muted-foreground">·</span>}
-            <span className="min-w-0">{renderInlineMarkdown(content)}</span>
-          </div>
-        );
-      })}
+    <div className={cn("rounded-md border px-3 py-2.5", wash[recommendation])}>
+      <p className={cn("text-sm font-semibold", text[recommendation])}>{RECOMMENDATION_LABEL[recommendation]}</p>
+      {rationale && <p className="mt-1 text-sm leading-relaxed text-foreground/90">{rationale}</p>}
     </div>
   );
 }
 
+function pillarLabelClasses(label: PillarLabel): string {
+  if (label === "Confirmed") return "text-emerald-700 dark:text-emerald-400";
+  if (label === "Hypothesis") return "text-amber-700 dark:text-amber-400";
+  return "text-muted-foreground";
+}
+
+interface PillarCardData {
+  title: string;
+  score: number | null;
+  label: PillarLabel | null;
+  rationale: string | null;
+}
+
+// Compact stat cards, not paragraphs -- the score and label are the thing
+// to scan; the rationale is one line, not a justification essay.
+function ScorecardGrid({ pillars }: { pillars: PillarCardData[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {pillars.map((p) => (
+        <div key={p.title} className="space-y-0.5 rounded-md border bg-muted/20 p-2.5">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{p.title}</p>
+          <p className="flex items-baseline gap-1">
+            <span className="text-lg font-semibold leading-none">{p.score ?? "--"}</span>
+            <span className="text-xs text-muted-foreground">/10</span>
+          </p>
+          <p className={cn("text-[11px] font-medium", p.label ? pillarLabelClasses(p.label) : "text-muted-foreground")}>
+            {p.label ?? "Unknown"}
+          </p>
+          {p.rationale && <p className="line-clamp-2 pt-0.5 text-xs text-muted-foreground">{p.rationale}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FactGrid({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-md border bg-muted/20 p-3 sm:grid-cols-3">{children}</div>;
+}
+
+function Fact({ label, value, full }: { label: string; value: ReactNode; full?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className={cn("space-y-0.5", full && "col-span-2 sm:col-span-3")}>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-sm leading-snug">{value}</p>
+    </div>
+  );
+}
+
+function fmtOtherContact(c: ParsedIntroCallResearch["otherContacts"][number]): string {
+  return `${c.name ?? "(unnamed)"}${c.jobTitle ? ` (${c.jobTitle})` : ""}${c.activeInBuilderApp ? " · active" : ""}`;
+}
+
+function fmtDealFact(d: ParsedIntroCallResearch["deals"][number]): string {
+  const closedLost = d.closedLostReasonCategory
+    ? ` — Closed Lost: ${d.closedLostReasonCategory}${d.closedLostReasonDetail ? ` (${d.closedLostReasonDetail})` : ""}`
+    : "";
+  return `${d.name ?? "(unnamed)"} · ${d.stage ?? "?"}${d.ownerName ? ` · ${d.ownerName}` : ""}${closedLost}`;
+}
+
 function IntroCallCheckpointDisplay({ lead }: { lead: InboundLead }) {
+  let research: ParsedIntroCallResearch | null = null;
+  if (lead.introResearchJson) {
+    try {
+      research = JSON.parse(lead.introResearchJson) as ParsedIntroCallResearch;
+    } catch {
+      research = null;
+    }
+  }
+
+  const enterpriseNeedSignals: string[] = lead.introEnterpriseNeedSignals ? JSON.parse(lead.introEnterpriseNeedSignals) : [];
+  const icpFitSignals: string[] = lead.introIcpFitSignals ? JSON.parse(lead.introIcpFitSignals) : [];
+
+  const pillars: PillarCardData[] = [
+    { title: "Enterprise Need", score: lead.introEnterpriseNeedScore, label: lead.introEnterpriseNeedLabel, rationale: enterpriseNeedSignals[0] ?? null },
+    { title: "Pain we can solve", score: lead.introPainScore, label: lead.introPainLabel, rationale: lead.introPainRationale },
+    { title: "Potential Champion", score: lead.introChampionScore, label: lead.introChampionLabel, rationale: lead.introChampionRationale },
+    { title: "ICP Fit", score: lead.introIcpFitScore, label: lead.introIcpFitLabel, rationale: icpFitSignals[0] ?? null },
+  ];
+
+  const c = research?.contact;
+  const co = research?.company;
+
   return (
     <div className="space-y-3">
       {lead.introTldr && <p className="text-sm leading-relaxed">{lead.introTldr}</p>}
 
-      {lead.introHubspotSummary && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              HubSpot Summary
-            </Label>
-            <CopyButton text={lead.introHubspotSummary} />
-          </div>
-          <MarkdownLiteBlock text={lead.introHubspotSummary} />
-        </div>
+      {lead.introRecommendation && (
+        <RecommendationBanner recommendation={lead.introRecommendation} rationale={lead.introRecommendationRationale} />
       )}
 
-      {lead.introScorecardText && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Scorecard
-            </Label>
-            <CopyButton text={lead.introScorecardText} />
-          </div>
-          <MarkdownLiteBlock text={lead.introScorecardText} />
-        </div>
+      <ScorecardGrid pillars={pillars} />
+
+      {c?.messageVerbatim && (
+        <blockquote className="border-l-2 border-muted-foreground/30 pl-3 text-sm italic leading-relaxed text-foreground/80">
+          &ldquo;{c.messageVerbatim}&rdquo;
+        </blockquote>
       )}
 
-      {lead.introRecommendationRationale && (
-        <p className="text-sm">
-          <span className="font-medium">My read: {lead.introRecommendation ? RECOMMENDATION_LABEL[lead.introRecommendation] : ""}.</span>{" "}
-          <span className="text-muted-foreground">{lead.introRecommendationRationale}</span>
-        </p>
+      {research && (
+        <FactGrid>
+          <Fact label="Contact" value={[c?.name, c?.jobTitle].filter(Boolean).join(" · ") || "unknown"} />
+          <Fact label="Location" value={c?.location} />
+          <Fact label="LinkedIn" value={c?.linkedinUrl ?? "none on file"} />
+          <Fact label="Fit score (Breeze)" value={c?.breezeFitScore} />
+          <Fact label="Signed up" value={c?.signUpTimeStamp} />
+          <Fact label="Heard about us" value={c?.howHeardAboutBuilder} />
+          <Fact label="Job function" value={c?.jobFunctions} />
+          <Fact
+            label="Product"
+            value={
+              lead.introProduct
+                ? `${lead.introProduct === "code" ? "Builder Code" : "Builder Content"}${lead.introProductSignal ? ` (${lead.introProductSignal})` : ""}`
+                : null
+            }
+          />
+          {lead.introMaturityStage != null && (
+            <Fact label="Maturity stage" value={`Stage ${lead.introMaturityStage}${lead.introMaturityStageReason ? ` — ${lead.introMaturityStageReason}` : ""}`} full />
+          )}
+          <Fact
+            label="Company"
+            value={
+              co
+                ? [co.name, co.employeeCount ? `${co.employeeCount} employees` : null, co.industry, co.location, co.parentCompanyName ? `parent: ${co.parentCompanyName}` : null]
+                    .filter(Boolean)
+                    .join(" · ")
+                : "unknown"
+            }
+            full
+          />
+          <Fact
+            label="Deals"
+            value={research.deals.length ? research.deals.map(fmtDealFact).join("; ") : "None — clean account"}
+            full
+          />
+          <Fact
+            label={`Other contacts (${research.activeInAppUserCount}/${research.otherContacts.length} active in-app)`}
+            value={research.otherContacts.length ? research.otherContacts.map(fmtOtherContact).join(" · ") : "None"}
+            full
+          />
+          <Fact
+            label="Notes"
+            value={c?.numNotes ? `${c.numNotes}${research.notesUnreadable ? " — paste in if relevant, bodies aren't readable here" : ""}` : "None"}
+          />
+        </FactGrid>
       )}
     </div>
   );

@@ -5,14 +5,18 @@ import { completeJsonWithRetry } from "./complete-text-retry.js";
 
 export type PillarLabel = "Confirmed" | "Hypothesis" | "Unknown";
 
+// Only the judgment calls come from the model -- product ID, Enterprise
+// Need, and ICP Fit are already deterministic (intro-call-score.ts) and get
+// rendered directly from structured data, not from LLM prose, so the UI can
+// show a scannable scorecard instead of paragraphs the xDR has to read.
 export interface IntroCallCheckpoint {
   tldr: string;
-  hubspotSummary: string;
-  scorecardText: string;
   painScore: number;
   painLabel: PillarLabel;
+  painRationale: string;
   championScore: number;
   championLabel: PillarLabel;
+  championRationale: string;
   recommendation: "take_call" | "pivot_ae" | "disqualify";
   recommendationRationale: string;
 }
@@ -70,39 +74,25 @@ Suggested recommendation: ${scorecard.recommendation} (${scorecard.recommendatio
 
 const CHECKPOINT_CONTRACT = `## Your task
 
-Produce the Checkpoint 1 output for this lead: a TLDR, a HubSpot Summary block, a Scorecard + Recommendation block, your own Pain and Potential Champion scores, and a final recommendation.
+This is a quick-answer tool -- the xDR needs a fast, scannable read, not a document. Every fact (contact, company, deals, the deterministic Enterprise Need and ICP Fit numbers) is already rendered directly by the app from structured data, so your job is ONLY the judgment calls: the TLDR, your own Pain and Potential Champion scores, and the final recommendation. Do not restate facts you're given -- reason about them.
 
-Follow this shape for each field:
-
-- tldr: 2-4 sentences in plain language -- who they are, real company, what they seem to want, whether it looks like an agency/reseller motion, and the gist of whether it's worth taking. No scores, no jargon.
-- hubspotSummary: a markdown bullet list using exactly this shape (omit a bullet only if truly not applicable, use "--" for empty fields, never fabricate):
-  - **Contact:** name, title, location, LinkedIn
-  - **Message (verbatim):** "..."
-  - **Company Fit Score (Breeze):** value
-  - **Sign Up Time Stamp:** value
-  - **First Space Kind:** value -> Builder Content / Builder Code
-  - **Job Functions from Product Sign Up:** value or --
-  - **How You Heard About Builder (in-app):** value or --
-  - **Company:** name, employees, industry, location, parent if any
-  - **Deals:** open/recent with Closed Lost reason if applicable, or "None -- clean account"
-  - **Other contacts:** names/roles/activity, or "None"
-  - **Notes:** count -- "paste or skip?" if non-zero
-  - **Product / track:** Builder Content or Builder Code, one line on the signal, plus (Code only) a one-line maturity blurb ("Stage N, [name] -- [why in a few words]") and a one-line champion/engineering-path read; (Content only) "Not on the prototyping maturity model. Expansion path if it grows: Visual CMS to Optimization to Localization."
-- scorecardText: a markdown block with exactly four bolded lines in this order, each "**Pillar: X/10 -- Label.** One to two sentences of rationale.": Enterprise Need, Pain we can solve, Potential Champion, ICP Fit. Use the deterministic Enterprise Need and ICP Fit numbers/labels given -- do not change them, just explain them in one to two sentences anchored to the Pricing Reference or Content criteria. Score Pain we can solve and Potential Champion yourself per the reference doc.
-- painScore / painLabel: your own score and label (Confirmed/Hypothesis/Unknown) for Pain we can solve, consistent with scorecardText.
-- championScore / championLabel: same for Potential Champion.
-- recommendation: "take_call", "pivot_ae", or "disqualify". Default to the deterministic suggested recommendation given above unless your own Pain/Champion read gives real cause to diverge.
-- recommendationRationale: 1-2 plain sentences giving the reasons only. The UI already shows "My read: [recommendation]." right before this text, so do NOT repeat "My read" or restate the recommendation here -- just the reasoning itself, e.g. "The message itself is too vague to size the pain, and Chuong isn't clearly a champion, but seven active users including a Technical Lead is worth 15 minutes to understand what's happening inside the account."
+- tldr: 2-3 sentences in plain language -- who they are, real company, what they seem to want, whether it looks like an agency/reseller motion, and the gist of whether it's worth taking. No scores, no jargon. This is the one thing the xDR reads without expanding anything, so make it count.
+- painScore / painLabel: your own score (0-10) and label (Confirmed/Hypothesis/Unknown) for Pain we can solve, per the reference doc's Scoring Logic.
+- painRationale: ONE short sentence (under 20 words) explaining the pain score. No preamble, just the reason, e.g. "Message only says 'test the feature,' no described cost or team impact yet."
+- championScore / championLabel: your own score and label for Potential Champion, per the champion-vs-coach acid test in the reference doc.
+- championRationale: ONE short sentence (under 20 words), same style as painRationale.
+- recommendation: "take_call", "pivot_ae", or "disqualify". Default to the deterministic suggested recommendation given in the input unless your own Pain/Champion read gives real cause to diverge.
+- recommendationRationale: 1-2 plain sentences giving the reasons only, written the way you'd say it out loud. Do NOT write "My read" or restate the recommendation itself -- the UI already shows that as the headline right above this text. Just the reasoning, e.g. "The message itself is too vague to size the pain, and Chuong isn't clearly a champion, but seven active users including a Technical Lead is worth 15 minutes to understand what's happening inside the account."
 
 Reply with valid JSON only, no markdown fences, no explanation:
 {
   "tldr": "...",
-  "hubspotSummary": "...",
-  "scorecardText": "...",
   "painScore": 0,
   "painLabel": "Confirmed" | "Hypothesis" | "Unknown",
+  "painRationale": "...",
   "championScore": 0,
   "championLabel": "Confirmed" | "Hypothesis" | "Unknown",
+  "championRationale": "...",
   "recommendation": "take_call" | "pivot_ae" | "disqualify",
   "recommendationRationale": "..."
 }`;
@@ -111,20 +101,20 @@ export async function generateCheckpointOne(research: IntroCallResearch, scoreca
   const parsed = await completeJsonWithRetry<IntroCallCheckpoint>({
     systemPrompt: `${INTRO_CALL_REFERENCE}\n\n${CHECKPOINT_CONTRACT}`,
     input: buildResearchBlock(research, scorecard),
-    maxOutputTokens: 2500,
+    maxOutputTokens: 900,
   });
   return {
     tldr: String(parsed.tldr ?? ""),
-    hubspotSummary: String(parsed.hubspotSummary ?? ""),
-    scorecardText: String(parsed.scorecardText ?? ""),
     painScore: Number(parsed.painScore ?? 0) || 0,
     painLabel: (["Confirmed", "Hypothesis", "Unknown"] as const).includes(parsed.painLabel as PillarLabel)
       ? (parsed.painLabel as PillarLabel)
       : "Unknown",
+    painRationale: String(parsed.painRationale ?? ""),
     championScore: Number(parsed.championScore ?? 0) || 0,
     championLabel: (["Confirmed", "Hypothesis", "Unknown"] as const).includes(parsed.championLabel as PillarLabel)
       ? (parsed.championLabel as PillarLabel)
       : "Unknown",
+    championRationale: String(parsed.championRationale ?? ""),
     recommendation: (["take_call", "pivot_ae", "disqualify"] as const).includes(
       parsed.recommendation as IntroCallCheckpoint["recommendation"],
     )

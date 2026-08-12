@@ -41,12 +41,12 @@ export default defineAction({
 
     const checkpoint: IntroCallCheckpoint = {
       tldr: lead.introTldr ?? "",
-      hubspotSummary: lead.introHubspotSummary ?? "",
-      scorecardText: lead.introScorecardText ?? "",
       painScore: lead.introPainScore ?? 0,
       painLabel: (lead.introPainLabel as IntroCallCheckpoint["painLabel"]) ?? "Unknown",
+      painRationale: lead.introPainRationale ?? "",
       championScore: lead.introChampionScore ?? 0,
       championLabel: (lead.introChampionLabel as IntroCallCheckpoint["championLabel"]) ?? "Unknown",
+      championRationale: lead.introChampionRationale ?? "",
       recommendation: (lead.introRecommendation as IntroCallCheckpoint["recommendation"]) ?? "take_call",
       recommendationRationale: lead.introRecommendationRationale ?? "",
     };
