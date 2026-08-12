@@ -92,7 +92,7 @@ Follow this shape for each field:
 - painScore / painLabel: your own score and label (Confirmed/Hypothesis/Unknown) for Pain we can solve, consistent with scorecardText.
 - championScore / championLabel: same for Potential Champion.
 - recommendation: "take_call", "pivot_ae", or "disqualify". Default to the deterministic suggested recommendation given above unless your own Pain/Champion read gives real cause to diverge.
-- recommendationRationale: 1-2 plain sentences explaining the call, written the way you'd say it to the xDR, e.g. "My read: take the call. [reasons]."
+- recommendationRationale: 1-2 plain sentences giving the reasons only. The UI already shows "My read: [recommendation]." right before this text, so do NOT repeat "My read" or restate the recommendation here -- just the reasoning itself, e.g. "The message itself is too vague to size the pain, and Chuong isn't clearly a champion, but seven active users including a Technical Lead is worth 15 minutes to understand what's happening inside the account."
 
 Reply with valid JSON only, no markdown fences, no explanation:
 {

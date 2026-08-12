@@ -1,6 +1,6 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { IconBell, IconCheck, IconCopy, IconLoader2, IconPencil, IconX } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -135,6 +135,41 @@ function recommendationBadgeClasses(rec: IntroCallRecommendation, decided: boole
   return decided ? solid[rec] : outline[rec];
 }
 
+// Renders the model's lightweight markdown (**bold** spans, "- " bullets)
+// as actual formatted text instead of showing literal asterisks. Grows with
+// content -- no fixed height, so nothing gets clipped the way a fixed-size
+// textarea would.
+function renderInlineMarkdown(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={i} className="font-semibold">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
+function MarkdownLiteBlock({ text }: { text: string }) {
+  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+  return (
+    <div className="space-y-1.5 rounded-md border bg-muted/30 px-3 py-2.5 text-sm leading-relaxed">
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        const isBullet = trimmed.startsWith("- ");
+        const content = isBullet ? trimmed.slice(2) : trimmed;
+        return (
+          <div key={i} className={cn("flex gap-1.5", isBullet && "pl-0.5")}>
+            {isBullet && <span className="mt-0.5 shrink-0 text-muted-foreground">·</span>}
+            <span className="min-w-0">{renderInlineMarkdown(content)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function IntroCallCheckpointDisplay({ lead }: { lead: InboundLead }) {
   return (
     <div className="space-y-3">
@@ -148,7 +183,7 @@ function IntroCallCheckpointDisplay({ lead }: { lead: InboundLead }) {
             </Label>
             <CopyButton text={lead.introHubspotSummary} />
           </div>
-          <Textarea readOnly className="min-h-[140px] text-sm resize-none bg-muted/30" value={lead.introHubspotSummary} />
+          <MarkdownLiteBlock text={lead.introHubspotSummary} />
         </div>
       )}
 
@@ -160,7 +195,7 @@ function IntroCallCheckpointDisplay({ lead }: { lead: InboundLead }) {
             </Label>
             <CopyButton text={lead.introScorecardText} />
           </div>
-          <Textarea readOnly className="min-h-[120px] text-sm resize-none bg-muted/30" value={lead.introScorecardText} />
+          <MarkdownLiteBlock text={lead.introScorecardText} />
         </div>
       )}
 
@@ -187,7 +222,7 @@ function EmailOutputDisplay({ subject, body }: { subject: string; body: string }
           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</Label>
           <CopyButton text={body} />
         </div>
-        <Textarea readOnly className="min-h-[160px] text-sm resize-none bg-muted/30 leading-relaxed" value={body} />
+        <Textarea readOnly className="min-h-[160px] text-sm resize-y bg-muted/30 leading-relaxed" value={body} />
       </div>
     </div>
   );
@@ -586,7 +621,7 @@ function InboundLeadsPanel({
                                   </div>
                                   <Textarea
                                     readOnly
-                                    className="min-h-[240px] text-xs font-mono resize-none bg-muted/30 leading-relaxed"
+                                    className="min-h-[240px] text-xs font-mono resize-y bg-muted/30 leading-relaxed"
                                     value={lead.introWorksheet}
                                   />
                                 </div>
