@@ -50,7 +50,7 @@ export const generatedNotes = table("generated_notes", {
 });
 
 // One row per HubSpot contact detected filling out the "Contact Sales" form,
-// via the daily poll job (jobs/poll-hubspot-contact-sales.md). The idempotency
+// via the 2-hourly poll job (jobs/poll-hubspot-contact-sales.md). The idempotency
 // key is (hubspotContactId, contactSalesDate) together, NOT hubspotContactId
 // alone -- contactSalesDate tracks HubSpot's most_recent_contact_sales_date,
 // which updates on every resubmission, so the same contact submitting again

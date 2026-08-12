@@ -32,7 +32,7 @@ interface HubSpotContactResult {
 
 export default defineAction({
   description:
-    "Poll HubSpot for contacts who recently submitted the Contact Sales form and record any not already seen.",
+    "Poll HubSpot for contacts who recently submitted the Contact Sales form and record any not already seen. Returns the new leads' ids so the caller can action each one.",
   schema: z.object({}),
   requiresAuth: true,
   http: { method: "POST" },
@@ -59,7 +59,7 @@ export default defineAction({
       .map((c) => ({ ...c, contactSalesDate: c.properties.most_recent_contact_sales_date ?? null }))
       .filter((c) => c.contactSalesDate);
     if (candidates.length === 0) {
-      return { newLeadsFound: 0 };
+      return { newLeadsFound: 0, newLeadIds: [] as string[] };
     }
 
     const db = getDb();
@@ -70,23 +70,22 @@ export default defineAction({
 
     const fresh = candidates.filter((c) => !alreadySeen.has(`${c.id}::${c.contactSalesDate}`));
     if (fresh.length === 0) {
-      return { newLeadsFound: 0 };
+      return { newLeadsFound: 0, newLeadIds: [] as string[] };
     }
 
     const now = new Date().toISOString();
-    await db.insert(inboundLeads).values(
-      fresh.map((c) => ({
-        id: nanoid(),
-        hubspotContactId: c.id,
-        prospectName: [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || "Unknown",
-        prospectEmail: c.properties.email ?? null,
-        company: c.properties.company ?? null,
-        contactSalesDate: c.contactSalesDate,
-        seen: 0,
-        createdAt: now,
-      })),
-    );
+    const freshRows = fresh.map((c) => ({
+      id: nanoid(),
+      hubspotContactId: c.id,
+      prospectName: [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || "Unknown",
+      prospectEmail: c.properties.email ?? null,
+      company: c.properties.company ?? null,
+      contactSalesDate: c.contactSalesDate,
+      seen: 0,
+      createdAt: now,
+    }));
+    await db.insert(inboundLeads).values(freshRows);
 
-    return { newLeadsFound: fresh.length };
+    return { newLeadsFound: freshRows.length, newLeadIds: freshRows.map((r) => r.id) };
   },
 });
