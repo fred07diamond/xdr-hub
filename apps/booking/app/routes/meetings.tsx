@@ -42,6 +42,7 @@ interface Meeting {
   status: string;
   meetingLink: string | null;
   createdAt: string | null;
+  nooksCallId: string | null;
 }
 
 interface MeetingNotes {
@@ -552,7 +553,21 @@ function MeetingCard({
               <span>{names[m.aeUserEmail] ?? (m.aeUserEmail || "--")}</span>
               <span className="text-muted-foreground">XDR</span>
               <span>{names[m.xdrUserEmail] ?? m.xdrUserEmail}</span>
+              {m.nooksCallId && (
+                <>
+                  <span className="text-muted-foreground">Nooks Call ID</span>
+                  <div className="flex items-center gap-1">
+                    <span className="truncate font-mono text-xs">{m.nooksCallId}</span>
+                    <CopyButton text={m.nooksCallId} />
+                  </div>
+                </>
+              )}
               <div className="col-span-2 pt-2 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  {m.nooksCallId
+                    ? 'Pull this call\'s transcript in a Claude session with the Nooks connector (e.g. "get the transcript for Nooks call " + the ID above), then paste it below.'
+                    : "No Nooks call ID on this meeting -- ask Claude to find the transcript by prospect name and meeting time instead."}
+                </p>
                 <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Paste call transcript
                 </Label>
