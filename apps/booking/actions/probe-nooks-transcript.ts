@@ -58,15 +58,23 @@ async function refreshAccessToken(
 // actually present in the live token, and if so, do /calls/{id}/transcript
 // and ?include=transcript still 403 anyway (entitlement gate) or succeed
 // (meaning the earlier 403s were a stale-token artifact)? Admin-only.
-// Delete once answered.
+// Accepts an optional callId to test against a call this token's own
+// /calls list doesn't return -- always in its own labeled block so it's
+// never confused with what the token can see on its own. Delete once
+// answered.
 export default defineAction({
   description: "[diagnostic] Ground-truth check of the Nooks token and calls/transcript endpoints.",
-  schema: z.object({}),
+  schema: z.object({
+    // Optional: an externally-sourced call ID to also probe, kept separate
+    // from and clearly labeled apart from whatever this token's own /calls
+    // list returns, so the two pieces of evidence are never conflated.
+    callId: z.string().optional(),
+  }),
   requiresAuth: true,
   readOnly: true,
   agentTool: false,
   http: { method: "GET" },
-  run: async (_args, ctx) => {
+  run: async ({ callId: externalCallId }, ctx) => {
     await requireRole(ctx?.userEmail, ["admin"]);
 
     const accounts = await getOAuthAccounts("nooks", ctx!.userEmail);
@@ -152,13 +160,24 @@ export default defineAction({
     }
 
     if (firstCallId) {
-      results.push(await probe("call-detail", `/calls/${firstCallId}`));
-      results.push(await probe("transcript-sub-resource", `/calls/${firstCallId}/transcript`));
-      results.push(await probe("call-detail-include-transcript", `/calls/${firstCallId}?include=transcript`));
+      results.push(await probe("own-list:call-detail", `/calls/${firstCallId}`));
+      results.push(await probe("own-list:transcript-sub-resource", `/calls/${firstCallId}/transcript`));
+      results.push(await probe("own-list:call-detail-include-transcript", `/calls/${firstCallId}?include=transcript`));
     } else {
-      results.push({ label: "call-detail", path: null, status: null, note: "no call id returned by list-calls" });
-      results.push({ label: "transcript-sub-resource", path: null, status: null, note: "no call id returned by list-calls" });
-      results.push({ label: "call-detail-include-transcript", path: null, status: null, note: "no call id returned by list-calls" });
+      results.push({ label: "own-list:call-detail", path: null, status: null, note: "no call id returned by list-calls" });
+      results.push({ label: "own-list:transcript-sub-resource", path: null, status: null, note: "no call id returned by list-calls" });
+      results.push({ label: "own-list:call-detail-include-transcript", path: null, status: null, note: "no call id returned by list-calls" });
+    }
+
+    // Externally-sourced ID (not discovered by this token's own /calls list)
+    // -- kept in its own labeled block so it's never mistaken for evidence
+    // about what this token/account can itself see.
+    if (externalCallId) {
+      results.push(await probe("external-id:call-detail", `/calls/${externalCallId}`));
+      results.push(await probe("external-id:transcript-sub-resource", `/calls/${externalCallId}/transcript`));
+      results.push(
+        await probe("external-id:call-detail-include-transcript", `/calls/${externalCallId}?include=transcript`),
+      );
     }
 
     return {
