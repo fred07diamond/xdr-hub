@@ -240,16 +240,17 @@ function ScorecardGrid({ pillars }: { pillars: PillarCardData[] }) {
   );
 }
 
-function FactGrid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-md border bg-muted/20 p-3 sm:grid-cols-3">{children}</div>;
-}
-
-function Fact({ label, value, full }: { label: string; value: ReactNode; full?: boolean }) {
-  if (!value) return null;
+// A thin inline strip of small facts, not a grid of identical cells --
+// these are secondary details, not things to scan at the same weight as
+// the scorecard above.
+function MetaStrip({ items }: { items: Array<string | null> }) {
+  const present = items.filter(Boolean) as string[];
+  if (present.length === 0) return null;
   return (
-    <div className={cn("space-y-0.5", full && "col-span-2 sm:col-span-3")}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-sm leading-snug">{value}</p>
+    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {present.map((item, i) => (
+        <span key={i}>{item}</span>
+      ))}
     </div>
   );
 }
@@ -287,6 +288,9 @@ function IntroCallCheckpointDisplay({ lead }: { lead: InboundLead }) {
 
   const c = research?.contact;
   const co = research?.company;
+  const productLine = lead.introProduct
+    ? `${lead.introProduct === "code" ? "Builder Code" : "Builder Content"}${lead.introProductSignal ? ` (${lead.introProductSignal})` : ""}`
+    : null;
 
   return (
     <div className="space-y-3">
@@ -298,58 +302,52 @@ function IntroCallCheckpointDisplay({ lead }: { lead: InboundLead }) {
 
       <ScorecardGrid pillars={pillars} />
 
-      {c?.messageVerbatim && (
-        <blockquote className="border-l-2 border-muted-foreground/30 pl-3 text-sm italic leading-relaxed text-foreground/80">
-          &ldquo;{c.messageVerbatim}&rdquo;
-        </blockquote>
-      )}
-
       {research && (
-        <FactGrid>
-          <Fact label="Contact" value={[c?.name, c?.jobTitle].filter(Boolean).join(" · ") || "unknown"} />
-          <Fact label="Location" value={c?.location} />
-          <Fact label="LinkedIn" value={c?.linkedinUrl ?? "none on file"} />
-          <Fact label="Fit score (Breeze)" value={c?.breezeFitScore} />
-          <Fact label="Signed up" value={c?.signUpTimeStamp} />
-          <Fact label="Heard about us" value={c?.howHeardAboutBuilder} />
-          <Fact label="Job function" value={c?.jobFunctions} />
-          <Fact
-            label="Product"
-            value={
-              lead.introProduct
-                ? `${lead.introProduct === "code" ? "Builder Code" : "Builder Content"}${lead.introProductSignal ? ` (${lead.introProductSignal})` : ""}`
-                : null
-            }
-          />
-          {lead.introMaturityStage != null && (
-            <Fact label="Maturity stage" value={`Stage ${lead.introMaturityStage}${lead.introMaturityStageReason ? ` — ${lead.introMaturityStageReason}` : ""}`} full />
+        <div className="space-y-2.5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-sm font-medium">{c?.name || "Unknown contact"}</p>
+              <p className="text-xs text-muted-foreground">{[c?.jobTitle, c?.location].filter(Boolean).join(" · ") || "No title or location on file"}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium">{co?.name || "Unknown company"}</p>
+              <p className="text-xs text-muted-foreground">
+                {[co?.employeeCount ? `${co.employeeCount} employees` : null, co?.industry, co?.location, co?.parentCompanyName ? `parent: ${co.parentCompanyName}` : null]
+                  .filter(Boolean)
+                  .join(" · ") || "Unknown"}
+              </p>
+            </div>
+          </div>
+
+          {c?.messageVerbatim && (
+            <blockquote className="border-l-2 border-muted-foreground/30 pl-3 text-sm italic leading-relaxed text-foreground/80">
+              &ldquo;{c.messageVerbatim}&rdquo;
+            </blockquote>
           )}
-          <Fact
-            label="Company"
-            value={
-              co
-                ? [co.name, co.employeeCount ? `${co.employeeCount} employees` : null, co.industry, co.location, co.parentCompanyName ? `parent: ${co.parentCompanyName}` : null]
-                    .filter(Boolean)
-                    .join(" · ")
-                : "unknown"
-            }
-            full
+
+          <MetaStrip
+            items={[
+              c?.breezeFitScore ? `Fit score ${c.breezeFitScore}` : null,
+              c?.signUpTimeStamp ? `Signed up ${c.signUpTimeStamp}` : null,
+              c?.howHeardAboutBuilder ? `Heard via ${c.howHeardAboutBuilder}` : null,
+              `LinkedIn: ${c?.linkedinUrl ?? "none on file"}`,
+              productLine,
+              lead.introMaturityStage != null ? `Stage ${lead.introMaturityStage}${lead.introMaturityStageReason ? ` — ${lead.introMaturityStageReason}` : ""}` : null,
+            ]}
           />
-          <Fact
-            label="Deals"
-            value={research.deals.length ? research.deals.map(fmtDealFact).join("; ") : "None — clean account"}
-            full
-          />
-          <Fact
-            label={`Other contacts (${research.activeInAppUserCount}/${research.otherContacts.length} active in-app)`}
-            value={research.otherContacts.length ? research.otherContacts.map(fmtOtherContact).join(" · ") : "None"}
-            full
-          />
-          <Fact
-            label="Notes"
-            value={c?.numNotes ? `${c.numNotes}${research.notesUnreadable ? " — paste in if relevant, bodies aren't readable here" : ""}` : "None"}
-          />
-        </FactGrid>
+
+          <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">
+            <p>Deals: {research.deals.length ? research.deals.map(fmtDealFact).join("; ") : "None — clean account"}</p>
+            <p>
+              Other contacts ({research.activeInAppUserCount}/{research.otherContacts.length} active in-app):{" "}
+              {research.otherContacts.length ? research.otherContacts.map(fmtOtherContact).join(" · ") : "None"}
+            </p>
+            <p>
+              Notes: {c?.numNotes || "None"}
+              {c?.numNotes && research.notesUnreadable ? " — paste in if relevant, bodies aren't readable here" : ""}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
