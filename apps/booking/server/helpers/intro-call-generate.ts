@@ -69,6 +69,7 @@ Seat math: ${scorecard.seatMath ? `${scorecard.seatMath.activeUsers} active user
 Enterprise feature matches: ${scorecard.enterpriseFeatureMatches.join(", ") || "none"}
 Closed Lost override: ${scorecard.closedLostOverride.applies ? `APPLIES -- ${scorecard.closedLostOverride.reason} (deal: ${scorecard.closedLostOverride.dealName})` : "does not apply"}
 Agency signal: ${scorecard.agencySignal.looksLikeAgency ? `YES -- ${scorecard.agencySignal.evidence}` : "no"}
+Hard disqualify gate: ${scorecard.hardDisqualify.applies ? `APPLIES -- ${scorecard.hardDisqualify.reasons.join("; ")}` : "does not apply"}
 Suggested recommendation: ${scorecard.recommendation} (${scorecard.recommendationReasons.join("; ")})`;
 }
 
@@ -81,8 +82,8 @@ This is a quick-answer tool -- the xDR needs a fast, scannable read, not a docum
 - painRationale: ONE short sentence (under 20 words) explaining the pain score. No preamble, just the reason, e.g. "Message only says 'test the feature,' no described cost or team impact yet."
 - championScore / championLabel: your own score and label for Potential Champion, per the champion-vs-coach acid test in the reference doc.
 - championRationale: ONE short sentence (under 20 words), same style as painRationale.
-- recommendation: "take_call", "pivot_ae", or "disqualify". Default to the deterministic suggested recommendation given in the input unless your own Pain/Champion read gives real cause to diverge.
-- recommendationRationale: 1-2 plain sentences giving the reasons only, written the way you'd say it out loud. Do NOT write "My read" or restate the recommendation itself -- the UI already shows that as the headline right above this text. Just the reasoning, e.g. "The message itself is too vague to size the pain, and Chuong isn't clearly a champion, but seven active users including a Technical Lead is worth 15 minutes to understand what's happening inside the account."
+- recommendation: "take_call", "pivot_ae", or "disqualify". If the input's "Hard disqualify gate" says APPLIES, recommendation MUST be "disqualify" -- this is a firm business rule (region, industry, company size, or academic), not a judgment call, and it overrides everything else including a strong Pain or Champion read. Otherwise, default to the deterministic suggested recommendation given in the input unless your own Pain/Champion read gives real cause to diverge.
+- recommendationRationale: 1-2 plain sentences giving the reasons only, written the way you'd say it out loud. Do NOT write "My read" or restate the recommendation itself -- the UI already shows that as the headline right above this text. Just the reasoning, e.g. "The message itself is too vague to size the pain, and Chuong isn't clearly a champion, but seven active users including a Technical Lead is worth 15 minutes to understand what's happening inside the account." If the hard disqualify gate applied, state which reason(s) plainly instead, e.g. "Under our 100-employee floor with a one-word message, so this doesn't clear the bar for a call."
 
 Reply with valid JSON only, no markdown fences, no explanation:
 {

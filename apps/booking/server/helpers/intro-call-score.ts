@@ -11,6 +11,11 @@ export interface Pillar {
   signals: string[];
 }
 
+export interface HardDisqualifyResult {
+  applies: boolean;
+  reasons: string[];
+}
+
 export interface IntroCallScorecard {
   product: Product;
   productSignal: string;
@@ -23,6 +28,7 @@ export interface IntroCallScorecard {
   enterpriseFeatureMatches: string[];
   closedLostOverride: { applies: boolean; reason: string | null; dealName: string | null };
   agencySignal: { looksLikeAgency: boolean; evidence: string | null };
+  hardDisqualify: HardDisqualifyResult;
   recommendation: Recommendation;
   recommendationReasons: string[];
 }
@@ -62,7 +68,116 @@ const AGENCY_INDUSTRY_KEYWORDS = /marketing.*advertising|information technology.
 const CLOSED_LOST_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000;
 const SELF_SERVE_DECLINE_DETAIL_PATTERN = /no enterprise need|self-?serve sufficient/i;
 
-const PRIMARY_MARKETS = new Set(["united states", "usa", "us", "canada", "united kingdom", "uk", "germany", "france", "netherlands", "sweden", "norway", "denmark", "finland", "australia", "brazil"]);
+// Australia and Brazil dropped from here -- they're outside NAM/EMEA, so the
+// hard-disqualify gate below already rules them out before this list would
+// ever be reached.
+const PRIMARY_MARKETS = new Set(["united states", "usa", "us", "canada", "united kingdom", "uk", "germany", "france", "netherlands", "sweden", "norway", "denmark", "finland"]);
+
+// Explicit business-calibration gate (not from any GTM/persona doc -- the
+// user's own instruction): avoid leads outside NAM/EMEA, avoid companies
+// that aren't a B2B/SaaS/B2C business, avoid sub-100-employee companies
+// unless the message is genuinely detailed, and avoid academic leads. Any
+// one of these firing forces disqualify, ahead of every other rule
+// (including the Closed Lost override and enterprise-feature escalation).
+const NAM_EMEA_COUNTRIES = new Set([
+  "united states", "usa", "u.s.a", "u.s.a.", "us", "united states of america", "canada", "mexico",
+  "united kingdom", "uk", "great britain", "england", "scotland", "wales", "northern ireland",
+  "ireland", "france", "germany", "netherlands", "belgium", "luxembourg", "switzerland", "austria",
+  "spain", "portugal", "italy", "greece", "poland", "czech republic", "czechia", "slovakia", "hungary",
+  "romania", "bulgaria", "croatia", "slovenia", "serbia", "bosnia and herzegovina", "montenegro",
+  "albania", "north macedonia", "macedonia", "kosovo", "sweden", "norway", "denmark", "finland",
+  "iceland", "estonia", "latvia", "lithuania", "ukraine", "belarus", "moldova", "malta", "cyprus",
+  "monaco", "liechtenstein", "andorra", "san marino", "vatican city",
+  "turkey", "israel", "united arab emirates", "uae", "saudi arabia", "qatar", "kuwait", "bahrain",
+  "oman", "jordan", "lebanon", "iraq",
+  "egypt", "morocco", "tunisia", "algeria", "south africa", "nigeria", "kenya", "ghana", "ethiopia",
+  "tanzania", "uganda", "rwanda", "senegal", "ivory coast", "cote d'ivoire", "cameroon", "zimbabwe",
+  "zambia", "botswana", "namibia", "mozambique", "madagascar",
+]);
+
+// HubSpot's industry enum (~150 values, verified live), limited to the
+// clearly non-commercial / heavy-industrial / regulated-public-sector
+// categories -- deliberately conservative on borderline consumer/retail
+// categories (a supermarket or restaurant chain can plausibly want a
+// marketing site) since a false exclude is worse than a false include here.
+const EXCLUDED_INDUSTRIES = new Set([
+  "GOVERNMENT_ADMINISTRATION", "GOVERNMENT_RELATIONS", "LEGISLATIVE_OFFICE", "PUBLIC_POLICY", "PUBLIC_SAFETY",
+  "LAW_ENFORCEMENT", "JUDICIARY", "MILITARY", "DEFENSE_SPACE", "INTERNATIONAL_AFFAIRS", "POLITICAL_ORGANIZATION",
+  "NON_PROFIT_ORGANIZATION_MANAGEMENT", "PHILANTHROPY", "FUND_RAISING", "RELIGIOUS_INSTITUTIONS",
+  "CIVIC_SOCIAL_ORGANIZATION", "THINK_TANKS",
+  "EDUCATION_MANAGEMENT", "HIGHER_EDUCATION", "PRIMARY_SECONDARY_EDUCATION", "LIBRARIES", "MUSEUMS_AND_INSTITUTIONS",
+  "FARMING", "RANCHING", "FISHERY", "DAIRY", "MINING_METALS", "OIL_ENERGY", "UTILITIES",
+  "LOGISTICS_AND_SUPPLY_CHAIN", "TRANSPORTATION_TRUCKING_RAILROAD", "RAILROAD_MANUFACTURE", "SHIPBUILDING", "MARITIME",
+  "AVIATION_AEROSPACE", "AIRLINES_AVIATION", "WAREHOUSING",
+  "CONSTRUCTION", "CIVIL_ENGINEERING", "ARCHITECTURE_PLANNING", "BUILDING_MATERIALS", "GLASS_CERAMICS_CONCRETE",
+  "MACHINERY", "MECHANICAL_OR_INDUSTRIAL_ENGINEERING", "ELECTRICAL_ELECTRONIC_MANUFACTURING",
+  "PACKAGING_AND_CONTAINERS", "PAPER_FOREST_PRODUCTS", "PLASTICS", "TEXTILES", "TOBACCO",
+  "WHOLESALE", "IMPORT_AND_EXPORT",
+]);
+
+const ACADEMIC_INDUSTRIES = new Set(["EDUCATION_MANAGEMENT", "HIGHER_EDUCATION", "PRIMARY_SECONDARY_EDUCATION"]);
+const ACADEMIC_EMAIL_PATTERN = /\.edu(\.[a-z]{2})?$|\.ac\.[a-z]{2,3}$/i;
+const ACADEMIC_NAME_PATTERN = /\buniversit(y|e|ies|é)\b|\bcolleges?\b|\binstitute of technology\b/i;
+
+const MIN_EMPLOYEE_FLOOR = 100;
+const STRONG_MESSAGE_MIN_WORDS = 15;
+
+function isOutsideNamEmea(country: string | null): boolean {
+  const normalized = country?.trim().toLowerCase();
+  if (!normalized) return false; // unknown -- don't disqualify on missing data
+  if (NAM_EMEA_COUNTRIES.has(normalized)) return false;
+  // Substring match only for longer country names, to avoid short-code
+  // false positives (e.g. "us" inside "Belarus").
+  const substringMatch = [...NAM_EMEA_COUNTRIES].some(
+    (c) => c.length >= 4 && (normalized.includes(c) || c.includes(normalized)),
+  );
+  return !substringMatch;
+}
+
+function isStrongMessage(message: string | null): boolean {
+  if (!message) return false;
+  return message.trim().split(/\s+/).filter(Boolean).length >= STRONG_MESSAGE_MIN_WORDS;
+}
+
+function checkHardDisqualify(research: IntroCallResearch): HardDisqualifyResult {
+  const reasons: string[] = [];
+  const contact = research.contact;
+  const company = research.company;
+
+  const country = company?.country ?? contact.country;
+  if (isOutsideNamEmea(country)) {
+    reasons.push(`Location ("${country}") is outside NAM and EMEA.`);
+  }
+
+  const industry = company?.industry?.toUpperCase().trim() ?? null;
+  if (industry && EXCLUDED_INDUSTRIES.has(industry)) {
+    reasons.push(`Industry ("${company?.industry}") isn't a B2B, SaaS, or B2C business.`);
+  }
+
+  const emailDomain = contact.email?.split("@")[1]?.toLowerCase() ?? null;
+  const isAcademicEmail = emailDomain ? ACADEMIC_EMAIL_PATTERN.test(emailDomain) : false;
+  const isAcademicName = company?.name ? ACADEMIC_NAME_PATTERN.test(company.name) : false;
+  const isAcademicIndustry = industry ? ACADEMIC_INDUSTRIES.has(industry) : false;
+  if (isAcademicEmail || isAcademicName || isAcademicIndustry) {
+    const evidence = [
+      isAcademicEmail && "edu-style email domain",
+      isAcademicName && "\"university\"/\"college\" in the company name",
+      isAcademicIndustry && "education industry",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    reasons.push(`Looks academic (${evidence}).`);
+  }
+
+  const employees = company?.employeeCount ?? null;
+  if (employees !== null && employees < MIN_EMPLOYEE_FLOOR && !isStrongMessage(contact.messageVerbatim)) {
+    reasons.push(
+      `${employees} employees is under the ${MIN_EMPLOYEE_FLOOR}-employee floor, and the message isn't detailed enough (under ${STRONG_MESSAGE_MIN_WORDS} words) to override it.`,
+    );
+  }
+
+  return { applies: reasons.length > 0, reasons };
+}
 
 function countMatches(message: string | null, patterns: Array<{ label: string; pattern: RegExp }>): string[] {
   if (!message) return [];
@@ -336,20 +451,23 @@ export function scoreIntroCallLead(research: IntroCallResearch): IntroCallScorec
   const icpFit = scoreIcpFit(research, product, maturityStage);
   const closedLostOverride = checkClosedLostOverride(research);
   const agencySignal = checkAgencySignal(research);
+  const hardDisqualify = checkHardDisqualify(research);
 
-  const { recommendation, reasons } = decideRecommendation({
-    product,
-    productNeedsConfirmation,
-    enterpriseNeed,
-    icpFit,
-    featureMatches,
-    seatMath,
-    maturityStage,
-    closedLostOverride,
-    jobTitle: research.contact.jobTitle,
-    employeeCount: research.company?.employeeCount ?? null,
-    location: research.company?.location ?? research.contact.location,
-  });
+  const { recommendation, reasons } = hardDisqualify.applies
+    ? { recommendation: "disqualify" as Recommendation, reasons: hardDisqualify.reasons }
+    : decideRecommendation({
+        product,
+        productNeedsConfirmation,
+        enterpriseNeed,
+        icpFit,
+        featureMatches,
+        seatMath,
+        maturityStage,
+        closedLostOverride,
+        jobTitle: research.contact.jobTitle,
+        employeeCount: research.company?.employeeCount ?? null,
+        location: research.company?.location ?? research.contact.location,
+      });
 
   return {
     product,
@@ -363,6 +481,7 @@ export function scoreIntroCallLead(research: IntroCallResearch): IntroCallScorec
     enterpriseFeatureMatches: featureMatches,
     closedLostOverride,
     agencySignal,
+    hardDisqualify,
     recommendation,
     recommendationReasons: reasons,
   };

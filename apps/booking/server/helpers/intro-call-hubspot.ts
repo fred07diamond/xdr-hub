@@ -72,8 +72,10 @@ const DEALS_CAP = 10;
 export interface IntroCallContact {
   id: string;
   name: string | null;
+  email: string | null;
   jobTitle: string | null;
   location: string | null;
+  country: string | null;
   linkedinUrl: string | null;
   source: string | null;
   lastActivityDate: string | null;
@@ -116,6 +118,7 @@ export interface IntroCallCompany {
   industry: string | null;
   employeeCount: number | null;
   location: string | null;
+  country: string | null;
   parentCompanyName: string | null;
 }
 
@@ -197,8 +200,10 @@ export async function fetchIntroCallResearch(contactId: string): Promise<IntroCa
   const contact: IntroCallContact = {
     id: contactObj.id,
     name: [cp.firstname, cp.lastname].filter(Boolean).join(" ") || null,
+    email: cp.email ?? null,
     jobTitle: cp.jobtitle ?? null,
     location: joinLocation(cp.city, cp.state, cp.country),
+    country: cp.country ?? null,
     linkedinUrl: cp.hs_linkedin_url ?? null,
     source: cp.hs_analytics_source ?? null,
     lastActivityDate: cp.notes_last_updated ?? null,
@@ -254,6 +259,7 @@ export async function fetchIntroCallResearch(contactId: string): Promise<IntroCa
         industry: co.industry ?? null,
         employeeCount: co.numberofemployees ? Number(co.numberofemployees) || null : null,
         location: joinLocation(co.city, co.state, co.country),
+        country: co.country ?? null,
         parentCompanyName,
       };
     } catch {

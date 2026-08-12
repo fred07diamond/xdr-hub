@@ -82,6 +82,19 @@ Use these to read *who the champion is* and *where the engineering path runs*. D
 - **Product** (CPO, VP/Head/Director of Product, GPM). Owns a roadmap and a number; feels the cost of betting engineering capacity on ideas they couldn't validate cheaply. "I just want fast prototypes / no code" is a redirect signal -- bridge to an engineering decision-maker.
 - **Exec** (VP/SVP/C-level across Eng, Product, Design). The economic buyer. Needs outcomes that show up in board decks, not feature lists.
 
+**Seniority tiers, for scoring Potential Champion.** Leaders (CXO/VP/Head of -- e.g. CDO, VP Design, Head of UX; CPO, VP Product, Head of Product R&D; CTO, VP Engineering, Head of Engineering) usually control or heavily influence budget and can say yes to new tools -- score toward Confirmed champion access if one of these is engaged with a real path to the EB. Managers (Manager/Director -- e.g. UX Manager, Design Manager; Director of Product, Group PM; Engineering Manager, Platform Manager) often have budget input and are frequently the internal champion, but confirm they can reach the Leader tier. Leads (Sr/Lead/Staff -- e.g. Lead/Principal/Staff Designer; Sr/Principal PM, Product Owner; Staff/Principal Engineer, Tech Lead) have limited budget authority but can torpedo a deal on usability grounds -- useful as a coach or end-user validator, rarely a champion on their own.
+
+**The acceptable-vs-unacceptable language test, for scoring Pain.** For each use case, specific + business impact + urgency reads as real pain worth a call; vague desire + no impact + no timeline reads as surface interest needing more qualification (not an automatic disqualify, just a lower Pain score and a live-call question).
+
+| Use case | Acceptable (real pain) | Unacceptable (surface interest) |
+|---|---|---|
+| Optimize Software Development Lifecycle | "Reduce time from concept to production," "eliminate bottlenecks between teams" | "Work faster," "be more efficient," "improve our process" |
+| Idea Exploration & Rapid Prototyping | "Validate ideas without engineering resources," "test concepts with users before development" | "Try new ideas," "test things out," "be more innovative" |
+| Design to Code | "Reduce back-and-forth between design and engineering," "maintain design fidelity in production" | "Get designs built better," "improve handoffs" |
+| Update and Manage Design System | "Scale design standards across multiple teams," "keep components up to date across platforms" | "Be more consistent," "improve our components" |
+
+Quick test either way: if they can't answer "what's driving this need right now" or "what happens if you wait six more months," they don't have urgent pain worth pursuing yet -- that's a live-call question, not necessarily a disqualify.
+
 ## Scoring Logic -- Pain and Potential Champion (yours to score)
 
 ### Pain we can solve
