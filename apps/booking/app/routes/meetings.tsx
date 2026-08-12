@@ -247,6 +247,9 @@ function MeetingCard({
   const updateMeeting = useActionMutation("update-meeting") as any;
   const deleteMeeting = useActionMutation("delete-meeting") as any;
   const bookCalendar = useActionMutation("book-meeting-calendar") as any;
+  const generateFromTranscript = useActionMutation("generate-notes-for-meeting") as any;
+  const [transcriptDraft, setTranscriptDraft] = useState("");
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
 
   const saving = updateMeeting.isPending || bookCalendar.isPending;
   // Saving a confirmed meeting with a date also creates/moves the Google
@@ -263,13 +266,28 @@ function MeetingCard({
     }
   }
 
-  const { data: detail, isLoading } = useActionQuery(
+  const { data: detail, isLoading, refetch: refetchDetail } = useActionQuery(
     "get-meeting-detail",
     { meetingId: m.id },
     { enabled: isExpanded && !isEditing },
-  ) as { data: { meeting: Meeting; notes: MeetingNotes | null } | undefined; isLoading: boolean };
+  ) as {
+    data: { meeting: Meeting; notes: MeetingNotes | null } | undefined;
+    isLoading: boolean;
+    refetch: () => void;
+  };
 
   const notes = detail?.notes ?? null;
+
+  async function handleGenerateFromTranscript() {
+    setTranscriptError(null);
+    try {
+      await generateFromTranscript.mutateAsync({ meetingId: m.id, transcript: transcriptDraft });
+      setTranscriptDraft("");
+      refetchDetail();
+    } catch (err) {
+      setTranscriptError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   function handleEdit(e: React.MouseEvent) {
     e.stopPropagation();
@@ -534,9 +552,33 @@ function MeetingCard({
               <span>{names[m.aeUserEmail] ?? (m.aeUserEmail || "--")}</span>
               <span className="text-muted-foreground">XDR</span>
               <span>{names[m.xdrUserEmail] ?? m.xdrUserEmail}</span>
-              <span className="col-span-2 pt-2 text-xs text-muted-foreground">
-                No generated notes for this meeting.
-              </span>
+              <div className="col-span-2 pt-2 space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Paste call transcript
+                </Label>
+                <Textarea
+                  className="min-h-[120px] text-sm resize-none"
+                  placeholder="Paste the call transcript here to generate the agenda, CRM notes, and follow-up email..."
+                  value={transcriptDraft}
+                  onChange={(e) => setTranscriptDraft(e.target.value)}
+                  disabled={generateFromTranscript.isPending}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleGenerateFromTranscript}
+                  disabled={generateFromTranscript.isPending || !transcriptDraft.trim()}
+                  className="h-7 text-xs px-3"
+                >
+                  {generateFromTranscript.isPending ? (
+                    <IconLoader2 className="h-3 w-3 animate-spin mr-1" />
+                  ) : null}
+                  Generate notes
+                </Button>
+                {transcriptError && (
+                  <p className="text-xs text-destructive">{transcriptError}</p>
+                )}
+              </div>
             </div>
           ) : (
             <>
