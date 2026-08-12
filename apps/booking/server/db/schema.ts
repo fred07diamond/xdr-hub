@@ -49,6 +49,21 @@ export const generatedNotes = table("generated_notes", {
   confirmedAt: text("confirmed_at"),
 });
 
+// One row per HubSpot contact detected filling out the "Contact Sales" form,
+// via the daily poll job (jobs/poll-hubspot-contact-sales.md). hubspotContactId
+// is the idempotency key -- the poll re-checks recent contact_sales_date
+// values every run, so it must skip contacts already recorded here.
+export const inboundLeads = table("inbound_leads", {
+  id: text("id").primaryKey(),
+  hubspotContactId: text("hubspot_contact_id").notNull().unique(),
+  prospectName: text("prospect_name").notNull(),
+  prospectEmail: text("prospect_email"),
+  company: text("company"),
+  contactSalesDate: text("contact_sales_date"),
+  seen: integer("seen").notNull().default(0), // 0/1 boolean, matches the rest of this monorepo's convention
+  createdAt: text("created_at").default(now()),
+});
+
 // One row per confirmed workflow — created after HubSpot deal creation succeeds.
 export const deals = table("deals", {
   id: text("id").primaryKey(),

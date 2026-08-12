@@ -1,5 +1,5 @@
-import { useActionMutation } from "@agent-native/core/client";
-import { IconCheck, IconCopy, IconLoader2, IconPencil, IconX } from "@tabler/icons-react";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { IconBell, IconCheck, IconCopy, IconLoader2, IconPencil, IconX } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,14 @@ interface ConfirmResult {
   meetingLink: string | null;
   emailSent: boolean;
   errors: { hubspot: string | null; calendar: string | null; email: string | null };
+}
+
+interface InboundLead {
+  id: string;
+  prospectName: string;
+  prospectEmail: string | null;
+  company: string | null;
+  contactSalesDate: string | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -149,6 +157,21 @@ export default function WorkflowRoute() {
 
   const initiate = useActionMutation("initiate-workflow");
   const confirm = useActionMutation("confirm-workflow");
+  const dismissLead = useActionMutation("dismiss-inbound-lead") as any;
+  const { data: leadsData, refetch: refetchLeads } = useActionQuery(
+    "list-unseen-inbound-leads",
+    {},
+    { refetchInterval: 60_000 },
+  ) as { data: { leads: InboundLead[] } | undefined; refetch: () => void };
+
+  async function handleDismissLead(leadId: string) {
+    try {
+      await dismissLead.mutateAsync({ leadId });
+      refetchLeads();
+    } catch {
+      // Best-effort -- it'll just show up again next refetch if this failed.
+    }
+  }
 
   async function handleGenerate() {
     if (!transcript.trim()) return;
@@ -222,6 +245,37 @@ export default function WorkflowRoute() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
+      {leadsData?.leads && leadsData.leads.length > 0 && (
+        <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
+            <IconBell className="h-4 w-4" />
+            {leadsData.leads.length} new inbound lead{leadsData.leads.length > 1 ? "s" : ""} from Contact Sales
+          </div>
+          <div className="space-y-1.5">
+            {leadsData.leads.map((lead) => (
+              <div
+                key={lead.id}
+                className="flex items-center justify-between gap-3 rounded-md bg-background/60 px-3 py-2 text-sm"
+              >
+                <span>
+                  <span className="font-medium">{lead.prospectName}</span>
+                  {lead.company && <span className="text-muted-foreground"> · {lead.company}</span>}
+                  {lead.prospectEmail && <span className="text-muted-foreground"> · {lead.prospectEmail}</span>}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-xs px-2"
+                  onClick={() => handleDismissLead(lead.id)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Post-Call Workflow</h1>
