@@ -1,5 +1,4 @@
 import { defineAction } from "@agent-native/core";
-import { inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -8,9 +7,17 @@ import { hubspotFetch } from "../server/helpers/hubspot-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 // Buffer past 24h so a slow/late run (or a run that fails and retries the
-// next day) never misses a contact whose contact_sales_date fell in the gap.
-// Safe to overlap -- hubspotContactId is the idempotency key below.
+// next day) never misses a contact whose most_recent_contact_sales_date fell
+// in the gap. Safe to overlap -- (hubspotContactId, contactSalesDate) together
+// are the idempotency key below.
 const LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
+
+// NOT contact_sales_date ("First Contact Sales Date") -- that only ever gets
+// set once, the very first time a contact submits, so a returning contact's
+// resubmission would never be detected. most_recent_contact_sales_date
+// updates on every submission (confirmed live: a contact whose first-touch
+// date was from months ago showed today's date here after resubmitting).
+const CONTACT_SALES_PROPERTY = "most_recent_contact_sales_date";
 
 interface HubSpotContactResult {
   id: string;
@@ -19,7 +26,7 @@ interface HubSpotContactResult {
     lastname?: string;
     email?: string;
     company?: string;
-    contact_sales_date?: string;
+    most_recent_contact_sales_date?: string;
   };
 }
 
@@ -36,10 +43,10 @@ export default defineAction({
 
     const searchBody = {
       filterGroups: [
-        { filters: [{ propertyName: "contact_sales_date", operator: "GTE", value: String(cutoff) }] },
+        { filters: [{ propertyName: CONTACT_SALES_PROPERTY, operator: "GTE", value: String(cutoff) }] },
       ],
-      properties: ["firstname", "lastname", "email", "company", "contact_sales_date"],
-      sorts: [{ propertyName: "contact_sales_date", direction: "DESCENDING" }],
+      properties: ["firstname", "lastname", "email", "company", CONTACT_SALES_PROPERTY],
+      sorts: [{ propertyName: CONTACT_SALES_PROPERTY, direction: "DESCENDING" }],
       limit: 100,
     };
 
@@ -48,20 +55,20 @@ export default defineAction({
       body: JSON.stringify(searchBody),
     })) as { results?: HubSpotContactResult[] };
 
-    const candidates = result.results ?? [];
+    const candidates = (result.results ?? [])
+      .map((c) => ({ ...c, contactSalesDate: c.properties.most_recent_contact_sales_date ?? null }))
+      .filter((c) => c.contactSalesDate);
     if (candidates.length === 0) {
       return { newLeadsFound: 0 };
     }
 
     const db = getDb();
-    const candidateIds = candidates.map((c) => c.id);
     const existing = await db
-      .select({ hubspotContactId: inboundLeads.hubspotContactId })
-      .from(inboundLeads)
-      .where(inArray(inboundLeads.hubspotContactId, candidateIds));
-    const alreadySeen = new Set(existing.map((row) => row.hubspotContactId));
+      .select({ hubspotContactId: inboundLeads.hubspotContactId, contactSalesDate: inboundLeads.contactSalesDate })
+      .from(inboundLeads);
+    const alreadySeen = new Set(existing.map((row) => `${row.hubspotContactId}::${row.contactSalesDate}`));
 
-    const fresh = candidates.filter((c) => !alreadySeen.has(c.id));
+    const fresh = candidates.filter((c) => !alreadySeen.has(`${c.id}::${c.contactSalesDate}`));
     if (fresh.length === 0) {
       return { newLeadsFound: 0 };
     }
@@ -74,7 +81,7 @@ export default defineAction({
         prospectName: [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || "Unknown",
         prospectEmail: c.properties.email ?? null,
         company: c.properties.company ?? null,
-        contactSalesDate: c.properties.contact_sales_date ?? null,
+        contactSalesDate: c.contactSalesDate,
         seen: 0,
         createdAt: now,
       })),

@@ -135,6 +135,21 @@ export default runMigrations(
       name: "inbound-leads-hubspot-contact-id-unique",
       sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_leads_hubspot_contact_id ON inbound_leads(hubspot_contact_id)`,
     },
+    // v17's plain per-contact unique index blocks a contact from ever being
+    // detected again after their first submission -- most_recent_contact_
+    // sales_date updates on every resubmission, so the same contact
+    // resubmitting later is a genuinely new lead. Replace with a composite
+    // index on (contact_id, contact_sales_date) instead.
+    {
+      version: 18,
+      name: "inbound-leads-drop-contact-id-only-unique",
+      sql: `DROP INDEX IF EXISTS idx_inbound_leads_hubspot_contact_id`,
+    },
+    {
+      version: 19,
+      name: "inbound-leads-contact-id-date-unique",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_leads_contact_id_date ON inbound_leads(hubspot_contact_id, contact_sales_date)`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );

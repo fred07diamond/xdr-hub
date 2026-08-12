@@ -50,12 +50,16 @@ export const generatedNotes = table("generated_notes", {
 });
 
 // One row per HubSpot contact detected filling out the "Contact Sales" form,
-// via the daily poll job (jobs/poll-hubspot-contact-sales.md). hubspotContactId
-// is the idempotency key -- the poll re-checks recent contact_sales_date
-// values every run, so it must skip contacts already recorded here.
+// via the daily poll job (jobs/poll-hubspot-contact-sales.md). The idempotency
+// key is (hubspotContactId, contactSalesDate) together, NOT hubspotContactId
+// alone -- contactSalesDate tracks HubSpot's most_recent_contact_sales_date,
+// which updates on every resubmission, so the same contact submitting again
+// months later is a genuinely new lead and must be able to insert a second
+// row with the new date. A plain unique() on hubspotContactId would silently
+// block that forever after the first submission (see migration v18-v19).
 export const inboundLeads = table("inbound_leads", {
   id: text("id").primaryKey(),
-  hubspotContactId: text("hubspot_contact_id").notNull().unique(),
+  hubspotContactId: text("hubspot_contact_id").notNull(),
   prospectName: text("prospect_name").notNull(),
   prospectEmail: text("prospect_email"),
   company: text("company"),
