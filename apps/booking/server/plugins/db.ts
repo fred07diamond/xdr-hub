@@ -116,6 +116,25 @@ export default runMigrations(
       name: "booked-meetings-nooks-call-id-unique",
       sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_booked_meetings_nooks_call_id ON booked_meetings(nooks_call_id)`,
     },
+    {
+      version: 16,
+      name: "inbound-leads",
+      sql: `CREATE TABLE IF NOT EXISTS inbound_leads (
+        id TEXT PRIMARY KEY,
+        hubspot_contact_id TEXT NOT NULL,
+        prospect_name TEXT NOT NULL,
+        prospect_email TEXT,
+        company TEXT,
+        contact_sales_date TEXT,
+        seen INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 17,
+      name: "inbound-leads-hubspot-contact-id-unique",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_leads_hubspot_contact_id ON inbound_leads(hubspot_contact_id)`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );
