@@ -41,20 +41,26 @@ interface ConfirmResult {
   errors: { hubspot: string | null; calendar: string | null; email: string | null };
 }
 
+type IntroCallRecommendation = "take_call" | "pivot_ae" | "disqualify";
+
 interface InboundLead {
   id: string;
   prospectName: string;
   prospectEmail: string | null;
   company: string | null;
   contactSalesDate: string | null;
-  qualificationTier: string | null;
-  meetingAgenda: string | null;
-  xdrPain: string | null;
-  xdrContactQualification: string | null;
-  xdrNotes: string | null;
-  crmNote: string | null;
-  outreachEmail: string | null;
-  emailSubject: string | null;
+  introTldr: string | null;
+  introHubspotSummary: string | null;
+  introScorecardText: string | null;
+  introRecommendation: IntroCallRecommendation | null;
+  introRecommendationRationale: string | null;
+  introCheckpointGeneratedAt: string | null;
+  introDecision: IntroCallRecommendation | null;
+  introOutputSubject: string | null;
+  introOutputBody: string | null;
+  introAeName: string | null;
+  introTimeWorks: number | null;
+  introWorksheet: string | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -105,107 +111,191 @@ function fullSubmissionDate(dateStr: string | null): string | undefined {
   return submitted.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
 
-// The AI sometimes appends an inline flag to the tier, e.g.
-// "Needs Further Discovery (Code) -- flag: likely internal/test lead". Split
-// that out so the badge stays a compact label and the flag reads as context
-// underneath instead of bloating the pill.
-function splitQualificationTier(tier: string): { label: string; flag: string | null } {
-  const idx = tier.indexOf(" -- ");
-  if (idx === -1) return { label: tier, flag: null };
-  return { label: tier.slice(0, idx).trim(), flag: tier.slice(idx + 4).trim() };
+const RECOMMENDATION_LABEL: Record<IntroCallRecommendation, string> = {
+  take_call: "Take the call",
+  pivot_ae: "Pivot to AE",
+  disqualify: "Disqualify",
+};
+
+// Color is reserved for this one signal (the recommendation/decision) so it
+// stays meaningful instead of washing the whole panel in a single accent.
+// Solid fill once the xDR has decided; outline while it's just the
+// suggested read, so the two states are visually distinct at a glance.
+function recommendationBadgeClasses(rec: IntroCallRecommendation, decided: boolean): string {
+  const solid: Record<IntroCallRecommendation, string> = {
+    take_call: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+    pivot_ae: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+    disqualify: "bg-slate-500/15 text-slate-700 dark:text-slate-400",
+  };
+  const outline: Record<IntroCallRecommendation, string> = {
+    take_call: "border border-blue-500/40 text-blue-700 dark:text-blue-400",
+    pivot_ae: "border border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
+    disqualify: "border border-slate-500/40 text-slate-700 dark:text-slate-400",
+  };
+  return decided ? solid[rec] : outline[rec];
 }
 
-// Color is reserved for this one signal (deal-quality tier) so it stays
-// meaningful instead of washing the whole panel in a single accent.
-function tierBadgeClasses(label: string): string {
-  if (/highly qualified/i.test(label)) {
-    return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400";
-  }
-  if (/needs further discovery/i.test(label)) {
-    return "bg-amber-500/15 text-amber-700 dark:text-amber-400";
-  }
-  if (/standard/i.test(label)) {
-    return "bg-blue-500/15 text-blue-700 dark:text-blue-400";
-  }
-  return "bg-slate-500/15 text-slate-700 dark:text-slate-400";
+function IntroCallCheckpointDisplay({ lead }: { lead: InboundLead }) {
+  return (
+    <div className="space-y-3">
+      {lead.introTldr && <p className="text-sm leading-relaxed">{lead.introTldr}</p>}
+
+      {lead.introHubspotSummary && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              HubSpot Summary
+            </Label>
+            <CopyButton text={lead.introHubspotSummary} />
+          </div>
+          <Textarea readOnly className="min-h-[140px] text-sm resize-none bg-muted/30" value={lead.introHubspotSummary} />
+        </div>
+      )}
+
+      {lead.introScorecardText && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Scorecard
+            </Label>
+            <CopyButton text={lead.introScorecardText} />
+          </div>
+          <Textarea readOnly className="min-h-[120px] text-sm resize-none bg-muted/30" value={lead.introScorecardText} />
+        </div>
+      )}
+
+      {lead.introRecommendationRationale && (
+        <p className="text-sm">
+          <span className="font-medium">My read: {lead.introRecommendation ? RECOMMENDATION_LABEL[lead.introRecommendation] : ""}.</span>{" "}
+          <span className="text-muted-foreground">{lead.introRecommendationRationale}</span>
+        </p>
+      )}
+    </div>
+  );
 }
 
-function InboundLeadOutreach({ lead }: { lead: InboundLead }) {
-  const fields: [string, string | null][] = [
-    ["XDR: Pain", lead.xdrPain],
-    ["XDR: Contact Qualification", lead.xdrContactQualification],
-    ["XDR: Notes", lead.xdrNotes],
-  ];
+function EmailOutputDisplay({ subject, body }: { subject: string; body: string }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-1.5 text-sm">
+        <span className="text-muted-foreground">Subject:</span>
+        <span className="truncate font-medium">{subject}</span>
+        <CopyButton text={subject} />
+      </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</Label>
+          <CopyButton text={body} />
+        </div>
+        <Textarea readOnly className="min-h-[160px] text-sm resize-none bg-muted/30 leading-relaxed" value={body} />
+      </div>
+    </div>
+  );
+}
+
+interface PivotAeFormState {
+  leadId: string;
+  aeName: string;
+  aeEmail: string;
+  timeWorks: boolean;
+  altTime1: string;
+  altTime2: string;
+}
+
+function PivotAeForm({
+  form,
+  onChange,
+  onCancel,
+  onSubmit,
+  submitting,
+}: {
+  form: PivotAeFormState;
+  onChange: (next: PivotAeFormState) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+  submitting: boolean;
+}) {
+  const canSubmit = form.aeName.trim().length > 0 && (form.timeWorks || (form.altTime1.trim() && form.altTime2.trim()));
 
   return (
-    <div className="space-y-4 border-t px-3 py-3">
-      {lead.emailSubject && (
-        <div className="flex items-center gap-1.5 text-sm">
-          <span className="text-muted-foreground">Subject:</span>
-          <span className="truncate font-medium">{lead.emailSubject}</span>
-          <CopyButton text={lead.emailSubject} />
+    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">AE name</Label>
+          <Input
+            value={form.aeName}
+            onChange={(e) => onChange({ ...form, aeName: e.target.value })}
+            placeholder="e.g. Jamie Diaz"
+            className="h-8 text-sm"
+          />
         </div>
-      )}
-
-      {lead.meetingAgenda && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Meeting Agenda
-            </Label>
-            <CopyButton text={lead.meetingAgenda} />
-          </div>
-          <AgendaDisplay value={lead.meetingAgenda} onChange={() => {}} disabled />
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">AE email (optional)</Label>
+          <Input
+            value={form.aeEmail}
+            onChange={(e) => onChange({ ...form, aeEmail: e.target.value })}
+            placeholder="jamie@builder.io"
+            className="h-8 text-sm"
+          />
         </div>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        {fields
-          .filter(([, v]) => v)
-          .map(([label, value]) => (
-            <div key={label} className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {label}
-                </Label>
-                <CopyButton text={value as string} />
-              </div>
-              <Textarea readOnly className="min-h-[90px] text-sm resize-none bg-muted/30" value={value as string} />
-            </div>
-          ))}
       </div>
 
-      {lead.outreachEmail && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Outreach Email
-            </Label>
-            <CopyButton text={lead.outreachEmail} />
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Does the booked time work for the AE?</Label>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={form.timeWorks ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => onChange({ ...form, timeWorks: true })}
+          >
+            Yes, keep it
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={!form.timeWorks ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => onChange({ ...form, timeWorks: false })}
+          >
+            No, needs new times
+          </Button>
+        </div>
+      </div>
+
+      {!form.timeWorks && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Alt time 1</Label>
+            <Input
+              value={form.altTime1}
+              onChange={(e) => onChange({ ...form, altTime1: e.target.value })}
+              placeholder="Thursday 2pm ET"
+              className="h-8 text-sm"
+            />
           </div>
-          <Textarea
-            readOnly
-            className="min-h-[160px] text-sm resize-none bg-muted/30 leading-relaxed"
-            value={lead.outreachEmail}
-          />
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Alt time 2</Label>
+            <Input
+              value={form.altTime2}
+              onChange={(e) => onChange({ ...form, altTime2: e.target.value })}
+              placeholder="Friday 11am ET"
+              className="h-8 text-sm"
+            />
+          </div>
         </div>
       )}
 
-      {lead.crmNote && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              CRM Note
-            </Label>
-            <CopyButton text={lead.crmNote} />
-          </div>
-          <Textarea
-            readOnly
-            className="min-h-[200px] text-xs font-mono resize-none bg-muted/30 leading-relaxed"
-            value={lead.crmNote}
-          />
-        </div>
-      )}
+      <div className="flex gap-2">
+        <Button type="button" size="sm" className="h-7 text-xs" disabled={!canSubmit || submitting} onClick={onSubmit}>
+          {submitting ? <IconLoader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+          Generate email
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={onCancel} disabled={submitting}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }
@@ -224,22 +314,57 @@ function InboundLeadsPanel({
   onGenerated: () => void;
 }) {
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
-  const [generatingLeadId, setGeneratingLeadId] = useState<string | null>(null);
-  const [generateError, setGenerateError] = useState<{ leadId: string; message: string } | null>(null);
-  const generateOutreach = useActionMutation("generate-lead-outreach") as any;
+  const [checkpointLeadId, setCheckpointLeadId] = useState<string | null>(null);
+  const [checkpointError, setCheckpointError] = useState<{ leadId: string; message: string } | null>(null);
+  const [decidingLeadId, setDecidingLeadId] = useState<string | null>(null);
+  const [decideError, setDecideError] = useState<{ leadId: string; message: string } | null>(null);
+  const [worksheetLeadId, setWorksheetLeadId] = useState<string | null>(null);
+  const [worksheetError, setWorksheetError] = useState<{ leadId: string; message: string } | null>(null);
+  const [pivotForm, setPivotForm] = useState<PivotAeFormState | null>(null);
+
+  const runCheckpoint = useActionMutation("run-intro-call-checkpoint") as any;
+  const decide = useActionMutation("decide-intro-call") as any;
+  const genWorksheet = useActionMutation("generate-intro-call-worksheet") as any;
 
   if (leads.length === 0) return null;
 
-  async function handleGenerate(leadId: string) {
-    setGenerateError(null);
-    setGeneratingLeadId(leadId);
+  async function handleCheckpoint(leadId: string) {
+    setCheckpointError(null);
+    setCheckpointLeadId(leadId);
     try {
-      await generateOutreach.mutateAsync({ leadId });
+      await runCheckpoint.mutateAsync({ leadId });
       onGenerated();
     } catch (err: any) {
-      setGenerateError({ leadId, message: err?.message ?? "Generation failed" });
+      setCheckpointError({ leadId, message: err?.message ?? "Checkpoint failed" });
     } finally {
-      setGeneratingLeadId(null);
+      setCheckpointLeadId(null);
+    }
+  }
+
+  async function handleDecide(leadId: string, decision: IntroCallRecommendation, extra?: Record<string, unknown>) {
+    setDecideError(null);
+    setDecidingLeadId(leadId);
+    try {
+      await decide.mutateAsync({ leadId, decision, ...extra });
+      setPivotForm(null);
+      onGenerated();
+    } catch (err: any) {
+      setDecideError({ leadId, message: err?.message ?? "Failed to generate output" });
+    } finally {
+      setDecidingLeadId(null);
+    }
+  }
+
+  async function handleWorksheet(leadId: string) {
+    setWorksheetError(null);
+    setWorksheetLeadId(leadId);
+    try {
+      await genWorksheet.mutateAsync({ leadId });
+      onGenerated();
+    } catch (err: any) {
+      setWorksheetError({ leadId, message: err?.message ?? "Worksheet generation failed" });
+    } finally {
+      setWorksheetLeadId(null);
     }
   }
 
@@ -257,12 +382,20 @@ function InboundLeadsPanel({
           {leads.map((lead) => {
             const isDismissing = dismissingLeadIds.has(lead.id);
             const isFailed = failedLeadId === lead.id;
-            const isGenerating = generatingLeadId === lead.id;
             const isExpanded = expandedLeadId === lead.id;
-            const hasOutreach = !!lead.qualificationTier;
-            const tier = lead.qualificationTier ? splitQualificationTier(lead.qualificationTier) : null;
-            const previewParts = [tier?.flag, lead.xdrPain].filter(Boolean) as string[];
-            const preview = previewParts.length > 0 ? previewParts.join(" — ") : null;
+            const isCheckpointing = checkpointLeadId === lead.id;
+            const isDeciding = decidingLeadId === lead.id;
+            const isWorksheeting = worksheetLeadId === lead.id;
+            const hasCheckpoint = !!lead.introCheckpointGeneratedAt;
+            const badgeRec = lead.introDecision ?? lead.introRecommendation;
+            const decided = !!lead.introDecision;
+            const preview = !hasCheckpoint
+              ? "Not yet reviewed — click to pull HubSpot data and run Checkpoint 1."
+              : lead.introDecision
+                ? `${RECOMMENDATION_LABEL[lead.introDecision]} — ${lead.introDecision === "take_call" && !lead.introWorksheet ? "email ready, worksheet next" : "email ready"}`
+                : lead.introTldr ?? "Checkpoint ready — pick a decision below.";
+            const showPivotForm = pivotForm?.leadId === lead.id;
+
             return (
               <div
                 key={lead.id}
@@ -291,12 +424,10 @@ function InboundLeadsPanel({
                       <span
                         className={cn(
                           "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                          tier
-                            ? tierBadgeClasses(tier.label)
-                            : "border border-dashed text-muted-foreground",
+                          badgeRec ? recommendationBadgeClasses(badgeRec, decided) : "border border-dashed text-muted-foreground",
                         )}
                       >
-                        {tier ? tier.label : "Not actioned"}
+                        {badgeRec ? RECOMMENDATION_LABEL[badgeRec] : "Not actioned"}
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -322,45 +453,179 @@ function InboundLeadsPanel({
                       </span>
                     </div>
                   </div>
-                  <p className="truncate pl-9 text-xs text-muted-foreground">
-                    {preview ?? "Not yet reviewed — click to pull HubSpot data and draft outreach."}
-                  </p>
+                  <p className="truncate pl-9 text-xs text-muted-foreground">{preview}</p>
                 </button>
 
                 {isExpanded && (
-                  <>
-                    {hasOutreach ? (
-                      <InboundLeadOutreach lead={lead} />
-                    ) : (
-                      <div className="flex items-center justify-between gap-3 border-t px-3 py-2.5">
+                  <div className="space-y-4 border-t px-3 py-3">
+                    {!hasCheckpoint ? (
+                      <div className="flex items-center justify-between gap-3">
                         <p
                           className={cn(
                             "text-xs",
-                            generateError?.leadId === lead.id ? "text-destructive" : "text-muted-foreground",
+                            checkpointError?.leadId === lead.id ? "text-destructive" : "text-muted-foreground",
                           )}
                         >
-                          {isGenerating
-                            ? "Reading HubSpot data and drafting qualification notes..."
-                            : generateError?.leadId === lead.id
-                              ? generateError.message
-                              : "No outreach generated yet for this lead."}
+                          {isCheckpointing
+                            ? "Reading HubSpot data and scoring the lead..."
+                            : checkpointError?.leadId === lead.id
+                              ? checkpointError.message
+                              : "No checkpoint yet for this lead."}
                         </p>
                         <Button
                           type="button"
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleGenerate(lead.id);
+                            handleCheckpoint(lead.id);
                           }}
-                          disabled={isGenerating}
+                          disabled={isCheckpointing}
                           className="h-7 shrink-0 text-xs px-3"
                         >
-                          {isGenerating ? <IconLoader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                          {isCheckpointing ? <IconLoader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
                           Action lead
                         </Button>
                       </div>
+                    ) : (
+                      <>
+                        <IntroCallCheckpointDisplay lead={lead} />
+
+                        {!lead.introDecision ? (
+                          <div className="space-y-3 border-t pt-3">
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-7 text-xs px-3"
+                                disabled={isDeciding}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDecide(lead.id, "take_call");
+                                }}
+                              >
+                                {isDeciding ? <IconLoader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                Take the call
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs px-3"
+                                disabled={isDeciding}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPivotForm({
+                                    leadId: lead.id,
+                                    aeName: "",
+                                    aeEmail: "",
+                                    timeWorks: true,
+                                    altTime1: "",
+                                    altTime2: "",
+                                  });
+                                }}
+                              >
+                                Pivot to AE
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs px-3"
+                                disabled={isDeciding}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDecide(lead.id, "disqualify");
+                                }}
+                              >
+                                Disqualify
+                              </Button>
+                            </div>
+                            {showPivotForm && pivotForm && (
+                              <PivotAeForm
+                                form={pivotForm}
+                                onChange={setPivotForm}
+                                onCancel={() => setPivotForm(null)}
+                                submitting={isDeciding}
+                                onSubmit={() =>
+                                  handleDecide(lead.id, "pivot_ae", {
+                                    aeName: pivotForm.aeName.trim(),
+                                    aeEmail: pivotForm.aeEmail.trim() || undefined,
+                                    timeWorks: pivotForm.timeWorks,
+                                    altTime1: pivotForm.timeWorks ? undefined : pivotForm.altTime1.trim(),
+                                    altTime2: pivotForm.timeWorks ? undefined : pivotForm.altTime2.trim(),
+                                  })
+                                }
+                              />
+                            )}
+                            {decideError?.leadId === lead.id && (
+                              <p className="text-xs text-destructive">{decideError.message}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-3 border-t pt-3">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Decision: {RECOMMENDATION_LABEL[lead.introDecision]}
+                              {lead.introAeName ? ` (${lead.introAeName})` : ""}
+                            </p>
+                            {lead.introDecision === "disqualify" && (
+                              <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                                Recycle this lead in HubSpot.
+                              </p>
+                            )}
+                            {lead.introOutputBody && (
+                              <EmailOutputDisplay subject={lead.introOutputSubject ?? ""} body={lead.introOutputBody} />
+                            )}
+                            {lead.introDecision === "take_call" && (
+                              lead.introWorksheet ? (
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                      Live Call Worksheet
+                                    </Label>
+                                    <CopyButton text={lead.introWorksheet} />
+                                  </div>
+                                  <Textarea
+                                    readOnly
+                                    className="min-h-[240px] text-xs font-mono resize-none bg-muted/30 leading-relaxed"
+                                    value={lead.introWorksheet}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between gap-3">
+                                  <p
+                                    className={cn(
+                                      "text-xs",
+                                      worksheetError?.leadId === lead.id ? "text-destructive" : "text-muted-foreground",
+                                    )}
+                                  >
+                                    {isWorksheeting
+                                      ? "Building the worksheet..."
+                                      : worksheetError?.leadId === lead.id
+                                        ? worksheetError.message
+                                        : "No worksheet yet."}
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 shrink-0 text-xs px-3"
+                                    disabled={isWorksheeting}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleWorksheet(lead.id);
+                                    }}
+                                  >
+                                    {isWorksheeting ? <IconLoader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                    Generate worksheet
+                                  </Button>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             );

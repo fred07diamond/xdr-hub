@@ -66,16 +66,35 @@ export const inboundLeads = table("inbound_leads", {
   contactSalesDate: text("contact_sales_date"),
   seen: integer("seen").notNull().default(0), // 0/1 boolean, matches the rest of this monorepo's convention
   createdAt: text("created_at").default(now()),
-  // Populated by generate-lead-outreach -- null until an XDR actions the lead.
-  qualificationTier: text("qualification_tier"),
-  meetingAgenda: text("meeting_agenda"),
-  xdrPain: text("xdr_pain"),
-  xdrContactQualification: text("xdr_contact_qualification"),
-  xdrNotes: text("xdr_notes"),
-  crmNote: text("crm_note"),
-  outreachEmail: text("outreach_email"),
-  emailSubject: text("email_subject"),
-  outreachGeneratedAt: text("outreach_generated_at"),
+
+  // Checkpoint 1 output -- populated by run-intro-call-checkpoint (the
+  // "Action lead" button). Null until an xDR actions the lead.
+  introTldr: text("intro_tldr"),
+  introHubspotSummary: text("intro_hubspot_summary"),
+  introScorecardText: text("intro_scorecard_text"),
+  introPainScore: integer("intro_pain_score"),
+  introPainLabel: text("intro_pain_label"),
+  introChampionScore: integer("intro_champion_score"),
+  introChampionLabel: text("intro_champion_label"),
+  introRecommendation: text("intro_recommendation", { enum: ["take_call", "pivot_ae", "disqualify"] }),
+  introRecommendationRationale: text("intro_recommendation_rationale"),
+  introCheckpointGeneratedAt: text("intro_checkpoint_generated_at"),
+
+  // Decision + branch output -- populated by decide-intro-call, once the xDR
+  // picks one of the three buttons on the checkpoint output.
+  introDecision: text("intro_decision", { enum: ["take_call", "pivot_ae", "disqualify"] }),
+  introOutputSubject: text("intro_output_subject"),
+  introOutputBody: text("intro_output_body"),
+  introAeName: text("intro_ae_name"),
+  introAeEmail: text("intro_ae_email"),
+  introTimeWorks: integer("intro_time_works"), // 0/1, only set for pivot_ae
+  introAltTime1: text("intro_alt_time_1"),
+  introAltTime2: text("intro_alt_time_2"),
+  introDecisionGeneratedAt: text("intro_decision_generated_at"),
+
+  // Live-call worksheet -- populated by generate-intro-call-worksheet, only
+  // reachable after introDecision = take_call.
+  introWorksheet: text("intro_worksheet"),
 });
 
 // One row per confirmed workflow — created after HubSpot deal creation succeeds.

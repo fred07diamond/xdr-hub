@@ -195,6 +195,112 @@ export default runMigrations(
       name: "inbound-leads-outreach-fields-9",
       sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS outreach_generated_at TEXT`,
     },
+    // v29+ replace the old outreach fields above (qualification_tier,
+    // meeting_agenda, xdr_pain, xdr_contact_qualification, xdr_notes,
+    // crm_note, outreach_email, email_subject, outreach_generated_at --
+    // still physically present in SQLite but no longer referenced by
+    // schema.ts or any action) with the Intro Call Assistant's checkpoint +
+    // decision + worksheet fields.
+    {
+      version: 29,
+      name: "inbound-leads-intro-tldr",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_tldr TEXT`,
+    },
+    {
+      version: 30,
+      name: "inbound-leads-intro-hubspot-summary",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_hubspot_summary TEXT`,
+    },
+    {
+      version: 31,
+      name: "inbound-leads-intro-scorecard-text",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_scorecard_text TEXT`,
+    },
+    {
+      version: 32,
+      name: "inbound-leads-intro-pain-score",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_pain_score INTEGER`,
+    },
+    {
+      version: 33,
+      name: "inbound-leads-intro-pain-label",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_pain_label TEXT`,
+    },
+    {
+      version: 34,
+      name: "inbound-leads-intro-champion-score",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_champion_score INTEGER`,
+    },
+    {
+      version: 35,
+      name: "inbound-leads-intro-champion-label",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_champion_label TEXT`,
+    },
+    {
+      version: 36,
+      name: "inbound-leads-intro-recommendation",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_recommendation TEXT`,
+    },
+    {
+      version: 37,
+      name: "inbound-leads-intro-recommendation-rationale",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_recommendation_rationale TEXT`,
+    },
+    {
+      version: 38,
+      name: "inbound-leads-intro-checkpoint-generated-at",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_checkpoint_generated_at TEXT`,
+    },
+    {
+      version: 39,
+      name: "inbound-leads-intro-decision",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_decision TEXT`,
+    },
+    {
+      version: 40,
+      name: "inbound-leads-intro-output-subject",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_output_subject TEXT`,
+    },
+    {
+      version: 41,
+      name: "inbound-leads-intro-output-body",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_output_body TEXT`,
+    },
+    {
+      version: 42,
+      name: "inbound-leads-intro-ae-name",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_ae_name TEXT`,
+    },
+    {
+      version: 43,
+      name: "inbound-leads-intro-ae-email",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_ae_email TEXT`,
+    },
+    {
+      version: 44,
+      name: "inbound-leads-intro-time-works",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_time_works INTEGER`,
+    },
+    {
+      version: 45,
+      name: "inbound-leads-intro-alt-time-1",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_alt_time_1 TEXT`,
+    },
+    {
+      version: 46,
+      name: "inbound-leads-intro-alt-time-2",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_alt_time_2 TEXT`,
+    },
+    {
+      version: 47,
+      name: "inbound-leads-intro-decision-generated-at",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_decision_generated_at TEXT`,
+    },
+    {
+      version: 48,
+      name: "inbound-leads-intro-worksheet",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_worksheet TEXT`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );
