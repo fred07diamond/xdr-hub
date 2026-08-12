@@ -150,6 +150,51 @@ export default runMigrations(
       name: "inbound-leads-contact-id-date-unique",
       sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_leads_contact_id_date ON inbound_leads(hubspot_contact_id, contact_sales_date)`,
     },
+    {
+      version: 20,
+      name: "inbound-leads-outreach-fields",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS qualification_tier TEXT`,
+    },
+    {
+      version: 21,
+      name: "inbound-leads-outreach-fields-2",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS meeting_agenda TEXT`,
+    },
+    {
+      version: 22,
+      name: "inbound-leads-outreach-fields-3",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS xdr_pain TEXT`,
+    },
+    {
+      version: 23,
+      name: "inbound-leads-outreach-fields-4",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS xdr_contact_qualification TEXT`,
+    },
+    {
+      version: 24,
+      name: "inbound-leads-outreach-fields-5",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS xdr_notes TEXT`,
+    },
+    {
+      version: 25,
+      name: "inbound-leads-outreach-fields-6",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS crm_note TEXT`,
+    },
+    {
+      version: 26,
+      name: "inbound-leads-outreach-fields-7",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS outreach_email TEXT`,
+    },
+    {
+      version: 27,
+      name: "inbound-leads-outreach-fields-8",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS email_subject TEXT`,
+    },
+    {
+      version: 28,
+      name: "inbound-leads-outreach-fields-9",
+      sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS outreach_generated_at TEXT`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );

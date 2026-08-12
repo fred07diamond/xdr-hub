@@ -66,6 +66,16 @@ export const inboundLeads = table("inbound_leads", {
   contactSalesDate: text("contact_sales_date"),
   seen: integer("seen").notNull().default(0), // 0/1 boolean, matches the rest of this monorepo's convention
   createdAt: text("created_at").default(now()),
+  // Populated by generate-lead-outreach -- null until an XDR actions the lead.
+  qualificationTier: text("qualification_tier"),
+  meetingAgenda: text("meeting_agenda"),
+  xdrPain: text("xdr_pain"),
+  xdrContactQualification: text("xdr_contact_qualification"),
+  xdrNotes: text("xdr_notes"),
+  crmNote: text("crm_note"),
+  outreachEmail: text("outreach_email"),
+  emailSubject: text("email_subject"),
+  outreachGeneratedAt: text("outreach_generated_at"),
 });
 
 // One row per confirmed workflow — created after HubSpot deal creation succeeds.

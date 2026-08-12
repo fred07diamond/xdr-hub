@@ -47,6 +47,14 @@ interface InboundLead {
   prospectEmail: string | null;
   company: string | null;
   contactSalesDate: string | null;
+  qualificationTier: string | null;
+  meetingAgenda: string | null;
+  xdrPain: string | null;
+  xdrContactQualification: string | null;
+  xdrNotes: string | null;
+  crmNote: string | null;
+  outreachEmail: string | null;
+  emailSubject: string | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -89,18 +97,118 @@ function relativeSubmissionDate(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
+function InboundLeadOutreach({ lead }: { lead: InboundLead }) {
+  const fields: [string, string | null][] = [
+    ["XDR: Pain", lead.xdrPain],
+    ["XDR: Contact Qualification", lead.xdrContactQualification],
+    ["XDR: Notes", lead.xdrNotes],
+  ];
+
+  return (
+    <div className="space-y-4 border-t px-3 py-3">
+      {lead.emailSubject && (
+        <div className="flex items-center gap-1.5 text-sm">
+          <span className="text-muted-foreground">Subject:</span>
+          <span className="truncate font-medium">{lead.emailSubject}</span>
+          <CopyButton text={lead.emailSubject} />
+        </div>
+      )}
+
+      {lead.meetingAgenda && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Meeting Agenda
+            </Label>
+            <CopyButton text={lead.meetingAgenda} />
+          </div>
+          <AgendaDisplay value={lead.meetingAgenda} onChange={() => {}} disabled />
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {fields
+          .filter(([, v]) => v)
+          .map(([label, value]) => (
+            <div key={label} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {label}
+                </Label>
+                <CopyButton text={value as string} />
+              </div>
+              <Textarea readOnly className="min-h-[90px] text-sm resize-none bg-muted/30" value={value as string} />
+            </div>
+          ))}
+      </div>
+
+      {lead.outreachEmail && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Outreach Email
+            </Label>
+            <CopyButton text={lead.outreachEmail} />
+          </div>
+          <Textarea
+            readOnly
+            className="min-h-[160px] text-sm resize-none bg-muted/30 leading-relaxed"
+            value={lead.outreachEmail}
+          />
+        </div>
+      )}
+
+      {lead.crmNote && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              CRM Note
+            </Label>
+            <CopyButton text={lead.crmNote} />
+          </div>
+          <Textarea
+            readOnly
+            className="min-h-[200px] text-xs font-mono resize-none bg-muted/30 leading-relaxed"
+            value={lead.crmNote}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InboundLeadsPanel({
   leads,
   dismissingLeadIds,
   failedLeadId,
   onDismiss,
+  onGenerated,
 }: {
   leads: InboundLead[];
   dismissingLeadIds: Set<string>;
   failedLeadId: string | null;
   onDismiss: (leadId: string) => void;
+  onGenerated: () => void;
 }) {
+  const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
+  const [generatingLeadId, setGeneratingLeadId] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<{ leadId: string; message: string } | null>(null);
+  const generateOutreach = useActionMutation("generate-lead-outreach") as any;
+
   if (leads.length === 0) return null;
+
+  async function handleGenerate(leadId: string) {
+    setGenerateError(null);
+    setGeneratingLeadId(leadId);
+    try {
+      await generateOutreach.mutateAsync({ leadId });
+      onGenerated();
+    } catch (err: any) {
+      setGenerateError({ leadId, message: err?.message ?? "Generation failed" });
+    } finally {
+      setGeneratingLeadId(null);
+    }
+  }
 
   return (
     <Card className="border-amber-500/30 bg-amber-500/[0.06] shadow-sm">
@@ -113,43 +221,95 @@ function InboundLeadsPanel({
           {leads.map((lead) => {
             const isDismissing = dismissingLeadIds.has(lead.id);
             const isFailed = failedLeadId === lead.id;
+            const isGenerating = generatingLeadId === lead.id;
+            const isExpanded = expandedLeadId === lead.id;
+            const hasOutreach = !!lead.qualificationTier;
             return (
               <div
                 key={lead.id}
                 className={cn(
-                  "flex items-center justify-between gap-3 rounded-md bg-background px-3 py-2 text-sm shadow-sm transition-[opacity,transform] duration-200 ease-out",
+                  "rounded-md bg-background shadow-sm transition-[opacity,transform] duration-200 ease-out",
                   isDismissing && "-translate-y-1 opacity-0",
                 )}
               >
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                    {leadInitials(lead.prospectName)}
-                  </span>
-                  <span className="min-w-0 truncate">
-                    <span className="font-medium">{lead.prospectName}</span>
-                    {lead.company && <span className="text-muted-foreground"> · {lead.company}</span>}
-                    {lead.prospectEmail && (
-                      <span className="text-muted-foreground"> · {lead.prospectEmail}</span>
+                <button
+                  type="button"
+                  onClick={() => setExpandedLeadId(isExpanded ? null : lead.id)}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm"
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                      {leadInitials(lead.prospectName)}
+                    </span>
+                    <span className="min-w-0 truncate">
+                      <span className="font-medium">{lead.prospectName}</span>
+                      {lead.company && <span className="text-muted-foreground"> · {lead.company}</span>}
+                      {lead.prospectEmail && (
+                        <span className="text-muted-foreground"> · {lead.prospectEmail}</span>
+                      )}
+                    </span>
+                    {lead.qualificationTier && (
+                      <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                        {lead.qualificationTier}
+                      </span>
                     )}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {isFailed && (
-                    <span className="text-xs text-destructive">Failed, try again</span>
-                  )}
-                  <span className="text-xs text-muted-foreground">
-                    {relativeSubmissionDate(lead.contactSalesDate)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onDismiss(lead.id)}
-                    disabled={isDismissing}
-                    title="Dismiss"
-                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.96] disabled:opacity-50"
-                  >
-                    <IconX className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isFailed && <span className="text-xs text-destructive">Failed, try again</span>}
+                    <span className="text-xs text-muted-foreground">
+                      {relativeSubmissionDate(lead.contactSalesDate)}
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDismiss(lead.id);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), onDismiss(lead.id))}
+                      title="Dismiss"
+                      className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.96]"
+                    >
+                      <IconX className="h-3.5 w-3.5" />
+                    </span>
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <>
+                    {hasOutreach ? (
+                      <InboundLeadOutreach lead={lead} />
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 border-t px-3 py-2.5">
+                        <p
+                          className={cn(
+                            "text-xs",
+                            generateError?.leadId === lead.id ? "text-destructive" : "text-muted-foreground",
+                          )}
+                        >
+                          {isGenerating
+                            ? "Reading HubSpot data and drafting qualification notes..."
+                            : generateError?.leadId === lead.id
+                              ? generateError.message
+                              : "No outreach generated yet for this lead."}
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleGenerate(lead.id);
+                          }}
+                          disabled={isGenerating}
+                          className="h-7 shrink-0 text-xs px-3"
+                        >
+                          {isGenerating ? <IconLoader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                          Action lead
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             );
           })}
@@ -348,6 +508,7 @@ export default function WorkflowRoute() {
         dismissingLeadIds={dismissingLeadIds}
         failedLeadId={failedLeadId}
         onDismiss={handleDismissLead}
+        onGenerated={refetchLeads}
       />
       <div className="flex items-center justify-between">
         <div>
