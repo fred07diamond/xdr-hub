@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { localDatetimeValueToISO, toLocalDatetimeValue } from "@/lib/utils";
+import { cn, localDatetimeValueToISO, toLocalDatetimeValue } from "@/lib/utils";
 
 export function meta() {
   return [{ title: "XDR Booking Agent" }];
@@ -70,6 +70,92 @@ function CopyButton({ text }: { text: string }) {
         ? <IconCheck className="h-3.5 w-3.5 text-green-500" />
         : <IconCopy className="h-3.5 w-3.5 text-muted-foreground" />}
     </button>
+  );
+}
+
+function leadInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+function relativeSubmissionDate(dateStr: string | null): string {
+  if (!dateStr) return "";
+  const submitted = new Date(dateStr);
+  if (Number.isNaN(submitted.getTime())) return "";
+  const days = Math.floor((Date.now() - submitted.getTime()) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return `${days}d ago`;
+}
+
+function InboundLeadsPanel({
+  leads,
+  dismissingLeadIds,
+  failedLeadId,
+  onDismiss,
+}: {
+  leads: InboundLead[];
+  dismissingLeadIds: Set<string>;
+  failedLeadId: string | null;
+  onDismiss: (leadId: string) => void;
+}) {
+  if (leads.length === 0) return null;
+
+  return (
+    <Card className="border-amber-500/30 bg-amber-500/[0.06] shadow-sm">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
+          <IconBell className="h-4 w-4" />
+          {leads.length} new inbound lead{leads.length > 1 ? "s" : ""} from Contact Sales
+        </div>
+        <div className="space-y-1.5">
+          {leads.map((lead) => {
+            const isDismissing = dismissingLeadIds.has(lead.id);
+            const isFailed = failedLeadId === lead.id;
+            return (
+              <div
+                key={lead.id}
+                className={cn(
+                  "flex items-center justify-between gap-3 rounded-md bg-background px-3 py-2 text-sm shadow-sm transition-[opacity,transform] duration-200 ease-out",
+                  isDismissing && "-translate-y-1 opacity-0",
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                    {leadInitials(lead.prospectName)}
+                  </span>
+                  <span className="min-w-0 truncate">
+                    <span className="font-medium">{lead.prospectName}</span>
+                    {lead.company && <span className="text-muted-foreground"> · {lead.company}</span>}
+                    {lead.prospectEmail && (
+                      <span className="text-muted-foreground"> · {lead.prospectEmail}</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {isFailed && (
+                    <span className="text-xs text-destructive">Failed, try again</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    {relativeSubmissionDate(lead.contactSalesDate)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onDismiss(lead.id)}
+                    disabled={isDismissing}
+                    title="Dismiss"
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.96] disabled:opacity-50"
+                  >
+                    <IconX className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -163,13 +249,25 @@ export default function WorkflowRoute() {
     {},
     { refetchInterval: 60_000 },
   ) as { data: { leads: InboundLead[] } | undefined; refetch: () => void };
+  const [dismissingLeadIds, setDismissingLeadIds] = useState<Set<string>>(new Set());
+  const [failedLeadId, setFailedLeadId] = useState<string | null>(null);
 
+  // Exit plays first (translate + fade), then the row actually leaves the
+  // list once the transition has had time to finish -- removing it from the
+  // query result immediately would cut the animation short.
   async function handleDismissLead(leadId: string) {
+    setFailedLeadId(null);
+    setDismissingLeadIds((prev) => new Set(prev).add(leadId));
     try {
       await dismissLead.mutateAsync({ leadId });
-      refetchLeads();
+      setTimeout(() => refetchLeads(), 200);
     } catch {
-      // Best-effort -- it'll just show up again next refetch if this failed.
+      setDismissingLeadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(leadId);
+        return next;
+      });
+      setFailedLeadId(leadId);
     }
   }
 
@@ -245,37 +343,12 @@ export default function WorkflowRoute() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
-      {leadsData?.leads && leadsData.leads.length > 0 && (
-        <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
-            <IconBell className="h-4 w-4" />
-            {leadsData.leads.length} new inbound lead{leadsData.leads.length > 1 ? "s" : ""} from Contact Sales
-          </div>
-          <div className="space-y-1.5">
-            {leadsData.leads.map((lead) => (
-              <div
-                key={lead.id}
-                className="flex items-center justify-between gap-3 rounded-md bg-background/60 px-3 py-2 text-sm"
-              >
-                <span>
-                  <span className="font-medium">{lead.prospectName}</span>
-                  {lead.company && <span className="text-muted-foreground"> · {lead.company}</span>}
-                  {lead.prospectEmail && <span className="text-muted-foreground"> · {lead.prospectEmail}</span>}
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 text-xs px-2"
-                  onClick={() => handleDismissLead(lead.id)}
-                >
-                  Dismiss
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <InboundLeadsPanel
+        leads={leadsData?.leads ?? []}
+        dismissingLeadIds={dismissingLeadIds}
+        failedLeadId={failedLeadId}
+        onDismiss={handleDismissLead}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Post-Call Workflow</h1>
