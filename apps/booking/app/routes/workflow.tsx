@@ -1,5 +1,5 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
-import { IconBell, IconCheck, IconCopy, IconLoader2, IconPencil, IconX } from "@tabler/icons-react";
+import { IconBell, IconCheck, IconCopy, IconLoader2, IconPencil, IconRefresh, IconX } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -669,6 +669,28 @@ function InboundLeadsPanel({
                       </div>
                     ) : (
                       <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground" title={fullSubmissionDate(lead.introCheckpointGeneratedAt)}>
+                            Checkpoint from {relativeSubmissionDate(lead.introCheckpointGeneratedAt).toLowerCase() || "just now"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCheckpoint(lead.id);
+                            }}
+                            disabled={isCheckpointing}
+                            title="Re-run checkpoint"
+                            className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.96] disabled:opacity-50"
+                          >
+                            <IconRefresh className={cn("h-3.5 w-3.5", isCheckpointing && "animate-spin")} />
+                            Refresh
+                          </button>
+                        </div>
+                        {checkpointError?.leadId === lead.id && (
+                          <p className="text-xs text-destructive">{checkpointError.message}</p>
+                        )}
+
                         <IntroCallCheckpointDisplay lead={lead} />
 
                         {!lead.introDecision ? (

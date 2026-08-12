@@ -101,7 +101,7 @@ export async function generateCheckpointOne(research: IntroCallResearch, scoreca
   const parsed = await completeJsonWithRetry<IntroCallCheckpoint>({
     systemPrompt: `${INTRO_CALL_REFERENCE}\n\n${CHECKPOINT_CONTRACT}`,
     input: buildResearchBlock(research, scorecard),
-    maxOutputTokens: 900,
+    maxOutputTokens: 2000,
   });
   return {
     tldr: String(parsed.tldr ?? ""),
@@ -149,7 +149,7 @@ export async function generateTakeCallEmail(research: IntroCallResearch, scoreca
   const parsed = await completeJsonWithRetry<EmailOutput>({
     systemPrompt: `${INTRO_CALL_REFERENCE}\n\n${TAKE_CALL_EMAIL_CONTRACT}`,
     input: `${buildResearchBlock(research, scorecard)}\n\nAgreed recommendation: take the call.\nRecommendation rationale: ${checkpoint.recommendationRationale}`,
-    maxOutputTokens: 800,
+    maxOutputTokens: 1500,
   });
   return { subject: String(parsed.subject ?? ""), body: String(parsed.body ?? "") };
 }
@@ -202,7 +202,7 @@ export async function generateAeIntroEmail(
   const parsed = await completeJsonWithRetry<EmailOutput>({
     systemPrompt: `${INTRO_CALL_REFERENCE}\n\n${aeIntroEmailContract(timeWorks)}`,
     input: `${buildResearchBlock(research, scorecard)}\n\nAgreed recommendation: pivot to AE.\nRecommendation rationale: ${checkpoint.recommendationRationale}\nAE: ${ae.name}${ae.email ? ` (${ae.email})` : ""}\nDoes the booked time work for the AE: ${timeWorks ? "yes" : "no"}${!timeWorks && altTimes ? `\nAlternate time option 1: ${altTimes[0]}\nAlternate time option 2: ${altTimes[1]}` : ""}`,
-    maxOutputTokens: 900,
+    maxOutputTokens: 1500,
   });
   return { subject: String(parsed.subject ?? ""), body: String(parsed.body ?? "") };
 }
@@ -227,7 +227,7 @@ export async function generateQualifyOutEmail(research: IntroCallResearch, score
   const parsed = await completeJsonWithRetry<EmailOutput>({
     systemPrompt: `${INTRO_CALL_REFERENCE}\n\n${QUALIFY_OUT_EMAIL_CONTRACT}`,
     input: `${buildResearchBlock(research, scorecard)}\n\nAgreed recommendation: disqualify.\nRecommendation rationale: ${checkpoint.recommendationRationale}`,
-    maxOutputTokens: 700,
+    maxOutputTokens: 1200,
   });
   return { subject: String(parsed.subject ?? ""), body: String(parsed.body ?? "") };
 }
@@ -317,7 +317,7 @@ export async function generateWorksheet(research: IntroCallResearch, scorecard: 
   const parsed = await completeJsonWithRetry<{ worksheetMarkdown: string }>({
     systemPrompt: `${INTRO_CALL_REFERENCE}\n\n${WORKSHEET_CONTRACT}`,
     input: `${buildResearchBlock(research, scorecard)}\n\nAgreed pain score: ${checkpoint.painScore}/10 -- ${checkpoint.painLabel}\nAgreed champion score: ${checkpoint.championScore}/10 -- ${checkpoint.championLabel}`,
-    maxOutputTokens: 2000,
+    maxOutputTokens: 3000,
   });
   return String(parsed.worksheetMarkdown ?? "");
 }
