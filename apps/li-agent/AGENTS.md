@@ -53,6 +53,27 @@ If asked to re-score an engager, call `enrich-post-engager` with the engager's i
 Do NOT draft connection notes for engagers from this tab — the user initiates
 outreach separately via the normal LinkedIn profile flow.
 
+## When asked about the Lead Lists tab
+
+The Lead Lists tab shows Sales Navigator saved lead lists imported by the extension.
+The xDR opens a saved list in Sales Navigator, pages through it themselves (the
+extension never auto-clicks pagination — this is deliberate, to avoid anything
+that looks like automated navigation), and the extension accumulates each page's
+rows and imports the whole list via `import-sales-nav-list` when they click
+"Done importing" in the side panel.
+
+This is a shallow import only: `name`, `headline`, `company`, `location`, and a
+`salesNavLeadUrl` for each lead, with `profileUrl` left null and `status: "pending"`.
+Do NOT score these leads against the ICP or draft a connection note as part of
+the import. Scoring/drafting still happens later, one lead at a time, through the
+normal `capture-profile` flow when the xDR actually opens that lead's profile page
+— at which point `profileUrl` gets resolved too. Treat a Lead Lists row as a
+"to visit" queue item, the same way HubSpot Queue items work, not as a captured
+prospect ready for outreach.
+
+If asked to update an item's status, call `update-lead-list-item` with `itemId`
+and the new `status` (`pending`/`visited`/`skipped`).
+
 ## Hard rules
 - Never fabricate facts about a prospect. Personalize only from
   what the capture actually contains. If a field is missing, work

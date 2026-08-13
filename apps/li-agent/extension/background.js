@@ -253,6 +253,25 @@ async function getPostEngager(id, apiToken) {
   return await res.json();
 }
 
+async function importSalesNavList({ listName, listUrl, leads }) {
+  const { appUrl, apiToken } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/import-sales-nav-list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      listName,
+      listUrl: listUrl ?? null,
+      leads,
+      ...(apiToken ? { apiToken } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`import-sales-nav-list failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { listId, totalCount, truncated? }
+}
+
 // Scrapes the LinkedIn profile at profileUrl in a background tab, returns the
 // profile data. Opens a non-active tab, waits for load, injects the content
 // script, reads the profile, closes the tab.
@@ -422,6 +441,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         .then((result) => sendResponse(result ?? { status: "not_found" }))
         .catch(() => sendResponse({ status: "not_found" }));
     });
+    return true;
+  }
+
+  if (msg.type === "IMPORT_SALES_NAV_LIST") {
+    importSalesNavList(msg)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
 });

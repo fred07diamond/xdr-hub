@@ -150,6 +150,47 @@ export const hubspotQueueItems = table("hubspot_queue_items", {
   updatedAt: text("updated_at").default(now()),
 });
 
+// Sales Navigator lead lists imported by the extension — each import creates
+// a new list entity (same behavior as HubSpot queues re-importing a list,
+// verified against import-hubspot-queue.ts, which has no upsert/merge logic).
+// ownerEmail is nullable, unlike hubspotQueues.ownerEmail, because this is
+// written by a public/unauthenticated action (resolveOwner() can return
+// null) — same nullable-owner shape as prospects/postEngagements.
+// Shallow import only: no ICP scoring or draft note happens here. That still
+// happens later, per-lead, through the existing capture-profile flow when
+// the xDR opens that lead's actual profile page.
+export const leadLists = table("lead_lists", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email"),
+  name: text("name").notNull(),
+  salesNavListUrl: text("sales_nav_list_url"),
+  totalCount: integer("total_count").notNull().default(0),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
+
+// Individual leads within a Sales Navigator lead list. profileUrl (the
+// public /in/... URL) is null at import time — a list page has N leads, so
+// there's no reliable single-link scan to resolve it the way a single lead's
+// profile page can. It gets filled in later once the xDR actually opens that
+// lead's profile and the existing capture flow runs. salesNavLeadUrl (the
+// /sales/lead/... link) is always present at import time and is what "Open
+// LinkedIn" falls back to until profileUrl is resolved.
+export const leadListItems = table("lead_list_items", {
+  id: text("id").primaryKey(),
+  listId: text("list_id").notNull(),
+  name: text("name"),
+  headline: text("headline"),
+  company: text("company"),
+  location: text("location"),
+  profileUrl: text("profile_url"),
+  salesNavLeadUrl: text("sales_nav_lead_url"),
+  status: text("status", { enum: ["pending", "visited", "skipped"] }).notNull().default("pending"),
+  position: integer("position").notNull(),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
+
 // Singleton row that holds ICP configuration.
 // icpText: the full text of the user's uploaded ICP document — used by
 //   capture-profile to score and draft every captured LinkedIn profile.

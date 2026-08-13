@@ -762,12 +762,22 @@ function isPostUrl(url) {
   return url.includes("linkedin.com/posts/") || url.includes("linkedin.com/feed/update/");
 }
 
+// LIVE-VERIFY: best guess based on Sales Nav's known URL taxonomy for a
+// saved lead list, not confirmed against a real account — matches the same
+// pattern content.js's isSalesNavListUrl() uses (the two can't share code
+// across the content-script/panel boundary without a build step, so this is
+// deliberately duplicated, same as isProfileUrl/isPostUrl already are).
+function isSalesNavListUrl(url) {
+  return /linkedin\.com\/sales\/lists\/people\//i.test(url);
+}
+
 function switchTab(tab) {
-  const isProfile = tab === "profile";
-  tabProfileBtn.classList.toggle("active", isProfile);
-  tabEngagersBtn.classList.toggle("active", !isProfile);
-  mainContent.style.display = isProfile ? "block" : "none";
-  engagersTab.style.display = isProfile ? "none" : "block";
+  tabProfileBtn.classList.toggle("active", tab === "profile");
+  tabEngagersBtn.classList.toggle("active", tab === "engagers");
+  if (tabListsBtn) tabListsBtn.classList.toggle("active", tab === "lists");
+  mainContent.style.display = tab === "profile" ? "block" : "none";
+  engagersTab.style.display = tab === "engagers" ? "block" : "none";
+  if (listsTab) listsTab.style.display = tab === "lists" ? "block" : "none";
 }
 
 tabProfileBtn.addEventListener("click", () => switchTab("profile"));
@@ -950,6 +960,167 @@ async function loadEngagersTab(tabId) {
   }
 }
 
+// ── Lists tab (Sales Nav lead list import) ──────────────────────────────────
+// Pagination is always user-driven — the xDR clicks "Next" in Sales Nav
+// themselves; this only accumulates whatever each page's scrape returns.
+// Never auto-clicks pagination controls (account-safety decision).
+
+const tabListsBtn = document.getElementById("tab-lists-btn");
+const listsTab = document.getElementById("lists-tab");
+const listsCount = document.getElementById("lists-count");
+const listsLeadsEl = document.getElementById("lists-leads");
+const listsEmpty = document.getElementById("lists-empty");
+const listsStatus = document.getElementById("lists-status");
+const doneImportingBtn = document.getElementById("done-importing-btn");
+const startNewImportBtn = document.getElementById("start-new-import-btn");
+
+const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
+// leadsByUrl is a plain object (not a Map) — chrome.storage.session values
+// are JSON-serialized, so a Map wouldn't survive a save/reload round trip.
+let listImportSession = { listUrl: null, listName: null, pages: 1, leadsByUrl: {} };
+let currentListUrl = null; // tracks the list URL independently of currentProfileUrl/currentPostUrl
+
+function deriveSalesNavListName(rawTitle) {
+  if (!rawTitle) return "Sales Navigator List";
+  const cleaned = rawTitle
+    .replace(/\s*\|\s*(LinkedIn\s+)?Sales\s+Navigator\s*$/i, "")
+    .replace(/\s*\|\s*LinkedIn\s*$/i, "")
+    .trim();
+  return cleaned || "Sales Navigator List";
+}
+
+async function loadListImportSession() {
+  try {
+    const stored = await chrome.storage.session.get([LIST_SESSION_STORAGE_KEY]);
+    if (stored?.[LIST_SESSION_STORAGE_KEY]) {
+      listImportSession = stored[LIST_SESSION_STORAGE_KEY];
+    }
+  } catch {
+    // chrome.storage.session may be unavailable in some contexts — fall
+    // back to the in-memory default; a closed/reopened panel just starts
+    // a fresh session in that case instead of resuming one.
+  }
+  renderListsTab();
+}
+loadListImportSession();
+
+function saveListImportSession() {
+  try {
+    chrome.storage.session.set({ [LIST_SESSION_STORAGE_KEY]: listImportSession });
+  } catch {
+    // best-effort
+  }
+}
+
+function resetListImportSession(listUrl, listName) {
+  listImportSession = { listUrl, listName, pages: 1, leadsByUrl: {} };
+  saveListImportSession();
+  renderListsTab();
+}
+
+// Merges newly-scraped rows into the accumulator, deduped by salesNavLeadUrl
+// (a lead already captured on an earlier page is simply overwritten with
+// the same data, not duplicated). Returns true if any genuinely new lead
+// was added, so the caller can decide whether to bump the page counter.
+function mergeLeadRows(rows) {
+  let addedAny = false;
+  for (const row of rows) {
+    if (!row.salesNavLeadUrl) continue;
+    if (!listImportSession.leadsByUrl[row.salesNavLeadUrl]) addedAny = true;
+    listImportSession.leadsByUrl[row.salesNavLeadUrl] = row;
+  }
+  saveListImportSession();
+  renderListsTab();
+  return addedAny;
+}
+
+function renderListsTab() {
+  if (!listsCount) return;
+  const leads = Object.values(listImportSession.leadsByUrl);
+  listsCount.textContent = `${leads.length} lead${leads.length === 1 ? "" : "s"} captured across ${listImportSession.pages} page${listImportSession.pages === 1 ? "" : "s"}`;
+  listsLeadsEl.innerHTML = "";
+  if (leads.length === 0) {
+    listsLeadsEl.appendChild(listsEmpty);
+  } else {
+    for (const lead of leads) {
+      const row = document.createElement("div");
+      row.className = "list-lead-row";
+      row.textContent = `${lead.name}${lead.company ? " · " + lead.company : ""}`;
+      listsLeadsEl.appendChild(row);
+    }
+  }
+  doneImportingBtn.disabled = leads.length === 0;
+}
+
+// Scrapes whatever page is currently loaded (one page, no pagination of its
+// own) and starts content.js's MutationObserver so subsequent manual page
+// turns get picked up without the panel needing to poll.
+async function scrapeCurrentListPage(tabId) {
+  try {
+    let result;
+    try {
+      result = await chrome.tabs.sendMessage(tabId, { type: "SCRAPE_SALES_NAV_LIST_ROWS" });
+    } catch {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+      result = await chrome.tabs.sendMessage(tabId, { type: "SCRAPE_SALES_NAV_LIST_ROWS" });
+    }
+    if (result?.ok && result.rows?.length) {
+      mergeLeadRows(result.rows);
+    }
+    await chrome.tabs.sendMessage(tabId, { type: "START_WATCHING_SALES_NAV_LIST" }).catch(() => {});
+  } catch {
+    listsStatus.textContent = "Could not read this list. Make sure you're on a Sales Navigator saved lead list.";
+  }
+}
+
+// content.js pushes here whenever its MutationObserver sees the DOM change
+// after the xDR clicks "Next" themselves in Sales Nav.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "SALES_NAV_LIST_ROWS_UPDATED" && msg.rows) {
+    const addedAny = mergeLeadRows(msg.rows);
+    if (addedAny) {
+      listImportSession.pages += 1;
+      saveListImportSession();
+      renderListsTab();
+    }
+  }
+});
+
+doneImportingBtn.addEventListener("click", async () => {
+  const leads = Object.values(listImportSession.leadsByUrl);
+  if (leads.length === 0) return;
+  doneImportingBtn.disabled = true;
+  doneImportingBtn.textContent = "Importing…";
+  listsStatus.textContent = "";
+
+  const result = await chrome.runtime.sendMessage({
+    type: "IMPORT_SALES_NAV_LIST",
+    listName: listImportSession.listName || "Sales Navigator List",
+    listUrl: listImportSession.listUrl,
+    leads,
+  }).catch((err) => ({ ok: false, error: err.message }));
+
+  doneImportingBtn.textContent = "Done importing";
+  // result.ok only reflects the HTTP call succeeding — the action itself can
+  // return a normal 200 response with an `error` field set (e.g. rate
+  // limited) and listId empty, so a successful import needs both ok AND a
+  // real listId, not just ok.
+  if (result?.ok && result.listId && !result.error) {
+    listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${result.truncated ? " (list was capped at 500)" : ""}. Find it in the Lead Lists tab.`;
+    resetListImportSession(listImportSession.listUrl, listImportSession.listName);
+  } else {
+    doneImportingBtn.disabled = false;
+    listsStatus.textContent = result?.error || "Import failed.";
+  }
+});
+
+startNewImportBtn.addEventListener("click", () => {
+  resetListImportSession(currentListUrl, listImportSession.listName);
+  listsStatus.textContent = "";
+});
+
+tabListsBtn?.addEventListener("click", () => switchTab("lists"));
+
 // Extend the existing init and URL polling to handle post pages.
 // Patch: after the URL polling loop detects a new URL, also handle post pages.
 // We do this by overriding the urlPollTimer logic to check isPostUrl.
@@ -1000,10 +1171,40 @@ function startUrlPollingWithEngagers() {
         notLinkedin.style.display = "none";
         switchTab("engagers");
       }
+    } else if (isSalesNavListUrl(url)) {
+      // Keep tab switcher visible; only reset the accumulator and rescan on
+      // a genuinely different list URL. Use currentListUrl (not
+      // currentProfileUrl) for the same reason the post branch uses
+      // currentPostUrl — a background profile tab shouldn't spuriously
+      // reset an in-progress list import.
+      tabSwitcher.style.display = "flex";
+      if (cleanUrl !== currentListUrl) {
+        const isNewList = !!currentListUrl && currentListUrl !== cleanUrl;
+        currentListUrl = cleanUrl;
+        currentProfileUrl = cleanUrl;
+        currentTabUrl = cleanUrl;
+        notLinkedin.style.display = "none";
+        mainContent.style.display = "none";
+        switchTab("lists");
+        if (isNewList || !listImportSession.listUrl) {
+          resetListImportSession(cleanUrl, deriveSalesNavListName(tab.title));
+        }
+        listsStatus.textContent = "";
+        scrapeCurrentListPage(tab.id);
+      } else {
+        // Same list — user may have switched tabs and come back, or the
+        // content script instance may have been torn down (e.g. a full page
+        // reload between pagination pages, not an SPA route swap). Rescan
+        // and re-arm the observer either way; mergeLeadRows is additive-only
+        // so this is safe to call repeatedly.
+        notLinkedin.style.display = "none";
+        switchTab("lists");
+        scrapeCurrentListPage(tab.id);
+      }
     } else {
       // Non-LinkedIn page: hide tab switcher, show not-LinkedIn message.
-      // currentPostUrl is intentionally NOT cleared here so returning to the
-      // same post tab won't trigger a redundant rescan.
+      // currentPostUrl/currentListUrl are intentionally NOT cleared here so
+      // returning to the same post/list tab won't trigger a redundant reset.
       tabSwitcher.style.display = "none";
       switchTab("profile");
       if (currentProfileUrl) {

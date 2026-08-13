@@ -652,6 +652,82 @@
       padding: 24px 0;
       line-height: 1.6;
     }
+
+    /* ── Lists tab ───────────────────────────────────────── */
+    #lists-tab { display: none; }
+    #lists-hint {
+      font-size: 11px;
+      color: #888;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    #lists-count {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+    #lists-leads {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 260px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+    .list-lead-row {
+      font-size: 12px;
+      padding: 6px 8px;
+      background: #f8f9fa;
+      border-radius: 5px;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #lists-empty {
+      text-align: center;
+      font-size: 12px;
+      color: #888;
+      padding: 24px 0;
+      line-height: 1.6;
+    }
+    #lists-controls {
+      display: flex;
+      gap: 8px;
+    }
+    #start-new-import-btn {
+      flex: 1;
+      padding: 7px 12px;
+      background: none;
+      border: 1px solid #d1d5db;
+      border-radius: 7px;
+      font-size: 12px;
+      color: #555;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #done-importing-btn {
+      flex: 2;
+      padding: 7px 12px;
+      background: #0a66c2;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    #done-importing-btn:disabled { background: #aaa; cursor: not-allowed; }
+    #done-importing-btn:hover:not(:disabled) { background: #004182; }
+    #lists-status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #666;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -660,10 +736,11 @@
     <button id="settings-btn" title="Settings">⚙</button>
   </div>
 
-  <!-- Tab switcher — visible on profile and post pages -->
+  <!-- Tab switcher — visible on profile, post, and Sales Nav list pages -->
   <div id="tab-switcher" style="display:none; margin-bottom:12px;">
     <button class="tab-btn active" id="tab-profile-btn">Profile</button>
     <button class="tab-btn" id="tab-engagers-btn">Engagers</button>
+    <button class="tab-btn" id="tab-lists-btn">Lists</button>
   </div>
 
   <!-- Settings view — shown on gear click or when no token -->
@@ -797,6 +874,24 @@
         Navigate to a LinkedIn post to see commenters here.
       </div>
     </div>
+  </div>
+
+  <!-- Lists tab — visible on a Sales Navigator saved lead list page.
+       Pagination is always user-driven: page through the list yourself in
+       Sales Nav at a normal pace and this accumulates each page as it loads. -->
+  <div id="lists-tab">
+    <div id="lists-hint">
+      Page through this list in Sales Navigator yourself — each page you view gets captured automatically. Click "Done importing" once you've reached the end (or whenever you want to import what's captured so far).
+    </div>
+    <div id="lists-count">0 leads captured across 1 page</div>
+    <div id="lists-leads">
+      <div id="lists-empty">Open a Sales Navigator saved lead list to start capturing leads.</div>
+    </div>
+    <div id="lists-controls">
+      <button id="start-new-import-btn">Start new import</button>
+      <button id="done-importing-btn" disabled>Done importing</button>
+    </div>
+    <div id="lists-status"></div>
   </div>
 
   <script src="panel.js"></script>

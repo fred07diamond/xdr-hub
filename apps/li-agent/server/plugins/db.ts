@@ -281,6 +281,47 @@ export default runMigrations(
         window_start TEXT NOT NULL
       )`,
     },
+    {
+      version: 44,
+      name: "lead-lists-table",
+      sql: `CREATE TABLE IF NOT EXISTS lead_lists (
+        id TEXT PRIMARY KEY,
+        owner_email TEXT,
+        name TEXT NOT NULL,
+        sales_nav_list_url TEXT,
+        total_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 45,
+      name: "lead-list-items-table",
+      sql: `CREATE TABLE IF NOT EXISTS lead_list_items (
+        id TEXT PRIMARY KEY,
+        list_id TEXT NOT NULL,
+        name TEXT,
+        headline TEXT,
+        company TEXT,
+        location TEXT,
+        profile_url TEXT,
+        sales_nav_lead_url TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        position INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 46,
+      name: "lead-list-items-list-id-index",
+      sql: `CREATE INDEX IF NOT EXISTS lead_list_items_list_id ON lead_list_items(list_id)`,
+    },
+    {
+      version: 47,
+      name: "lead-lists-owner-email-index",
+      sql: `CREATE INDEX IF NOT EXISTS lead_lists_owner_email ON lead_lists(owner_email)`,
+    },
   ],
   { table: "outreach_migrations" },
 );

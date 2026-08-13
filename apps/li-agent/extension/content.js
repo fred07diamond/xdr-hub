@@ -228,6 +228,106 @@ function findPublicProfileUrl() {
   return null;
 }
 
+// ── Sales Navigator list page (saved lead list) ────────────────────────────
+// LIVE-VERIFY: this URL pattern is a best guess based on Sales Nav's known
+// URL taxonomy, not confirmed against a real account. Check
+// window.location.href on a real saved lead list before trusting this.
+function isSalesNavListUrl(url) {
+  const href = url || window.location.href;
+  return /linkedin\.com\/sales\/lists\/people\//i.test(href);
+}
+
+// Reads all lead rows rendered on the CURRENT page of a Sales Nav saved
+// list. Pagination is the caller's job (the xDR clicks Next themselves,
+// never automated — account-safety decision) — this reads whatever DOM
+// exists right now, one page at a time, same one-page contract as
+// scrapeCommenters() reading one already-loaded post.
+//
+// LIVE-VERIFY: the row-container selector (closest("li")/table row/custom
+// wrapper) is unverified against a real Sales Nav list's DOM structure.
+// Anchoring on [data-anonymize="person-name"] per row reuses the same
+// attribute-first discipline as scrapeSalesNavTopCard()/snField() above,
+// since these GDPR-anonymization hooks are the most stable selector
+// strategy LinkedIn exposes for Sales Nav — but the row-scope walk-up may
+// need adjustment once tested live (use window.__bliDiagnoseSalesNavList()
+// below).
+function scrapeSalesNavListRows() {
+  const rows = [];
+  const seen = new Set();
+  const nameEls = Array.from(document.querySelectorAll('[data-anonymize="person-name"]'));
+
+  for (const nameEl of nameEls) {
+    const rowScope =
+      nameEl.closest("li") ||
+      nameEl.closest("tr") ||
+      nameEl.closest('[data-x--people-list--result]') ||
+      nameEl.parentElement?.parentElement?.parentElement ||
+      null;
+    if (!rowScope) continue;
+
+    const name = nameEl.innerText?.trim() || null;
+    const headline = snField(["headline", "person-tagline", "person-headline"], rowScope);
+    const company = snField(["company-name", "person-company", "company"], rowScope);
+    const location = snField(["location", "person-location"], rowScope);
+
+    // List rows link to the Sales Nav lead page, not the public /in/ profile
+    // — unlike a single lead page, a list has N leads so findPublicProfileUrl()'s
+    // document-wide /in/ scan can't be attributed to a specific row. The
+    // public URL gets resolved later, when the xDR opens this lead's actual
+    // profile and the existing single-profile flow runs unmodified.
+    const linkEl = rowScope.querySelector('a[href*="/sales/lead/"], a[href*="/sales/people/"]');
+    const href = linkEl?.getAttribute("href") || null;
+    const salesNavLeadUrl = href
+      ? new URL(href, window.location.origin).href.split("?")[0]
+      : null;
+
+    if (!name || !salesNavLeadUrl || seen.has(salesNavLeadUrl)) continue;
+    seen.add(salesNavLeadUrl);
+    rows.push({ name, headline, company, location, salesNavLeadUrl });
+  }
+
+  return rows;
+}
+
+// Watches the list container for DOM changes after the xDR clicks "Next"
+// themselves in Sales Nav — this NEVER auto-clicks pagination controls
+// (deliberate account-safety decision, matching the existing comments flow's
+// "scroll manually, don't automate it" philosophy). Debounced re-scrape,
+// pushed to the panel as a message; the panel dedupes by salesNavLeadUrl, so
+// re-sending the full current-page set on every mutation batch (rather than
+// diffing here) is intentional — simpler than tracking diff state twice.
+let salesNavListObserver = null;
+let salesNavListDebounceTimer = null;
+
+function startWatchingSalesNavList() {
+  stopWatchingSalesNavList();
+  const firstNameEl = document.querySelector('[data-anonymize="person-name"]');
+  const container =
+    firstNameEl?.closest("ul") ||
+    firstNameEl?.closest("table") ||
+    firstNameEl?.closest("main") ||
+    document.body;
+
+  salesNavListObserver = new MutationObserver(() => {
+    clearTimeout(salesNavListDebounceTimer);
+    salesNavListDebounceTimer = setTimeout(() => {
+      chrome.runtime.sendMessage({
+        type: "SALES_NAV_LIST_ROWS_UPDATED",
+        rows: scrapeSalesNavListRows(),
+      });
+    }, 400);
+  });
+  salesNavListObserver.observe(container, { childList: true, subtree: true });
+}
+
+function stopWatchingSalesNavList() {
+  if (salesNavListObserver) {
+    salesNavListObserver.disconnect();
+    salesNavListObserver = null;
+  }
+  clearTimeout(salesNavListDebounceTimer);
+}
+
 function scrapeProfile() {
   const getAll = (sel, limit = 3) =>
     Array.from(document.querySelectorAll(sel))
@@ -1028,6 +1128,16 @@ window.__bliDiagnoseSalesNav = function () {
   console.log("[BLI SN] visible buttons:\n" + buttons.join("\n"));
 };
 
+// Sales Nav LIST diagnostic — call window.__bliDiagnoseSalesNavList() in the
+// tab console on a saved lead list page when scrapeSalesNavListRows() misses
+// rows or fields.
+window.__bliDiagnoseSalesNavList = function () {
+  console.log("[BLI SN List] isSalesNavListUrl:", isSalesNavListUrl());
+  const nameEls = Array.from(document.querySelectorAll('[data-anonymize="person-name"]'));
+  console.log(`[BLI SN List] found ${nameEls.length} [data-anonymize="person-name"] elements`);
+  console.log("[BLI SN List] scrape result:", scrapeSalesNavListRows());
+};
+
 // Diagnostic helper — call window.__bliDiagnose() in the LinkedIn tab console
 window.__bliDiagnose = function () {
   const mainEl = document.querySelector("main, [role='main']");
@@ -1204,6 +1314,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const commenters = scrapeCommenters();
     sendResponse({ ok: true, commenters });
     return true;
+  }
+
+  if (msg.type === "SCRAPE_SALES_NAV_LIST_ROWS") {
+    sendResponse({ ok: true, rows: scrapeSalesNavListRows(), isListPage: isSalesNavListUrl() });
+  }
+
+  if (msg.type === "START_WATCHING_SALES_NAV_LIST") {
+    startWatchingSalesNavList();
+    sendResponse({ ok: true });
+  }
+
+  if (msg.type === "STOP_WATCHING_SALES_NAV_LIST") {
+    stopWatchingSalesNavList();
+    sendResponse({ ok: true });
   }
 
   if (msg.type === "SEND_CONNECTION_REQUEST") {
