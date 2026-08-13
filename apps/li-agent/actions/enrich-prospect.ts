@@ -39,23 +39,34 @@ export default defineAction({
     const now = new Date().toISOString();
     await db.update(prospects).set({ enrichmentStatus: "enriching", updatedAt: now }).where(eq(prospects.id, id));
 
+    // Person Match and Organization Search are independent Apollo endpoints
+    // with independently-scoped API-key permissions — each is wrapped
+    // separately so a scope problem on one doesn't block whichever data the
+    // other still gets. Mirrors apps/prospecting-hub/actions/enrich-contact-
+    // with-apollo.ts and enrich-lead-list-item.ts.
+    const warnings: string[] = [];
+
     let person = null;
+    try {
+      person = await matchApolloPerson({ name: prospect.name, companyName: prospect.company });
+    } catch (err) {
+      warnings.push(`Person lookup: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     let organization = null;
     try {
-      [person, organization] = await Promise.all([
-        matchApolloPerson({ name: prospect.name, companyName: prospect.company }),
-        enrichApolloOrganization({ companyName: prospect.company }),
-      ]);
+      organization = await enrichApolloOrganization({
+        companyName: prospect.company,
+        domain: person?.organization?.primary_domain ?? null,
+      });
     } catch (err) {
-      await db
-        .update(prospects)
-        .set({ enrichmentStatus: "failed", updatedAt: new Date().toISOString() })
-        .where(eq(prospects.id, id));
-      return { ok: false, error: err instanceof Error ? err.message : "Apollo enrichment failed." };
+      warnings.push(`Organization lookup: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     const enrichedAt = new Date().toISOString();
-    const status = person || organization ? "done" : "not_found";
+    const status = person || organization ? "done" : warnings.length > 0 ? "failed" : "not_found";
+    const enrichmentError = warnings.length > 0 ? warnings.join(" | ") : null;
+
     await db
       .update(prospects)
       .set({
@@ -66,6 +77,7 @@ export default defineAction({
         enrichedCompanyIndustry: organization?.industry ?? null,
         enrichedCompanySize: organization?.estimated_num_employees ?? null,
         enrichedAt,
+        enrichmentError,
         updatedAt: enrichedAt,
       })
       .where(eq(prospects.id, id));
@@ -78,6 +90,7 @@ export default defineAction({
       enrichedLinkedinUrl: person?.linkedin_url ?? null,
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
+      enrichmentError,
     };
   },
 });

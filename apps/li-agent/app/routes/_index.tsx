@@ -64,6 +64,7 @@ interface Prospect {
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
+  enrichmentError: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -133,6 +134,7 @@ function EnrichedCell({
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); onEnrich(prospect); }}
+      title={prospect.enrichmentError ?? undefined}
       className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
     >
       <IconSparkles size={11} />

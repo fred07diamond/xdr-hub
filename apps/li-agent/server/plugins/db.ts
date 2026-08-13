@@ -392,6 +392,16 @@ export default runMigrations(
       name: "prospects-enriched-at",
       sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_at TEXT`,
     },
+    {
+      version: 62,
+      name: "lead-list-items-enrichment-error",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enrichment_error TEXT`,
+    },
+    {
+      version: 63,
+      name: "prospects-enrichment-error",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enrichment_error TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

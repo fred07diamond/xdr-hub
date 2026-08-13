@@ -55,6 +55,7 @@ export const prospects = table("prospects", {
   enrichedCompanyIndustry: text("enriched_company_industry"),
   enrichedCompanySize: integer("enriched_company_size"),
   enrichedAt: text("enriched_at"),
+  enrichmentError: text("enrichment_error"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });
@@ -212,6 +213,11 @@ export const leadListItems = table("lead_list_items", {
   enrichedCompanyIndustry: text("enriched_company_industry"),
   enrichedCompanySize: integer("enriched_company_size"),
   enrichedAt: text("enriched_at"),
+  // Per-endpoint Apollo warnings (e.g. a key scoped for org search but not
+  // person match) — set whenever the person and/or organization lookup
+  // threw, even if the other one succeeded, so a partial "done" result is
+  // still explainable instead of looking like silent data loss.
+  enrichmentError: text("enrichment_error"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });

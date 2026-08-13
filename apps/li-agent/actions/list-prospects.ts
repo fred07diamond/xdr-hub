@@ -38,6 +38,7 @@ export default defineAction({
         enrichedLinkedinUrl: prospects.enrichedLinkedinUrl,
         enrichedCompanyIndustry: prospects.enrichedCompanyIndustry,
         enrichedCompanySize: prospects.enrichedCompanySize,
+        enrichmentError: prospects.enrichmentError,
         createdAt: prospects.createdAt,
         updatedAt: prospects.updatedAt,
       })

@@ -23,6 +23,7 @@ type LeadListItem = {
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
+  enrichmentError: string | null;
 };
 
 type LeadList = {
@@ -97,6 +98,7 @@ function EnrichedCell({
     <button
       type="button"
       onClick={() => onEnrich(item)}
+      title={item.enrichmentError ?? undefined}
       className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
     >
       <IconSparkles size={11} />
