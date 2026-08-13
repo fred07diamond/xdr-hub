@@ -200,6 +200,13 @@ export const leadListItems = table("lead_list_items", {
   salesNavLeadUrl: text("sales_nav_lead_url"),
   status: text("status", { enum: ["pending", "visited", "skipped"] }).notNull().default("pending"),
   position: integer("position").notNull(),
+  // Persona assigned from the scraped headline/title at import time via
+  // selectPersonasBatch() — same personaId/personaName/personaColor shape as
+  // prospects. Best-effort: null when there's no headline yet, or when the
+  // batch classification call fails.
+  personaId: text("persona_id"),
+  personaName: text("persona_name"),
+  personaColor: text("persona_color"),
   // Apollo.io enrichment — on-demand, triggered from the Lead Lists page
   // (enrich-lead-list-item.ts), not part of the shallow import above.
   // enrichedLinkedinUrl is kept separate from profileUrl, which stays

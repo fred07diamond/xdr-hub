@@ -412,6 +412,21 @@ export default runMigrations(
       name: "prospects-enriched-phone",
       sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_phone TEXT`,
     },
+    {
+      version: 66,
+      name: "lead-list-items-persona-id",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS persona_id TEXT`,
+    },
+    {
+      version: 67,
+      name: "lead-list-items-persona-name",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS persona_name TEXT`,
+    },
+    {
+      version: 68,
+      name: "lead-list-items-persona-color",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS persona_color TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

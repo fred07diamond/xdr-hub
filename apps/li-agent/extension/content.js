@@ -266,7 +266,14 @@ function scrapeSalesNavListRows() {
     if (!rowScope) continue;
 
     const name = nameEl.innerText?.trim() || null;
-    const headline = snField(["headline", "person-tagline", "person-headline"], rowScope);
+    // Sales Nav's condensed list view shows a current job TITLE under each
+    // name (e.g. "VP, Product Design"), not a LinkedIn bio-style headline --
+    // live-confirmed the headline-style attribute names below came back
+    // empty for every row in a real list, so job-title-style names (already
+    // used for `role` on the single-lead top card) are tried as a fallback.
+    const headline =
+      snField(["headline", "person-tagline", "person-headline"], rowScope) ||
+      snField(["job-title", "person-title", "title"], rowScope);
     const company = snField(["company-name", "person-company", "company"], rowScope);
     const location = snField(["location", "person-location"], rowScope);
 
@@ -1136,6 +1143,15 @@ window.__bliDiagnoseSalesNavList = function () {
   const nameEls = Array.from(document.querySelectorAll('[data-anonymize="person-name"]'));
   console.log(`[BLI SN List] found ${nameEls.length} [data-anonymize="person-name"] elements`);
   console.log("[BLI SN List] scrape result:", scrapeSalesNavListRows());
+  const firstRowScope = nameEls[0] &&
+    (nameEls[0].closest("li") || nameEls[0].closest("tr") ||
+     nameEls[0].closest('[data-x--people-list--result]') ||
+     nameEls[0].parentElement?.parentElement?.parentElement);
+  if (firstRowScope) {
+    const inventory = Array.from(firstRowScope.querySelectorAll("[data-anonymize]"))
+      .map((el) => `${el.getAttribute("data-anonymize")} -> "${(el.innerText || "").trim().replace(/\s+/g, " ").slice(0, 70)}"`);
+    console.log("[BLI SN List] first row data-anonymize inventory:\n" + inventory.join("\n"));
+  }
 };
 
 // Diagnostic helper — call window.__bliDiagnose() in the LinkedIn tab console

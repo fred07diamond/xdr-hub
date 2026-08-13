@@ -5,6 +5,7 @@ import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems } from "../server/db/schema.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
+import { selectPersonasBatch } from "../server/helpers/select-persona.js";
 
 // Sales Nav lists can run into the thousands -- cap like import-hubspot-
 // queue.ts's IMPORT_LIMIT so one import can't produce an unbounded insert.
@@ -46,6 +47,20 @@ export default defineAction({
     const listId = nanoid();
     const now = new Date().toISOString();
 
+    // Persona classification only -- a single batched LLM call (or none at
+    // all, for 0/1 personas), not per-lead ICP fit scoring or draft note
+    // generation. Best-effort: any failure here must not block the import
+    // itself, since the import is the durable outcome that matters.
+    let personaMatches: Awaited<ReturnType<typeof selectPersonasBatch>> = [];
+    try {
+      personaMatches = await selectPersonasBatch(
+        db,
+        capped.map((lead) => ({ name: lead.name, headline: lead.headline, company: lead.company })),
+      );
+    } catch {
+      personaMatches = [];
+    }
+
     // Always creates a new list entity, even re-importing the same listUrl --
     // matches import-hubspot-queue.ts's real behavior (no upsert/merge by
     // list id there either).
@@ -60,20 +75,26 @@ export default defineAction({
     });
 
     await db.insert(leadListItems).values(
-      capped.map((lead, i) => ({
-        id: nanoid(),
-        listId,
-        name: lead.name ?? null,
-        headline: lead.headline ?? null,
-        company: lead.company ?? null,
-        location: lead.location ?? null,
-        profileUrl: null,
-        salesNavLeadUrl: lead.salesNavLeadUrl ?? null,
-        status: "pending" as const,
-        position: i,
-        createdAt: now,
-        updatedAt: now,
-      })),
+      capped.map((lead, i) => {
+        const persona = personaMatches[i];
+        return {
+          id: nanoid(),
+          listId,
+          name: lead.name ?? null,
+          headline: lead.headline ?? null,
+          company: lead.company ?? null,
+          location: lead.location ?? null,
+          profileUrl: null,
+          salesNavLeadUrl: lead.salesNavLeadUrl ?? null,
+          status: "pending" as const,
+          position: i,
+          personaId: persona?.personaId ?? null,
+          personaName: persona?.personaName ?? null,
+          personaColor: persona?.personaColor ?? null,
+          createdAt: now,
+          updatedAt: now,
+        };
+      }),
     );
 
     return { listId, totalCount: capped.length, truncated };

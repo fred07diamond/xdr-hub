@@ -1056,6 +1056,13 @@ function renderListsTab() {
       nameEl.textContent = lead.name || "—";
       row.appendChild(nameEl);
 
+      if (lead.headline) {
+        const titleEl = document.createElement("div");
+        titleEl.className = "list-lead-title";
+        titleEl.textContent = lead.headline;
+        row.appendChild(titleEl);
+      }
+
       if (lead.company) {
         const companyEl = document.createElement("div");
         companyEl.className = "list-lead-company";

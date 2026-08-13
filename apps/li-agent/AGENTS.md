@@ -62,14 +62,18 @@ that looks like automated navigation), and the extension accumulates each page's
 rows and imports the whole list via `import-sales-nav-list` when they click
 "Send to LinkedIn Agent" in the side panel.
 
-This is a shallow import only: `name`, `headline`, `company`, `location`, and a
-`salesNavLeadUrl` for each lead, with `profileUrl` left null and `status: "pending"`.
-Do NOT score these leads against the ICP or draft a connection note as part of
-the import. Scoring/drafting still happens later, one lead at a time, through the
-normal `capture-profile` flow when the xDR actually opens that lead's profile page
-— at which point `profileUrl` gets resolved too. Treat a Lead Lists row as a
-"to visit" queue item, the same way HubSpot Queue items work, not as a captured
-prospect ready for outreach.
+This is a shallow import: `name`, `headline` (the job title scraped from Sales
+Nav's list rows), `company`, `location`, and a `salesNavLeadUrl` for each lead,
+with `profileUrl` left null and `status: "pending"`. `import-sales-nav-list`
+DOES assign a persona at import time (via `selectPersonasBatch` — one batched
+LLM call classifying the whole list against active ICP personas, not one call
+per lead), so `personaId`/`personaName`/`personaColor` get set then. This is
+persona classification only, not full ICP fit scoring: it does NOT set a fit
+verdict/reasoning or draft a connection note as part of the import — those still
+happen later, one lead at a time, through the normal `capture-profile` flow when
+the xDR actually opens that lead's profile page, at which point `profileUrl` also
+gets resolved. Treat a Lead Lists row as a "to visit" queue item, the same way
+HubSpot Queue items work, not as a captured prospect ready for outreach.
 
 If asked to update an item's status, call `update-lead-list-item` with `itemId`
 and the new `status` (`pending`/`visited`/`skipped`).

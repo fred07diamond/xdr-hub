@@ -17,6 +17,9 @@ type LeadListItem = {
   salesNavLeadUrl: string | null;
   status: "pending" | "visited" | "skipped";
   position: number;
+  personaId: string | null;
+  personaName: string | null;
+  personaColor: string | null;
   enrichmentStatus: "idle" | "enriching" | "done" | "not_found" | "failed";
   enrichedEmail: string | null;
   enrichedTitle: string | null;
@@ -143,7 +146,15 @@ function LeadListItemRow({
       )}
     >
       <td className="px-4 py-3">
-        <p className="text-sm font-medium">{item.name ?? "—"}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium">{item.name ?? "—"}</p>
+          {item.personaName && item.personaColor && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
+              <span style={{ background: item.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full" />
+              {item.personaName}
+            </span>
+          )}
+        </div>
         {item.location && (
           <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{item.location}</p>
         )}
