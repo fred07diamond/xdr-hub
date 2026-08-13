@@ -89,10 +89,27 @@ per-row "Enrich" button that calls Apollo.io on demand: `enrich-prospect` for
 prospects, `enrich-lead-list-item` for lead list items. Both share the same
 `server/helpers/apollo-client.ts` (person match + company search) and the same
 enrichment columns (`enrichmentStatus`, `enrichedEmail`, `enrichedTitle`,
-`enrichedLinkedinUrl`, `enrichedCompanyIndustry`, `enrichedCompanySize`,
-`enrichedAt`). Always on-demand and one row at a time — never automatic, never
-bulk, since each call spends Apollo credits. This is a data lookup, not an ICP
-fit judgment, and must not influence scoring or draft notes.
+`enrichedPhone`, `enrichedLinkedinUrl`, `enrichedCompanyIndustry`,
+`enrichedCompanySize`, `enrichedAt`, `enrichmentError`). This is a data lookup,
+not an ICP fit judgment, and must not influence scoring or draft notes.
+
+- On-demand only — the user always triggers it (one row, "Enrich selected" on
+  Prospects, or "Enrich all" on a Lead List). Never call it automatically at
+  capture/import time.
+- Email/Phone columns distinguish "never enriched" (—) from "enriched but
+  Apollo had no email/phone" (done, field empty) from "no match at all"
+  (not_found) from a real API error (failed, with the message in
+  `enrichmentError` / the Retry button's tooltip) — don't collapse these back
+  into one generic blank state.
+- `cleanForApolloMatch()` in `apollo-client.ts` strips emoji from names/company
+  names before sending them to Apollo (LinkedIn-captured names/titles/companies
+  sometimes carry emoji that hurt Apollo's fuzzy matching). Keep this centralized
+  there rather than re-implementing per caller.
+- Phone numbers come from Apollo's synchronous `person.contact.phone_numbers`
+  field — only populated when Apollo has already "revealed" that person for
+  this team. A brand-new person Apollo has never seen will show no phone; this
+  does not implement Apollo's separate paid async reveal_phone_number+webhook
+  flow.
 
 ## Hard rules
 - Never fabricate facts about a prospect. Personalize only from

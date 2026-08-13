@@ -63,12 +63,26 @@ function StatusPill({ status }: { status: LeadListItem["status"] }) {
   );
 }
 
-function EnrichedField({ value }: { value: string | null }) {
-  return value ? (
-    <span className="text-xs truncate max-w-[170px] block">{value}</span>
-  ) : (
-    <span className="text-xs text-muted-foreground/50">—</span>
-  );
+function EnrichedField({
+  value,
+  status,
+  kind,
+}: {
+  value: string | null;
+  status: LeadListItem["enrichmentStatus"];
+  kind: "email" | "phone";
+}) {
+  if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
+  if (status === "not_found") {
+    return <span className="text-xs italic text-muted-foreground/70">No contact info found</span>;
+  }
+  if (status === "failed") {
+    return <span className="text-xs italic text-destructive/70">Enrichment failed</span>;
+  }
+  if (status === "done") {
+    return <span className="text-xs italic text-muted-foreground/70">No {kind} found</span>;
+  }
+  return <span className="text-xs text-muted-foreground/50">—</span>;
 }
 
 function EnrichButton({
@@ -140,10 +154,10 @@ function LeadListItemRow({
         <StatusPill status={item.status} />
       </td>
       <td className="px-4 py-3">
-        <EnrichedField value={item.enrichedEmail} />
+        <EnrichedField value={item.enrichedEmail} status={item.enrichmentStatus} kind="email" />
       </td>
       <td className="px-4 py-3">
-        <EnrichedField value={item.enrichedPhone} />
+        <EnrichedField value={item.enrichedPhone} status={item.enrichmentStatus} kind="phone" />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
@@ -191,6 +205,7 @@ export default function LeadListsPage() {
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
+  const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
 
   const listsQuery = useActionQuery("list-lead-lists", {}, { refetchInterval: 30_000 });
   const lists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
@@ -214,6 +229,9 @@ export default function LeadListsPage() {
   const pendingCount = items.filter((i) => i.status === "pending").length;
   const visitedCount = items.filter((i) => i.status === "visited").length;
   const skippedCount = items.filter((i) => i.status === "skipped").length;
+  const enrichEligibleCount = items.filter(
+    (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
+  ).length;
 
   function handleOpenLinkedIn(item: LeadListItem) {
     window.open(linkedInUrl(item), "_blank", "noopener,noreferrer");
@@ -242,6 +260,34 @@ export default function LeadListsPage() {
       });
       itemsQuery.refetch();
     }
+  }
+
+  // Sequential, not parallel -- keeps this well under the per-hour Apollo
+  // rate limit and avoids hammering Apollo with a burst of concurrent calls.
+  async function handleBulkEnrich() {
+    const targets = items.filter(
+      (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
+    );
+    if (targets.length === 0) return;
+    setBulkEnrichProgress({ done: 0, total: targets.length });
+    for (const item of targets) {
+      setEnrichingIds((prev) => new Set(prev).add(item.id));
+      try {
+        await enrichItem.mutateAsync({ itemId: item.id });
+      } catch {
+        // Per-item failures are surfaced via enrichmentError on that row --
+        // keep going so one bad lead doesn't stop the rest of the batch.
+      } finally {
+        setEnrichingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        setBulkEnrichProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+      }
+    }
+    setBulkEnrichProgress(null);
+    itemsQuery.refetch();
   }
 
   async function handleDeleteList(listId: string) {
@@ -334,6 +380,21 @@ export default function LeadListsPage() {
                   {pendingCount} pending · {visitedCount} visited · {skippedCount} skipped
                 </p>
               </div>
+              {bulkEnrichProgress ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <IconLoader2 size={12} className="animate-spin" />
+                  Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
+                </span>
+              ) : enrichEligibleCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleBulkEnrich}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                >
+                  <IconSparkles size={12} />
+                  Enrich all ({enrichEligibleCount})
+                </button>
+              ) : null}
             </div>
 
             {/* Filter tabs */}

@@ -99,12 +99,26 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
-function EnrichedField({ value }: { value: string | null }) {
-  return value ? (
-    <span className="text-xs truncate max-w-[170px] block">{value}</span>
-  ) : (
-    <span className="text-xs text-muted-foreground/50">—</span>
-  );
+function EnrichedField({
+  value,
+  status,
+  kind,
+}: {
+  value: string | null;
+  status: Prospect["enrichmentStatus"];
+  kind: "email" | "phone";
+}) {
+  if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
+  if (status === "not_found") {
+    return <span className="text-xs italic text-muted-foreground/70">No contact info found</span>;
+  }
+  if (status === "failed") {
+    return <span className="text-xs italic text-destructive/70">Enrichment failed</span>;
+  }
+  if (status === "done") {
+    return <span className="text-xs italic text-muted-foreground/70">No {kind} found</span>;
+  }
+  return <span className="text-xs text-muted-foreground/50">—</span>;
 }
 
 function EnrichButton({
@@ -458,6 +472,7 @@ export default function ProspectsRoute() {
   const [personaFilter, setPersonaFilter] = useState<string>("all");
 
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
+  const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
 
   const bulkDeleteProspects = useActionMutation("bulk-delete-prospects");
   const deleteProspect = useActionMutation("delete-prospect");
@@ -553,6 +568,33 @@ export default function ProspectsRoute() {
     }
   }
 
+  // Sequential, not parallel -- keeps this well under the per-hour Apollo
+  // rate limit and avoids hammering Apollo with a burst of concurrent calls.
+  async function handleBulkEnrich() {
+    const targets = allProspects.filter((p) => selectedIds.has(p.id));
+    if (targets.length === 0) return;
+    setBulkEnrichProgress({ done: 0, total: targets.length });
+    for (const p of targets) {
+      setEnrichingIds((prev) => new Set(prev).add(p.id));
+      try {
+        await enrichProspect.mutateAsync({ id: p.id });
+      } catch {
+        // Per-item failures are surfaced via enrichmentError on that row --
+        // keep going so one bad prospect doesn't stop the rest of the batch.
+      } finally {
+        setEnrichingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(p.id);
+          return next;
+        });
+        setBulkEnrichProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+      }
+    }
+    setBulkEnrichProgress(null);
+    setSelectedIds(new Set());
+    refetch();
+  }
+
   const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || search;
 
   return (
@@ -586,6 +628,17 @@ export default function ProspectsRoute() {
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
                   <IconCheck size={13} /> Mark sent
                 </button>
+                {bulkEnrichProgress ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <IconLoader2 size={12} className="animate-spin" />
+                    Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
+                  </span>
+                ) : (
+                  <button type="button" onClick={handleBulkEnrich}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
+                    <IconSparkles size={13} /> Enrich selected
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -771,12 +824,12 @@ export default function ProspectsRoute() {
 
                     {/* Email */}
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <EnrichedField value={p.enrichedEmail} />
+                      <EnrichedField value={p.enrichedEmail} status={p.enrichmentStatus} kind="email" />
                     </td>
 
                     {/* Phone */}
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <EnrichedField value={p.enrichedPhone} />
+                      <EnrichedField value={p.enrichedPhone} status={p.enrichmentStatus} kind="phone" />
                     </td>
 
                     {/* Actions */}

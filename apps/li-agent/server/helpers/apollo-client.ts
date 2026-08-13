@@ -40,6 +40,30 @@ async function apolloFetch(path: string, options?: RequestInit, timeoutMs: numbe
   return res.json();
 }
 
+// Names/titles/companies captured from LinkedIn sometimes carry emoji
+// (e.g. a paintbrush glyph after a name) that people add to their profile
+// -- live-confirmed these measurably hurt Apollo's fuzzy name/company
+// matching, so every value sent to Apollo goes through this first.
+// Extended_Pictographic covers the actual emoji glyphs; U+FE0F (variation
+// selector) and U+200D (zero-width joiner) strip the invisible characters
+// that stitch compound emoji together; the regional-indicator range
+// strips flag emoji specifically since those aren't Extended_Pictographic.
+// Deliberately narrow -- does not touch accents, non-Latin scripts, or
+// ordinary punctuation like apostrophes.
+const EMOJI_PATTERN = new RegExp(
+  "\\p{Extended_Pictographic}|\\u{FE0F}|\\u{200D}|[\\u{1F1E6}-\\u{1F1FF}]",
+  "gu",
+);
+
+function cleanForApolloMatch(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const cleaned = text
+    .replace(EMOJI_PATTERN, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || null;
+}
+
 export interface ApolloPersonMatch {
   title?: string;
   seniority?: string;
@@ -67,8 +91,11 @@ export async function matchApolloPerson(options: {
   companyName?: string | null;
   email?: string | null;
 }): Promise<ApolloPersonMatch | null> {
-  const body: Record<string, unknown> = { name: options.name };
-  if (options.companyName) body.organization_name = options.companyName;
+  const cleanedName = cleanForApolloMatch(options.name);
+  if (!cleanedName) return null;
+  const body: Record<string, unknown> = { name: cleanedName };
+  const cleanedCompany = cleanForApolloMatch(options.companyName);
+  if (cleanedCompany) body.organization_name = cleanedCompany;
   if (options.email) body.email = options.email;
   const result = (await apolloFetch("/people/match", {
     method: "POST",
@@ -101,17 +128,18 @@ export async function enrichApolloOrganization(options: {
   companyName?: string | null;
   domain?: string | null;
 }): Promise<ApolloOrganization | null> {
-  if (!options.domain && !options.companyName) return null;
+  const cleanedCompany = cleanForApolloMatch(options.companyName);
+  if (!options.domain && !cleanedCompany) return null;
   const body: Record<string, unknown> = options.domain
     ? { q_organization_domains: [options.domain], page: 1, per_page: 1 }
-    : { q_organization_name: options.companyName, page: 1, per_page: 5 };
+    : { q_organization_name: cleanedCompany, page: 1, per_page: 5 };
   const result = (await apolloFetch("/organizations/search", {
     method: "POST",
     body: JSON.stringify(body),
   })) as ApolloOrganizationSearchResponse;
   const organizations = result.organizations ?? [];
   if (organizations.length === 0) return null;
-  const companyLower = options.companyName?.trim().toLowerCase();
+  const companyLower = cleanedCompany?.toLowerCase();
   const exactMatch = companyLower
     ? organizations.find((o) => (o as { name?: string }).name?.trim().toLowerCase() === companyLower)
     : undefined;
