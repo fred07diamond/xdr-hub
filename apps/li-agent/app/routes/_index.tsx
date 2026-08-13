@@ -61,6 +61,7 @@ interface Prospect {
   enrichmentStatus: "idle" | "enriching" | "done" | "not_found" | "failed";
   enrichedEmail: string | null;
   enrichedTitle: string | null;
+  enrichedPhone: string | null;
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
@@ -98,7 +99,15 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
-function EnrichedCell({
+function EnrichedField({ value }: { value: string | null }) {
+  return value ? (
+    <span className="text-xs truncate max-w-[170px] block">{value}</span>
+  ) : (
+    <span className="text-xs text-muted-foreground/50">—</span>
+  );
+}
+
+function EnrichButton({
   prospect,
   isEnriching,
   onEnrich,
@@ -116,20 +125,6 @@ function EnrichedCell({
     );
   }
 
-  if (prospect.enrichmentStatus === "done") {
-    return (
-      <div className="min-w-0">
-        {prospect.enrichedTitle && <p className="text-xs truncate max-w-[160px]">{prospect.enrichedTitle}</p>}
-        {prospect.enrichedEmail && (
-          <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{prospect.enrichedEmail}</p>
-        )}
-        {!prospect.enrichedTitle && !prospect.enrichedEmail && (
-          <p className="text-[11px] text-muted-foreground">Company data only</p>
-        )}
-      </div>
-    );
-  }
-
   return (
     <button
       type="button"
@@ -138,7 +133,11 @@ function EnrichedCell({
       className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
     >
       <IconSparkles size={11} />
-      {prospect.enrichmentStatus === "failed" || prospect.enrichmentStatus === "not_found" ? "Retry enrich" : "Enrich"}
+      {prospect.enrichmentStatus === "done"
+        ? "Re-enrich"
+        : prospect.enrichmentStatus === "failed" || prospect.enrichmentStatus === "not_found"
+        ? "Retry enrich"
+        : "Enrich"}
     </button>
   );
 }
@@ -703,7 +702,8 @@ export default function ProspectsRoute() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Enriched</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
                 <th className="py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
@@ -769,14 +769,22 @@ export default function ProspectsRoute() {
                       )}
                     </td>
 
-                    {/* Enriched */}
+                    {/* Email */}
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <EnrichedCell prospect={p} isEnriching={enrichingIds.has(p.id)} onEnrich={handleEnrich} />
+                      <EnrichedField value={p.enrichedEmail} />
+                    </td>
+
+                    {/* Phone */}
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <EnrichedField value={p.enrichedPhone} />
                     </td>
 
                     {/* Actions */}
                     <td className="py-3 pl-3 pr-4" onClick={(e) => e.stopPropagation()}>
-                      {note && <CopyButton text={note} />}
+                      <div className="flex items-center gap-1.5">
+                        {note && <CopyButton text={note} />}
+                        <EnrichButton prospect={p} isEnriching={enrichingIds.has(p.id)} onEnrich={handleEnrich} />
+                      </div>
                     </td>
                   </tr>
                 );

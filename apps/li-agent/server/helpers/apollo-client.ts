@@ -47,6 +47,14 @@ export interface ApolloPersonMatch {
   email_status?: string;
   linkedin_url?: string;
   organization?: { primary_domain?: string; name?: string } | null;
+  // Only present when Apollo already has this person "revealed" for our
+  // team (e.g. previously enriched, or CRM-synced) — live-confirmed this
+  // nests real, unmasked phone numbers with no extra reveal step or
+  // webhook required. For a person Apollo has never revealed for this
+  // team, `contact` is absent and phone_numbers has to go through Apollo's
+  // separate paid async reveal_phone_number + webhook flow, which this
+  // integration does not implement.
+  contact?: { phone_numbers?: Array<{ raw_number?: string; type?: string }> } | null;
 }
 
 interface ApolloPersonMatchResponse {
@@ -67,6 +75,13 @@ export async function matchApolloPerson(options: {
     body: JSON.stringify(body),
   })) as ApolloPersonMatchResponse;
   return result.person ?? null;
+}
+
+// Synchronous-only: returns null when Apollo hasn't already revealed this
+// person for our team (see ApolloPersonMatch.contact comment). Never
+// triggers Apollo's paid async phone reveal.
+export function extractApolloPhone(person: ApolloPersonMatch | null): string | null {
+  return person?.contact?.phone_numbers?.[0]?.raw_number ?? null;
 }
 
 export interface ApolloOrganization {

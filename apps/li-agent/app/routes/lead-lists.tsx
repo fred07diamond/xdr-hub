@@ -20,6 +20,7 @@ type LeadListItem = {
   enrichmentStatus: "idle" | "enriching" | "done" | "not_found" | "failed";
   enrichedEmail: string | null;
   enrichedTitle: string | null;
+  enrichedPhone: string | null;
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
@@ -62,7 +63,15 @@ function StatusPill({ status }: { status: LeadListItem["status"] }) {
   );
 }
 
-function EnrichedCell({
+function EnrichedField({ value }: { value: string | null }) {
+  return value ? (
+    <span className="text-xs truncate max-w-[170px] block">{value}</span>
+  ) : (
+    <span className="text-xs text-muted-foreground/50">—</span>
+  );
+}
+
+function EnrichButton({
   item,
   isEnriching,
   onEnrich,
@@ -80,20 +89,6 @@ function EnrichedCell({
     );
   }
 
-  if (item.enrichmentStatus === "done") {
-    return (
-      <div className="min-w-0">
-        {item.enrichedTitle && <p className="text-xs truncate max-w-[160px]">{item.enrichedTitle}</p>}
-        {item.enrichedEmail && (
-          <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{item.enrichedEmail}</p>
-        )}
-        {!item.enrichedTitle && !item.enrichedEmail && (
-          <p className="text-[11px] text-muted-foreground">Company data only</p>
-        )}
-      </div>
-    );
-  }
-
   return (
     <button
       type="button"
@@ -102,7 +97,11 @@ function EnrichedCell({
       className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
     >
       <IconSparkles size={11} />
-      {item.enrichmentStatus === "failed" || item.enrichmentStatus === "not_found" ? "Retry enrich" : "Enrich"}
+      {item.enrichmentStatus === "done"
+        ? "Re-enrich"
+        : item.enrichmentStatus === "failed" || item.enrichmentStatus === "not_found"
+        ? "Retry enrich"
+        : "Enrich"}
     </button>
   );
 }
@@ -141,7 +140,10 @@ function LeadListItemRow({
         <StatusPill status={item.status} />
       </td>
       <td className="px-4 py-3">
-        <EnrichedCell item={item} isEnriching={isEnriching} onEnrich={onEnrich} />
+        <EnrichedField value={item.enrichedEmail} />
+      </td>
+      <td className="px-4 py-3">
+        <EnrichedField value={item.enrichedPhone} />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
@@ -172,6 +174,7 @@ function LeadListItemRow({
               Restore
             </button>
           )}
+          <EnrichButton item={item} isEnriching={isEnriching} onEnrich={onEnrich} />
         </div>
       </td>
     </tr>
@@ -371,7 +374,8 @@ export default function LeadListsPage() {
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Headline</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Company</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Status</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Enriched</th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Email</th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Phone</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>

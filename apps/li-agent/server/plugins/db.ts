@@ -402,6 +402,16 @@ export default runMigrations(
       name: "prospects-enrichment-error",
       sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enrichment_error TEXT`,
     },
+    {
+      version: 64,
+      name: "lead-list-items-enriched-phone",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_phone TEXT`,
+    },
+    {
+      version: 65,
+      name: "prospects-enriched-phone",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_phone TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

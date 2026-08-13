@@ -35,6 +35,7 @@ export default defineAction({
         enrichmentStatus: prospects.enrichmentStatus,
         enrichedEmail: prospects.enrichedEmail,
         enrichedTitle: prospects.enrichedTitle,
+        enrichedPhone: prospects.enrichedPhone,
         enrichedLinkedinUrl: prospects.enrichedLinkedinUrl,
         enrichedCompanyIndustry: prospects.enrichedCompanyIndustry,
         enrichedCompanySize: prospects.enrichedCompanySize,
