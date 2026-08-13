@@ -980,13 +980,16 @@ const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
 let listImportSession = { listUrl: null, listName: null, pages: 1, leadsByUrl: {} };
 let currentListUrl = null; // tracks the list URL independently of currentProfileUrl/currentPostUrl
 
+// Live-confirmed a Sales Nav list page's tab title looks like
+// "{List Name} | Lead Lists | Sales Navigator" -- taking just the first
+// "|"-delimited segment is more robust than trying to strip every possible
+// suffix LinkedIn might append (the previous suffix-stripping version left
+// "| Lead Lists" in the name since it only stripped the trailing
+// "| Sales Navigator" part).
 function deriveSalesNavListName(rawTitle) {
   if (!rawTitle) return "Sales Navigator List";
-  const cleaned = rawTitle
-    .replace(/\s*\|\s*(LinkedIn\s+)?Sales\s+Navigator\s*$/i, "")
-    .replace(/\s*\|\s*LinkedIn\s*$/i, "")
-    .trim();
-  return cleaned || "Sales Navigator List";
+  const firstSegment = rawTitle.split("|")[0].trim();
+  return firstSegment || "Sales Navigator List";
 }
 
 async function loadListImportSession() {
@@ -1036,6 +1039,8 @@ function mergeLeadRows(rows) {
 
 function renderListsTab() {
   if (!listsCount) return;
+  const listsNameEl = document.getElementById("lists-name");
+  if (listsNameEl) listsNameEl.textContent = listImportSession.listName || "";
   const leads = Object.values(listImportSession.leadsByUrl);
   listsCount.textContent = `${leads.length} lead${leads.length === 1 ? "" : "s"} captured across ${listImportSession.pages} page${listImportSession.pages === 1 ? "" : "s"}`;
   listsLeadsEl.innerHTML = "";
@@ -1191,14 +1196,21 @@ function startUrlPollingWithEngagers() {
       // reset an in-progress list import.
       tabSwitcher.style.display = "flex";
       if (cleanUrl !== currentListUrl) {
-        const isNewList = !!currentListUrl && currentListUrl !== cleanUrl;
         currentListUrl = cleanUrl;
         currentProfileUrl = cleanUrl;
         currentTabUrl = cleanUrl;
         notLinkedin.style.display = "none";
         mainContent.style.display = "none";
         switchTab("lists");
-        if (isNewList || !listImportSession.listUrl) {
+        // Compare against the SESSION's tracked list URL (persisted via
+        // chrome.storage.session, so it survives a closed/reopened panel),
+        // not just the in-memory currentListUrl above -- that variable
+        // always starts null on a fresh panel load, so comparing only
+        // against it can't tell "this is genuinely a new list" from
+        // "resuming the same list I was just on," and was silently keeping
+        // a previous list's already-captured leads around when the xDR
+        // opened a different Sales Nav list in a fresh panel.
+        if (!listImportSession.listUrl || listImportSession.listUrl !== cleanUrl) {
           resetListImportSession(cleanUrl, deriveSalesNavListName(tab.title));
         }
         listsStatus.textContent = "";
