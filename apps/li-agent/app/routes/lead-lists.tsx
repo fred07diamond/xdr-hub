@@ -1,6 +1,6 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconExternalLink, IconListCheck, IconLoader2, IconTrash, IconUsers } from "@tabler/icons-react";
+import { IconExternalLink, IconListCheck, IconLoader2, IconSparkles, IconTrash, IconUsers } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { APP_TITLE } from "@/lib/app-config";
@@ -17,6 +17,12 @@ type LeadListItem = {
   salesNavLeadUrl: string | null;
   status: "pending" | "visited" | "skipped";
   position: number;
+  enrichmentStatus: "idle" | "enriching" | "done" | "not_found" | "failed";
+  enrichedEmail: string | null;
+  enrichedTitle: string | null;
+  enrichedLinkedinUrl: string | null;
+  enrichedCompanyIndustry: string | null;
+  enrichedCompanySize: number | null;
 };
 
 type LeadList = {
@@ -55,16 +61,64 @@ function StatusPill({ status }: { status: LeadListItem["status"] }) {
   );
 }
 
+function EnrichedCell({
+  item,
+  isEnriching,
+  onEnrich,
+}: {
+  item: LeadListItem;
+  isEnriching: boolean;
+  onEnrich: (item: LeadListItem) => void;
+}) {
+  if (isEnriching || item.enrichmentStatus === "enriching") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <IconLoader2 size={11} className="animate-spin" />
+        Enriching…
+      </span>
+    );
+  }
+
+  if (item.enrichmentStatus === "done") {
+    return (
+      <div className="min-w-0">
+        {item.enrichedTitle && <p className="text-xs truncate max-w-[160px]">{item.enrichedTitle}</p>}
+        {item.enrichedEmail && (
+          <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{item.enrichedEmail}</p>
+        )}
+        {!item.enrichedTitle && !item.enrichedEmail && (
+          <p className="text-[11px] text-muted-foreground">Company data only</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onEnrich(item)}
+      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
+    >
+      <IconSparkles size={11} />
+      {item.enrichmentStatus === "failed" || item.enrichmentStatus === "not_found" ? "Retry enrich" : "Enrich"}
+    </button>
+  );
+}
+
 function LeadListItemRow({
   item,
+  isEnriching,
   onOpen,
   onSkip,
   onUnskip,
+  onEnrich,
 }: {
   item: LeadListItem;
+  isEnriching: boolean;
   onOpen: (item: LeadListItem) => void;
   onSkip: (item: LeadListItem) => void;
   onUnskip: (item: LeadListItem) => void;
+  onEnrich: (item: LeadListItem) => void;
 }) {
   return (
     <tr
@@ -83,6 +137,9 @@ function LeadListItemRow({
       <td className="px-4 py-3 text-xs text-muted-foreground">{item.company ?? "—"}</td>
       <td className="px-4 py-3">
         <StatusPill status={item.status} />
+      </td>
+      <td className="px-4 py-3">
+        <EnrichedCell item={item} isEnriching={isEnriching} onEnrich={onEnrich} />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
@@ -128,6 +185,7 @@ export default function LeadListsPage() {
 
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
 
   const listsQuery = useActionQuery("list-lead-lists", {}, { refetchInterval: 30_000 });
   const lists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
@@ -142,6 +200,7 @@ export default function LeadListsPage() {
 
   const updateItem = useActionMutation("update-lead-list-item");
   const deleteList = useActionMutation("delete-lead-list");
+  const enrichItem = useActionMutation("enrich-lead-list-item");
 
   const filteredItems = statusFilter === "all"
     ? items
@@ -164,6 +223,20 @@ export default function LeadListsPage() {
 
   function handleUnskip(item: LeadListItem) {
     updateItem.mutate({ itemId: item.id, status: "pending" });
+  }
+
+  async function handleEnrich(item: LeadListItem) {
+    setEnrichingIds((prev) => new Set(prev).add(item.id));
+    try {
+      await enrichItem.mutateAsync({ itemId: item.id });
+    } finally {
+      setEnrichingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      itemsQuery.refetch();
+    }
   }
 
   async function handleDeleteList(listId: string) {
@@ -296,6 +369,7 @@ export default function LeadListsPage() {
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Headline</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Company</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Status</th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Enriched</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
@@ -304,9 +378,11 @@ export default function LeadListsPage() {
                       <LeadListItemRow
                         key={item.id}
                         item={item}
+                        isEnriching={enrichingIds.has(item.id)}
                         onOpen={handleOpenLinkedIn}
                         onSkip={handleSkip}
                         onUnskip={handleUnskip}
+                        onEnrich={handleEnrich}
                       />
                     ))}
                   </tbody>

@@ -788,7 +788,7 @@ refreshEngagersBtn.addEventListener("click", async () => {
   refreshEngagersBtn.disabled = true;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab?.id) await loadEngagersTab(tab.id);
-  refreshEngagersBtn.textContent = "↻ Refresh";
+  refreshEngagersBtn.textContent = "↻ Refresh comments";
   refreshEngagersBtn.disabled = false;
 });
 
@@ -796,7 +796,7 @@ function updateLoadSelectedBtn() {
   const checked = document.querySelectorAll(".engager-check:checked");
   const count = checked.length;
   loadSelectedBtn.disabled = count === 0;
-  loadSelectedBtn.textContent = count > 0 ? `Load selected (${count})` : "Load selected (0)";
+  loadSelectedBtn.textContent = `Send to LinkedIn Agent (${count})`;
 }
 
 function renderEngagerRow(engager, idx) {
@@ -878,7 +878,7 @@ loadSelectedBtn.addEventListener("click", async () => {
   if (!selected.length) return;
 
   loadSelectedBtn.disabled = true;
-  loadSelectedBtn.textContent = "Loading…";
+  loadSelectedBtn.textContent = "Sending…";
 
   // Reset button after 3s — progress messages handle card UI from here.
   setTimeout(() => {
@@ -1045,7 +1045,19 @@ function renderListsTab() {
     for (const lead of leads) {
       const row = document.createElement("div");
       row.className = "list-lead-row";
-      row.textContent = `${lead.name}${lead.company ? " · " + lead.company : ""}`;
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "list-lead-name";
+      nameEl.textContent = lead.name || "—";
+      row.appendChild(nameEl);
+
+      if (lead.company) {
+        const companyEl = document.createElement("div");
+        companyEl.className = "list-lead-company";
+        companyEl.textContent = lead.company;
+        row.appendChild(companyEl);
+      }
+
       listsLeadsEl.appendChild(row);
     }
   }
@@ -1090,7 +1102,7 @@ doneImportingBtn.addEventListener("click", async () => {
   const leads = Object.values(listImportSession.leadsByUrl);
   if (leads.length === 0) return;
   doneImportingBtn.disabled = true;
-  doneImportingBtn.textContent = "Importing…";
+  doneImportingBtn.textContent = "Sending…";
   listsStatus.textContent = "";
 
   const result = await chrome.runtime.sendMessage({
@@ -1100,7 +1112,7 @@ doneImportingBtn.addEventListener("click", async () => {
     leads,
   }).catch((err) => ({ ok: false, error: err.message }));
 
-  doneImportingBtn.textContent = "Done importing";
+  doneImportingBtn.textContent = "Send to LinkedIn Agent";
   // result.ok only reflects the HTTP call succeeding — the action itself can
   // return a normal 200 response with an `error` field set (e.g. rate
   // limited) and listId empty, so a successful import needs both ok AND a

@@ -60,7 +60,7 @@ The xDR opens a saved list in Sales Navigator, pages through it themselves (the
 extension never auto-clicks pagination — this is deliberate, to avoid anything
 that looks like automated navigation), and the extension accumulates each page's
 rows and imports the whole list via `import-sales-nav-list` when they click
-"Done importing" in the side panel.
+"Send to LinkedIn Agent" in the side panel.
 
 This is a shallow import only: `name`, `headline`, `company`, `location`, and a
 `salesNavLeadUrl` for each lead, with `profileUrl` left null and `status: "pending"`.
@@ -73,6 +73,14 @@ prospect ready for outreach.
 
 If asked to update an item's status, call `update-lead-list-item` with `itemId`
 and the new `status` (`pending`/`visited`/`skipped`).
+
+Each row also has an on-demand "Enrich" action (`enrich-lead-list-item`, dashboard-
+only, requires auth) that calls Apollo.io (`server/helpers/apollo-client.ts`) for
+person match + company search, populating `enrichedEmail`, `enrichedTitle`,
+`enrichedLinkedinUrl`, `enrichedCompanyIndustry`, `enrichedCompanySize` on that
+item. This is separate from and does not affect ICP scoring — it's a data lookup,
+not a fit judgment. Never trigger it automatically at import time or in bulk
+without being asked; it spends Apollo credits per call.
 
 ## Hard rules
 - Never fabricate facts about a prospect. Personalize only from

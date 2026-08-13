@@ -322,6 +322,41 @@ export default runMigrations(
       name: "lead-lists-owner-email-index",
       sql: `CREATE INDEX IF NOT EXISTS lead_lists_owner_email ON lead_lists(owner_email)`,
     },
+    {
+      version: 48,
+      name: "lead-list-items-enrichment-status",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enrichment_status TEXT NOT NULL DEFAULT 'idle'`,
+    },
+    {
+      version: 49,
+      name: "lead-list-items-enriched-email",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_email TEXT`,
+    },
+    {
+      version: 50,
+      name: "lead-list-items-enriched-title",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_title TEXT`,
+    },
+    {
+      version: 51,
+      name: "lead-list-items-enriched-linkedin-url",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_linkedin_url TEXT`,
+    },
+    {
+      version: 52,
+      name: "lead-list-items-enriched-company-industry",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_company_industry TEXT`,
+    },
+    {
+      version: 53,
+      name: "lead-list-items-enriched-company-size",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_company_size INTEGER`,
+    },
+    {
+      version: 54,
+      name: "lead-list-items-enriched-at",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_at TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

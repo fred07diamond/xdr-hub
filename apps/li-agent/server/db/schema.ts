@@ -187,6 +187,20 @@ export const leadListItems = table("lead_list_items", {
   salesNavLeadUrl: text("sales_nav_lead_url"),
   status: text("status", { enum: ["pending", "visited", "skipped"] }).notNull().default("pending"),
   position: integer("position").notNull(),
+  // Apollo.io enrichment — on-demand, triggered from the Lead Lists page
+  // (enrich-lead-list-item.ts), not part of the shallow import above.
+  // enrichedLinkedinUrl is kept separate from profileUrl, which stays
+  // reserved for the value the capture-profile flow resolves when the xDR
+  // actually opens the lead's LinkedIn page (see comment above).
+  enrichmentStatus: text("enrichment_status", { enum: ["idle", "enriching", "done", "not_found", "failed"] })
+    .notNull()
+    .default("idle"),
+  enrichedEmail: text("enriched_email"),
+  enrichedTitle: text("enriched_title"),
+  enrichedLinkedinUrl: text("enriched_linkedin_url"),
+  enrichedCompanyIndustry: text("enriched_company_industry"),
+  enrichedCompanySize: integer("enriched_company_size"),
+  enrichedAt: text("enriched_at"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });
