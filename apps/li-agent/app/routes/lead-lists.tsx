@@ -443,7 +443,7 @@ export default function LeadListsPage() {
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Name</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Headline</th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Job Title</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Company</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Status</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Email</th>
