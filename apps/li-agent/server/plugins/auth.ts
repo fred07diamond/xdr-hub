@@ -18,5 +18,6 @@ export default createAuthPlugin({
     "/_agent-native/actions/ingest-post-engager",
     "/_agent-native/actions/get-post-engager",
     "/_agent-native/actions/enrich-post-engager",
+    "/_agent-native/actions/import-sales-nav-list",
   ],
 });

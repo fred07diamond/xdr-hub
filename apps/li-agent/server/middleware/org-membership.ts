@@ -20,6 +20,7 @@ const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/enrich-post-engager",
   "/_agent-native/actions/get-post-engager",
   "/_agent-native/actions/resolve-connect-button",
+  "/_agent-native/actions/import-sales-nav-list",
 ]);
 
 // Runs after auth.ts (alphabetical order). Rejects authenticated users who
