@@ -82,6 +82,18 @@ item. This is separate from and does not affect ICP scoring — it's a data look
 not a fit judgment. Never trigger it automatically at import time or in bulk
 without being asked; it spends Apollo credits per call.
 
+## Apollo enrichment
+
+Both the Prospects table (`/`) and the Lead Lists table (`/lead-lists`) have a
+per-row "Enrich" button that calls Apollo.io on demand: `enrich-prospect` for
+prospects, `enrich-lead-list-item` for lead list items. Both share the same
+`server/helpers/apollo-client.ts` (person match + company search) and the same
+enrichment columns (`enrichmentStatus`, `enrichedEmail`, `enrichedTitle`,
+`enrichedLinkedinUrl`, `enrichedCompanyIndustry`, `enrichedCompanySize`,
+`enrichedAt`). Always on-demand and one row at a time — never automatic, never
+bulk, since each call spends Apollo credits. This is a data lookup, not an ICP
+fit judgment, and must not influence scoring or draft notes.
+
 ## Hard rules
 - Never fabricate facts about a prospect. Personalize only from
   what the capture actually contains. If a field is missing, work

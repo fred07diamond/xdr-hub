@@ -44,6 +44,17 @@ export const prospects = table("prospects", {
   status: text("status", { enum: ["captured", "drafted", "sent"] })
     .notNull()
     .default("captured"),
+  // Apollo.io enrichment — on-demand, triggered from the Prospects table
+  // (enrich-prospect.ts). Same shape as lead_list_items' enrichment columns.
+  enrichmentStatus: text("enrichment_status", { enum: ["idle", "enriching", "done", "not_found", "failed"] })
+    .notNull()
+    .default("idle"),
+  enrichedEmail: text("enriched_email"),
+  enrichedTitle: text("enriched_title"),
+  enrichedLinkedinUrl: text("enriched_linkedin_url"),
+  enrichedCompanyIndustry: text("enriched_company_industry"),
+  enrichedCompanySize: integer("enriched_company_size"),
+  enrichedAt: text("enriched_at"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });

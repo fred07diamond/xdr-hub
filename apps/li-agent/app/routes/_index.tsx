@@ -7,6 +7,7 @@ import {
   IconLoader2,
   IconRefresh,
   IconSearch,
+  IconSparkles,
   IconThumbDown,
   IconThumbUp,
   IconTrash,
@@ -57,6 +58,12 @@ interface Prospect {
   rating: number | null;
   ratingNote: string | null;
   status: Status;
+  enrichmentStatus: "idle" | "enriching" | "done" | "not_found" | "failed";
+  enrichedEmail: string | null;
+  enrichedTitle: string | null;
+  enrichedLinkedinUrl: string | null;
+  enrichedCompanyIndustry: string | null;
+  enrichedCompanySize: number | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -87,6 +94,50 @@ function StatusBadge({ status }: { status: Status }) {
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[status]}`}>
       {status}
     </span>
+  );
+}
+
+function EnrichedCell({
+  prospect,
+  isEnriching,
+  onEnrich,
+}: {
+  prospect: Prospect;
+  isEnriching: boolean;
+  onEnrich: (prospect: Prospect) => void;
+}) {
+  if (isEnriching || prospect.enrichmentStatus === "enriching") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <IconLoader2 size={11} className="animate-spin" />
+        Enriching…
+      </span>
+    );
+  }
+
+  if (prospect.enrichmentStatus === "done") {
+    return (
+      <div className="min-w-0">
+        {prospect.enrichedTitle && <p className="text-xs truncate max-w-[160px]">{prospect.enrichedTitle}</p>}
+        {prospect.enrichedEmail && (
+          <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{prospect.enrichedEmail}</p>
+        )}
+        {!prospect.enrichedTitle && !prospect.enrichedEmail && (
+          <p className="text-[11px] text-muted-foreground">Company data only</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onEnrich(prospect); }}
+      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
+    >
+      <IconSparkles size={11} />
+      {prospect.enrichmentStatus === "failed" || prospect.enrichmentStatus === "not_found" ? "Retry enrich" : "Enrich"}
+    </button>
   );
 }
 
@@ -405,9 +456,12 @@ export default function ProspectsRoute() {
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [personaFilter, setPersonaFilter] = useState<string>("all");
 
+  const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
+
   const bulkDeleteProspects = useActionMutation("bulk-delete-prospects");
   const deleteProspect = useActionMutation("delete-prospect");
   const markSent = useActionMutation("mark-sent");
+  const enrichProspect = useActionMutation("enrich-prospect");
 
   const { data, refetch, isLoading } = useActionQuery("list-prospects", {}, {
     refetchInterval: (query) => {
@@ -482,6 +536,20 @@ export default function ProspectsRoute() {
     }
     setSelectedIds(new Set());
     refetch();
+  }
+
+  async function handleEnrich(prospect: Prospect) {
+    setEnrichingIds((prev) => new Set(prev).add(prospect.id));
+    try {
+      await enrichProspect.mutateAsync({ id: prospect.id });
+    } finally {
+      setEnrichingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(prospect.id);
+        return next;
+      });
+      refetch();
+    }
   }
 
   const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || search;
@@ -633,6 +701,7 @@ export default function ProspectsRoute() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Enriched</th>
                 <th className="py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
@@ -696,6 +765,11 @@ export default function ProspectsRoute() {
                           {p.status === "captured" ? "Drafting…" : "No note"}
                         </span>
                       )}
+                    </td>
+
+                    {/* Enriched */}
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <EnrichedCell prospect={p} isEnriching={enrichingIds.has(p.id)} onEnrich={handleEnrich} />
                     </td>
 
                     {/* Actions */}

@@ -32,6 +32,12 @@ export default defineAction({
         rating: prospects.rating,
         ratingNote: prospects.ratingNote,
         status: prospects.status,
+        enrichmentStatus: prospects.enrichmentStatus,
+        enrichedEmail: prospects.enrichedEmail,
+        enrichedTitle: prospects.enrichedTitle,
+        enrichedLinkedinUrl: prospects.enrichedLinkedinUrl,
+        enrichedCompanyIndustry: prospects.enrichedCompanyIndustry,
+        enrichedCompanySize: prospects.enrichedCompanySize,
         createdAt: prospects.createdAt,
         updatedAt: prospects.updatedAt,
       })

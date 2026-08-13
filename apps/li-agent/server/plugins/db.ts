@@ -357,6 +357,41 @@ export default runMigrations(
       name: "lead-list-items-enriched-at",
       sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_at TEXT`,
     },
+    {
+      version: 55,
+      name: "prospects-enrichment-status",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enrichment_status TEXT NOT NULL DEFAULT 'idle'`,
+    },
+    {
+      version: 56,
+      name: "prospects-enriched-email",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_email TEXT`,
+    },
+    {
+      version: 57,
+      name: "prospects-enriched-title",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_title TEXT`,
+    },
+    {
+      version: 58,
+      name: "prospects-enriched-linkedin-url",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_linkedin_url TEXT`,
+    },
+    {
+      version: 59,
+      name: "prospects-enriched-company-industry",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_company_industry TEXT`,
+    },
+    {
+      version: 60,
+      name: "prospects-enriched-company-size",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_company_size INTEGER`,
+    },
+    {
+      version: 61,
+      name: "prospects-enriched-at",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_at TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );
