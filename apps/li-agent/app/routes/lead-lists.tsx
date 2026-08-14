@@ -27,7 +27,21 @@ type LeadListItem = {
   enrichedCompanySize: number | null;
   enrichmentError: string | null;
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
+  phoneRevealRequestedAt: string | null;
 };
+
+// Apollo doesn't always send a phone-reveal webhook back for a genuine
+// "no number found" outcome (sometimes it just never calls back, with
+// nothing identifying which request that silence was for) -- so a
+// "requested" status can't be trusted to resolve on its own forever. Past
+// this age, treat it the same as "done, nothing found" rather than showing
+// "Revealing…" indefinitely.
+const PHONE_REVEAL_STALE_AFTER_MS = 5 * 60 * 1000;
+
+function isPhoneRevealStale(requestedAt: string | null): boolean {
+  if (!requestedAt) return true;
+  return Date.now() - new Date(requestedAt).getTime() > PHONE_REVEAL_STALE_AFTER_MS;
+}
 
 type LeadList = {
   id: string;
@@ -54,16 +68,20 @@ function EnrichedField({
   status,
   kind,
   phoneRevealStatus,
+  phoneRevealRequestedAt,
 }: {
   value: string | null;
   status: LeadListItem["enrichmentStatus"];
   kind: "email" | "phone";
   phoneRevealStatus?: LeadListItem["phoneRevealStatus"];
+  phoneRevealRequestedAt?: LeadListItem["phoneRevealRequestedAt"];
 }) {
   if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
   // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
   // enrichment itself is done, but the personal number hasn't arrived yet.
-  if (kind === "phone" && phoneRevealStatus === "requested") {
+  // Past PHONE_REVEAL_STALE_AFTER_MS, stop waiting and fall through to the
+  // normal "no phone found" treatment below.
+  if (kind === "phone" && phoneRevealStatus === "requested" && !isPhoneRevealStale(phoneRevealRequestedAt ?? null)) {
     return <span className="text-xs italic text-muted-foreground/70">Revealing…</span>;
   }
   if (status === "not_found") {
@@ -158,7 +176,7 @@ function LeadListItemRow({
         <EnrichedField value={item.enrichedEmail} status={item.enrichmentStatus} kind="email" />
       </td>
       <td className="px-4 py-3">
-        <EnrichedField value={item.enrichedPhone} status={item.enrichmentStatus} kind="phone" phoneRevealStatus={item.phoneRevealStatus} />
+        <EnrichedField value={item.enrichedPhone} status={item.enrichmentStatus} kind="phone" phoneRevealStatus={item.phoneRevealStatus} phoneRevealRequestedAt={item.phoneRevealRequestedAt} />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
