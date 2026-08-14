@@ -22,6 +22,7 @@ const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/resolve-connect-button",
   "/_agent-native/actions/import-sales-nav-list",
   "/_agent-native/actions/list-lead-lists-for-extension",
+  "/_agent-native/actions/apollo-phone-reveal-webhook",
 ]);
 
 // Runs after auth.ts (alphabetical order). Rejects authenticated users who

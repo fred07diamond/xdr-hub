@@ -26,6 +26,7 @@ type LeadListItem = {
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
   enrichmentError: string | null;
+  phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
 };
 
 type LeadList = {
@@ -52,12 +53,19 @@ function EnrichedField({
   value,
   status,
   kind,
+  phoneRevealStatus,
 }: {
   value: string | null;
   status: LeadListItem["enrichmentStatus"];
   kind: "email" | "phone";
+  phoneRevealStatus?: LeadListItem["phoneRevealStatus"];
 }) {
   if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
+  // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
+  // enrichment itself is done, but the personal number hasn't arrived yet.
+  if (kind === "phone" && phoneRevealStatus === "requested") {
+    return <span className="text-xs italic text-muted-foreground/70">Revealing…</span>;
+  }
   if (status === "not_found") {
     return <span className="text-xs italic text-muted-foreground/70">No contact info found</span>;
   }
@@ -150,7 +158,7 @@ function LeadListItemRow({
         <EnrichedField value={item.enrichedEmail} status={item.enrichmentStatus} kind="email" />
       </td>
       <td className="px-4 py-3">
-        <EnrichedField value={item.enrichedPhone} status={item.enrichmentStatus} kind="phone" />
+        <EnrichedField value={item.enrichedPhone} status={item.enrichmentStatus} kind="phone" phoneRevealStatus={item.phoneRevealStatus} />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">

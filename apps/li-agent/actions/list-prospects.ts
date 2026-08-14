@@ -40,6 +40,7 @@ export default defineAction({
         enrichedCompanyIndustry: prospects.enrichedCompanyIndustry,
         enrichedCompanySize: prospects.enrichedCompanySize,
         enrichmentError: prospects.enrichmentError,
+        phoneRevealStatus: prospects.phoneRevealStatus,
         createdAt: prospects.createdAt,
         updatedAt: prospects.updatedAt,
       })

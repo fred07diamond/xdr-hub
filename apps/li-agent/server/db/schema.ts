@@ -57,6 +57,15 @@ export const prospects = table("prospects", {
   enrichedCompanySize: integer("enriched_company_size"),
   enrichedAt: text("enriched_at"),
   enrichmentError: text("enrichment_error"),
+  // Apollo's reveal_phone_number flow -- async, delivered via webhook, not
+  // part of the synchronous /people/match response. phoneRevealRequestId is
+  // Apollo's request_id, captured from the initial reveal request and used
+  // by apollo-phone-reveal-webhook.ts to match the later callback back to
+  // this row. Spends real Apollo credits, so only requested when
+  // enrichedPhone is empty at enrich time.
+  phoneRevealStatus: text("phone_reveal_status", { enum: ["requested", "done", "no_match", "failed"] }),
+  phoneRevealRequestId: text("phone_reveal_request_id"),
+  phoneRevealRequestedAt: text("phone_reveal_requested_at"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });
@@ -228,6 +237,15 @@ export const leadListItems = table("lead_list_items", {
   // threw, even if the other one succeeded, so a partial "done" result is
   // still explainable instead of looking like silent data loss.
   enrichmentError: text("enrichment_error"),
+  // Apollo's reveal_phone_number flow -- async, delivered via webhook, not
+  // part of the synchronous /people/match response. phoneRevealRequestId is
+  // Apollo's request_id, captured from the initial reveal request and used
+  // by apollo-phone-reveal-webhook.ts to match the later callback back to
+  // this row. Spends real Apollo credits, so only requested when
+  // enrichedPhone is empty at enrich time.
+  phoneRevealStatus: text("phone_reveal_status", { enum: ["requested", "done", "no_match", "failed"] }),
+  phoneRevealRequestId: text("phone_reveal_request_id"),
+  phoneRevealRequestedAt: text("phone_reveal_requested_at"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });

@@ -48,9 +48,17 @@ export default defineAction({
     // with-apollo.ts and enrich-lead-list-item.ts.
     const warnings: string[] = [];
 
+    // Only request Apollo's paid phone reveal when we don't already have a
+    // personal number on file -- re-enriching someone already revealed
+    // shouldn't spend credits again.
+    const revealPhone = !prospect.enrichedPhone;
+
     let person = null;
+    let requestId: string | null = null;
     try {
-      person = await matchApolloPerson({ name: prospect.name, companyName: prospect.company });
+      const result = await matchApolloPerson({ name: prospect.name, companyName: prospect.company, revealPhone });
+      person = result.person;
+      requestId = result.requestId;
     } catch (err) {
       warnings.push(`Person lookup: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -68,7 +76,23 @@ export default defineAction({
     const enrichedAt = new Date().toISOString();
     const status = person || organization ? "done" : warnings.length > 0 ? "failed" : "not_found";
     const enrichmentError = warnings.length > 0 ? warnings.join(" | ") : null;
+    // Apollo sometimes already has a personal number on file even without a
+    // fresh reveal (e.g. previously revealed for this team) -- populated
+    // synchronously either way.
     const phone = extractApolloPhone(person);
+
+    // Reveal bookkeeping only applies when this call actually requested
+    // one. A phone found synchronously means nothing async is pending, and
+    // when revealPhone was false to begin with, leave existing reveal
+    // fields untouched rather than overwriting them with this call's
+    // (irrelevant) outcome.
+    const phoneRevealUpdate = !revealPhone
+      ? {}
+      : phone
+        ? { phoneRevealStatus: "done" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null }
+        : requestId
+          ? { phoneRevealStatus: "requested" as const, phoneRevealRequestId: requestId, phoneRevealRequestedAt: enrichedAt }
+          : { phoneRevealStatus: "failed" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null };
 
     await db
       .update(prospects)
@@ -83,6 +107,7 @@ export default defineAction({
         enrichedAt,
         enrichmentError,
         updatedAt: enrichedAt,
+        ...phoneRevealUpdate,
       })
       .where(eq(prospects.id, id));
 
@@ -96,6 +121,7 @@ export default defineAction({
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
       enrichmentError,
+      phoneRevealStatus: "phoneRevealStatus" in phoneRevealUpdate ? phoneRevealUpdate.phoneRevealStatus : (prospect.phoneRevealStatus ?? null),
     };
   },
 });

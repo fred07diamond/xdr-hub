@@ -20,5 +20,6 @@ export default createAuthPlugin({
     "/_agent-native/actions/enrich-post-engager",
     "/_agent-native/actions/import-sales-nav-list",
     "/_agent-native/actions/list-lead-lists-for-extension",
+    "/_agent-native/actions/apollo-phone-reveal-webhook",
   ],
 });

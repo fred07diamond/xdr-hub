@@ -77,32 +77,54 @@ export interface ApolloPersonMatch {
   // nests real, unmasked phone numbers with no extra reveal step or
   // webhook required. For a person Apollo has never revealed for this
   // team, `contact` is absent and phone_numbers has to go through Apollo's
-  // separate paid async reveal_phone_number + webhook flow, which this
-  // integration does not implement.
+  // separate paid async reveal_phone_number + webhook flow (see
+  // matchApolloPerson's revealPhone option and
+  // actions/apollo-phone-reveal-webhook.ts).
   contact?: { phone_numbers?: Array<{ raw_number?: string; type?: string }> } | null;
 }
 
 interface ApolloPersonMatchResponse {
   person?: ApolloPersonMatch | null;
+  // Present when the request included reveal_phone_number: true -- the
+  // handle to match the later async webhook callback back to this request.
+  // Live-confirmed as a bare (not string) number in the response.
+  request_id?: number | string | null;
 }
 
-// A no-match is a normal, expected outcome (null), never an error.
+// Live-confirmed via a direct 400 test: reveal_phone_number requires a
+// valid webhook_url, full stop -- there is no polling-without-webhook
+// shortcut despite Apollo's docs suggesting /webhook_result/{request_id}
+// polling as a standalone alternative.
+export const APOLLO_PHONE_REVEAL_WEBHOOK_URL = "https://xdr-hub.netlify.app/li-agent/_agent-native/actions/apollo-phone-reveal-webhook";
+
+// A no-match is a normal, expected outcome (null person), never an error.
+// requestId is null unless revealPhone was set AND Apollo accepted the
+// reveal request -- callers use it to remember which row is waiting for
+// which webhook callback.
 export async function matchApolloPerson(options: {
   name: string;
   companyName?: string | null;
   email?: string | null;
-}): Promise<ApolloPersonMatch | null> {
+  revealPhone?: boolean;
+}): Promise<{ person: ApolloPersonMatch | null; requestId: string | null }> {
   const cleanedName = cleanForApolloMatch(options.name);
-  if (!cleanedName) return null;
+  if (!cleanedName) return { person: null, requestId: null };
   const body: Record<string, unknown> = { name: cleanedName };
   const cleanedCompany = cleanForApolloMatch(options.companyName);
   if (cleanedCompany) body.organization_name = cleanedCompany;
   if (options.email) body.email = options.email;
+  if (options.revealPhone) {
+    body.reveal_phone_number = true;
+    body.webhook_url = APOLLO_PHONE_REVEAL_WEBHOOK_URL;
+  }
   const result = (await apolloFetch("/people/match", {
     method: "POST",
     body: JSON.stringify(body),
   })) as ApolloPersonMatchResponse;
-  return result.person ?? null;
+  return {
+    person: result.person ?? null,
+    requestId: result.request_id != null ? String(result.request_id) : null,
+  };
 }
 
 // Live-confirmed Apollo's contact.phone_numbers frequently puts a
@@ -115,14 +137,20 @@ export async function matchApolloPerson(options: {
 // that isn't actually theirs.
 const PERSONAL_PHONE_TYPES = new Set(["mobile", "direct", "personal", "home"]);
 
-// Synchronous-only: returns null when Apollo hasn't already revealed this
-// person for our team (see ApolloPersonMatch.contact comment). Never
-// triggers Apollo's paid async phone reveal.
-export function extractApolloPhone(person: ApolloPersonMatch | null): string | null {
-  const numbers = person?.contact?.phone_numbers;
+// Shared by extractApolloPhone (synchronous match response) and the
+// reveal-phone webhook receiver (async callback payload) -- same type-based
+// selection logic, applied to whatever phone_numbers array either shape
+// hands it.
+export function pickPersonalPhoneNumber(numbers: Array<{ raw_number?: string; type?: string }> | null | undefined): string | null {
   if (!numbers?.length) return null;
   const personal = numbers.find((n) => n.raw_number && PERSONAL_PHONE_TYPES.has((n.type ?? "").toLowerCase()));
   return personal?.raw_number ?? null;
+}
+
+// Synchronous-only: returns null when Apollo hasn't already revealed this
+// person for our team (see ApolloPersonMatch.contact comment).
+export function extractApolloPhone(person: ApolloPersonMatch | null): string | null {
+  return pickPersonalPhoneNumber(person?.contact?.phone_numbers);
 }
 
 export interface ApolloOrganization {

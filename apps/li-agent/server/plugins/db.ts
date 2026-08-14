@@ -432,6 +432,36 @@ export default runMigrations(
       name: "lead-lists-description",
       sql: `ALTER TABLE lead_lists ADD COLUMN IF NOT EXISTS description TEXT`,
     },
+    {
+      version: 70,
+      name: "lead-list-items-phone-reveal-status",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS phone_reveal_status TEXT`,
+    },
+    {
+      version: 71,
+      name: "lead-list-items-phone-reveal-request-id",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS phone_reveal_request_id TEXT`,
+    },
+    {
+      version: 72,
+      name: "lead-list-items-phone-reveal-requested-at",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS phone_reveal_requested_at TEXT`,
+    },
+    {
+      version: 73,
+      name: "prospects-phone-reveal-status",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS phone_reveal_status TEXT`,
+    },
+    {
+      version: 74,
+      name: "prospects-phone-reveal-request-id",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS phone_reveal_request_id TEXT`,
+    },
+    {
+      version: 75,
+      name: "prospects-phone-reveal-requested-at",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS phone_reveal_requested_at TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

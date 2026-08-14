@@ -67,6 +67,7 @@ interface Prospect {
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
   enrichmentError: string | null;
+  phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -104,12 +105,19 @@ function EnrichedField({
   value,
   status,
   kind,
+  phoneRevealStatus,
 }: {
   value: string | null;
   status: Prospect["enrichmentStatus"];
   kind: "email" | "phone";
+  phoneRevealStatus?: Prospect["phoneRevealStatus"];
 }) {
   if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
+  // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
+  // enrichment itself is done, but the personal number hasn't arrived yet.
+  if (kind === "phone" && phoneRevealStatus === "requested") {
+    return <span className="text-xs italic text-muted-foreground/70">Revealing…</span>;
+  }
   if (status === "not_found") {
     return <span className="text-xs italic text-muted-foreground/70">No contact info found</span>;
   }
@@ -902,7 +910,7 @@ export default function ProspectsRoute() {
 
                     {/* Phone */}
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <EnrichedField value={p.enrichedPhone} status={p.enrichmentStatus} kind="phone" />
+                      <EnrichedField value={p.enrichedPhone} status={p.enrichmentStatus} kind="phone" phoneRevealStatus={p.phoneRevealStatus} />
                     </td>
 
                     {/* Actions */}
