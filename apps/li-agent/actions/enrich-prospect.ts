@@ -28,7 +28,9 @@ export default defineAction({
     const prospect = rows[0];
     if (!prospect) throw new Error("Prospect not found or access denied");
 
-    if (!(await checkRateLimit(ctx?.userEmail ?? "anonymous", "enrich-prospect", 100))) {
+    // Raised from 100/hr to match enrich-lead-list-item.ts -- real xDR usage
+    // runs ~500 leads/day, often enriched in one sitting.
+    if (!(await checkRateLimit(ctx?.userEmail ?? "anonymous", "enrich-prospect", 1000))) {
       return { ok: false, error: "Rate limit reached — try again shortly." };
     }
 

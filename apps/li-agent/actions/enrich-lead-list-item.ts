@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems } from "../server/db/schema.js";
-import { matchApolloPerson, enrichApolloOrganization, extractApolloPhone, debugRevealPhoneAttempt } from "../server/helpers/apollo-client.js";
+import { matchApolloPerson, enrichApolloOrganization, extractApolloPhone } from "../server/helpers/apollo-client.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 export default defineAction({
@@ -24,7 +24,10 @@ export default defineAction({
     const listRows = await db.select().from(leadLists).where(eq(leadLists.id, item.listId));
     if (!listRows[0] || listRows[0].ownerEmail !== ctx!.userEmail) throw new Error("Not authorized");
 
-    if (!(await checkRateLimit(ctx!.userEmail!, "enrich-lead-list-item", 500))) { // TEMPORARY bump for live reveal-flow testing, revert to 100 after
+    // Raised from 100/hr -- real xDR usage runs ~500 leads/day, often
+    // enriched in one sitting right after a big import ("Enrich all" on a
+    // list), so a single-user hourly cap needs real headroom above that.
+    if (!(await checkRateLimit(ctx!.userEmail!, "enrich-lead-list-item", 1000))) {
       return { ok: false, error: "Rate limit reached — try again shortly." };
     }
 
@@ -91,10 +94,6 @@ export default defineAction({
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
       enrichmentError,
-      // TEMPORARY -- one live test of reveal_phone_number without a
-      // webhook_url, to see whether Apollo errors or returns a pollable
-      // request_id. Spends real credits on this one call. Remove after.
-      _debugReveal: await debugRevealPhoneAttempt({ name: item.name, companyName: item.company, email: person?.email }),
     };
   },
 });

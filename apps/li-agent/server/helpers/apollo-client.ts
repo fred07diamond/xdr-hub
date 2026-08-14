@@ -125,28 +125,6 @@ export function extractApolloPhone(person: ApolloPersonMatch | null): string | n
   return personal?.raw_number ?? null;
 }
 
-// TEMPORARY -- one-off live test to settle a contradiction in Apollo's own
-// docs about whether reveal_phone_number requires webhook_url or supports
-// polling via /webhook_result/{request_id} instead. Deliberately bypasses
-// apolloFetch's throw-on-error so both the success shape and the exact
-// error body are visible. Remove once the real flow is built.
-export async function debugRevealPhoneAttempt(options: { email?: string | null; name: string; companyName?: string | null }): Promise<unknown> {
-  const apiKey = await getApolloToken();
-  if (!apiKey) return { error: "no api key" };
-  const body: Record<string, unknown> = { name: options.name, reveal_phone_number: true };
-  if (options.companyName) body.organization_name = options.companyName;
-  if (options.email) body.email = options.email;
-  const res = await fetch(`${APOLLO_API_BASE}/people/match`, {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  let parsed: unknown = text;
-  try { parsed = JSON.parse(text); } catch { /* leave as raw text */ }
-  return { httpStatus: res.status, sentBody: body, response: parsed };
-}
-
 export interface ApolloOrganization {
   industry?: string;
   estimated_num_employees?: number;
