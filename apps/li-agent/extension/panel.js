@@ -1130,7 +1130,10 @@ doneImportingBtn.addEventListener("click", async () => {
   // limited) and listId empty, so a successful import needs both ok AND a
   // real listId, not just ok.
   if (result?.ok && result.listId && !result.error) {
-    listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${result.truncated ? " (list was capped at 500)" : ""}. Find it in the Lead Lists tab.`;
+    const dupeNote = result.duplicatesSkipped
+      ? ` (${result.duplicatesSkipped} already in your lists, skipped)`
+      : "";
+    listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${dupeNote}${result.truncated ? " (list was capped at 500)" : ""}. Find it in the Lead Lists tab.`;
     resetListImportSession(listImportSession.listUrl, listImportSession.listName);
   } else {
     doneImportingBtn.disabled = false;

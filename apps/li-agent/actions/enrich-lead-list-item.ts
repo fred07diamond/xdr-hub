@@ -17,7 +17,7 @@ export default defineAction({
   run: async ({ itemId }, ctx) => {
     const db = getDb();
 
-    // Same ownership check shape as update-lead-list-item.ts.
+    // Verify the item exists and belongs to the requesting user's list.
     const itemRows = await db.select().from(leadListItems).where(eq(leadListItems.id, itemId));
     const item = itemRows[0];
     if (!item) throw new Error("Item not found");

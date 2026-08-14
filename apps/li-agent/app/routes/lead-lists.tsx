@@ -15,8 +15,6 @@ type LeadListItem = {
   location: string | null;
   profileUrl: string | null;
   salesNavLeadUrl: string | null;
-  status: "pending" | "visited" | "skipped";
-  position: number;
   personaId: string | null;
   personaName: string | null;
   personaColor: string | null;
@@ -38,8 +36,6 @@ type LeadList = {
   createdAt: string | null;
 };
 
-type StatusFilter = "all" | "pending" | "visited" | "skipped";
-
 // Prefer the resolved public profile URL; it's null until the xDR actually
 // opens the lead's profile and the existing capture flow fills it in. Until
 // then, fall back to the Sales Nav lead URL captured at import time, which
@@ -49,21 +45,6 @@ function linkedInUrl(item: LeadListItem): string {
   if (item.salesNavLeadUrl) return item.salesNavLeadUrl;
   const parts = [item.name, item.company].filter(Boolean);
   return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(parts.join(" "))}`;
-}
-
-function StatusPill({ status }: { status: LeadListItem["status"] }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
-        status === "pending" && "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-        status === "visited" && "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-        status === "skipped" && "bg-muted text-muted-foreground line-through",
-      )}
-    >
-      {status}
-    </span>
-  );
 }
 
 function EnrichedField({
@@ -127,24 +108,15 @@ function LeadListItemRow({
   item,
   isEnriching,
   onOpen,
-  onSkip,
-  onUnskip,
   onEnrich,
 }: {
   item: LeadListItem;
   isEnriching: boolean;
   onOpen: (item: LeadListItem) => void;
-  onSkip: (item: LeadListItem) => void;
-  onUnskip: (item: LeadListItem) => void;
   onEnrich: (item: LeadListItem) => void;
 }) {
   return (
-    <tr
-      className={cn(
-        "border-b border-border last:border-b-0 transition-colors hover:bg-muted/40",
-        item.status === "skipped" && "opacity-40",
-      )}
-    >
+    <tr className="border-b border-border last:border-b-0 transition-colors hover:bg-muted/40">
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium">{item.name ?? "—"}</p>
@@ -162,9 +134,6 @@ function LeadListItemRow({
       <td className="px-4 py-3 text-xs text-muted-foreground">{item.headline ?? "—"}</td>
       <td className="px-4 py-3 text-xs text-muted-foreground">{item.company ?? "—"}</td>
       <td className="px-4 py-3">
-        <StatusPill status={item.status} />
-      </td>
-      <td className="px-4 py-3">
         <EnrichedField value={item.enrichedEmail} status={item.enrichmentStatus} kind="email" />
       </td>
       <td className="px-4 py-3">
@@ -172,33 +141,14 @@ function LeadListItemRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
-          {item.status !== "skipped" ? (
-            <>
-              <button
-                type="button"
-                onClick={() => onOpen(item)}
-                className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
-              >
-                <IconExternalLink size={11} />
-                LinkedIn
-              </button>
-              <button
-                type="button"
-                onClick={() => onSkip(item)}
-                className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted"
-              >
-                Skip
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onUnskip(item)}
-              className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted"
-            >
-              Restore
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => onOpen(item)}
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
+          >
+            <IconExternalLink size={11} />
+            LinkedIn
+          </button>
           <EnrichButton item={item} isEnriching={isEnriching} onEnrich={onEnrich} />
         </div>
       </td>
@@ -214,7 +164,6 @@ export default function LeadListsPage() {
   useSetPageTitle("Lead Lists");
 
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -229,34 +178,15 @@ export default function LeadListsPage() {
   const items: LeadListItem[] = (itemsQuery.data as { items?: LeadListItem[] } | undefined)?.items ?? [];
   const activeList = (itemsQuery.data as { list?: LeadList } | undefined)?.list ?? null;
 
-  const updateItem = useActionMutation("update-lead-list-item");
   const deleteList = useActionMutation("delete-lead-list");
   const enrichItem = useActionMutation("enrich-lead-list-item");
 
-  const filteredItems = statusFilter === "all"
-    ? items
-    : items.filter((i) => i.status === statusFilter);
-
-  const pendingCount = items.filter((i) => i.status === "pending").length;
-  const visitedCount = items.filter((i) => i.status === "visited").length;
-  const skippedCount = items.filter((i) => i.status === "skipped").length;
   const enrichEligibleCount = items.filter(
     (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
   ).length;
 
   function handleOpenLinkedIn(item: LeadListItem) {
     window.open(linkedInUrl(item), "_blank", "noopener,noreferrer");
-    if (item.status === "pending") {
-      updateItem.mutate({ itemId: item.id, status: "visited" });
-    }
-  }
-
-  function handleSkip(item: LeadListItem) {
-    updateItem.mutate({ itemId: item.id, status: "skipped" });
-  }
-
-  function handleUnskip(item: LeadListItem) {
-    updateItem.mutate({ itemId: item.id, status: "pending" });
   }
 
   async function handleEnrich(item: LeadListItem) {
@@ -307,13 +237,6 @@ export default function LeadListsPage() {
     listsQuery.refetch();
   }
 
-  const filterTabs: { id: StatusFilter; label: string }[] = [
-    { id: "all", label: `All (${items.length})` },
-    { id: "pending", label: `Pending (${pendingCount})` },
-    { id: "visited", label: `Visited (${visitedCount})` },
-    { id: "skipped", label: `Skipped (${skippedCount})` },
-  ];
-
   return (
     <div className="flex h-full min-h-0">
       {/* Left panel — lead list list */}
@@ -345,7 +268,7 @@ export default function LeadListsPage() {
                 <li key={l.id}>
                   <button
                     type="button"
-                    onClick={() => { setSelectedListId(l.id); setStatusFilter("all"); }}
+                    onClick={() => setSelectedListId(l.id)}
                     className={cn(
                       "group w-full text-left px-4 py-3 transition-colors hover:bg-muted/50",
                       selectedListId === l.id && "bg-muted",
@@ -388,7 +311,7 @@ export default function LeadListsPage() {
               <div>
                 <h2 className="text-sm font-semibold">{activeList?.name ?? "Lead List"}</h2>
                 <p className="text-xs text-muted-foreground">
-                  {pendingCount} pending · {visitedCount} visited · {skippedCount} skipped
+                  {items.length} lead{items.length === 1 ? "" : "s"}
                 </p>
               </div>
               {bulkEnrichProgress ? (
@@ -408,25 +331,6 @@ export default function LeadListsPage() {
               ) : null}
             </div>
 
-            {/* Filter tabs */}
-            <div className="flex items-center gap-1 border-b border-border px-6 py-2">
-              {filterTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setStatusFilter(tab.id)}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-xs transition-colors",
-                    statusFilter === tab.id
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
             {/* Items table */}
             <div className="flex-1 overflow-auto">
               {itemsQuery.isLoading ? (
@@ -434,9 +338,9 @@ export default function LeadListsPage() {
                   <IconLoader2 size={14} className="animate-spin" />
                   Loading leads…
                 </div>
-              ) : filteredItems.length === 0 ? (
+              ) : items.length === 0 ? (
                 <div className="px-6 py-8 text-center text-sm text-muted-foreground">
-                  No leads in this view.
+                  No leads in this list.
                 </div>
               ) : (
                 <table className="w-full text-sm">
@@ -445,21 +349,18 @@ export default function LeadListsPage() {
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Name</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Job Title</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Company</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Status</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Email</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Phone</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredItems.map((item) => (
+                    {items.map((item) => (
                       <LeadListItemRow
                         key={item.id}
                         item={item}
                         isEnriching={enrichingIds.has(item.id)}
                         onOpen={handleOpenLinkedIn}
-                        onSkip={handleSkip}
-                        onUnskip={handleUnskip}
                         onEnrich={handleEnrich}
                       />
                     ))}

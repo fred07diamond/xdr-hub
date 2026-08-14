@@ -64,19 +64,27 @@ rows and imports the whole list via `import-sales-nav-list` when they click
 
 This is a shallow import: `name`, `headline` (the job title scraped from Sales
 Nav's list rows), `company`, `location`, and a `salesNavLeadUrl` for each lead,
-with `profileUrl` left null and `status: "pending"`. `import-sales-nav-list`
-DOES assign a persona at import time (via `selectPersonasBatch` — one batched
-LLM call classifying the whole list against active ICP personas, not one call
-per lead), so `personaId`/`personaName`/`personaColor` get set then. This is
-persona classification only, not full ICP fit scoring: it does NOT set a fit
+with `profileUrl` left null. `import-sales-nav-list` DOES assign a persona at
+import time (via `selectPersonasBatch` — one batched LLM call classifying the
+whole list against active ICP personas, not one call per lead), so
+`personaId`/`personaName`/`personaColor` get set then. This is persona
+classification only, not full ICP fit scoring: it does NOT set a fit
 verdict/reasoning or draft a connection note as part of the import — those still
 happen later, one lead at a time, through the normal `capture-profile` flow when
 the xDR actually opens that lead's profile page, at which point `profileUrl` also
-gets resolved. Treat a Lead Lists row as a "to visit" queue item, the same way
-HubSpot Queue items work, not as a captured prospect ready for outreach.
+gets resolved. Treat a Lead Lists row as a "to visit" queue item, not as a
+captured prospect ready for outreach.
 
-If asked to update an item's status, call `update-lead-list-item` with `itemId`
-and the new `status` (`pending`/`visited`/`skipped`).
+There is deliberately no pending/visited/skipped status tracking on these rows
+(removed — it added a filter/skip workflow that wasn't giving the xDR anything
+useful). Rows just sit in the list; "Open LinkedIn" opens the link and nothing
+else. Do not reintroduce a status field without being asked.
+
+`import-sales-nav-list` dedupes against this owner's existing lead list items by
+`salesNavLeadUrl` across ALL of their lists (not just the list being imported
+into) — a lead already captured anywhere doesn't get inserted again, even on a
+fresh import of the same or a different Sales Nav list. The response's
+`duplicatesSkipped` count reflects how many were skipped this way.
 
 Each row also has an on-demand "Enrich" action (`enrich-lead-list-item`, dashboard-
 only, requires auth) that calls Apollo.io (`server/helpers/apollo-client.ts`) for

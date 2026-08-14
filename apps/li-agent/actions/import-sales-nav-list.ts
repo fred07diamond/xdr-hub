@@ -1,4 +1,5 @@
 import { defineAction } from "@agent-native/core";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
@@ -40,10 +41,51 @@ export default defineAction({
       return { listId: "", totalCount: 0, error: "Rate limit reached -- try again shortly." };
     }
 
-    const capped = leads.slice(0, IMPORT_LIMIT);
-    const truncated = leads.length > IMPORT_LIMIT;
-
     const db = getDb();
+
+    // Defensive within-batch dedupe by salesNavLeadUrl -- the extension's
+    // accumulator already dedupes client-side, but don't assume that holds
+    // for every caller of this public action.
+    const seenInBatch = new Set<string>();
+    const withinBatchDeduped = leads.filter((lead) => {
+      if (!lead.salesNavLeadUrl) return true;
+      if (seenInBatch.has(lead.salesNavLeadUrl)) return false;
+      seenInBatch.add(lead.salesNavLeadUrl);
+      return true;
+    });
+
+    const capped = withinBatchDeduped.slice(0, IMPORT_LIMIT);
+    const truncated = withinBatchDeduped.length > IMPORT_LIMIT;
+
+    // Cross-list dedupe: a lead already captured ANYWHERE in this owner's
+    // lead lists (not just the list being imported into) doesn't get
+    // inserted again -- e.g. re-importing "Recommended Leads" after it
+    // changed on LinkedIn shouldn't recreate every lead that was already
+    // imported last time.
+    const ownerFilter = ownerEmail ? eq(leadLists.ownerEmail, ownerEmail) : isNull(leadLists.ownerEmail);
+    const urlsToCheck = capped.map((l) => l.salesNavLeadUrl).filter((u): u is string => !!u);
+    let existingUrls = new Set<string>();
+    if (urlsToCheck.length > 0) {
+      const existingRows = await db
+        .select({ salesNavLeadUrl: leadListItems.salesNavLeadUrl })
+        .from(leadListItems)
+        .innerJoin(leadLists, eq(leadListItems.listId, leadLists.id))
+        .where(and(ownerFilter, inArray(leadListItems.salesNavLeadUrl, urlsToCheck)));
+      existingUrls = new Set(existingRows.map((r) => r.salesNavLeadUrl).filter((u): u is string => !!u));
+    }
+    const deduped = capped.filter((lead) => !lead.salesNavLeadUrl || !existingUrls.has(lead.salesNavLeadUrl));
+    const duplicatesSkipped = capped.length - deduped.length;
+
+    if (deduped.length === 0) {
+      return {
+        listId: null,
+        totalCount: 0,
+        truncated,
+        duplicatesSkipped,
+        error: "Every lead in this import was already in one of your lead lists -- nothing new to add.",
+      };
+    }
+
     const listId = nanoid();
     const now = new Date().toISOString();
 
@@ -55,7 +97,7 @@ export default defineAction({
     try {
       personaMatches = await selectPersonasBatch(
         db,
-        capped.map((lead) => ({ name: lead.name, headline: lead.headline, company: lead.company })),
+        deduped.map((lead) => ({ name: lead.name, headline: lead.headline, company: lead.company })),
       );
     } catch {
       personaMatches = [];
@@ -63,19 +105,21 @@ export default defineAction({
 
     // Always creates a new list entity, even re-importing the same listUrl --
     // matches import-hubspot-queue.ts's real behavior (no upsert/merge by
-    // list id there either).
+    // list id there either). Cross-list lead dedup above means re-importing
+    // the same list won't duplicate leads, even though the list entity
+    // itself is still recreated.
     await db.insert(leadLists).values({
       id: listId,
       ownerEmail,
       name: listName,
       salesNavListUrl: listUrl ?? null,
-      totalCount: capped.length,
+      totalCount: deduped.length,
       createdAt: now,
       updatedAt: now,
     });
 
     await db.insert(leadListItems).values(
-      capped.map((lead, i) => {
+      deduped.map((lead, i) => {
         const persona = personaMatches[i];
         return {
           id: nanoid(),
@@ -86,7 +130,6 @@ export default defineAction({
           location: lead.location ?? null,
           profileUrl: null,
           salesNavLeadUrl: lead.salesNavLeadUrl ?? null,
-          status: "pending" as const,
           position: i,
           personaId: persona?.personaId ?? null,
           personaName: persona?.personaName ?? null,
@@ -97,6 +140,6 @@ export default defineAction({
       }),
     );
 
-    return { listId, totalCount: capped.length, truncated };
+    return { listId, totalCount: deduped.length, truncated, duplicatesSkipped };
   },
 });
