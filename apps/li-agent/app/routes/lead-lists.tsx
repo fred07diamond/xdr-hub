@@ -107,16 +107,28 @@ function EnrichButton({
 function LeadListItemRow({
   item,
   isEnriching,
+  isChecked,
+  onToggle,
   onOpen,
   onEnrich,
 }: {
   item: LeadListItem;
   isEnriching: boolean;
+  isChecked: boolean;
+  onToggle: (id: string) => void;
   onOpen: (item: LeadListItem) => void;
   onEnrich: (item: LeadListItem) => void;
 }) {
   return (
-    <tr className="border-b border-border last:border-b-0 transition-colors hover:bg-muted/40">
+    <tr className={cn("border-b border-border last:border-b-0 transition-colors hover:bg-muted/40", isChecked && "bg-muted/60")}>
+      <td className="py-3 pl-4 pr-1 w-8">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={() => onToggle(item.id)}
+          className="rounded border-border"
+        />
+      </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium">{item.name ?? "—"}</p>
@@ -166,6 +178,7 @@ export default function LeadListsPage() {
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
 
   const listsQuery = useActionQuery("list-lead-lists", {}, { refetchInterval: 30_000 });
   const lists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
@@ -203,12 +216,22 @@ export default function LeadListsPage() {
     }
   }
 
+  function toggleSelectItem(id: string) {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllItems() {
+    const allSelected = items.length > 0 && items.every((i) => selectedItemIds.has(i.id));
+    setSelectedItemIds(allSelected ? new Set() : new Set(items.map((i) => i.id)));
+  }
+
   // Sequential, not parallel -- keeps this well under the per-hour Apollo
   // rate limit and avoids hammering Apollo with a burst of concurrent calls.
-  async function handleBulkEnrich() {
-    const targets = items.filter(
-      (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
-    );
+  async function runBulkEnrich(targets: LeadListItem[]) {
     if (targets.length === 0) return;
     setBulkEnrichProgress({ done: 0, total: targets.length });
     for (const item of targets) {
@@ -229,6 +252,23 @@ export default function LeadListsPage() {
     }
     setBulkEnrichProgress(null);
     itemsQuery.refetch();
+  }
+
+  function handleBulkEnrichAllEligible() {
+    return runBulkEnrich(items.filter(
+      (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
+    ));
+  }
+
+  async function handleBulkEnrichSelected() {
+    const targets = items.filter((i) => selectedItemIds.has(i.id));
+    await runBulkEnrich(targets);
+    setSelectedItemIds(new Set());
+  }
+
+  function handleSelectList(listId: string) {
+    setSelectedListId(listId);
+    setSelectedItemIds(new Set());
   }
 
   async function handleDeleteList(listId: string) {
@@ -268,7 +308,7 @@ export default function LeadListsPage() {
                 <li key={l.id}>
                   <button
                     type="button"
-                    onClick={() => setSelectedListId(l.id)}
+                    onClick={() => handleSelectList(l.id)}
                     className={cn(
                       "group w-full text-left px-4 py-3 transition-colors hover:bg-muted/50",
                       selectedListId === l.id && "bg-muted",
@@ -308,21 +348,38 @@ export default function LeadListsPage() {
           <>
             {/* Header */}
             <div className="border-b border-border px-6 py-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold">{activeList?.name ?? "Lead List"}</h2>
-                <p className="text-xs text-muted-foreground">
-                  {items.length} lead{items.length === 1 ? "" : "s"}
-                </p>
-              </div>
+              {selectedItemIds.size > 0 ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-foreground">{selectedItemIds.size} selected</span>
+                  <button type="button" onClick={() => setSelectedItemIds(new Set())}
+                    className="text-xs text-muted-foreground hover:text-foreground">Deselect all</button>
+                </div>
+              ) : (
+                <div>
+                  <h2 className="text-sm font-semibold">{activeList?.name ?? "Lead List"}</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {items.length} lead{items.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+              )}
               {bulkEnrichProgress ? (
                 <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <IconLoader2 size={12} className="animate-spin" />
                   Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
                 </span>
+              ) : selectedItemIds.size > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleBulkEnrichSelected}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                >
+                  <IconSparkles size={12} />
+                  Enrich selected ({selectedItemIds.size})
+                </button>
               ) : enrichEligibleCount > 0 ? (
                 <button
                   type="button"
-                  onClick={handleBulkEnrich}
+                  onClick={handleBulkEnrichAllEligible}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
                 >
                   <IconSparkles size={12} />
@@ -346,6 +403,15 @@ export default function LeadListsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
+                      <th className="py-2.5 pl-4 pr-1 w-8">
+                        <input
+                          type="checkbox"
+                          checked={items.length > 0 && items.every((i) => selectedItemIds.has(i.id))}
+                          onChange={toggleSelectAllItems}
+                          className="rounded border-border"
+                          title="Select all"
+                        />
+                      </th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Name</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Job Title</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Company</th>
@@ -360,6 +426,8 @@ export default function LeadListsPage() {
                         key={item.id}
                         item={item}
                         isEnriching={enrichingIds.has(item.id)}
+                        isChecked={selectedItemIds.has(item.id)}
+                        onToggle={toggleSelectItem}
                         onOpen={handleOpenLinkedIn}
                         onEnrich={handleEnrich}
                       />

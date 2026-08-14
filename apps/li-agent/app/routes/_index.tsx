@@ -224,6 +224,8 @@ function ProspectSheet({
   const deleteProspect = useActionMutation("delete-prospect");
   const rateProspect = useActionMutation("rate-prospect");
   const redraft = useActionMutation("redraft-prospect");
+  const enrichProspect = useActionMutation("enrich-prospect");
+  const [isEnriching, setIsEnriching] = useState(false);
 
   const crmQuery = useActionQuery(
     "check-hubspot-contact",
@@ -300,6 +302,16 @@ function ProspectSheet({
     onDeleted();
   }
 
+  async function handleEnrichFromSheet() {
+    setIsEnriching(true);
+    try {
+      await enrichProspect.mutateAsync({ id: prospect.id });
+    } finally {
+      setIsEnriching(false);
+      onUpdated();
+    }
+  }
+
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent showClose={false} className="flex w-full flex-col gap-0 p-0 sm:max-w-lg overflow-hidden">
@@ -359,6 +371,73 @@ function ProspectSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Apollo enrichment</p>
+              {!isEnriching && prospect.enrichmentStatus !== "enriching" && (
+                <button type="button" onClick={handleEnrichFromSheet}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted">
+                  <IconSparkles size={11} />
+                  {prospect.enrichmentStatus === "done"
+                    ? "Re-enrich"
+                    : prospect.enrichmentStatus === "failed" || prospect.enrichmentStatus === "not_found"
+                    ? "Retry enrich"
+                    : "Enrich"}
+                </button>
+              )}
+            </div>
+            {isEnriching || prospect.enrichmentStatus === "enriching" ? (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <IconLoader2 size={12} className="animate-spin" />
+                Enriching…
+              </p>
+            ) : prospect.enrichmentStatus === "not_found" ? (
+              <p className="text-xs italic text-muted-foreground">No Apollo match found for this person.</p>
+            ) : prospect.enrichmentStatus === "failed" ? (
+              <p className="text-xs italic text-destructive" title={prospect.enrichmentError ?? undefined}>
+                Enrichment failed{prospect.enrichmentError ? `: ${prospect.enrichmentError}` : "."}
+              </p>
+            ) : prospect.enrichmentStatus === "done" ? (
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                <div>
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Title</dt>
+                  <dd className="text-xs text-foreground">{prospect.enrichedTitle ?? <span className="italic text-muted-foreground">Not found</span>}</dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Email</dt>
+                  <dd className="text-xs text-foreground truncate">{prospect.enrichedEmail ?? <span className="italic text-muted-foreground">Not found</span>}</dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Phone</dt>
+                  <dd className="text-xs text-foreground">{prospect.enrichedPhone ?? <span className="italic text-muted-foreground">Not found</span>}</dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Company size</dt>
+                  <dd className="text-xs text-foreground">
+                    {prospect.enrichedCompanySize ? `~${prospect.enrichedCompanySize.toLocaleString()} employees` : <span className="italic text-muted-foreground">Not found</span>}
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Industry</dt>
+                  <dd className="text-xs text-foreground">{prospect.enrichedCompanyIndustry ?? <span className="italic text-muted-foreground">Not found</span>}</dd>
+                </div>
+                {prospect.enrichedLinkedinUrl && (
+                  <div className="col-span-2">
+                    <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Apollo LinkedIn match</dt>
+                    <dd className="text-xs">
+                      <a href={prospect.enrichedLinkedinUrl} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-primary hover:underline">
+                        View profile <IconExternalLink size={10} />
+                      </a>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            ) : (
+              <p className="text-xs text-muted-foreground">Not enriched yet.</p>
+            )}
+          </div>
+
           {prospect.fitReason && (
             <div>
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Fit rationale</p>
@@ -772,7 +851,7 @@ export default function ProspectsRoute() {
                     onClick={() => setSelectedId(p.id)}
                   >
                     {/* Checkbox */}
-                    <td className="py-3 pl-3 pr-1 w-8" onClick={(e) => { e.stopPropagation(); toggleSelect(p.id); }}>
+                    <td className="py-3 pl-3 pr-1 w-8" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={isChecked}
