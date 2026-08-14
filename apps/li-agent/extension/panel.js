@@ -1075,18 +1075,25 @@ function renderListsTab() {
       nameEl.textContent = lead.name || "—";
       row.appendChild(nameEl);
 
-      if (lead.headline) {
-        const titleEl = document.createElement("div");
-        titleEl.className = "list-lead-title";
-        titleEl.textContent = lead.headline;
-        row.appendChild(titleEl);
-      }
+      if (lead.headline || lead.company) {
+        const chips = document.createElement("div");
+        chips.className = "list-lead-chips";
 
-      if (lead.company) {
-        const companyEl = document.createElement("div");
-        companyEl.className = "list-lead-company";
-        companyEl.textContent = lead.company;
-        row.appendChild(companyEl);
+        if (lead.headline) {
+          const titleChip = document.createElement("span");
+          titleChip.className = "list-lead-title-chip";
+          titleChip.textContent = lead.headline;
+          chips.appendChild(titleChip);
+        }
+
+        if (lead.company) {
+          const companyChip = document.createElement("span");
+          companyChip.className = "list-lead-company-chip";
+          companyChip.textContent = lead.company;
+          chips.appendChild(companyChip);
+        }
+
+        row.appendChild(chips);
       }
 
       listsLeadsEl.appendChild(row);

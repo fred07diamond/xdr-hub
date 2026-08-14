@@ -678,17 +678,17 @@
     #lists-leads {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      max-height: 260px;
+      gap: 10px;
+      max-height: 320px;
       overflow-y: auto;
       margin-bottom: 12px;
       padding: 2px;
     }
     .list-lead-row {
-      padding: 8px 10px;
+      padding: 12px 14px;
       background: #fff;
       border: 1px solid #e5e7eb;
-      border-radius: 8px;
+      border-radius: 10px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
       flex-shrink: 0;
       min-width: 0;
@@ -696,29 +696,34 @@
     }
     .list-lead-row:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
     .list-lead-name {
-      font-size: 12.5px;
+      font-size: 13.5px;
       font-weight: 700;
       color: #0a0a0a;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      margin-bottom: 6px;
     }
-    .list-lead-title {
+    .list-lead-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-width: 0;
+    }
+    .list-lead-title-chip,
+    .list-lead-company-chip {
+      display: inline-block;
+      max-width: 100%;
+      border-radius: 12px;
+      padding: 3px 10px;
       font-size: 11.5px;
-      color: #444;
-      margin-top: 1px;
+      font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .list-lead-company {
-      font-size: 11px;
-      color: #666;
-      margin-top: 1px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    .list-lead-title-chip { background: #e9f0fb; color: #0a66c2; }
+    .list-lead-company-chip { background: #e6f4ea; color: #1e7e34; }
     #lists-empty {
       text-align: center;
       font-size: 12px;
