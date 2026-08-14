@@ -24,7 +24,7 @@ export default defineAction({
     const listRows = await db.select().from(leadLists).where(eq(leadLists.id, item.listId));
     if (!listRows[0] || listRows[0].ownerEmail !== ctx!.userEmail) throw new Error("Not authorized");
 
-    if (!(await checkRateLimit(ctx!.userEmail!, "enrich-lead-list-item", 100))) {
+    if (!(await checkRateLimit(ctx!.userEmail!, "enrich-lead-list-item", 500))) { // TEMPORARY bump for live reveal-flow testing, revert to 100 after
       return { ok: false, error: "Rate limit reached — try again shortly." };
     }
 
