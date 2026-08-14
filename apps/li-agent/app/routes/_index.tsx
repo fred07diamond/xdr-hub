@@ -31,6 +31,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { APP_TITLE } from "@/lib/app-config";
+import { cn } from "@/lib/utils";
 
 export function meta() {
   return [
