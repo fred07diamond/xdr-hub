@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { leadListItems, prospects } from "../server/db/schema.js";
+import { leadListItems, prospects, workspaceSettings } from "../server/db/schema.js";
 import { pickPersonalPhoneNumber } from "../server/helpers/apollo-client.js";
 
 // Apollo POSTs here asynchronously after a reveal_phone_number request
@@ -31,6 +31,21 @@ export default defineAction({
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
   http: { method: "POST" },
   run: async (body) => {
+    // TEMPORARY -- capture every raw payload Apollo actually sends so the
+    // best-guess parsing above can be corrected from real data. Remove once
+    // confirmed working.
+    try {
+      await getDb()
+        .insert(workspaceSettings)
+        .values({ key: "debug_last_apollo_webhook_payload", value: JSON.stringify(body).slice(0, 8000), updatedAt: new Date().toISOString() })
+        .onConflictDoUpdate({
+          target: workspaceSettings.key,
+          set: { value: JSON.stringify(body).slice(0, 8000), updatedAt: new Date().toISOString() },
+        });
+    } catch {
+      // best-effort -- never let debug capture block the real webhook handling
+    }
+
     const requestId = findRequestId(body as Record<string, unknown>);
     // No request_id to match on -- ack anyway (200) so Apollo doesn't keep
     // retrying a payload we can never resolve.
