@@ -72,7 +72,7 @@ classification only, not full ICP fit scoring: it does NOT set a fit
 verdict/reasoning or draft a connection note as part of the import — those still
 happen later, one lead at a time, through the normal `capture-profile` flow when
 the xDR actually opens that lead's profile page, at which point `profileUrl` also
-gets resolved. Treat a Lead Lists row as a "to visit" queue item, not as a
+gets resolved. Treat a Lead Lists row as a "to visit" item, not as a
 captured prospect ready for outreach.
 
 There is deliberately no pending/visited/skipped status tracking on these rows

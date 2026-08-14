@@ -104,10 +104,9 @@ export default defineAction({
     }
 
     // Always creates a new list entity, even re-importing the same listUrl --
-    // matches import-hubspot-queue.ts's real behavior (no upsert/merge by
-    // list id there either). Cross-list lead dedup above means re-importing
-    // the same list won't duplicate leads, even though the list entity
-    // itself is still recreated.
+    // no upsert/merge by list id. Cross-list lead dedup above means
+    // re-importing the same list won't duplicate leads, even though the
+    // list entity itself is still recreated.
     await db.insert(leadLists).values({
       id: listId,
       ownerEmail,
