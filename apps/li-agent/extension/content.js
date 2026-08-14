@@ -273,19 +273,22 @@ function scrapeSalesNavListRows() {
 
     const name = nameEl.innerText?.trim() || null;
     // Sales Nav's condensed list view shows a current job TITLE under each
-    // name (e.g. "VP, Product Design"), not a LinkedIn bio-style headline --
-    // live-confirmed the headline-style attribute names below came back
-    // empty for every row in a real list, so job-title-style names (already
-    // used for `role` on the single-lead top card) are tried as a fallback.
+    // name (e.g. "VP, Product Design"), not a LinkedIn bio-style headline.
+    // Live-confirmed on a real search-results row: "title" correctly holds
+    // the job title, but "job-title" (despite the name) holds the person's
+    // About/bio blurb instead -- a genuinely misleading attribute name on
+    // LinkedIn's part, not a guess gone wrong. "title" now goes first;
+    // job-title/person-title stay only as a last-resort fallback for
+    // whatever page variant originally needed them.
     let headline =
-      snField(["headline", "person-tagline", "person-headline"], rowScope) ||
-      snField(["job-title", "person-title", "title"], rowScope);
-    // Live-confirmed on a search-results page: the generic "title"/"person-
-    // title" attribute names above can land on the "X years/months in role
-    // in company" tenure caption instead of the actual job title (a search-
-    // results row's DOM differs from a saved-list row's). Reject anything
-    // matching that shape outright rather than show wrong data as the title.
-    if (headline && /\bin (role|company|position)\b/i.test(headline)) headline = null;
+      snField(["headline", "person-tagline", "person-headline", "title"], rowScope) ||
+      snField(["job-title", "person-title"], rowScope);
+    // Defense in depth regardless of which attribute matched: real job
+    // titles are short. A bio blurb (multi-sentence prose) or the "X
+    // years/months in role in company" tenure caption (also live-confirmed
+    // to leak into these attributes on some page variant) are both far
+    // longer or a distinctive shape -- reject rather than show wrong data.
+    if (headline && (headline.length > 100 || /\bin (role|company|position)\b/i.test(headline))) headline = null;
     const company = snField(["company-name", "person-company", "company"], rowScope);
     const location = snField(["location", "person-location"], rowScope);
 
