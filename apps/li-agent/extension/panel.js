@@ -982,11 +982,18 @@ const listsEmpty = document.getElementById("lists-empty");
 const listsStatus = document.getElementById("lists-status");
 const doneImportingBtn = document.getElementById("done-importing-btn");
 const startNewImportBtn = document.getElementById("start-new-import-btn");
+const listsNameInput = document.getElementById("lists-name");
+const listsSelectAllBtn = document.getElementById("lists-select-all-btn");
 
 const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
 // leadsByUrl is a plain object (not a Map) — chrome.storage.session values
 // are JSON-serialized, so a Map wouldn't survive a save/reload round trip.
-let listImportSession = { listUrl: null, listName: null, pages: 1, leadsByUrl: {} };
+// excludedUrls tracks leads the xDR unchecked before sending -- a plain
+// array (not a Set) for the same JSON-serialization reason leadsByUrl is a
+// plain object. Everything captured defaults to included; unchecking a row
+// adds its salesNavLeadUrl here rather than removing it from leadsByUrl, so
+// re-checking it later doesn't need to re-scrape anything.
+let listImportSession = { listUrl: null, listName: null, pages: 1, leadsByUrl: {}, excludedUrls: [] };
 let currentListUrl = null; // tracks the list URL independently of currentProfileUrl/currentPostUrl
 
 // Live-confirmed a Sales Nav list page's tab title looks like
@@ -1016,6 +1023,9 @@ async function loadListImportSession() {
     const stored = await chrome.storage.session.get([LIST_SESSION_STORAGE_KEY]);
     if (stored?.[LIST_SESSION_STORAGE_KEY]) {
       listImportSession = stored[LIST_SESSION_STORAGE_KEY];
+      // A session saved before excludedUrls existed won't have it -- default
+      // it in rather than let every `.includes(...)` call below throw.
+      if (!Array.isArray(listImportSession.excludedUrls)) listImportSession.excludedUrls = [];
     }
   } catch {
     // chrome.storage.session may be unavailable in some contexts — fall
@@ -1035,7 +1045,7 @@ function saveListImportSession() {
 }
 
 function resetListImportSession(listUrl, listName) {
-  listImportSession = { listUrl, listName, pages: 1, leadsByUrl: {} };
+  listImportSession = { listUrl, listName, pages: 1, leadsByUrl: {}, excludedUrls: [] };
   saveListImportSession();
   renderListsTab();
 }
@@ -1056,24 +1066,61 @@ function mergeLeadRows(rows) {
   return addedAny;
 }
 
+function isLeadExcluded(lead) {
+  return listImportSession.excludedUrls.includes(lead.salesNavLeadUrl);
+}
+
+function toggleLeadExcluded(salesNavLeadUrl) {
+  const idx = listImportSession.excludedUrls.indexOf(salesNavLeadUrl);
+  if (idx === -1) listImportSession.excludedUrls.push(salesNavLeadUrl);
+  else listImportSession.excludedUrls.splice(idx, 1);
+  saveListImportSession();
+  renderListsTab();
+}
+
 function renderListsTab() {
   if (!listsCount) return;
-  const listsNameEl = document.getElementById("lists-name");
-  if (listsNameEl) listsNameEl.textContent = listImportSession.listName || "";
+
+  // Don't stomp the field while the xDR is actively typing in it -- this
+  // fires on every scrape/merge, which would otherwise reset the cursor
+  // position (or the draft text itself) mid-keystroke.
+  if (listsNameInput && document.activeElement !== listsNameInput) {
+    listsNameInput.value = listImportSession.listName || "";
+  }
+
   const leads = Object.values(listImportSession.leadsByUrl);
-  listsCount.textContent = `${leads.length} lead${leads.length === 1 ? "" : "s"} captured across ${listImportSession.pages} page${listImportSession.pages === 1 ? "" : "s"}`;
+  const includedCount = leads.filter((l) => !isLeadExcluded(l)).length;
+  const selectedNote = includedCount === leads.length ? "" : ` (${includedCount} selected)`;
+  listsCount.textContent = `${leads.length} lead${leads.length === 1 ? "" : "s"} captured across ${listImportSession.pages} page${listImportSession.pages === 1 ? "" : "s"}${selectedNote}`;
+
+  if (listsSelectAllBtn) {
+    listsSelectAllBtn.style.display = leads.length === 0 ? "none" : "";
+    listsSelectAllBtn.textContent = includedCount === leads.length ? "Deselect all" : "Select all";
+  }
+
   listsLeadsEl.innerHTML = "";
   if (leads.length === 0) {
     listsLeadsEl.appendChild(listsEmpty);
   } else {
     for (const lead of leads) {
+      const excluded = isLeadExcluded(lead);
       const row = document.createElement("div");
-      row.className = "list-lead-row";
+      row.className = `list-lead-row${excluded ? " excluded" : ""}`;
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "list-lead-check";
+      checkbox.checked = !excluded;
+      checkbox.addEventListener("change", () => toggleLeadExcluded(lead.salesNavLeadUrl));
+      row.appendChild(checkbox);
+
+      const info = document.createElement("div");
+      info.className = "list-lead-info";
 
       const nameEl = document.createElement("div");
       nameEl.className = "list-lead-name";
       nameEl.textContent = lead.name || "—";
-      row.appendChild(nameEl);
+      info.appendChild(nameEl);
 
       if (lead.headline || lead.company) {
         const chips = document.createElement("div");
@@ -1093,13 +1140,14 @@ function renderListsTab() {
           chips.appendChild(companyChip);
         }
 
-        row.appendChild(chips);
+        info.appendChild(chips);
       }
 
+      row.appendChild(info);
       listsLeadsEl.appendChild(row);
     }
   }
-  doneImportingBtn.disabled = leads.length === 0;
+  doneImportingBtn.disabled = includedCount === 0;
 }
 
 // Scrapes whatever page is currently loaded (one page, no pagination of its
@@ -1146,15 +1194,16 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 doneImportingBtn.addEventListener("click", async () => {
-  const leads = Object.values(listImportSession.leadsByUrl);
+  const leads = Object.values(listImportSession.leadsByUrl).filter((l) => !isLeadExcluded(l));
   if (leads.length === 0) return;
   doneImportingBtn.disabled = true;
   doneImportingBtn.textContent = "Sending…";
   listsStatus.textContent = "";
 
+  const listName = (listsNameInput?.value || listImportSession.listName || "").trim() || "Sales Navigator List";
   const result = await chrome.runtime.sendMessage({
     type: "IMPORT_SALES_NAV_LIST",
-    listName: listImportSession.listName || "Sales Navigator List",
+    listName,
     listUrl: listImportSession.listUrl,
     leads,
   }).catch((err) => ({ ok: false, error: err.message }));
@@ -1168,7 +1217,10 @@ doneImportingBtn.addEventListener("click", async () => {
     const dupeNote = result.duplicatesSkipped
       ? ` (${result.duplicatesSkipped} already in your lists, skipped)`
       : "";
-    listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${dupeNote}${result.truncated ? " (list was capped at 500)" : ""}. Find it in the Lead Lists tab.`;
+    const skippedNote = listImportSession.excludedUrls.length
+      ? ` (${listImportSession.excludedUrls.length} deselected, not sent)`
+      : "";
+    listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${dupeNote}${skippedNote}${result.truncated ? " (list was capped at 500)" : ""}. Find it in the Lead Lists tab.`;
     resetListImportSession(listImportSession.listUrl, listImportSession.listName);
   } else {
     doneImportingBtn.disabled = false;
@@ -1179,6 +1231,19 @@ doneImportingBtn.addEventListener("click", async () => {
 startNewImportBtn.addEventListener("click", () => {
   resetListImportSession(currentListUrl, listImportSession.listName);
   listsStatus.textContent = "";
+});
+
+listsNameInput?.addEventListener("input", () => {
+  listImportSession.listName = listsNameInput.value;
+  saveListImportSession();
+});
+
+listsSelectAllBtn?.addEventListener("click", () => {
+  const leads = Object.values(listImportSession.leadsByUrl);
+  const allSelected = leads.every((l) => !isLeadExcluded(l));
+  listImportSession.excludedUrls = allSelected ? leads.map((l) => l.salesNavLeadUrl) : [];
+  saveListImportSession();
+  renderListsTab();
 });
 
 tabListsBtn?.addEventListener("click", () => switchTab("lists"));

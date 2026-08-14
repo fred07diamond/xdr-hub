@@ -662,19 +662,45 @@
       margin-bottom: 10px;
     }
     #lists-name {
+      display: block;
+      width: 100%;
       font-size: 13px;
       font-weight: 700;
       color: #0a66c2;
       line-height: 1.3;
-      margin-bottom: 2px;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      border: 1.5px solid transparent;
+      border-radius: 6px;
+      background: #f0f4ff;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #lists-name::placeholder { color: #6b8fc9; font-weight: 500; }
+    #lists-name:hover { background: #e9f0fb; }
+    #lists-name:focus { outline: none; border-color: #0a66c2; background: #fff; }
+    #lists-count-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
     }
     #lists-count {
       font-size: 12px;
       font-weight: 600;
       line-height: 1.4;
       color: #1a1a1a;
-      margin-bottom: 8px;
     }
+    #lists-select-all-btn {
+      font-size: 11.5px;
+      color: #0a66c2;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+    #lists-select-all-btn:hover { color: #004182; }
     #lists-leads {
       display: flex;
       flex-direction: column;
@@ -685,6 +711,9 @@
       padding: 2px;
     }
     .list-lead-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
       padding: 12px 14px;
       background: #fff;
       border: 1px solid #e5e7eb;
@@ -692,9 +721,18 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
       flex-shrink: 0;
       min-width: 0;
-      transition: box-shadow 0.15s;
+      transition: box-shadow 0.15s, opacity 0.15s;
     }
     .list-lead-row:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .list-lead-row.excluded { opacity: 0.45; }
+    .list-lead-check {
+      margin-top: 3px;
+      flex-shrink: 0;
+      cursor: pointer;
+      width: 15px;
+      height: 15px;
+    }
+    .list-lead-info { flex: 1; min-width: 0; }
     .list-lead-name {
       font-size: 13.5px;
       font-weight: 700;
@@ -923,8 +961,11 @@
     <div id="lists-hint">
       Page through this list or search in Sales Navigator yourself — each page you view gets captured automatically. Click "Send to LinkedIn Agent" once you've reached the end (or whenever you want to import what's captured so far).
     </div>
-    <div id="lists-name"></div>
-    <div id="lists-count">0 leads captured across 1 page</div>
+    <input id="lists-name" type="text" placeholder="Name this list…" autocomplete="off" />
+    <div id="lists-count-row">
+      <span id="lists-count">0 leads captured across 1 page</span>
+      <button id="lists-select-all-btn" type="button">Select all</button>
+    </div>
     <div id="lists-leads">
       <div id="lists-empty">Open a Sales Navigator saved lead list or run a search to start capturing leads.</div>
     </div>
