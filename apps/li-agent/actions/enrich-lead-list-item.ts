@@ -35,7 +35,7 @@ export default defineAction({
     const now = new Date().toISOString();
     await db.update(leadListItems).set({ enrichmentStatus: "enriching", updatedAt: now }).where(eq(leadListItems.id, itemId));
 
-    // Person Match and Organization Search are independent Apollo endpoints
+    // Person Match and Organization Enrich are independent Apollo endpoints
     // with independently-scoped API-key permissions (live-confirmed
     // elsewhere in this workspace: a key can be authorized for one and
     // rejected with a 403 on the other) — each is wrapped separately so a
@@ -53,8 +53,8 @@ export default defineAction({
     let organization = null;
     try {
       organization = await enrichApolloOrganization({
-        companyName: item.company,
         domain: person?.organization?.primary_domain ?? null,
+        email: person?.email ?? null,
       });
     } catch (err) {
       warnings.push(`Organization lookup: ${err instanceof Error ? err.message : String(err)}`);

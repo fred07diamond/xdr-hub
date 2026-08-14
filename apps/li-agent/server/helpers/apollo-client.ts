@@ -118,30 +118,36 @@ export interface ApolloOrganization {
   linkedin_url?: string;
 }
 
-interface ApolloOrganizationSearchResponse {
-  organizations?: ApolloOrganization[];
+interface ApolloOrganizationEnrichResponse {
+  organization?: ApolloOrganization | null;
 }
 
-// Same "prefer exact name match, fall back to top result" cascade as
-// prospecting-hub's enrichApolloOrganization.
+function domainFromEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const at = email.lastIndexOf("@");
+  if (at === -1) return null;
+  const domain = email.slice(at + 1).trim().toLowerCase();
+  return domain || null;
+}
+
+// Live-confirmed this workspace's current Apollo key is scoped for
+// /organizations/enrich (exact domain lookup) but returns 403
+// API_INACCESSIBLE on /organizations/search (name search) -- the mirror
+// image of the PREVIOUS key's scope gap, which had search but not enrich
+// (see git history: "fix: use organizations/search instead of
+// organizations/enrich"). Only ever calls /organizations/enrich now.
+// Domain comes from Apollo's own person-match response when available,
+// falling back to the domain portion of the person's email address --
+// without either, there's no way to look up the company under this key's
+// current scope, and this returns null rather than guessing by name.
 export async function enrichApolloOrganization(options: {
-  companyName?: string | null;
   domain?: string | null;
+  email?: string | null;
 }): Promise<ApolloOrganization | null> {
-  const cleanedCompany = cleanForApolloMatch(options.companyName);
-  if (!options.domain && !cleanedCompany) return null;
-  const body: Record<string, unknown> = options.domain
-    ? { q_organization_domains: [options.domain], page: 1, per_page: 1 }
-    : { q_organization_name: cleanedCompany, page: 1, per_page: 5 };
-  const result = (await apolloFetch("/organizations/search", {
-    method: "POST",
-    body: JSON.stringify(body),
-  })) as ApolloOrganizationSearchResponse;
-  const organizations = result.organizations ?? [];
-  if (organizations.length === 0) return null;
-  const companyLower = cleanedCompany?.toLowerCase();
-  const exactMatch = companyLower
-    ? organizations.find((o) => (o as { name?: string }).name?.trim().toLowerCase() === companyLower)
-    : undefined;
-  return exactMatch ?? organizations[0];
+  const domain = options.domain ?? domainFromEmail(options.email);
+  if (!domain) return null;
+  const result = (await apolloFetch(`/organizations/enrich?domain=${encodeURIComponent(domain)}`, {
+    method: "GET",
+  })) as ApolloOrganizationEnrichResponse;
+  return result.organization ?? null;
 }

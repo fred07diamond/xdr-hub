@@ -39,7 +39,7 @@ export default defineAction({
     const now = new Date().toISOString();
     await db.update(prospects).set({ enrichmentStatus: "enriching", updatedAt: now }).where(eq(prospects.id, id));
 
-    // Person Match and Organization Search are independent Apollo endpoints
+    // Person Match and Organization Enrich are independent Apollo endpoints
     // with independently-scoped API-key permissions — each is wrapped
     // separately so a scope problem on one doesn't block whichever data the
     // other still gets. Mirrors apps/prospecting-hub/actions/enrich-contact-
@@ -56,8 +56,8 @@ export default defineAction({
     let organization = null;
     try {
       organization = await enrichApolloOrganization({
-        companyName: prospect.company,
         domain: person?.organization?.primary_domain ?? null,
+        email: person?.email ?? null,
       });
     } catch (err) {
       warnings.push(`Organization lookup: ${err instanceof Error ? err.message : String(err)}`);
