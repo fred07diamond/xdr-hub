@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems } from "../server/db/schema.js";
-import { matchApolloPerson, enrichApolloOrganization, extractApolloPhone } from "../server/helpers/apollo-client.js";
+import { matchApolloPerson, enrichApolloOrganization, extractApolloPhone, debugRevealPhoneAttempt } from "../server/helpers/apollo-client.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 export default defineAction({
@@ -91,6 +91,10 @@ export default defineAction({
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
       enrichmentError,
+      // TEMPORARY -- one live test of reveal_phone_number without a
+      // webhook_url, to see whether Apollo errors or returns a pollable
+      // request_id. Spends real credits on this one call. Remove after.
+      _debugReveal: await debugRevealPhoneAttempt({ name: item.name, companyName: item.company, email: person?.email }),
     };
   },
 });
