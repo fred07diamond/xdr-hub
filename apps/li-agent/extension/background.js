@@ -253,14 +253,16 @@ async function getPostEngager(id, apiToken) {
   return await res.json();
 }
 
-async function importSalesNavList({ listName, listUrl, leads }) {
+async function importSalesNavList({ listName, listDescription, listUrl, existingListId, leads }) {
   const { appUrl, apiToken } = await getSettings();
   const res = await fetch(`${appUrl}/_agent-native/actions/import-sales-nav-list`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       listName,
+      listDescription: listDescription ?? null,
       listUrl: listUrl ?? null,
+      existingListId: existingListId ?? null,
       leads,
       ...(apiToken ? { apiToken } : {}),
     }),
@@ -270,6 +272,17 @@ async function importSalesNavList({ listName, listUrl, leads }) {
     throw new Error(`import-sales-nav-list failed (${res.status}): ${text.slice(0, 200)}`);
   }
   return await res.json(); // { listId, totalCount, truncated? }
+}
+
+async function listLeadLists() {
+  const { appUrl, apiToken } = await getSettings();
+  const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+  const res = await fetch(`${appUrl}/_agent-native/actions/list-lead-lists-for-extension?x=1${tokenParam}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`list-lead-lists-for-extension failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { lists: [{ id, name, totalCount }] }
 }
 
 // Scrapes the LinkedIn profile at profileUrl in a background tab, returns the
@@ -448,6 +461,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     importSalesNavList(msg)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "LIST_LEAD_LISTS") {
+    listLeadLists()
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message, lists: [] }));
     return true;
   }
 });

@@ -427,6 +427,11 @@ export default runMigrations(
       name: "lead-list-items-persona-color",
       sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS persona_color TEXT`,
     },
+    {
+      version: 69,
+      name: "lead-lists-description",
+      sql: `ALTER TABLE lead_lists ADD COLUMN IF NOT EXISTS description TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

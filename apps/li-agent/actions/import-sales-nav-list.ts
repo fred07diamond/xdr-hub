@@ -17,7 +17,9 @@ export default defineAction({
     "Import a Sales Navigator saved lead list captured by the Builder.LI extension. Shallow import only -- no ICP scoring or draft note generation happens here; that still happens later, per-lead, through the existing capture-profile flow when the xDR opens that lead's profile page.",
   schema: z.object({
     listName: z.string().describe("Name of the Sales Navigator list, or a derived/fallback name"),
+    listDescription: z.string().nullish().describe("Optional description, only used when creating a new list (ignored if existingListId is set)"),
     listUrl: z.string().url().nullish().describe("URL of the Sales Navigator list page"),
+    existingListId: z.string().nullish().describe("If set, append these leads to this existing list instead of creating a new one"),
     leads: z
       .array(
         z.object({
@@ -34,7 +36,7 @@ export default defineAction({
   }),
   requiresAuth: false,
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
-  run: async ({ listName, listUrl, leads, apiToken }, ctx) => {
+  run: async ({ listName, listDescription, listUrl, existingListId, leads, apiToken }, ctx) => {
     const ownerEmail = await resolveOwner(apiToken, ctx);
 
     if (!(await checkRateLimit(ownerEmail ?? "anonymous", "import-sales-nav-list", 20))) {
@@ -86,7 +88,6 @@ export default defineAction({
       };
     }
 
-    const listId = nanoid();
     const now = new Date().toISOString();
 
     // Persona classification only -- a single batched LLM call (or none at
@@ -103,19 +104,53 @@ export default defineAction({
       personaMatches = [];
     }
 
-    // Always creates a new list entity, even re-importing the same listUrl --
-    // no upsert/merge by list id. Cross-list lead dedup above means
-    // re-importing the same list won't duplicate leads, even though the
-    // list entity itself is still recreated.
-    await db.insert(leadLists).values({
-      id: listId,
-      ownerEmail,
-      name: listName,
-      salesNavListUrl: listUrl ?? null,
-      totalCount: deduped.length,
-      createdAt: now,
-      updatedAt: now,
-    });
+    let listId: string;
+    let positionOffset = 0;
+    let newTotalCount = deduped.length;
+
+    if (existingListId) {
+      // Append to an existing list -- verify it belongs to this owner before
+      // touching it, same ownerFilter used for cross-list dedup above.
+      const [existingList] = await db
+        .select({ id: leadLists.id, totalCount: leadLists.totalCount })
+        .from(leadLists)
+        .where(and(eq(leadLists.id, existingListId), ownerFilter));
+
+      if (!existingList) {
+        return {
+          listId: null,
+          totalCount: 0,
+          truncated,
+          duplicatesSkipped,
+          error: "That list no longer exists or isn't yours.",
+        };
+      }
+
+      listId = existingList.id;
+      positionOffset = existingList.totalCount;
+      newTotalCount = existingList.totalCount + deduped.length;
+
+      await db
+        .update(leadLists)
+        .set({ totalCount: newTotalCount, updatedAt: now })
+        .where(eq(leadLists.id, listId));
+    } else {
+      // Creates a new list entity, even re-importing the same listUrl -- no
+      // upsert/merge by list id. Cross-list lead dedup above means
+      // re-importing the same list won't duplicate leads, even though the
+      // list entity itself is still recreated.
+      listId = nanoid();
+      await db.insert(leadLists).values({
+        id: listId,
+        ownerEmail,
+        name: listName,
+        description: listDescription ?? null,
+        salesNavListUrl: listUrl ?? null,
+        totalCount: deduped.length,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
 
     await db.insert(leadListItems).values(
       deduped.map((lead, i) => {
@@ -129,7 +164,7 @@ export default defineAction({
           location: lead.location ?? null,
           profileUrl: null,
           salesNavLeadUrl: lead.salesNavLeadUrl ?? null,
-          position: i,
+          position: positionOffset + i,
           personaId: persona?.personaId ?? null,
           personaName: persona?.personaName ?? null,
           personaColor: persona?.personaColor ?? null,
@@ -139,6 +174,6 @@ export default defineAction({
       }),
     );
 
-    return { listId, totalCount: deduped.length, truncated, duplicatesSkipped };
+    return { listId, totalCount: newTotalCount, truncated, duplicatesSkipped };
   },
 });

@@ -679,6 +679,25 @@
     #lists-name::placeholder { color: #6b8fc9; font-weight: 500; }
     #lists-name:hover { background: #e9f0fb; }
     #lists-name:focus { outline: none; border-color: #0a66c2; background: #fff; }
+    #lists-description {
+      display: block;
+      width: 100%;
+      font-size: 12px;
+      color: #333;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 6px;
+      background: #fafafa;
+      font-family: inherit;
+      resize: none;
+      box-sizing: border-box;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #lists-description::placeholder { color: #999; }
+    #lists-description:hover { background: #f3f4f6; }
+    #lists-description:focus { outline: none; border-color: #0a66c2; background: #fff; }
     #lists-count-row {
       display: flex;
       align-items: center;
@@ -772,6 +791,7 @@
     #lists-controls {
       display: flex;
       gap: 8px;
+      margin-bottom: 8px;
     }
     #start-new-import-btn {
       flex: 1;
@@ -784,8 +804,15 @@
       cursor: pointer;
       font-family: inherit;
     }
-    #done-importing-btn {
-      flex: 2;
+    #lists-send-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #create-list-btn,
+    #add-existing-list-btn,
+    #confirm-add-existing-btn {
+      width: 100%;
       padding: 7px 12px;
       background: #0a66c2;
       color: #fff;
@@ -796,9 +823,50 @@
       cursor: pointer;
       font-family: inherit;
       transition: background 0.15s;
+      box-sizing: border-box;
     }
-    #done-importing-btn:disabled { background: #aaa; cursor: not-allowed; }
-    #done-importing-btn:hover:not(:disabled) { background: #004182; }
+    #add-existing-list-btn {
+      background: none;
+      border: 1.5px solid #0a66c2;
+      color: #0a66c2;
+    }
+    #create-list-btn:disabled,
+    #add-existing-list-btn:disabled,
+    #confirm-add-existing-btn:disabled { background: #aaa; border-color: #aaa; color: #fff; cursor: not-allowed; }
+    #create-list-btn:hover:not(:disabled),
+    #confirm-add-existing-btn:hover:not(:disabled) { background: #004182; }
+    #add-existing-list-btn:hover:not(:disabled) { background: #f0f4ff; }
+    #existing-list-picker {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #existing-list-select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 7px;
+      font-size: 12px;
+      font-family: inherit;
+      background: #fff;
+      box-sizing: border-box;
+    }
+    #existing-list-picker-actions {
+      display: flex;
+      gap: 8px;
+    }
+    #existing-list-picker-actions #cancel-add-existing-btn {
+      flex: 1;
+      padding: 7px 12px;
+      background: none;
+      border: 1px solid #d1d5db;
+      border-radius: 7px;
+      font-size: 12px;
+      color: #555;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #existing-list-picker-actions #confirm-add-existing-btn { flex: 2; margin: 0; }
     #lists-status {
       margin-top: 8px;
       font-size: 11px;
@@ -962,6 +1030,7 @@
       Page through this list or search in Sales Navigator yourself — each page you view gets captured automatically. Click "Send to LinkedIn Agent" once you've reached the end (or whenever you want to import what's captured so far).
     </div>
     <input id="lists-name" type="text" placeholder="Name this list…" autocomplete="off" />
+    <textarea id="lists-description" placeholder="Add a description (optional)…" rows="2"></textarea>
     <div id="lists-count-row">
       <span id="lists-count">0 leads captured across 1 page</span>
       <button id="lists-select-all-btn" type="button">Select all</button>
@@ -971,7 +1040,17 @@
     </div>
     <div id="lists-controls">
       <button id="start-new-import-btn">Start new import</button>
-      <button id="done-importing-btn" disabled>Send to LinkedIn Agent</button>
+    </div>
+    <div id="lists-send-controls">
+      <button id="create-list-btn" disabled>＋ Create List</button>
+      <button id="add-existing-list-btn" disabled>Add to Existing List</button>
+    </div>
+    <div id="existing-list-picker">
+      <select id="existing-list-select"><option value="">Loading your lists…</option></select>
+      <div id="existing-list-picker-actions">
+        <button id="cancel-add-existing-btn" type="button">Cancel</button>
+        <button id="confirm-add-existing-btn" type="button" disabled>Add to List</button>
+      </div>
     </div>
     <div id="lists-status"></div>
   </div>

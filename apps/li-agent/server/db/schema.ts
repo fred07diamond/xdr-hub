@@ -176,6 +176,7 @@ export const leadLists = table("lead_lists", {
   id: text("id").primaryKey(),
   ownerEmail: text("owner_email"),
   name: text("name").notNull(),
+  description: text("description"),
   salesNavListUrl: text("sales_nav_list_url"),
   totalCount: integer("total_count").notNull().default(0),
   createdAt: text("created_at").default(now()),

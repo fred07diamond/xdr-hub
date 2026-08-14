@@ -980,10 +980,16 @@ const listsCount = document.getElementById("lists-count");
 const listsLeadsEl = document.getElementById("lists-leads");
 const listsEmpty = document.getElementById("lists-empty");
 const listsStatus = document.getElementById("lists-status");
-const doneImportingBtn = document.getElementById("done-importing-btn");
 const startNewImportBtn = document.getElementById("start-new-import-btn");
 const listsNameInput = document.getElementById("lists-name");
+const listsDescriptionInput = document.getElementById("lists-description");
 const listsSelectAllBtn = document.getElementById("lists-select-all-btn");
+const createListBtn = document.getElementById("create-list-btn");
+const addExistingListBtn = document.getElementById("add-existing-list-btn");
+const existingListPicker = document.getElementById("existing-list-picker");
+const existingListSelect = document.getElementById("existing-list-select");
+const cancelAddExistingBtn = document.getElementById("cancel-add-existing-btn");
+const confirmAddExistingBtn = document.getElementById("confirm-add-existing-btn");
 
 const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
 // leadsByUrl is a plain object (not a Map) — chrome.storage.session values
@@ -993,7 +999,7 @@ const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
 // plain object. Everything captured defaults to included; unchecking a row
 // adds its salesNavLeadUrl here rather than removing it from leadsByUrl, so
 // re-checking it later doesn't need to re-scrape anything.
-let listImportSession = { listUrl: null, listName: null, pages: 1, leadsByUrl: {}, excludedUrls: [] };
+let listImportSession = { listUrl: null, listName: null, listDescription: null, pages: 1, leadsByUrl: {}, excludedUrls: [] };
 let currentListUrl = null; // tracks the list URL independently of currentProfileUrl/currentPostUrl
 
 // Live-confirmed a Sales Nav list page's tab title looks like
@@ -1026,6 +1032,7 @@ async function loadListImportSession() {
       // A session saved before excludedUrls existed won't have it -- default
       // it in rather than let every `.includes(...)` call below throw.
       if (!Array.isArray(listImportSession.excludedUrls)) listImportSession.excludedUrls = [];
+      if (listImportSession.listDescription === undefined) listImportSession.listDescription = null;
     }
   } catch {
     // chrome.storage.session may be unavailable in some contexts — fall
@@ -1044,8 +1051,8 @@ function saveListImportSession() {
   }
 }
 
-function resetListImportSession(listUrl, listName) {
-  listImportSession = { listUrl, listName, pages: 1, leadsByUrl: {}, excludedUrls: [] };
+function resetListImportSession(listUrl, listName, listDescription) {
+  listImportSession = { listUrl, listName, listDescription: listDescription ?? null, pages: 1, leadsByUrl: {}, excludedUrls: [] };
   saveListImportSession();
   renderListsTab();
 }
@@ -1086,6 +1093,9 @@ function renderListsTab() {
   // position (or the draft text itself) mid-keystroke.
   if (listsNameInput && document.activeElement !== listsNameInput) {
     listsNameInput.value = listImportSession.listName || "";
+  }
+  if (listsDescriptionInput && document.activeElement !== listsDescriptionInput) {
+    listsDescriptionInput.value = listImportSession.listDescription || "";
   }
 
   const leads = Object.values(listImportSession.leadsByUrl);
@@ -1147,7 +1157,8 @@ function renderListsTab() {
       listsLeadsEl.appendChild(row);
     }
   }
-  doneImportingBtn.disabled = includedCount === 0;
+  if (createListBtn) createListBtn.disabled = includedCount === 0;
+  if (addExistingListBtn) addExistingListBtn.disabled = includedCount === 0;
 }
 
 // Scrapes whatever page is currently loaded (one page, no pagination of its
@@ -1193,22 +1204,30 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
-doneImportingBtn.addEventListener("click", async () => {
+function includedLeadsCount() {
+  return Object.values(listImportSession.leadsByUrl).filter((l) => !isLeadExcluded(l)).length;
+}
+
+// Shared send path for both "Create List" and "Add to Existing List" --
+// existingListId set means append (server skips creating a new lead_lists
+// row and ignores listDescription); omitted means create a new list.
+async function sendImport({ existingListId } = {}) {
   const leads = Object.values(listImportSession.leadsByUrl).filter((l) => !isLeadExcluded(l));
-  if (leads.length === 0) return;
-  doneImportingBtn.disabled = true;
-  doneImportingBtn.textContent = "Sending…";
+  if (leads.length === 0) return false;
   listsStatus.textContent = "";
 
   const listName = (listsNameInput?.value || listImportSession.listName || "").trim() || "Sales Navigator List";
+  const listDescription = (listsDescriptionInput?.value || "").trim() || null;
+
   const result = await chrome.runtime.sendMessage({
     type: "IMPORT_SALES_NAV_LIST",
     listName,
+    listDescription: existingListId ? null : listDescription,
     listUrl: listImportSession.listUrl,
+    existingListId: existingListId || null,
     leads,
   }).catch((err) => ({ ok: false, error: err.message }));
 
-  doneImportingBtn.textContent = "Send to LinkedIn Agent";
   // result.ok only reflects the HTTP call succeeding — the action itself can
   // return a normal 200 response with an `error` field set (e.g. rate
   // limited) and listId empty, so a successful import needs both ok AND a
@@ -1220,12 +1239,70 @@ doneImportingBtn.addEventListener("click", async () => {
     const skippedNote = listImportSession.excludedUrls.length
       ? ` (${listImportSession.excludedUrls.length} deselected, not sent)`
       : "";
-    listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${dupeNote}${skippedNote}${result.truncated ? " (list was capped at 500)" : ""}. Find it in the Lead Lists tab.`;
+    const destNote = existingListId ? "Added to your list." : "Find it in the Lead Lists tab.";
+    listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${dupeNote}${skippedNote}${result.truncated ? " (list was capped at 500)" : ""}. ${destNote}`;
     resetListImportSession(listImportSession.listUrl, listImportSession.listName);
-  } else {
-    doneImportingBtn.disabled = false;
-    listsStatus.textContent = result?.error || "Import failed.";
+    return true;
   }
+
+  listsStatus.textContent = result?.error || "Import failed.";
+  return false;
+}
+
+createListBtn?.addEventListener("click", async () => {
+  if (includedLeadsCount() === 0) return;
+  createListBtn.disabled = true;
+  if (addExistingListBtn) addExistingListBtn.disabled = true;
+  createListBtn.textContent = "Creating…";
+  await sendImport();
+  createListBtn.textContent = "＋ Create List";
+  renderListsTab();
+});
+
+addExistingListBtn?.addEventListener("click", async () => {
+  if (includedLeadsCount() === 0 || !existingListPicker || !existingListSelect) return;
+  existingListPicker.style.display = "flex";
+  existingListSelect.innerHTML = "";
+  const loadingOpt = document.createElement("option");
+  loadingOpt.textContent = "Loading your lists…";
+  existingListSelect.appendChild(loadingOpt);
+  if (confirmAddExistingBtn) confirmAddExistingBtn.disabled = true;
+
+  const result = await chrome.runtime
+    .sendMessage({ type: "LIST_LEAD_LISTS" })
+    .catch((err) => ({ ok: false, error: err.message, lists: [] }));
+  const lists = result?.lists || [];
+
+  existingListSelect.innerHTML = "";
+  if (!result?.ok || lists.length === 0) {
+    const emptyOpt = document.createElement("option");
+    emptyOpt.textContent = result?.ok ? "No existing lists yet" : "Could not load lists";
+    existingListSelect.appendChild(emptyOpt);
+    return;
+  }
+  // Build options with textContent (not innerHTML) to avoid XSS from list names.
+  lists.forEach((l) => {
+    const opt = document.createElement("option");
+    opt.value = l.id;
+    opt.textContent = `${l.name} (${l.totalCount} lead${l.totalCount === 1 ? "" : "s"})`;
+    existingListSelect.appendChild(opt);
+  });
+  if (confirmAddExistingBtn) confirmAddExistingBtn.disabled = false;
+});
+
+cancelAddExistingBtn?.addEventListener("click", () => {
+  if (existingListPicker) existingListPicker.style.display = "none";
+});
+
+confirmAddExistingBtn?.addEventListener("click", async () => {
+  const existingListId = existingListSelect?.value;
+  if (!existingListId) return;
+  confirmAddExistingBtn.disabled = true;
+  confirmAddExistingBtn.textContent = "Adding…";
+  await sendImport({ existingListId });
+  confirmAddExistingBtn.textContent = "Add to List";
+  if (existingListPicker) existingListPicker.style.display = "none";
+  renderListsTab();
 });
 
 startNewImportBtn.addEventListener("click", () => {
@@ -1235,6 +1312,11 @@ startNewImportBtn.addEventListener("click", () => {
 
 listsNameInput?.addEventListener("input", () => {
   listImportSession.listName = listsNameInput.value;
+  saveListImportSession();
+});
+
+listsDescriptionInput?.addEventListener("input", () => {
+  listImportSession.listDescription = listsDescriptionInput.value;
   saveListImportSession();
 });
 
