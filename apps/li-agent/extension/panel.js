@@ -1118,6 +1118,15 @@ async function scrapeCurrentListPage(tabId) {
       mergeLeadRows(result.rows);
     }
     await chrome.tabs.sendMessage(tabId, { type: "START_WATCHING_SALES_NAV_LIST" }).catch(() => {});
+
+    // Temporary troubleshooting aid while the search-results row selectors
+    // are still being confirmed live -- logs to THIS panel's own devtools
+    // console (right-click the panel -> Inspect), not the LinkedIn tab's,
+    // so there's no isolated-world context to hunt for. Safe to remove once
+    // the selectors are confirmed stable.
+    chrome.tabs.sendMessage(tabId, { type: "DIAGNOSE_SALES_NAV_LIST" })
+      .then((diag) => { if (diag?.ok) console.log("[BLI panel] Sales Nav list diagnostic:", diag); })
+      .catch(() => {});
   } catch {
     listsStatus.textContent = "Could not read this list. Make sure you're on a Sales Navigator saved lead list.";
   }

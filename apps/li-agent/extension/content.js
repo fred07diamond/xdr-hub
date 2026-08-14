@@ -1147,24 +1147,46 @@ window.__bliDiagnoseSalesNav = function () {
   console.log("[BLI SN] visible buttons:\n" + buttons.join("\n"));
 };
 
-// Sales Nav LIST diagnostic — call window.__bliDiagnoseSalesNavList() in the
-// tab console on a saved lead list OR search results page when
-// scrapeSalesNavListRows() misses rows or fields.
-window.__bliDiagnoseSalesNavList = function () {
-  console.log("[BLI SN List] location:", window.location.href);
-  console.log("[BLI SN List] isSalesNavListUrl:", isSalesNavListUrl());
+// Sales Nav LIST diagnostic — returns a plain object rather than only
+// console.logging, so it can be sent back over chrome.runtime messaging to
+// the panel (see the DIAGNOSE_SALES_NAV_LIST handler below) and printed in
+// the side panel's OWN devtools console -- avoids needing to find/select
+// this content script's isolated-world context in the LinkedIn tab's
+// console, which is a confusing extra step (Chrome's console defaults to
+// the page's main world, not the content script's world).
+function diagnoseSalesNavList() {
   const nameEls = Array.from(document.querySelectorAll('[data-anonymize="person-name"]'));
-  console.log(`[BLI SN List] found ${nameEls.length} [data-anonymize="person-name"] elements`);
-  console.log("[BLI SN List] scrape result:", scrapeSalesNavListRows());
   const firstRowScope = nameEls[0] &&
     (nameEls[0].closest("li") || nameEls[0].closest("tr") ||
      nameEls[0].closest('[data-x--people-list--result]') ||
      nameEls[0].parentElement?.parentElement?.parentElement);
-  if (firstRowScope) {
-    const inventory = Array.from(firstRowScope.querySelectorAll("[data-anonymize]"))
-      .map((el) => `${el.getAttribute("data-anonymize")} -> "${(el.innerText || "").trim().replace(/\s+/g, " ").slice(0, 70)}"`);
-    console.log("[BLI SN List] first row data-anonymize inventory:\n" + inventory.join("\n"));
-  }
+  const firstRowInventory = firstRowScope
+    ? Array.from(firstRowScope.querySelectorAll("[data-anonymize]"))
+        .map((el) => `${el.getAttribute("data-anonymize")} -> "${(el.innerText || "").trim().replace(/\s+/g, " ").slice(0, 70)}"`)
+    : [];
+  return {
+    location: window.location.href,
+    isSalesNavListUrl: isSalesNavListUrl(),
+    personNameElementCount: nameEls.length,
+    scrapeResult: scrapeSalesNavListRows(),
+    firstRowInventory,
+  };
+}
+
+// Call window.__bliDiagnoseSalesNavList() in the LinkedIn tab's console --
+// requires selecting this content script's isolated-world context in the
+// console's context dropdown first (it defaults to the page's own world).
+// Prefer the DIAGNOSE_SALES_NAV_LIST message handler below instead, which
+// surfaces the same data in the side panel's console with no context
+// switching needed.
+window.__bliDiagnoseSalesNavList = function () {
+  const result = diagnoseSalesNavList();
+  console.log("[BLI SN List] location:", result.location);
+  console.log("[BLI SN List] isSalesNavListUrl:", result.isSalesNavListUrl);
+  console.log(`[BLI SN List] found ${result.personNameElementCount} [data-anonymize="person-name"] elements`);
+  console.log("[BLI SN List] scrape result:", result.scrapeResult);
+  console.log("[BLI SN List] first row data-anonymize inventory:\n" + result.firstRowInventory.join("\n"));
+  return result;
 };
 
 // Diagnostic helper — call window.__bliDiagnose() in the LinkedIn tab console
@@ -1347,6 +1369,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === "SCRAPE_SALES_NAV_LIST_ROWS") {
     sendResponse({ ok: true, rows: scrapeSalesNavListRows(), isListPage: isSalesNavListUrl() });
+  }
+
+  if (msg.type === "DIAGNOSE_SALES_NAV_LIST") {
+    sendResponse({ ok: true, ...diagnoseSalesNavList() });
   }
 
   if (msg.type === "START_WATCHING_SALES_NAV_LIST") {
