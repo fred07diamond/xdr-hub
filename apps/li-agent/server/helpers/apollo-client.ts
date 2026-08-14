@@ -65,6 +65,13 @@ function cleanForApolloMatch(text: string | null | undefined): string | null {
 }
 
 export interface ApolloPersonMatch {
+  // Apollo's own person id -- live-confirmed this is how the async phone-
+  // reveal webhook payload identifies which person its result is for
+  // (nested in a `people[]` array with a `type_cd`-labeled phone_numbers
+  // array, NOT the same shape as this synchronous response's `contact`
+  // field). There is no request_id round-trip despite Apollo's docs
+  // suggesting one -- matching must happen via this id.
+  id?: string;
   name?: string;
   title?: string;
   seniority?: string;
@@ -85,30 +92,26 @@ export interface ApolloPersonMatch {
 
 interface ApolloPersonMatchResponse {
   person?: ApolloPersonMatch | null;
-  // Present when the request included reveal_phone_number: true -- the
-  // handle to match the later async webhook callback back to this request.
-  // Live-confirmed as a bare (not string) number in the response.
-  request_id?: number | string | null;
 }
 
 // Live-confirmed via a direct 400 test: reveal_phone_number requires a
 // valid webhook_url, full stop -- there is no polling-without-webhook
 // shortcut despite Apollo's docs suggesting /webhook_result/{request_id}
-// polling as a standalone alternative.
+// polling as a standalone alternative (that polling id never actually
+// appears anywhere in this flow -- see ApolloPersonMatch.id).
 export const APOLLO_PHONE_REVEAL_WEBHOOK_URL = "https://xdr-hub.netlify.app/li-agent/_agent-native/actions/apollo-phone-reveal-webhook";
 
 // A no-match is a normal, expected outcome (null person), never an error.
-// requestId is null unless revealPhone was set AND Apollo accepted the
-// reveal request -- callers use it to remember which row is waiting for
-// which webhook callback.
+// When revealPhone is set, the caller must remember person.id themselves
+// (not returned separately here) to match the later webhook callback.
 export async function matchApolloPerson(options: {
   name: string;
   companyName?: string | null;
   email?: string | null;
   revealPhone?: boolean;
-}): Promise<{ person: ApolloPersonMatch | null; requestId: string | null }> {
+}): Promise<ApolloPersonMatch | null> {
   const cleanedName = cleanForApolloMatch(options.name);
-  if (!cleanedName) return { person: null, requestId: null };
+  if (!cleanedName) return null;
   const body: Record<string, unknown> = { name: cleanedName };
   const cleanedCompany = cleanForApolloMatch(options.companyName);
   if (cleanedCompany) body.organization_name = cleanedCompany;
@@ -121,10 +124,7 @@ export async function matchApolloPerson(options: {
     method: "POST",
     body: JSON.stringify(body),
   })) as ApolloPersonMatchResponse;
-  return {
-    person: result.person ?? null,
-    requestId: result.request_id != null ? String(result.request_id) : null,
-  };
+  return result.person ?? null;
 }
 
 // Live-confirmed Apollo's contact.phone_numbers frequently puts a

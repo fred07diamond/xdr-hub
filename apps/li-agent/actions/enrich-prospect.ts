@@ -54,11 +54,8 @@ export default defineAction({
     const revealPhone = !prospect.enrichedPhone;
 
     let person = null;
-    let requestId: string | null = null;
     try {
-      const result = await matchApolloPerson({ name: prospect.name, companyName: prospect.company, revealPhone });
-      person = result.person;
-      requestId = result.requestId;
+      person = await matchApolloPerson({ name: prospect.name, companyName: prospect.company, revealPhone });
     } catch (err) {
       warnings.push(`Person lookup: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -85,13 +82,15 @@ export default defineAction({
     // one. A phone found synchronously means nothing async is pending, and
     // when revealPhone was false to begin with, leave existing reveal
     // fields untouched rather than overwriting them with this call's
-    // (irrelevant) outcome.
+    // (irrelevant) outcome. Matching key is Apollo's own person.id --
+    // live-confirmed the webhook payload has no request_id, only a
+    // `people[].id` identifying which person each result is for.
     const phoneRevealUpdate = !revealPhone
       ? {}
       : phone
         ? { phoneRevealStatus: "done" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null }
-        : requestId
-          ? { phoneRevealStatus: "requested" as const, phoneRevealRequestId: requestId, phoneRevealRequestedAt: enrichedAt }
+        : person?.id
+          ? { phoneRevealStatus: "requested" as const, phoneRevealRequestId: person.id, phoneRevealRequestedAt: enrichedAt }
           : { phoneRevealStatus: "failed" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null };
 
     await db
