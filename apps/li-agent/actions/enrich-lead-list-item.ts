@@ -91,6 +91,17 @@ export default defineAction({
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
       enrichmentError,
+      // TEMPORARY -- diagnosing a report that enrichedPhone shows the
+      // company's number instead of the person's. Remove once resolved.
+      _debugPhone: {
+        sentToApollo: { name: item.name, companyName: item.company },
+        matchedPersonName: person?.name,
+        matchedPersonTitle: person?.title,
+        matchedOrgName: person?.organization?.name,
+        matchedOrgDomain: person?.organization?.primary_domain,
+        hasContact: !!person?.contact,
+        phoneNumbers: person?.contact?.phone_numbers ?? [],
+      },
     };
   },
 });

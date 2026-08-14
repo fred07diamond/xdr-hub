@@ -65,6 +65,7 @@ function cleanForApolloMatch(text: string | null | undefined): string | null {
 }
 
 export interface ApolloPersonMatch {
+  name?: string;
   title?: string;
   seniority?: string;
   email?: string;
