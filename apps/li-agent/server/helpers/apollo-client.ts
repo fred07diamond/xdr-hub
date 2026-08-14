@@ -105,11 +105,24 @@ export async function matchApolloPerson(options: {
   return result.person ?? null;
 }
 
+// Live-confirmed Apollo's contact.phone_numbers frequently puts a
+// company-level number (type "work_hq") at position 0 and the person's own
+// number (type "mobile") later in the array -- position/order is NOT
+// reliable, so this must select by type rather than take index [0]. Only
+// returns a number tagged as one of the person's own phone types; if Apollo
+// only has a company-level number for this person, returns null (same "we
+// have nothing" convention as a blank email) rather than showing a number
+// that isn't actually theirs.
+const PERSONAL_PHONE_TYPES = new Set(["mobile", "direct", "personal", "home"]);
+
 // Synchronous-only: returns null when Apollo hasn't already revealed this
 // person for our team (see ApolloPersonMatch.contact comment). Never
 // triggers Apollo's paid async phone reveal.
 export function extractApolloPhone(person: ApolloPersonMatch | null): string | null {
-  return person?.contact?.phone_numbers?.[0]?.raw_number ?? null;
+  const numbers = person?.contact?.phone_numbers;
+  if (!numbers?.length) return null;
+  const personal = numbers.find((n) => n.raw_number && PERSONAL_PHONE_TYPES.has((n.type ?? "").toLowerCase()));
+  return personal?.raw_number ?? null;
 }
 
 export interface ApolloOrganization {
