@@ -73,10 +73,13 @@ export default defineAction({
     const enrichedAt = new Date().toISOString();
     const status = person || organization ? "done" : warnings.length > 0 ? "failed" : "not_found";
     const enrichmentError = warnings.length > 0 ? warnings.join(" | ") : null;
-    // Apollo sometimes already has a personal number on file even without a
-    // fresh reveal (e.g. previously revealed for this team) -- populated
-    // synchronously either way.
-    const phone = extractApolloPhone(person);
+    // Live-confirmed bug: Apollo's synchronous /people/match response only
+    // carries contact.phone_numbers on the SAME call that requests a fresh
+    // reveal -- a number delivered earlier via the async webhook is NOT
+    // echoed back on a later plain re-enrich. Falling back to the
+    // already-stored value here is required, or a routine re-enrich wipes
+    // out a real number to null.
+    const phone = extractApolloPhone(person) ?? prospect.enrichedPhone;
 
     // Reveal bookkeeping only applies when this call actually requested
     // one. A phone found synchronously means nothing async is pending, and
