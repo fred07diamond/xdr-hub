@@ -11,11 +11,13 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async (_input, ctx) => {
+    const userEmail = ctx?.userEmail;
+    if (!userEmail) return { lists: [] };
     const db = getDb();
     const lists = await db
       .select()
       .from(leadLists)
-      .where(eq(leadLists.ownerEmail, ctx!.userEmail));
+      .where(eq(leadLists.ownerEmail, userEmail));
     return { lists };
   },
 });
