@@ -1,9 +1,9 @@
 import { defineAction } from "@agent-native/core";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists } from "../server/db/schema.js";
-import { resolveOwner } from "../server/helpers/resolve-owner.js";
+import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 
 // Separate from list-lead-lists.ts (the dashboard's session-only version)
 // because the extension has no session -- only a personal API token, same
@@ -18,13 +18,17 @@ export default defineAction({
   publicAgent: { expose: true, readOnly: true, requiresAuth: false },
   http: { method: "GET" },
   run: async ({ apiToken }, ctx) => {
-    const ownerEmail = await resolveOwner(apiToken, ctx);
+    // Strict resolution -- this action exposes list names/ids/counts, so a
+    // credential-free caller must get nothing back rather than silently
+    // being treated as the workspace owner.
+    const ownerEmail = await resolveOwnerStrict(apiToken, ctx);
+    if (!ownerEmail) return { lists: [] };
+
     const db = getDb();
-    const ownerFilter = ownerEmail ? eq(leadLists.ownerEmail, ownerEmail) : isNull(leadLists.ownerEmail);
     const lists = await db
       .select({ id: leadLists.id, name: leadLists.name, totalCount: leadLists.totalCount })
       .from(leadLists)
-      .where(and(ownerFilter))
+      .where(eq(leadLists.ownerEmail, ownerEmail))
       .orderBy(desc(leadLists.updatedAt));
     return { lists };
   },

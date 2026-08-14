@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems } from "../server/db/schema.js";
-import { resolveOwner } from "../server/helpers/resolve-owner.js";
+import { resolveOwner, resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 import { selectPersonasBatch } from "../server/helpers/select-persona.js";
 
@@ -109,8 +109,23 @@ export default defineAction({
     let newTotalCount = deduped.length;
 
     if (existingListId) {
-      // Append to an existing list -- verify it belongs to this owner before
-      // touching it, same ownerFilter used for cross-list dedup above.
+      // Appending into a specific pre-existing list is a targeted write, not
+      // just spraying a new, distinguishable list -- require a REAL
+      // credential here (session or valid token), never the
+      // WORKSPACE_OWNER_EMAIL env fallback that resolveOwner above allows.
+      const strictOwnerEmail = await resolveOwnerStrict(apiToken, ctx);
+      if (!strictOwnerEmail) {
+        return {
+          listId: null,
+          totalCount: 0,
+          truncated,
+          duplicatesSkipped,
+          error: "A personal API token is required to add leads to an existing list.",
+        };
+      }
+
+      // Verify the list belongs to this owner before touching it, same
+      // ownerFilter used for cross-list dedup above.
       const [existingList] = await db
         .select({ id: leadLists.id, totalCount: leadLists.totalCount })
         .from(leadLists)
