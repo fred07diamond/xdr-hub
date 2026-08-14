@@ -55,12 +55,16 @@ outreach separately via the normal LinkedIn profile flow.
 
 ## When asked about the Lead Lists tab
 
-The Lead Lists tab shows Sales Navigator saved lead lists imported by the extension.
-The xDR opens a saved list in Sales Navigator, pages through it themselves (the
-extension never auto-clicks pagination — this is deliberate, to avoid anything
-that looks like automated navigation), and the extension accumulates each page's
-rows and imports the whole list via `import-sales-nav-list` when they click
-"Send to LinkedIn Agent" in the side panel.
+The Lead Lists tab shows Sales Navigator captures imported by the extension —
+either a saved lead list, or a live filtered search on the Lead tab (most of
+the team prospects this way instead of saving lists first). Either way the
+xDR pages through it themselves (the extension never auto-clicks pagination —
+this is deliberate, to avoid anything that looks like automated navigation),
+and the extension accumulates each page's rows and imports the whole thing via
+`import-sales-nav-list` when they click "Send to LinkedIn Agent" in the side
+panel. A search capture gets a generated name like "Sales Nav Search — Aug 14,
+9:04 AM" instead of a real list name, since a search results page has no name
+to read off the page the way a saved list's tab title does.
 
 This is a shallow import: `name`, `headline` (the job title scraped from Sales
 Nav's list rows), `company`, `location`, and a `salesNavLeadUrl` for each lead,

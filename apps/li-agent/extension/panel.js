@@ -763,12 +763,21 @@ function isPostUrl(url) {
 }
 
 // LIVE-VERIFY: best guess based on Sales Nav's known URL taxonomy for a
-// saved lead list, not confirmed against a real account — matches the same
-// pattern content.js's isSalesNavListUrl() uses (the two can't share code
-// across the content-script/panel boundary without a build step, so this is
-// deliberately duplicated, same as isProfileUrl/isPostUrl already are).
+// saved lead list or live search results page, not confirmed against a
+// real account — matches the same pattern content.js's isSalesNavListUrl()
+// uses (the two can't share code across the content-script/panel boundary
+// without a build step, so this is deliberately duplicated, same as
+// isProfileUrl/isPostUrl already are).
 function isSalesNavListUrl(url) {
-  return /linkedin\.com\/sales\/lists\/people\//i.test(url);
+  return /linkedin\.com\/sales\/(lists\/people\/|search\/people)/i.test(url);
+}
+
+// Distinguishes the two URL shapes isSalesNavListUrl() matches, so the
+// caller can decide how to name the capture -- a saved list's tab title
+// literally contains the list's name, but a search-results page's title
+// doesn't, so it needs a different (timestamp-based) naming path below.
+function isSalesNavSearchUrl(url) {
+  return /linkedin\.com\/sales\/search\/people/i.test(url);
 }
 
 function switchTab(tab) {
@@ -990,6 +999,16 @@ function deriveSalesNavListName(rawTitle) {
   if (!rawTitle) return "Sales Navigator List";
   const firstSegment = rawTitle.split("|")[0].trim();
   return firstSegment || "Sales Navigator List";
+}
+
+// Search-results pages have no name to read off the page the way a saved
+// list's tab title contains the list's actual name -- generate a
+// deterministic, human-readable name from the current date/time instead.
+function deriveSalesNavSearchName() {
+  const now = new Date();
+  const date = now.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const time = now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `Sales Nav Search — ${date}, ${time}`;
 }
 
 async function loadListImportSession() {
@@ -1221,7 +1240,10 @@ function startUrlPollingWithEngagers() {
         // a previous list's already-captured leads around when the xDR
         // opened a different Sales Nav list in a fresh panel.
         if (!listImportSession.listUrl || listImportSession.listUrl !== cleanUrl) {
-          resetListImportSession(cleanUrl, deriveSalesNavListName(tab.title));
+          const derivedName = isSalesNavSearchUrl(cleanUrl)
+            ? deriveSalesNavSearchName()
+            : deriveSalesNavListName(tab.title);
+          resetListImportSession(cleanUrl, derivedName);
         }
         listsStatus.textContent = "";
         scrapeCurrentListPage(tab.id);

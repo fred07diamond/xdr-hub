@@ -228,23 +228,29 @@ function findPublicProfileUrl() {
   return null;
 }
 
-// ── Sales Navigator list page (saved lead list) ────────────────────────────
-// LIVE-VERIFY: this URL pattern is a best guess based on Sales Nav's known
+// ── Sales Navigator list page (saved lead list OR live search results) ────
+// LIVE-VERIFY: both URL patterns are best guesses based on Sales Nav's known
 // URL taxonomy, not confirmed against a real account. Check
-// window.location.href on a real saved lead list before trusting this.
+// window.location.href on a real saved lead list / search results page
+// before trusting this. /sales/search/people is the Lead-tab search results
+// view specifically -- deliberately not /sales/search/company (Account tab),
+// which is out of scope here.
 function isSalesNavListUrl(url) {
   const href = url || window.location.href;
-  return /linkedin\.com\/sales\/lists\/people\//i.test(href);
+  return /linkedin\.com\/sales\/(lists\/people\/|search\/people)/i.test(href);
 }
 
 // Reads all lead rows rendered on the CURRENT page of a Sales Nav saved
-// list. Pagination is the caller's job (the xDR clicks Next themselves,
-// never automated — account-safety decision) — this reads whatever DOM
-// exists right now, one page at a time, same one-page contract as
-// scrapeCommenters() reading one already-loaded post.
+// list OR a live search-results page (same row markup is assumed for both --
+// both link each row to the same /sales/lead/{id} profile URL). Pagination
+// is the caller's job (the xDR clicks Next themselves, never automated —
+// account-safety decision) — this reads whatever DOM exists right now, one
+// page at a time, same one-page contract as scrapeCommenters() reading one
+// already-loaded post.
 //
 // LIVE-VERIFY: the row-container selector (closest("li")/table row/custom
-// wrapper) is unverified against a real Sales Nav list's DOM structure.
+// wrapper) is unverified against a real Sales Nav list's or search results
+// page's DOM structure.
 // Anchoring on [data-anonymize="person-name"] per row reuses the same
 // attribute-first discipline as scrapeSalesNavTopCard()/snField() above,
 // since these GDPR-anonymization hooks are the most stable selector
@@ -1136,9 +1142,10 @@ window.__bliDiagnoseSalesNav = function () {
 };
 
 // Sales Nav LIST diagnostic — call window.__bliDiagnoseSalesNavList() in the
-// tab console on a saved lead list page when scrapeSalesNavListRows() misses
-// rows or fields.
+// tab console on a saved lead list OR search results page when
+// scrapeSalesNavListRows() misses rows or fields.
 window.__bliDiagnoseSalesNavList = function () {
+  console.log("[BLI SN List] location:", window.location.href);
   console.log("[BLI SN List] isSalesNavListUrl:", isSalesNavListUrl());
   const nameEls = Array.from(document.querySelectorAll('[data-anonymize="person-name"]'));
   console.log(`[BLI SN List] found ${nameEls.length} [data-anonymize="person-name"] elements`);
