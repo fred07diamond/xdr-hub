@@ -91,13 +91,6 @@ export default defineAction({
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
       enrichmentError,
-      // TEMPORARY round 2 -- confirming "no phone" cases genuinely have no
-      // personal-type number in Apollo's response (vs. our type filter
-      // missing a real personal type string). Remove once confirmed.
-      _debugPhone: {
-        hasContact: !!person?.contact,
-        phoneNumbers: person?.contact?.phone_numbers ?? [],
-      },
     };
   },
 });
