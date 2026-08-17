@@ -209,6 +209,41 @@ function EnrichButton({
   );
 }
 
+function ScoreDraftButton({
+  prospect,
+  isScoring,
+  error,
+  onScore,
+}: {
+  prospect: Prospect;
+  isScoring: boolean;
+  error?: string;
+  onScore: (prospect: Prospect) => void;
+}) {
+  if (isScoring) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <IconLoader2 size={11} className="animate-spin" />
+        Scoring…
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onScore(prospect); }}
+      title={error ?? "Generate a fit score and draft note for this lead"}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] hover:bg-muted ${
+        error ? "border-destructive/40 text-destructive" : "border-border"
+      }`}
+    >
+      <IconSparkles size={11} />
+      Score &amp; Draft
+    </button>
+  );
+}
+
 function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   async function handleCopy() {
@@ -280,7 +315,10 @@ function ProspectSheet({
   const redraft = useActionMutation("redraft-prospect");
   const enrichProspect = useActionMutation("enrich-prospect");
   const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
+  const scoreLeadListItem = useActionMutation("score-lead-list-item");
   const [isEnriching, setIsEnriching] = useState(false);
+  const [isScoring, setIsScoring] = useState(false);
+  const [scoreError, setScoreError] = useState<string | null>(null);
 
   const crmQuery = useActionQuery(
     "check-hubspot-contact",
@@ -366,6 +404,27 @@ function ProspectSheet({
     } finally {
       setIsEnriching(false);
       onUpdated();
+    }
+  }
+
+  async function handleScoreDraft() {
+    setIsScoring(true);
+    setScoreError(null);
+    try {
+      const result = await scoreLeadListItem.mutateAsync({ itemId: prospect.rawId });
+      if (result?.error) {
+        setScoreError(result.error);
+        return;
+      }
+      // The row's identity changes (lead_list:<id> -> prospect:<newId>) in
+      // the merged view once this lands -- close the sheet and let the
+      // parent's refetch pick up the newly-promoted row.
+      onClose();
+      onUpdated();
+    } catch (err) {
+      setScoreError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setIsScoring(false);
     }
   }
 
@@ -459,9 +518,21 @@ function ProspectSheet({
           )}
 
           {!isProspect && (
-            <p className="text-xs italic text-muted-foreground">
-              Not visited yet -- no fit scoring or draft note exists until the profile is opened in LinkedIn.
-            </p>
+            <div className="space-y-2">
+              <p className="text-xs italic text-muted-foreground">
+                Not visited yet -- no fit scoring or draft note exists until the profile is opened in LinkedIn.
+              </p>
+              <button
+                type="button"
+                onClick={handleScoreDraft}
+                disabled={isScoring}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+              >
+                {isScoring ? <IconLoader2 size={12} className="animate-spin" /> : <IconSparkles size={13} />}
+                Score &amp; Draft
+              </button>
+              {scoreError && <p className="text-xs text-destructive">{scoreError}</p>}
+            </div>
           )}
 
           {isProspect && (
@@ -619,12 +690,15 @@ export default function ProspectsRoute() {
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
+  const [scoringErrors, setScoringErrors] = useState<Map<string, string>>(new Map());
 
   const bulkDeleteProspects = useActionMutation("bulk-delete-prospects");
   const deleteProspect = useActionMutation("delete-prospect");
   const markSent = useActionMutation("mark-sent");
   const enrichProspect = useActionMutation("enrich-prospect");
   const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
+  const scoreLeadListItem = useActionMutation("score-lead-list-item");
 
   // Paginated -- merges the prospects table with every Lead List's items,
   // deduped (list-all-prospects.ts), so this one table is "everything ever
@@ -747,6 +821,31 @@ export default function ProspectsRoute() {
         return next;
       });
       refetch();
+    }
+  }
+
+  async function handleScoreDraft(prospect: Prospect) {
+    setScoringIds((prev) => new Set(prev).add(prospect.id));
+    setScoringErrors((prev) => {
+      const next = new Map(prev);
+      next.delete(prospect.id);
+      return next;
+    });
+    try {
+      const result = await scoreLeadListItem.mutateAsync({ itemId: prospect.rawId });
+      if (result?.error) {
+        setScoringErrors((prev) => new Map(prev).set(prospect.id, result.error));
+        return;
+      }
+      refetch();
+    } catch (err) {
+      setScoringErrors((prev) => new Map(prev).set(prospect.id, err instanceof Error ? err.message : "Something went wrong."));
+    } finally {
+      setScoringIds((prev) => {
+        const next = new Set(prev);
+        next.delete(prospect.id);
+        return next;
+      });
     }
   }
 
@@ -1074,6 +1173,14 @@ export default function ProspectsRoute() {
                       <div className="flex items-center gap-1.5">
                         {note && <CopyButton text={note} />}
                         <EnrichButton prospect={p} isEnriching={enrichingIds.has(p.id)} onEnrich={handleEnrich} />
+                        {p.source === "lead_list" && (
+                          <ScoreDraftButton
+                            prospect={p}
+                            isScoring={scoringIds.has(p.id)}
+                            error={scoringErrors.get(p.id)}
+                            onScore={handleScoreDraft}
+                          />
+                        )}
                       </div>
                     </td>
                   </tr>
