@@ -307,6 +307,20 @@ async function summarizeLeadList(listId) {
   return await res.json(); // { summary: string | null }
 }
 
+async function generateSalesNavSearch(prompt) {
+  const { appUrl, apiToken } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/generate-sales-nav-search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, ...(apiToken ? { apiToken } : {}) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`generate-sales-nav-search failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { searchUrl, summary, matchedPersonaName } or { error }
+}
+
 // Scrapes the LinkedIn profile at profileUrl in a background tab, returns the
 // profile data. Opens a non-active tab, waits for load, injects the content
 // script, reads the profile, closes the tab.
@@ -504,6 +518,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     summarizeLeadList(msg.listId)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => sendResponse({ ok: false, error: err.message, summary: null }));
+    return true;
+  }
+
+  if (msg.type === "GENERATE_SALES_NAV_SEARCH") {
+    generateSalesNavSearch(msg.prompt)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
 });

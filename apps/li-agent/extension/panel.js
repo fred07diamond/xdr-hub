@@ -1007,6 +1007,12 @@ const apolloExportFileRow = document.getElementById("apollo-export-file-row");
 const apolloExportFileChip = document.getElementById("apollo-export-file-chip");
 const apolloExportFileName = document.getElementById("apollo-export-file-name");
 const apolloExportDownloadLink = document.getElementById("apollo-export-download-link");
+const aiSearchPrompt = document.getElementById("ai-search-prompt");
+const aiSearchGenerateBtn = document.getElementById("ai-search-generate-btn");
+const aiSearchResult = document.getElementById("ai-search-result");
+const aiSearchSummary = document.getElementById("ai-search-summary");
+const aiSearchOpenLink = document.getElementById("ai-search-open-link");
+const aiSearchStatus = document.getElementById("ai-search-status");
 
 const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
 // leadsByUrl is a plain object (not a Map) — chrome.storage.session values
@@ -1346,6 +1352,45 @@ listsSelectAllBtn?.addEventListener("click", () => {
 });
 
 tabListsBtn?.addEventListener("click", () => switchTab("lists"));
+
+// ── AI search assistant ──────────────────────────────────────────────
+// Turns a plain-English prompt into a real Sales Nav search URL the xDR
+// clicks themselves -- never fills Sales Nav's own filter UI or pages
+// through automatically. Same account-safety stance as "Never auto-clicks
+// pagination controls" above: only ever reads/links, never scripts
+// LinkedIn's own navigation.
+aiSearchGenerateBtn?.addEventListener("click", async () => {
+  const prompt = aiSearchPrompt?.value?.trim();
+  if (!prompt) return;
+
+  aiSearchGenerateBtn.disabled = true;
+  aiSearchGenerateBtn.textContent = "Generating…";
+  if (aiSearchResult) aiSearchResult.style.display = "none";
+  if (aiSearchStatus) { aiSearchStatus.className = ""; aiSearchStatus.textContent = ""; }
+
+  const result = await chrome.runtime
+    .sendMessage({ type: "GENERATE_SALES_NAV_SEARCH", prompt })
+    .catch((err) => ({ ok: false, error: err.message }));
+
+  aiSearchGenerateBtn.disabled = false;
+  aiSearchGenerateBtn.textContent = "Generate search";
+
+  if (!result?.ok || result.error || !result.searchUrl) {
+    if (aiSearchStatus) {
+      aiSearchStatus.className = "error";
+      aiSearchStatus.textContent = result?.error || "Could not generate a search from that -- try rephrasing.";
+    }
+    return;
+  }
+
+  if (aiSearchSummary) {
+    aiSearchSummary.textContent = result.matchedPersonaName
+      ? `${result.summary || ""} (matched "${result.matchedPersonaName}")`
+      : result.summary || "Search generated.";
+  }
+  if (aiSearchOpenLink) aiSearchOpenLink.href = result.searchUrl;
+  if (aiSearchResult) aiSearchResult.style.display = "block";
+});
 
 // ── Export a saved list to Apollo (CSV) ──────────────────────────────
 // This workspace's Apollo API key has no write scope (contacts/create,

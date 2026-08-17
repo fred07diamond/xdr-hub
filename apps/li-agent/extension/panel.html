@@ -655,6 +655,88 @@
 
     /* ── Lists tab ───────────────────────────────────────── */
     #lists-tab { display: none; }
+
+    /* ── AI search assistant ─────────────────────────────── */
+    #ai-search-section {
+      margin-bottom: 16px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    #ai-search-heading {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+    #ai-search-prompt {
+      display: block;
+      width: 100%;
+      font-size: 12px;
+      color: #333;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 6px;
+      background: #fafafa;
+      font-family: inherit;
+      resize: none;
+      box-sizing: border-box;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #ai-search-prompt::placeholder { color: #999; }
+    #ai-search-prompt:hover { background: #f3f4f6; }
+    #ai-search-prompt:focus { outline: none; border-color: #0a66c2; background: #fff; }
+    #ai-search-generate-btn {
+      width: 100%;
+      padding: 7px 12px;
+      background: #0a66c2;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+      box-sizing: border-box;
+    }
+    #ai-search-generate-btn:disabled { background: #aaa; cursor: not-allowed; }
+    #ai-search-generate-btn:hover:not(:disabled) { background: #004182; }
+    #ai-search-result {
+      margin-top: 10px;
+      padding: 10px;
+      background: #f0f4ff;
+      border: 1px solid #d7e3fb;
+      border-radius: 8px;
+    }
+    #ai-search-summary {
+      font-size: 11.5px;
+      color: #333;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+    #ai-search-open-link {
+      display: block;
+      text-align: center;
+      padding: 6px 10px;
+      background: #0a66c2;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    #ai-search-open-link:hover { background: #004182; }
+    #ai-search-status {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #888;
+      line-height: 1.5;
+    }
+    #ai-search-status:empty { display: none; }
+    #ai-search-status.error { color: #b91c1c; }
+
     #lists-hint {
       font-size: 11px;
       color: #888;
@@ -1121,6 +1203,16 @@
        accumulates each page as it loads. -->
   <div id="lists-tab">
     <div id="lists-capture-section">
+      <div id="ai-search-section">
+        <div id="ai-search-heading">Describe who you're looking for</div>
+        <textarea id="ai-search-prompt" placeholder="e.g. design persona folks at mid-size B2B SaaS companies…" rows="2"></textarea>
+        <button id="ai-search-generate-btn" type="button">Generate search</button>
+        <div id="ai-search-result" style="display:none;">
+          <div id="ai-search-summary"></div>
+          <a id="ai-search-open-link" target="_blank" rel="noopener noreferrer">Open in Sales Navigator</a>
+        </div>
+        <div id="ai-search-status"></div>
+      </div>
       <div id="lists-hint">
         Page through this list or search in Sales Navigator yourself — each page you view gets captured automatically. Click "Send to LinkedIn Agent" once you've reached the end (or whenever you want to import what's captured so far).
       </div>
