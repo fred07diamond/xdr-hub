@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { callAction, useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconBrandLinkedin,
   IconCheck,
@@ -578,7 +578,16 @@ export default function ProspectsRoute() {
   const markSent = useActionMutation("mark-sent");
   const enrichProspect = useActionMutation("enrich-prospect");
 
-  const { data, refetch, isLoading } = useActionQuery("list-prospects", {}, {
+  // Paginated -- list-prospects used to fetch every prospect ever captured
+  // in one unbounded query on every page load, which got slower as the
+  // table grew. The first page still polls live (for in-progress captures);
+  // additional pages are loaded on demand via "Load more" and appended.
+  const PROSPECTS_PAGE_SIZE = 200;
+  const [loadedExtraProspects, setLoadedExtraProspects] = useState<Prospect[]>([]);
+  const [isLoadingMoreProspects, setIsLoadingMoreProspects] = useState(false);
+  const [prospectsTotalCount, setProspectsTotalCount] = useState<number | null>(null);
+
+  const { data, refetch, isLoading } = useActionQuery("list-prospects", { limit: PROSPECTS_PAGE_SIZE, offset: 0 }, {
     refetchInterval: (query) => {
       const rows = (query.state.data as any)?.prospects as any[] | undefined;
       return rows?.some((p) => p.status === "captured") ? 5000 : 30000;
@@ -587,7 +596,41 @@ export default function ProspectsRoute() {
     staleTime: 4000,
   });
 
-  const allProspects: Prospect[] = (data as any)?.prospects ?? [];
+  useEffect(() => {
+    const tc = (data as any)?.totalCount;
+    if (typeof tc === "number") setProspectsTotalCount(tc);
+  }, [data]);
+
+  const firstPageProspects: Prospect[] = (data as any)?.prospects ?? [];
+  // Dedupe defensively -- the polled first page and manually-loaded later
+  // pages use independent offsets, so a prospect captured between loads
+  // could theoretically appear in both.
+  const allProspects: Prospect[] = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: Prospect[] = [];
+    for (const p of [...firstPageProspects, ...loadedExtraProspects]) {
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      merged.push(p);
+    }
+    return merged;
+  }, [firstPageProspects, loadedExtraProspects]);
+
+  const hasMoreProspects = prospectsTotalCount != null && allProspects.length < prospectsTotalCount;
+
+  async function handleLoadMoreProspects() {
+    setIsLoadingMoreProspects(true);
+    try {
+      const result = await callAction<{ prospects: Prospect[]; totalCount: number }>("list-prospects", {
+        limit: PROSPECTS_PAGE_SIZE,
+        offset: allProspects.length,
+      });
+      setLoadedExtraProspects((prev) => [...prev, ...result.prospects]);
+      setProspectsTotalCount(result.totalCount);
+    } finally {
+      setIsLoadingMoreProspects(false);
+    }
+  }
 
   // Derived persona list for filter chips
   const personas = useMemo(() => [...new Map(
@@ -745,9 +788,11 @@ export default function ProspectsRoute() {
           <div>
             <h1 className="text-sm font-semibold text-foreground">Prospects</h1>
             <p className="text-xs text-muted-foreground">
-              {isLoading ? "Loading…" : hasActiveFilter
-                ? `${filtered.length} of ${allProspects.length} prospects`
-                : `${allProspects.length} prospect${allProspects.length === 1 ? "" : "s"}`}
+              {isLoading
+                ? "Loading…"
+                : hasActiveFilter
+                  ? `${filtered.length} of ${allProspects.length} loaded${hasMoreProspects ? ` (${prospectsTotalCount} total)` : ""} match`
+                  : `${allProspects.length}${hasMoreProspects ? ` of ${prospectsTotalCount}` : ""} prospect${allProspects.length === 1 ? "" : "s"}`}
             </p>
           </div>
         )}
@@ -945,6 +990,22 @@ export default function ProspectsRoute() {
           </table>
         )}
       </div>
+
+      {hasMoreProspects && (
+        <div className="flex items-center justify-center border-t border-border px-4 py-2.5">
+          <button
+            onClick={handleLoadMoreProspects}
+            disabled={isLoadingMoreProspects}
+            className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            {isLoadingMoreProspects
+              ? "Loading…"
+              : hasActiveFilter
+                ? `Load more to search all ${prospectsTotalCount} prospects`
+                : `Load more (${(prospectsTotalCount ?? 0) - allProspects.length} remaining)`}
+          </button>
+        </div>
+      )}
 
       {selected && (
         <ProspectSheet
