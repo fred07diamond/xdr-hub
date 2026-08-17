@@ -780,6 +780,14 @@ function isSalesNavSearchUrl(url) {
   return /linkedin\.com\/sales\/search\/people/i.test(url);
 }
 
+// The "Export a saved list to Apollo" section doesn't read anything off
+// the current page -- it only needs the tab switcher to stay visible and
+// the Lists tab to stay open while the rep is actually on Apollo, since
+// that's the tab they're dragging the generated CSV into.
+function isApolloUrl(url) {
+  return /(^|\.)apollo\.io(\/|$)/i.test(url.replace(/^https?:\/\//i, ""));
+}
+
 function switchTab(tab) {
   tabProfileBtn.classList.toggle("active", tab === "profile");
   tabEngagersBtn.classList.toggle("active", tab === "engagers");
@@ -1572,6 +1580,15 @@ function startUrlPollingWithEngagers() {
         switchTab("lists");
         scrapeCurrentListPage(tab.id);
       }
+    } else if (isApolloUrl(url)) {
+      // On Apollo: keep the tab switcher visible and stay on/switch to the
+      // Lists tab so the "Export a saved list to Apollo" section (and the
+      // file the rep is about to drag in) is reachable. Nothing here reads
+      // the Apollo page itself, so no scraping/session state to touch.
+      tabSwitcher.style.display = "flex";
+      notLinkedin.style.display = "none";
+      mainContent.style.display = "none";
+      switchTab("lists");
     } else {
       // Non-LinkedIn page: hide tab switcher, show not-LinkedIn message.
       // currentPostUrl/currentListUrl are intentionally NOT cleared here so
