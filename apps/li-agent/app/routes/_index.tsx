@@ -1267,6 +1267,8 @@ export default function ProspectsRoute() {
                   />
                 </th>
                 <th className="py-2 pl-2 pr-3 text-left text-xs font-medium text-muted-foreground">Person</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
@@ -1301,23 +1303,39 @@ export default function ProspectsRoute() {
                       <div className="flex items-center gap-1.5">
                         <IconBrandLinkedin size={13} className="shrink-0 text-[#0077B5]" />
                         <span className="font-medium text-foreground group-hover:text-primary truncate max-w-[180px]">{displayName}</span>
-                        {p.personaName && p.personaColor && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
-                            <span style={{ background: p.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full" />
-                            {p.personaName}
-                          </span>
-                        )}
                         {p.source === "lead_list" && (
                           <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0 truncate max-w-[100px]">
                             {p.listName ?? "Lead list"}
                           </span>
                         )}
                       </div>
-                      {(p.role || p.company) && (
-                        <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-[240px]">
-                          {[p.role, p.company].filter(Boolean).join(" · ")}
-                        </p>
+                      {p.company && (
+                        <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-[240px]">{p.company}</p>
                       )}
+                    </td>
+
+                    {/* Persona -- own column (not just a chip buried in the
+                        Person cell) so scanning/filtering by persona is
+                        easier at a glance. */}
+                    <td className="px-3 py-3">
+                      {p.personaName && p.personaColor ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          <span style={{ background: p.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full shrink-0" />
+                          {p.personaName}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+
+                    {/* Job Title -- prefers Apollo's enrichedTitle (kept
+                        current by Enrich/Re-enrich) over the LinkedIn-scraped
+                        role/headline, which can go stale or was never set for
+                        a lead-list row that hasn't been visited. */}
+                    <td className="px-3 py-3">
+                      <span className="text-xs text-muted-foreground truncate max-w-[180px] block">
+                        {p.enrichedTitle || p.role || p.headline || "—"}
+                      </span>
                     </td>
 
                     {/* Fit */}
