@@ -716,6 +716,15 @@
       line-height: 1.5;
       margin-bottom: 8px;
     }
+    #ai-search-filters {
+      margin: 0 0 8px;
+      padding-left: 16px;
+      font-size: 11px;
+      color: #333;
+      line-height: 1.5;
+    }
+    #ai-search-filters:empty { display: none; margin: 0; }
+    #ai-search-filters li strong { color: #0a4a8f; }
     #ai-search-open-link {
       display: block;
       text-align: center;
@@ -1209,6 +1218,7 @@
         <button id="ai-search-generate-btn" type="button">Generate search</button>
         <div id="ai-search-result" style="display:none;">
           <div id="ai-search-summary"></div>
+          <ul id="ai-search-filters"></ul>
           <a id="ai-search-open-link" target="_blank" rel="noopener noreferrer">Open in Sales Navigator</a>
         </div>
         <div id="ai-search-status"></div>

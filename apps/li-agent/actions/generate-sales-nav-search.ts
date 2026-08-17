@@ -16,14 +16,126 @@ import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
 // LinkedIn navigation. This action only builds a link; a human still
 // clicks it and pages through themselves, same as any other search.
 //
-// v1 mechanism: a Boolean-composed keyword string (Sales Nav's documented
-// AND/OR/NOT/quotes/parens syntax) in the search URL's `keywords` param.
-// Chip-based filters (Function/Seniority/Industry) use LinkedIn's internal
-// opaque IDs in the URL, not human-readable text -- encoding those
-// correctly needs live reverse-engineering that hasn't been done, so v1
-// deliberately doesn't attempt them.
+// v2 mechanism: real Sales Nav filter chips (Function, Seniority level,
+// Geography, Company headcount, Company type), not just a keyword string.
+// These ID tables were reverse-engineered from real Sales Nav search URLs
+// the user captured from their own account (not guessed) -- Function and
+// Seniority use small fixed integer IDs, Geography/Headcount/Type use
+// fixed letter/region codes. Company and Past Company filters use LinkedIn
+// entity URNs (e.g. urn:li:organization:1033) that require a name-to-ID
+// typeahead lookup we don't have -- those stay out of scope. Title nuance
+// that doesn't map to a Function/Seniority bucket still goes through the
+// documented Boolean keyword syntax, combined with the structured filters.
+const FUNCTION_IDS: Record<string, number> = {
+  "Accounting": 1,
+  "Administrative": 2,
+  "Arts and Design": 3,
+  "Business Development": 4,
+  "Community and Social Services": 5,
+  "Consulting": 6,
+  "Education": 7,
+  "Engineering": 8,
+  "Entrepreneurship": 9,
+  "Finance": 10,
+  "Healthcare Services": 11,
+  "Human Resources": 12,
+  "Information Technology": 13,
+  "Legal": 14,
+  "Marketing": 15,
+  "Media and Communication": 16,
+  "Military and Protective Services": 17,
+  "Operations": 18,
+  "Product Management": 19,
+  "Program and Project Management": 20,
+  "Purchasing": 21,
+  "Quality Assurance": 22,
+  "Real Estate": 23,
+  "Research": 24,
+  "Sales": 25,
+  "Customer Success and Support": 26,
+};
+
+const SENIORITY_IDS: Record<string, number> = {
+  "In Training": 100,
+  "Entry Level": 110,
+  "Senior": 120,
+  "Strategic": 130,
+  "Entry Level Manager": 200,
+  "Experienced Manager": 210,
+  "Director": 220,
+  "Vice President": 300,
+  "CXO": 310,
+  "Owner / Partner": 320,
+};
+
+const REGION_IDS: Record<string, number> = {
+  "North America": 102221843,
+  "South America": 104514572,
+  "Europe": 100506914,
+  "Africa": 103537801,
+  "Asia": 102393603,
+  "Oceania": 91000010,
+  "EMEA": 91000007,
+  "APAC": 91000003,
+  "APJ": 91000004,
+  "DACH": 91000006,
+  "Benelux": 91000005,
+  "Nordics": 91000009,
+  "MENA": 91000008,
+};
+
+const COMPANY_HEADCOUNT_IDS: Record<string, string> = {
+  "Self-employed": "A",
+  "1-10": "B",
+  "11-50": "C",
+  "51-200": "D",
+  "201-500": "E",
+  "501-1000": "F",
+  "1001-5000": "G",
+  "5001-10,000": "H",
+  "10,000+": "I",
+};
+
+const COMPANY_TYPE_IDS: Record<string, string> = {
+  "Public Company": "C",
+  "Privately Held": "P",
+  "Educational Institution": "D",
+  "Non Profit": "N",
+  "Partnership": "S",
+  "Self Employed": "E",
+  "Self Owned": "O",
+  "Government Agency": "G",
+};
+
+function encodeLeaf(value: string | number): string {
+  return encodeURIComponent(String(value));
+}
+
+function buildFilterEntry(type: string, entries: Array<{ id: string | number; text: string }>): string {
+  const values = entries
+    .map((e) => `(id:${encodeLeaf(e.id)},text:${encodeLeaf(e.text)},selectionType:INCLUDED)`)
+    .join(",");
+  return `(type:${type},values:List(${values}))`;
+}
+
+// Case-insensitive match against a known enum, dropping anything the model
+// invents that isn't one of the real, confirmed values.
+function resolveEnumValues<T extends string | number>(
+  requested: string[] | undefined,
+  table: Record<string, T>,
+): Array<{ id: T; text: string }> {
+  if (!requested?.length) return [];
+  const lower = new Map(Object.keys(table).map((k) => [k.toLowerCase(), k]));
+  const out: Array<{ id: T; text: string }> = [];
+  for (const req of requested) {
+    const key = lower.get(req.trim().toLowerCase());
+    if (key) out.push({ id: table[key], text: key });
+  }
+  return out;
+}
+
 export default defineAction({
-  description: "Generate a Sales Navigator search URL from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one.",
+  description: "Generate a Sales Navigator search URL with real filter chips (Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one.",
   schema: z.object({
     prompt: z.string().min(1),
     apiToken: z.string().nullish().describe("Personal API token from Settings"),
@@ -50,13 +162,21 @@ export default defineAction({
       : "(no saved personas)";
 
     const systemPrompt =
-      "You turn a sales rep's plain-English request into a LinkedIn Sales Navigator Boolean keyword search. " +
-      "If the request clearly matches one of the numbered personas below, base your search on that persona's REAL criteria " +
+      "You turn a sales rep's plain-English request into real LinkedIn Sales Navigator search filters. " +
+      "If the request clearly matches one of the numbered personas below, base your filters on that persona's REAL criteria " +
       "(titles, seniority language, function) rather than guessing from the request's wording alone. " +
-      "Sales Navigator's Boolean search rules: operators AND/OR/NOT must be uppercase, use quotes for exact phrases, " +
-      "use parentheses to group OR-alternatives, e.g. (Director OR VP OR \"Head of\") AND (Design OR \"User Experience\" OR UX OR UI). " +
       "Reply with ONLY a JSON object on one line, no markdown, no code fences, in this exact shape: " +
-      '{"booleanQuery": "...", "summary": "one plain-English sentence describing who this search targets", "matchedPersonaName": "exact persona name or null"}';
+      '{"function": ["..."], "seniorityLevel": ["..."], "region": ["..."], "companyHeadcount": ["..."], "companyType": ["..."], ' +
+      '"titleKeywords": "...", "summary": "one plain-English sentence describing who this search targets", "matchedPersonaName": "exact persona name or null"}\n\n' +
+      "Rules:\n" +
+      `- "function" values MUST come only from this exact list (use the exact text): ${Object.keys(FUNCTION_IDS).join(", ")}\n` +
+      `- "seniorityLevel" values MUST come only from this exact list: ${Object.keys(SENIORITY_IDS).join(", ")}\n` +
+      `- "region" values MUST come only from this exact list: ${Object.keys(REGION_IDS).join(", ")}\n` +
+      `- "companyHeadcount" values MUST come only from this exact list: ${Object.keys(COMPANY_HEADCOUNT_IDS).join(", ")}\n` +
+      `- "companyType" values MUST come only from this exact list: ${Object.keys(COMPANY_TYPE_IDS).join(", ")}\n` +
+      "- Only include a field's array with values if the request actually implies that criterion -- leave it an empty array otherwise. Don't force a seniority or headcount guess that wasn't implied.\n" +
+      "- \"titleKeywords\" is optional and only for job-title language that isn't already covered by function/seniority (e.g. a specific title phrase like \"Head of Design\"). Leave it an empty string if function/seniority already cover it. " +
+      "Sales Navigator Boolean rules apply if used: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping, e.g. (Director OR VP OR \"Head of\") AND (Design OR \"User Experience\" OR UX OR UI).";
 
     try {
       const ownerCtxForCall = await getOwnerCtx();
@@ -64,20 +184,71 @@ export default defineAction({
         completeText({
           systemPrompt,
           input: `Saved personas:\n${personaList}\n\nRequest: ${prompt}`,
-          maxOutputTokens: 300,
+          maxOutputTokens: 400,
         });
       const result = ownerCtxForCall ? await runWithRequestContext(ownerCtxForCall, call) : await call();
 
       const jsonMatch = result.text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) return { error: "Could not generate a search from that -- try rephrasing." };
-      const parsed = JSON.parse(jsonMatch[0]) as { booleanQuery?: string; summary?: string; matchedPersonaName?: string | null };
-      if (!parsed.booleanQuery?.trim()) return { error: "Could not generate a search from that -- try rephrasing." };
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        function?: string[];
+        seniorityLevel?: string[];
+        region?: string[];
+        companyHeadcount?: string[];
+        companyType?: string[];
+        titleKeywords?: string;
+        summary?: string;
+        matchedPersonaName?: string | null;
+      };
 
-      const searchUrl = `https://www.linkedin.com/sales/search/people?keywords=${encodeURIComponent(parsed.booleanQuery.trim())}`;
+      const functionValues = resolveEnumValues(parsed.function, FUNCTION_IDS);
+      const seniorityValues = resolveEnumValues(parsed.seniorityLevel, SENIORITY_IDS);
+      const regionValues = resolveEnumValues(parsed.region, REGION_IDS);
+      const headcountValues = resolveEnumValues(parsed.companyHeadcount, COMPANY_HEADCOUNT_IDS);
+      const companyTypeValues = resolveEnumValues(parsed.companyType, COMPANY_TYPE_IDS);
+      const titleKeywords = parsed.titleKeywords?.trim() ?? "";
+
+      const filterEntries: string[] = [];
+      const appliedFilters: string[] = [];
+      if (functionValues.length) {
+        filterEntries.push(buildFilterEntry("FUNCTION", functionValues));
+        appliedFilters.push(`Function: ${functionValues.map((v) => v.text).join(", ")}`);
+      }
+      if (seniorityValues.length) {
+        filterEntries.push(buildFilterEntry("SENIORITY_LEVEL", seniorityValues));
+        appliedFilters.push(`Seniority: ${seniorityValues.map((v) => v.text).join(", ")}`);
+      }
+      if (regionValues.length) {
+        filterEntries.push(buildFilterEntry("REGION", regionValues));
+        appliedFilters.push(`Geography: ${regionValues.map((v) => v.text).join(", ")}`);
+      }
+      if (headcountValues.length) {
+        filterEntries.push(buildFilterEntry("COMPANY_HEADCOUNT", headcountValues));
+        appliedFilters.push(`Company size: ${headcountValues.map((v) => v.text).join(", ")}`);
+      }
+      if (companyTypeValues.length) {
+        filterEntries.push(buildFilterEntry("COMPANY_TYPE", companyTypeValues));
+        appliedFilters.push(`Company type: ${companyTypeValues.map((v) => v.text).join(", ")}`);
+      }
+      if (titleKeywords) {
+        appliedFilters.push(`Title keywords: ${titleKeywords}`);
+      }
+
+      if (!filterEntries.length && !titleKeywords) {
+        return { error: "Could not generate a search from that -- try rephrasing with more specific criteria." };
+      }
+
+      const queryParts: string[] = [];
+      if (filterEntries.length) queryParts.push(`filters:List(${filterEntries.join(",")})`);
+      if (titleKeywords) queryParts.push(`keywords:${encodeLeaf(titleKeywords)}`);
+      const rawQuery = `(${queryParts.join(",")})`;
+      const searchUrl = `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent(rawQuery)}`;
+
       return {
         searchUrl,
         summary: parsed.summary ?? null,
         matchedPersonaName: parsed.matchedPersonaName ?? null,
+        appliedFilters,
       };
     } catch {
       return { error: "Something went wrong generating that search -- try again." };

@@ -1011,6 +1011,7 @@ const aiSearchPrompt = document.getElementById("ai-search-prompt");
 const aiSearchGenerateBtn = document.getElementById("ai-search-generate-btn");
 const aiSearchResult = document.getElementById("ai-search-result");
 const aiSearchSummary = document.getElementById("ai-search-summary");
+const aiSearchFilters = document.getElementById("ai-search-filters");
 const aiSearchOpenLink = document.getElementById("ai-search-open-link");
 const aiSearchStatus = document.getElementById("ai-search-status");
 
@@ -1387,6 +1388,18 @@ aiSearchGenerateBtn?.addEventListener("click", async () => {
     aiSearchSummary.textContent = result.matchedPersonaName
       ? `${result.summary || ""} (matched "${result.matchedPersonaName}")`
       : result.summary || "Search generated.";
+  }
+  if (aiSearchFilters) {
+    aiSearchFilters.innerHTML = "";
+    for (const line of result.appliedFilters || []) {
+      const [label, ...rest] = line.split(": ");
+      const li = document.createElement("li");
+      const strong = document.createElement("strong");
+      strong.textContent = `${label}: `;
+      li.appendChild(strong);
+      li.appendChild(document.createTextNode(rest.join(": ")));
+      aiSearchFilters.appendChild(li);
+    }
   }
   if (aiSearchOpenLink) aiSearchOpenLink.href = result.searchUrl;
   if (aiSearchResult) aiSearchResult.style.display = "block";
