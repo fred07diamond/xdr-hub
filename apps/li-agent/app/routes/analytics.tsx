@@ -1,6 +1,6 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { useOrgRole } from "@agent-native/core/client/org";
-import { IconChartBar, IconCheck, IconLoader2, IconMessageReport, IconThumbDown, IconThumbUp, IconUsers } from "@tabler/icons-react";
+import { IconChartBar, IconCheck, IconListCheck, IconLoader2, IconMessageReport, IconMessages, IconThumbDown, IconThumbUp, IconUsers } from "@tabler/icons-react";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { useState } from "react";
 import { Navigate } from "react-router";
@@ -65,6 +65,8 @@ export default function AnalyticsRoute() {
     totalUsers: number;
     totalSent: number;
     byUser: UserActivity[];
+    postEngagement: PostEngagementData;
+    leadLists: LeadListsData;
   };
 
   const sentRate = pct(d.totalSent, d.totalProspects);
@@ -132,6 +134,12 @@ export default function AnalyticsRoute() {
 
       {/* Team Activity */}
       <TeamActivitySection byUser={d.byUser} />
+
+      {/* Post Engagement */}
+      <PostEngagementSection data={d.postEngagement} />
+
+      {/* Lead Lists */}
+      <LeadListsSection data={d.leadLists} />
 
       {/* User Feedback */}
       <FeedbackSection feedbackData={feedbackData} refetch={refetchFeedback} />
@@ -315,6 +323,197 @@ function TeamActivitySection({ byUser }: { byUser: UserActivity[] }) {
                       {" / "}
                       <span className="text-rose-600 dark:text-rose-400">{u.weak}</span>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+type PostEngagementData = {
+  totalEngagers: number;
+  distinctPosts: number;
+  statusCounts: { pending: number; enriching: number; scoring: number; done: number };
+  verdictCounts: { strong: number; possible: number; weak: number };
+  thisWeek: number;
+  lastWeek: number;
+  newOpportunities: number;
+  byUser: { ownerEmail: string | null; total: number; done: number; strong: number; possible: number; weak: number }[];
+};
+
+function PostEngagementSection({ data }: { data: PostEngagementData }) {
+  const weekDiff = data.thisWeek - data.lastWeek;
+
+  if (data.totalEngagers === 0) {
+    return (
+      <div>
+        <h2 className="mb-2 text-sm font-medium text-muted-foreground">Post Engagement</h2>
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+          <IconMessages className="size-7 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">No post engagers captured yet.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="mb-2 text-sm font-medium text-muted-foreground">Post Engagement</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Engagers" value={data.totalEngagers} sub={`across ${data.distinctPosts} post${data.distinctPosts === 1 ? "" : "s"}`} />
+        <StatCard
+          label="This Week"
+          value={data.thisWeek}
+          sub={weekDiff === 0 ? "same as last week" : weekDiff > 0 ? `+${weekDiff} vs last week` : `${weekDiff} vs last week`}
+          subColor={weekDiff > 0 ? "text-emerald-600" : weekDiff < 0 ? "text-rose-500" : undefined}
+        />
+        <StatCard label="Scored" value={data.statusCounts.done} sub={`${pct(data.statusCounts.done, data.totalEngagers)} of engagers`} />
+        <StatCard label="New Opportunities" value={data.newOpportunities} sub="HubSpot: no existing contact" />
+      </div>
+
+      <Card className="mt-3">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Enrichment Pipeline</CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y divide-border">
+          <FunnelRow label="Pending" count={data.statusCounts.pending} total={data.totalEngagers} />
+          <FunnelRow label="Enriching" count={data.statusCounts.enriching} total={data.totalEngagers} />
+          <FunnelRow label="Scoring" count={data.statusCounts.scoring} total={data.totalEngagers} />
+          <FunnelRow label="Done" count={data.statusCounts.done} total={data.totalEngagers} />
+        </CardContent>
+      </Card>
+
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        <VerdictCard label="Strong" count={data.verdictCounts.strong} total={data.totalEngagers} color="border-emerald-400/50 bg-emerald-500/5" textColor="text-emerald-600 dark:text-emerald-400" />
+        <VerdictCard label="Possible" count={data.verdictCounts.possible} total={data.totalEngagers} color="border-amber-400/50 bg-amber-500/5" textColor="text-amber-600 dark:text-amber-400" />
+        <VerdictCard label="Weak" count={data.verdictCounts.weak} total={data.totalEngagers} color="border-rose-400/50 bg-rose-500/5" textColor="text-rose-600 dark:text-rose-400" />
+      </div>
+
+      {data.byUser.length > 0 && (
+        <Card className="mt-3">
+          <CardContent className="overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2 font-medium">Teammate</th>
+                  <th className="px-4 py-2 text-right font-medium">Engagers</th>
+                  <th className="px-4 py-2 text-right font-medium">Scored</th>
+                  <th className="px-4 py-2 text-right font-medium">Strong / Possible / Weak</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {data.byUser.map((u) => (
+                  <tr key={u.ownerEmail ?? "unassigned"}>
+                    <td className="px-4 py-2.5 font-medium">{u.ownerEmail ?? "Unassigned"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{u.total.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{u.done.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      <span className="text-emerald-600 dark:text-emerald-400">{u.strong}</span>
+                      {" / "}
+                      <span className="text-amber-600 dark:text-amber-400">{u.possible}</span>
+                      {" / "}
+                      <span className="text-rose-600 dark:text-rose-400">{u.weak}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+type LeadListsData = {
+  totalLists: number;
+  totalLeads: number;
+  thisWeek: number;
+  lastWeek: number;
+  enrichmentStatusCounts: { idle: number; enriching: number; done: number; not_found: number; failed: number };
+  phoneRevealStatusCounts: { requested: number; done: number; no_match: number; failed: number };
+  byUser: { ownerEmail: string | null; lists: number; leads: number }[];
+};
+
+function LeadListsSection({ data }: { data: LeadListsData }) {
+  const weekDiff = data.thisWeek - data.lastWeek;
+  const phoneRevealTotal = data.phoneRevealStatusCounts.requested + data.phoneRevealStatusCounts.done + data.phoneRevealStatusCounts.no_match + data.phoneRevealStatusCounts.failed;
+
+  if (data.totalLists === 0) {
+    return (
+      <div>
+        <h2 className="mb-2 text-sm font-medium text-muted-foreground">Lead Lists</h2>
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-10 text-center">
+          <IconListCheck className="size-7 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">No lead lists imported yet.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="mb-2 text-sm font-medium text-muted-foreground">Lead Lists</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Lists" value={data.totalLists} />
+        <StatCard label="Leads" value={data.totalLeads} />
+        <StatCard
+          label="Leads This Week"
+          value={data.thisWeek}
+          sub={weekDiff === 0 ? "same as last week" : weekDiff > 0 ? `+${weekDiff} vs last week` : `${weekDiff} vs last week`}
+          subColor={weekDiff > 0 ? "text-emerald-600" : weekDiff < 0 ? "text-rose-500" : undefined}
+        />
+        <StatCard label="Enriched" value={data.enrichmentStatusCounts.done} sub={`${pct(data.enrichmentStatusCounts.done, data.totalLeads)} of leads`} />
+      </div>
+
+      <Card className="mt-3">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Apollo Enrichment</CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y divide-border">
+          <FunnelRow label="Idle" count={data.enrichmentStatusCounts.idle} total={data.totalLeads} />
+          <FunnelRow label="Enriching" count={data.enrichmentStatusCounts.enriching} total={data.totalLeads} />
+          <FunnelRow label="Done" count={data.enrichmentStatusCounts.done} total={data.totalLeads} />
+          <FunnelRow label="Not Found" count={data.enrichmentStatusCounts.not_found} total={data.totalLeads} />
+          <FunnelRow label="Failed" count={data.enrichmentStatusCounts.failed} total={data.totalLeads} />
+        </CardContent>
+      </Card>
+
+      {phoneRevealTotal > 0 && (
+        <Card className="mt-3">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Phone Reveal</CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y divide-border">
+            <FunnelRow label="Requested" count={data.phoneRevealStatusCounts.requested} total={phoneRevealTotal} />
+            <FunnelRow label="Done" count={data.phoneRevealStatusCounts.done} total={phoneRevealTotal} />
+            <FunnelRow label="No Match" count={data.phoneRevealStatusCounts.no_match} total={phoneRevealTotal} />
+            <FunnelRow label="Failed" count={data.phoneRevealStatusCounts.failed} total={phoneRevealTotal} />
+          </CardContent>
+        </Card>
+      )}
+
+      {data.byUser.length > 0 && (
+        <Card className="mt-3">
+          <CardContent className="overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2 font-medium">Teammate</th>
+                  <th className="px-4 py-2 text-right font-medium">Lists</th>
+                  <th className="px-4 py-2 text-right font-medium">Leads</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {data.byUser.map((u) => (
+                  <tr key={u.ownerEmail ?? "unassigned"}>
+                    <td className="px-4 py-2.5 font-medium">{u.ownerEmail ?? "Unassigned"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{u.lists.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{u.leads.toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
