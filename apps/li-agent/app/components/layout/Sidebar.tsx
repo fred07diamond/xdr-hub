@@ -19,6 +19,7 @@ import {
   IconActivity,
   IconList,
   IconMessages,
+  IconUsersGroup,
   IconPin,
   IconPlus,
   IconSettings,
@@ -53,6 +54,7 @@ const navItems: Array<{
   view: string;
 }> = [
   { icon: IconUsers, labelKey: "navigation.prospects", href: "/", view: "prospects" },
+  { icon: IconUsersGroup, labelKey: "navigation.allProspects", label: "All Prospects", href: "/all-prospects", view: "all-prospects" },
   { icon: IconList, labelKey: "navigation.leadLists", label: "Lead Lists", href: "/lead-lists", view: "lead-lists" },
   { icon: IconTarget, labelKey: "navigation.icp", href: "/icp", view: "icp" },
   { icon: IconMessages, labelKey: "navigation.messaging", href: "/messaging", view: "messaging" },
