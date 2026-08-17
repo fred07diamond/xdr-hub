@@ -7,9 +7,9 @@ import { prospects } from "../server/db/schema.js";
 // Paginated -- this table has no upper bound (real usage runs ~500 leads/
 // day per rep), and an unbounded SELECT * here was fetching every prospect
 // ever captured on every single page load regardless of how many there
-// are. 200 is generous enough that most workspaces never notice pagination
-// exists; "Load more" on the client just bumps offset and appends.
-const DEFAULT_PAGE_SIZE = 200;
+// are. Capped at 25 per page by request; "Load more" on the client just
+// bumps offset and appends.
+const DEFAULT_PAGE_SIZE = 25;
 
 export default defineAction({
   description: "List captured LinkedIn prospects for the current user, ordered by most recent first, paginated.",

@@ -584,7 +584,7 @@ export default function ProspectsRoute() {
   // in one unbounded query on every page load, which got slower as the
   // table grew. The first page still polls live (for in-progress captures);
   // additional pages are loaded on demand via "Load more" and appended.
-  const PROSPECTS_PAGE_SIZE = 200;
+  const PROSPECTS_PAGE_SIZE = 25;
   const [loadedExtraProspects, setLoadedExtraProspects] = useState<Prospect[]>([]);
   const [isLoadingMoreProspects, setIsLoadingMoreProspects] = useState(false);
   const [prospectsTotalCount, setProspectsTotalCount] = useState<number | null>(null);

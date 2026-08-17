@@ -214,7 +214,7 @@ function OverviewTab({
     .slice(0, 8);
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
+    <div className="grid items-start grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
       <KpiCard label="Prospects" value={d.totalProspects} color={PIPELINE.prospects.color} />
       <KpiCard label="Engagers" value={d.postEngagement.totalEngagers} color={PIPELINE.engagers.color} />
       <KpiCard label="Leads" value={d.leadLists.totalLeads} color={PIPELINE.leads.color} />
@@ -280,7 +280,7 @@ function ProspectsTab({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
+      <div className="grid items-start grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
         <KpiCard label="Total" value={d.totalProspects} color={PIPELINE.prospects.color} />
         <KpiCard
           label="This Week"
@@ -369,7 +369,7 @@ function EngagementTab({ data, trend }: { data: PostEngagementData; trend: Trend
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
+      <div className="grid items-start grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
         <KpiCard label="Engagers" value={data.totalEngagers} sub={`across ${data.distinctPosts} post${data.distinctPosts === 1 ? "" : "s"}`} color={PIPELINE.engagers.color} />
         <KpiCard
           label="This Week"
@@ -457,7 +457,7 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
+      <div className="grid items-start grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
         <KpiCard label="Lists" value={data.totalLists} color={PIPELINE.leads.color} />
         <KpiCard label="Leads" value={data.totalLeads} color={PIPELINE.leads.color} />
         <KpiCard
@@ -626,7 +626,7 @@ function Leaderboard({ rows, color }: { rows: { label: string; value: number; co
         <YAxis
           type="category"
           dataKey="label"
-          width={140}
+          width={168}
           tick={{ fontSize: 12, fill: AXIS_COLOR }}
           axisLine={false}
           tickLine={false}

@@ -214,7 +214,7 @@ export default function LeadListsPage() {
   // every one of them on every selection/poll. Page 1 still polls live
   // (enrichment/reveal status changes while the tab is open); further
   // pages are loaded on demand and appended.
-  const ITEMS_PAGE_SIZE = 200;
+  const ITEMS_PAGE_SIZE = 25;
   const [loadedExtraItems, setLoadedExtraItems] = useState<LeadListItem[]>([]);
   const [isLoadingMoreItems, setIsLoadingMoreItems] = useState(false);
   const [itemsTotalCount, setItemsTotalCount] = useState<number | null>(null);

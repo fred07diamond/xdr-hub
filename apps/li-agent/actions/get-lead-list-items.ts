@@ -6,7 +6,7 @@ import { leadLists, leadListItems } from "../server/db/schema.js";
 
 // Paginated -- a list can hold up to IMPORT_LIMIT (500) items, and this
 // used to fetch every one of them on every page load/selection change.
-const DEFAULT_PAGE_SIZE = 200;
+const DEFAULT_PAGE_SIZE = 25;
 
 export default defineAction({
   description: "Get the leads in a Sales Navigator lead list, paginated.",
