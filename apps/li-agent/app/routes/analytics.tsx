@@ -66,6 +66,8 @@ function pct(n: number, total: number) {
 
 type TrendPoint = { date: string; label: string; prospects: number; engagers: number; leads: number };
 
+type PersonaAgg = { name: string; color: string | null; prospects: number; engagers: number; leads: number; total: number };
+
 type UserActivity = {
   ownerEmail: string | null;
   total: number;
@@ -136,6 +138,7 @@ export default function AnalyticsRoute() {
     totalSent: number;
     byUser: UserActivity[];
     trend: TrendPoint[];
+    personas: PersonaAgg[];
     postEngagement: PostEngagementData;
     leadLists: LeadListsData;
   };
@@ -194,6 +197,7 @@ function OverviewTab({
     lastWeek: number;
     byUser: UserActivity[];
     trend: TrendPoint[];
+    personas: PersonaAgg[];
     postEngagement: PostEngagementData;
     leadLists: LeadListsData;
   };
@@ -210,49 +214,47 @@ function OverviewTab({
     .slice(0, 8);
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard label="Prospects" value={d.totalProspects} color={PIPELINE.prospects.color} />
-        <KpiCard label="Engagers" value={d.postEngagement.totalEngagers} color={PIPELINE.engagers.color} />
-        <KpiCard label="Leads" value={d.leadLists.totalLeads} color={PIPELINE.leads.color} />
-        <KpiCard
-          label="This Week"
-          value={d.thisWeek}
-          sub={weekDiff === 0 ? "same as last week" : weekDiff > 0 ? `+${weekDiff} vs last week` : `${weekDiff} vs last week`}
-          subColor={weekDiff > 0 ? "text-emerald-600" : weekDiff < 0 ? "text-rose-500" : undefined}
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
+      <KpiCard label="Prospects" value={d.totalProspects} color={PIPELINE.prospects.color} />
+      <KpiCard label="Engagers" value={d.postEngagement.totalEngagers} color={PIPELINE.engagers.color} />
+      <KpiCard label="Leads" value={d.leadLists.totalLeads} color={PIPELINE.leads.color} />
+      <KpiCard
+        label="This Week"
+        value={d.thisWeek}
+        sub={weekDiff === 0 ? "same as last week" : weekDiff > 0 ? `+${weekDiff} vs last week` : `${weekDiff} vs last week`}
+        subColor={weekDiff > 0 ? "text-emerald-600" : weekDiff < 0 ? "text-rose-500" : undefined}
+      />
+
+      <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
+        <TrendChart
+          data={d.trend}
+          series={[
+            { key: "prospects", ...PIPELINE.prospects },
+            { key: "engagers", ...PIPELINE.engagers },
+            { key: "leads", ...PIPELINE.leads },
+          ]}
+          showLegend
         />
-      </div>
+      </BentoTile>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Activity, last 14 days</CardTitle>
-        </CardHeader>
-        <CardContent className="pl-0">
-          <TrendChart
-            data={d.trend}
-            series={[
-              { key: "prospects", ...PIPELINE.prospects },
-              { key: "engagers", ...PIPELINE.engagers },
-              { key: "leads", ...PIPELINE.leads },
-            ]}
-            showLegend
+      <BentoTile className="col-span-2" title="Team Leaderboard" sub="Prospects + engagers + leads, combined.">
+        {leaderboard.length === 0 ? (
+          <EmptyState icon={IconUsers} text="No activity yet." />
+        ) : (
+          <Leaderboard rows={leaderboard.map((r) => ({ label: r.name, value: r.total }))} color="#6b7280" />
+        )}
+      </BentoTile>
+
+      <BentoTile className="col-span-2" title="Personas" sub="Combined across all pipelines.">
+        {d.personas.length === 0 ? (
+          <EmptyState icon={IconUsers} text="No personas assigned yet." />
+        ) : (
+          <Leaderboard
+            rows={d.personas.slice(0, 8).map((p) => ({ label: p.name, value: p.total, color: p.color ?? undefined }))}
+            color="#6b7280"
           />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Team Leaderboard</CardTitle>
-          <p className="text-xs text-muted-foreground">Prospects + engagers + leads, combined.</p>
-        </CardHeader>
-        <CardContent>
-          {leaderboard.length === 0 ? (
-            <EmptyState icon={IconUsers} text="No activity yet." />
-          ) : (
-            <Leaderboard rows={leaderboard.map((r) => ({ label: r.name, value: r.total }))} color="#6b7280" />
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </BentoTile>
     </div>
   );
 }
@@ -277,8 +279,8 @@ function ProspectsTab({
   const sentRate = pct(d.totalSent, d.totalProspects);
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
         <KpiCard label="Total" value={d.totalProspects} color={PIPELINE.prospects.color} />
         <KpiCard
           label="This Week"
@@ -288,31 +290,22 @@ function ProspectsTab({
         />
         <KpiCard label="Sent" value={d.totalSent} sub={`${sentRate} send rate`} />
         <KpiCard label="Users" value={d.byUser.length} />
-      </div>
 
-      <Card>
-        <CardContent className="pt-4 pl-0">
-          <TrendChart data={d.trend} series={[{ key: "prospects", ...PIPELINE.prospects }]} height={140} />
-        </CardContent>
-      </Card>
+        <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
+          <TrendChart data={d.trend} series={[{ key: "prospects", ...PIPELINE.prospects }]} height={160} />
+        </BentoTile>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Fit Verdict</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DonutBreakdown
-              segments={[
-                { label: "Strong", value: d.verdictCounts.strong, color: VERDICT_COLOR.strong },
-                { label: "Possible", value: d.verdictCounts.possible, color: VERDICT_COLOR.possible },
-                { label: "Weak", value: d.verdictCounts.weak, color: VERDICT_COLOR.weak },
-              ]}
-            />
-          </CardContent>
-        </Card>
+        <BentoTile className="col-span-2" title="Fit Verdict">
+          <DonutBreakdown
+            segments={[
+              { label: "Strong", value: d.verdictCounts.strong, color: VERDICT_COLOR.strong },
+              { label: "Possible", value: d.verdictCounts.possible, color: VERDICT_COLOR.possible },
+              { label: "Weak", value: d.verdictCounts.weak, color: VERDICT_COLOR.weak },
+            ]}
+          />
+        </BentoTile>
 
-        <Card>
+        <Card className="col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Status Funnel</CardTitle>
           </CardHeader>
@@ -375,8 +368,8 @@ function EngagementTab({ data, trend }: { data: PostEngagementData; trend: Trend
   }
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
         <KpiCard label="Engagers" value={data.totalEngagers} sub={`across ${data.distinctPosts} post${data.distinctPosts === 1 ? "" : "s"}`} color={PIPELINE.engagers.color} />
         <KpiCard
           label="This Week"
@@ -386,31 +379,22 @@ function EngagementTab({ data, trend }: { data: PostEngagementData; trend: Trend
         />
         <KpiCard label="Scored" value={data.statusCounts.done} sub={`${pct(data.statusCounts.done, data.totalEngagers)} of engagers`} />
         <KpiCard label="New Opportunities" value={data.newOpportunities} sub="no existing HubSpot contact" />
-      </div>
 
-      <Card>
-        <CardContent className="pt-4 pl-0">
-          <TrendChart data={trend} series={[{ key: "engagers", ...PIPELINE.engagers }]} height={140} />
-        </CardContent>
-      </Card>
+        <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
+          <TrendChart data={trend} series={[{ key: "engagers", ...PIPELINE.engagers }]} height={160} />
+        </BentoTile>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Fit Verdict</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DonutBreakdown
-              segments={[
-                { label: "Strong", value: data.verdictCounts.strong, color: VERDICT_COLOR.strong },
-                { label: "Possible", value: data.verdictCounts.possible, color: VERDICT_COLOR.possible },
-                { label: "Weak", value: data.verdictCounts.weak, color: VERDICT_COLOR.weak },
-              ]}
-            />
-          </CardContent>
-        </Card>
+        <BentoTile className="col-span-2" title="Fit Verdict">
+          <DonutBreakdown
+            segments={[
+              { label: "Strong", value: data.verdictCounts.strong, color: VERDICT_COLOR.strong },
+              { label: "Possible", value: data.verdictCounts.possible, color: VERDICT_COLOR.possible },
+              { label: "Weak", value: data.verdictCounts.weak, color: VERDICT_COLOR.weak },
+            ]}
+          />
+        </BentoTile>
 
-        <Card>
+        <Card className="col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Enrichment Pipeline</CardTitle>
           </CardHeader>
@@ -472,8 +456,8 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
   }
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
         <KpiCard label="Lists" value={data.totalLists} color={PIPELINE.leads.color} />
         <KpiCard label="Leads" value={data.totalLeads} color={PIPELINE.leads.color} />
         <KpiCard
@@ -483,51 +467,37 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
           subColor={weekDiff > 0 ? "text-emerald-600" : weekDiff < 0 ? "text-rose-500" : undefined}
         />
         <KpiCard label="Enriched" value={data.enrichmentStatusCounts.done} sub={`${pct(data.enrichmentStatusCounts.done, data.totalLeads)} of leads`} />
-      </div>
 
-      <Card>
-        <CardContent className="pt-4 pl-0">
-          <TrendChart data={trend} series={[{ key: "leads", ...PIPELINE.leads }]} height={140} />
-        </CardContent>
-      </Card>
+        <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
+          <TrendChart data={trend} series={[{ key: "leads", ...PIPELINE.leads }]} height={160} />
+        </BentoTile>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Apollo Enrichment</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <BentoTile className="col-span-2" title="Apollo Enrichment">
+          <DonutBreakdown
+            segments={[
+              { label: "Done", value: data.enrichmentStatusCounts.done, color: "#10b981" },
+              { label: "Not Found", value: data.enrichmentStatusCounts.not_found, color: "#9ca3af" },
+              { label: "Failed", value: data.enrichmentStatusCounts.failed, color: VERDICT_COLOR.weak },
+              { label: "Enriching", value: data.enrichmentStatusCounts.enriching, color: PIPELINE.leads.color },
+              { label: "Idle", value: data.enrichmentStatusCounts.idle, color: "#d1d5db" },
+            ]}
+          />
+        </BentoTile>
+
+        <BentoTile className="col-span-2" title="Phone Reveal">
+          {phoneRevealTotal === 0 ? (
+            <EmptyState icon={IconListCheck} text="No phone reveals attempted yet." compact />
+          ) : (
             <DonutBreakdown
               segments={[
-                { label: "Done", value: data.enrichmentStatusCounts.done, color: "#10b981" },
-                { label: "Not Found", value: data.enrichmentStatusCounts.not_found, color: "#9ca3af" },
-                { label: "Failed", value: data.enrichmentStatusCounts.failed, color: VERDICT_COLOR.weak },
-                { label: "Enriching", value: data.enrichmentStatusCounts.enriching, color: PIPELINE.leads.color },
-                { label: "Idle", value: data.enrichmentStatusCounts.idle, color: "#d1d5db" },
+                { label: "Done", value: data.phoneRevealStatusCounts.done, color: "#10b981" },
+                { label: "No Match", value: data.phoneRevealStatusCounts.no_match, color: "#9ca3af" },
+                { label: "Requested", value: data.phoneRevealStatusCounts.requested, color: PIPELINE.leads.color },
+                { label: "Failed", value: data.phoneRevealStatusCounts.failed, color: VERDICT_COLOR.weak },
               ]}
             />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Phone Reveal</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {phoneRevealTotal === 0 ? (
-              <EmptyState icon={IconListCheck} text="No phone reveals attempted yet." compact />
-            ) : (
-              <DonutBreakdown
-                segments={[
-                  { label: "Done", value: data.phoneRevealStatusCounts.done, color: "#10b981" },
-                  { label: "No Match", value: data.phoneRevealStatusCounts.no_match, color: "#9ca3af" },
-                  { label: "Requested", value: data.phoneRevealStatusCounts.requested, color: PIPELINE.leads.color },
-                  { label: "Failed", value: data.phoneRevealStatusCounts.failed, color: VERDICT_COLOR.weak },
-                ]}
-              />
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </BentoTile>
       </div>
 
       <TeamSection
@@ -647,7 +617,7 @@ function DonutBreakdown({ segments }: { segments: { label: string; value: number
   );
 }
 
-function Leaderboard({ rows, color }: { rows: { label: string; value: number }[]; color: string }) {
+function Leaderboard({ rows, color }: { rows: { label: string; value: number; color?: string }[]; color: string }) {
   const height = Math.max(60, rows.length * 34);
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -662,9 +632,25 @@ function Leaderboard({ rows, color }: { rows: { label: string; value: number }[]
           tickLine={false}
         />
         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid rgba(128,128,128,0.2)" }} cursor={{ fill: "rgba(128,128,128,0.08)" }} />
-        <Bar dataKey="value" fill={color} radius={[0, 4, 4, 0]} maxBarSize={18} label={{ position: "right", fontSize: 11, fill: "currentColor" }} />
+        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={18} label={{ position: "right", fontSize: 11, fill: "currentColor" }}>
+          {rows.map((r, i) => (
+            <Cell key={`${r.label}-${i}`} fill={r.color ?? color} />
+          ))}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
+  );
+}
+
+function BentoTile({ title, sub, className, children }: { title: string; sub?: string; className?: string; children: React.ReactNode }) {
+  return (
+    <Card className={className}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 

@@ -52,6 +52,10 @@ export default defineAction({
       prospectsTrendRows,
       engagersTrendRows,
       leadsTrendRows,
+      // Persona breakdown
+      prospectsPersonaRows,
+      engagersPersonaRows,
+      leadsPersonaRows,
     ] = await Promise.all([
       db.select({ total: count() }).from(prospects),
       db.select({ verdict: prospects.fitVerdict, n: count() }).from(prospects).groupBy(prospects.fitVerdict),
@@ -121,6 +125,24 @@ export default defineAction({
         .from(leadListItems)
         .where(sql`created_at >= ${trendStart}`)
         .groupBy(sql`date_trunc('day', created_at::timestamptz)`),
+      // Persona breakdown -- combined across all three pipelines, since
+      // persona is assigned identically (personaName/personaColor) on all
+      // three tables.
+      db
+        .select({ name: prospects.personaName, color: prospects.personaColor, n: count() })
+        .from(prospects)
+        .where(sql`persona_name is not null`)
+        .groupBy(prospects.personaName, prospects.personaColor),
+      db
+        .select({ name: postEngagements.personaName, color: postEngagements.personaColor, n: count() })
+        .from(postEngagements)
+        .where(sql`persona_name is not null`)
+        .groupBy(postEngagements.personaName, postEngagements.personaColor),
+      db
+        .select({ name: leadListItems.personaName, color: leadListItems.personaColor, n: count() })
+        .from(leadListItems)
+        .where(sql`persona_name is not null`)
+        .groupBy(leadListItems.personaName, leadListItems.personaColor),
     ]);
 
     const verdictCounts = { strong: 0, possible: 0, weak: 0 };
@@ -225,6 +247,27 @@ export default defineAction({
       });
     }
 
+    // Merge the three pipelines' persona counts by persona name -- color
+    // comes from whichever row has it (personas keep one consistent color
+    // everywhere they're assigned, so any non-null value is correct).
+    type PersonaAgg = { name: string; color: string | null; prospects: number; engagers: number; leads: number };
+    const personaMap = new Map<string, PersonaAgg>();
+    function addPersonaRows(rows: { name: string | null; color: string | null; n: number }[], key: "prospects" | "engagers" | "leads") {
+      for (const r of rows) {
+        if (!r.name) continue;
+        const existing = personaMap.get(r.name) ?? { name: r.name, color: r.color, prospects: 0, engagers: 0, leads: 0 };
+        existing.color = existing.color ?? r.color;
+        existing[key] += Number(r.n);
+        personaMap.set(r.name, existing);
+      }
+    }
+    addPersonaRows(prospectsPersonaRows, "prospects");
+    addPersonaRows(engagersPersonaRows, "engagers");
+    addPersonaRows(leadsPersonaRows, "leads");
+    const personas = [...personaMap.values()]
+      .map((p) => ({ ...p, total: p.prospects + p.engagers + p.leads }))
+      .sort((a, b) => b.total - a.total);
+
     return {
       totalProspects: (totals?.total ?? 0) as number,
       verdictCounts,
@@ -235,6 +278,7 @@ export default defineAction({
       totalSent: (sentRow?.n ?? 0) as number,
       byUser,
       trend,
+      personas,
       postEngagement: {
         totalEngagers: (engagerTotals?.total ?? 0) as number,
         distinctPosts: (engagerDistinctPosts?.n ?? 0) as number,
