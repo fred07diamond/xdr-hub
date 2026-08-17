@@ -875,16 +875,17 @@
     }
 
     /* ── Export to Apollo ────────────────────────────────── */
-    #apollo-export-section {
-      margin-top: 16px;
-      padding-top: 14px;
-      border-top: 1px solid #e5e7eb;
-    }
     #apollo-export-heading {
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 700;
       color: #1a1a1a;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
+    }
+    #apollo-export-subhead {
+      font-size: 11.5px;
+      color: #888;
+      line-height: 1.5;
+      margin-bottom: 14px;
     }
     #apollo-export-list-select {
       width: 100%;
@@ -1119,36 +1120,39 @@
        the list/results yourself in Sales Nav at a normal pace and this
        accumulates each page as it loads. -->
   <div id="lists-tab">
-    <div id="lists-hint">
-      Page through this list or search in Sales Navigator yourself — each page you view gets captured automatically. Click "Send to LinkedIn Agent" once you've reached the end (or whenever you want to import what's captured so far).
-    </div>
-    <input id="lists-name" type="text" placeholder="Name this list…" autocomplete="off" />
-    <textarea id="lists-description" placeholder="Add a description (optional)…" rows="2"></textarea>
-    <div id="lists-count-row">
-      <span id="lists-count">0 leads captured across 1 page</span>
-      <button id="lists-select-all-btn" type="button">Select all</button>
-    </div>
-    <div id="lists-leads">
-      <div id="lists-empty">Open a Sales Navigator saved lead list or run a search to start capturing leads.</div>
-    </div>
-    <div id="lists-controls">
-      <button id="start-new-import-btn">Start new import</button>
-    </div>
-    <div id="lists-send-controls">
-      <button id="create-list-btn" disabled>＋ Create List</button>
-      <button id="add-existing-list-btn" disabled>Add to Existing List</button>
-    </div>
-    <div id="existing-list-picker">
-      <select id="existing-list-select"><option value="">Loading your lists…</option></select>
-      <div id="existing-list-picker-actions">
-        <button id="cancel-add-existing-btn" type="button">Cancel</button>
-        <button id="confirm-add-existing-btn" type="button" disabled>Add to List</button>
+    <div id="lists-capture-section">
+      <div id="lists-hint">
+        Page through this list or search in Sales Navigator yourself — each page you view gets captured automatically. Click "Send to LinkedIn Agent" once you've reached the end (or whenever you want to import what's captured so far).
       </div>
+      <input id="lists-name" type="text" placeholder="Name this list…" autocomplete="off" />
+      <textarea id="lists-description" placeholder="Add a description (optional)…" rows="2"></textarea>
+      <div id="lists-count-row">
+        <span id="lists-count">0 leads captured across 1 page</span>
+        <button id="lists-select-all-btn" type="button">Select all</button>
+      </div>
+      <div id="lists-leads">
+        <div id="lists-empty">Open a Sales Navigator saved lead list or run a search to start capturing leads.</div>
+      </div>
+      <div id="lists-controls">
+        <button id="start-new-import-btn">Start new import</button>
+      </div>
+      <div id="lists-send-controls">
+        <button id="create-list-btn" disabled>＋ Create List</button>
+        <button id="add-existing-list-btn" disabled>Add to Existing List</button>
+      </div>
+      <div id="existing-list-picker">
+        <select id="existing-list-select"><option value="">Loading your lists…</option></select>
+        <div id="existing-list-picker-actions">
+          <button id="cancel-add-existing-btn" type="button">Cancel</button>
+          <button id="confirm-add-existing-btn" type="button" disabled>Add to List</button>
+        </div>
+      </div>
+      <div id="lists-status"></div>
     </div>
-    <div id="lists-status"></div>
 
-    <div id="apollo-export-section">
+    <div id="apollo-export-section" style="display:none;">
       <div id="apollo-export-heading">Export a saved list to Apollo</div>
+      <div id="apollo-export-subhead">Pick a list, generate a CSV, drop it into Apollo.</div>
       <select id="apollo-export-list-select"><option value="">Loading your lists…</option></select>
       <div id="apollo-export-summary"></div>
       <button id="apollo-export-generate-btn" type="button" disabled>Generate CSV</button>

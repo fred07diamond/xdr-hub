@@ -984,6 +984,8 @@ async function loadEngagersTab(tabId) {
 
 const tabListsBtn = document.getElementById("tab-lists-btn");
 const listsTab = document.getElementById("lists-tab");
+const listsCaptureSection = document.getElementById("lists-capture-section");
+const apolloExportSection = document.getElementById("apollo-export-section");
 const listsCount = document.getElementById("lists-count");
 const listsLeadsEl = document.getElementById("lists-leads");
 const listsEmpty = document.getElementById("lists-empty");
@@ -1547,6 +1549,8 @@ function startUrlPollingWithEngagers() {
       // currentPostUrl — a background profile tab shouldn't spuriously
       // reset an in-progress list import.
       tabSwitcher.style.display = "flex";
+      if (listsCaptureSection) listsCaptureSection.style.display = "block";
+      if (apolloExportSection) apolloExportSection.style.display = "none";
       if (cleanUrl !== currentListUrl) {
         currentListUrl = cleanUrl;
         currentProfileUrl = cleanUrl;
@@ -1584,10 +1588,16 @@ function startUrlPollingWithEngagers() {
       // On Apollo: keep the tab switcher visible and stay on/switch to the
       // Lists tab so the "Export a saved list to Apollo" section (and the
       // file the rep is about to drag in) is reachable. Nothing here reads
-      // the Apollo page itself, so no scraping/session state to touch.
+      // the Apollo page itself, so no scraping/session state to touch. Hide
+      // the Sales-Nav capture UI entirely here -- it's all irrelevant noise
+      // on this page (nothing to name, nothing captured, every capture
+      // button disabled), which is exactly what made this view feel
+      // cluttered before this split.
       tabSwitcher.style.display = "flex";
       notLinkedin.style.display = "none";
       mainContent.style.display = "none";
+      if (listsCaptureSection) listsCaptureSection.style.display = "none";
+      if (apolloExportSection) apolloExportSection.style.display = "block";
       switchTab("lists");
     } else {
       // Non-LinkedIn page: hide tab switcher, show not-LinkedIn message.
