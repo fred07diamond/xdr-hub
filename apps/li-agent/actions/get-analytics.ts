@@ -17,6 +17,10 @@ export default defineAction({
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    // Daily trend window -- 14 full calendar days, used to chart activity
+    // over time per pipeline. date_trunc groups in the DB's own timezone;
+    // fine-grained enough for a trend chart, not meant to be billing-grade.
+    const trendStart = twoWeeksAgo;
 
     const [
       [totals],
@@ -44,6 +48,10 @@ export default defineAction({
       enrichmentStatusRows,
       phoneRevealStatusRows,
       listsByUserRows,
+      // Daily trend
+      prospectsTrendRows,
+      engagersTrendRows,
+      leadsTrendRows,
     ] = await Promise.all([
       db.select({ total: count() }).from(prospects),
       db.select({ verdict: prospects.fitVerdict, n: count() }).from(prospects).groupBy(prospects.fitVerdict),
@@ -97,6 +105,22 @@ export default defineAction({
         })
         .from(leadLists)
         .groupBy(leadLists.ownerEmail),
+      // Daily trend -- one grouped-by-day count per pipeline, last 14 days.
+      db
+        .select({ day: sql<string>`date_trunc('day', created_at::timestamptz)`, n: count() })
+        .from(prospects)
+        .where(sql`created_at >= ${trendStart}`)
+        .groupBy(sql`date_trunc('day', created_at::timestamptz)`),
+      db
+        .select({ day: sql<string>`date_trunc('day', created_at::timestamptz)`, n: count() })
+        .from(postEngagements)
+        .where(sql`created_at >= ${trendStart}`)
+        .groupBy(sql`date_trunc('day', created_at::timestamptz)`),
+      db
+        .select({ day: sql<string>`date_trunc('day', created_at::timestamptz)`, n: count() })
+        .from(leadListItems)
+        .where(sql`created_at >= ${trendStart}`)
+        .groupBy(sql`date_trunc('day', created_at::timestamptz)`),
     ]);
 
     const verdictCounts = { strong: 0, possible: 0, weak: 0 };
@@ -173,6 +197,34 @@ export default defineAction({
       }))
       .sort((a, b) => b.leads - a.leads);
 
+    // Merge the three per-pipeline daily counts into one dense 14-day
+    // series (today inclusive), filling zero for days with no activity --
+    // a chart needs every day present, not just the days that had rows.
+    function dayKey(d: Date) {
+      return d.toISOString().slice(0, 10);
+    }
+    function toDailyMap(rows: { day: string; n: number }[]) {
+      const m = new Map<string, number>();
+      for (const r of rows) m.set(new Date(r.day).toISOString().slice(0, 10), Number(r.n));
+      return m;
+    }
+    const prospectsByDay = toDailyMap(prospectsTrendRows);
+    const engagersByDay = toDailyMap(engagersTrendRows);
+    const leadsByDay = toDailyMap(leadsTrendRows);
+
+    const trend: { date: string; label: string; prospects: number; engagers: number; leads: number }[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = dayKey(d);
+      trend.push({
+        date: key,
+        label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        prospects: prospectsByDay.get(key) ?? 0,
+        engagers: engagersByDay.get(key) ?? 0,
+        leads: leadsByDay.get(key) ?? 0,
+      });
+    }
+
     return {
       totalProspects: (totals?.total ?? 0) as number,
       verdictCounts,
@@ -182,6 +234,7 @@ export default defineAction({
       totalUsers: (usersRow?.n ?? 0) as number,
       totalSent: (sentRow?.n ?? 0) as number,
       byUser,
+      trend,
       postEngagement: {
         totalEngagers: (engagerTotals?.total ?? 0) as number,
         distinctPosts: (engagerDistinctPosts?.n ?? 0) as number,
