@@ -199,7 +199,9 @@ export default defineAction({
       "- Only include a field's array with values if the request actually implies that criterion -- leave it an empty array otherwise. Don't force a seniority or headcount guess that wasn't implied.\n" +
       "- \"titleKeywords\" is optional and only for job-title language that isn't already covered by function/seniority (e.g. a specific title phrase like \"Head of Design\", or a domain term like \"AI\"). Leave it an empty string if function/seniority already cover it. " +
       "Sales Navigator Boolean rules apply if used: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping, e.g. (Director OR VP OR \"Head of\") AND (Design OR \"User Experience\" OR UX OR UI).\n" +
-      "- \"unsupportedNotes\" is a short plain-English note (or empty string) about any part of the request you could NOT express in these filters (e.g. a specific company, a specific city/country, an industry). Be honest about gaps rather than silently dropping or mis-mapping them.";
+      "- \"unsupportedNotes\" is a short plain-English note (or empty string) about any part of the request you could NOT express in these filters (e.g. a specific company, a specific city/country, an industry). Be honest about gaps rather than silently dropping or mis-mapping them. Keep it to one sentence.\n" +
+      "- There is NO company-targeting field available at all -- Company/Past Company require an internal LinkedIn ID lookup this tool doesn't have. If the request names specific companies (e.g. \"folks at Acme and Globex\"), do NOT refuse and do NOT reply with plain-text explanation instead of JSON -- list the company names in \"unsupportedNotes\" and still fill in every other field you CAN determine from the rest of the request (function, seniority, region, headcount, companyType, excludeCrmLeads, titleKeywords).\n" +
+      "- You must ALWAYS reply with the exact JSON shape above, even when most of the request can't be expressed in these filters. Never reply with plain prose, an apology, or an explanation instead of the JSON object -- put anything unsupported in \"unsupportedNotes\" and still return whatever filters you can. Keep \"summary\" and \"unsupportedNotes\" each to one short sentence so the reply stays compact.";
 
     try {
       const ownerCtxForCall = await getOwnerCtx();
@@ -207,7 +209,7 @@ export default defineAction({
         completeText({
           systemPrompt,
           input: `Saved personas:\n${personaList}\n\nRequest: ${prompt}`,
-          maxOutputTokens: 400,
+          maxOutputTokens: 600,
         });
       const result = ownerCtxForCall ? await runWithRequestContext(ownerCtxForCall, call) : await call();
 
