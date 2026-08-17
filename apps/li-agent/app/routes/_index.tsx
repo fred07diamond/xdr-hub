@@ -1045,7 +1045,8 @@ export default function ProspectsRoute() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3 min-h-[52px]">
+      <div className={cn("border-b border-border", someSelected && "bg-primary/5")}>
+      <div className="flex items-center justify-between px-4 py-3 min-h-[52px]">
         {someSelected ? (
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-foreground">{selectedIds.size} selected</span>
@@ -1135,9 +1136,9 @@ export default function ProspectsRoute() {
       </div>
 
       {allFilteredSelected && !isAllMatchingSelected && (isFetchingAllMatches || (allMatchingIds !== null && allMatchingIds.size > filtered.length)) && (
-        <div className="flex items-center justify-center gap-1.5 border-b border-border bg-primary/5 px-4 py-2 text-xs text-foreground">
+        <div className="flex items-center gap-1.5 px-4 pb-2.5 text-xs text-muted-foreground">
           {isFetchingAllMatches && allMatchingIds === null ? (
-            <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="flex items-center gap-1.5">
               <IconLoader2 size={12} className="animate-spin" />
               Checking how many match…
             </span>
@@ -1148,7 +1149,7 @@ export default function ProspectsRoute() {
                 type="button"
                 onClick={handleSelectAllMatching}
                 disabled={isFetchingAllMatches}
-                className="font-medium text-primary hover:underline disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/25 disabled:opacity-50"
               >
                 {isFetchingAllMatches ? "Selecting…" : `Select all ${allMatchingIds?.size.toLocaleString()} matching`}
               </button>
@@ -1156,6 +1157,7 @@ export default function ProspectsRoute() {
           )}
         </div>
       )}
+      </div>
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
