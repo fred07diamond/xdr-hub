@@ -692,6 +692,7 @@ export default function ProspectsRoute() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
   const [scoringErrors, setScoringErrors] = useState<Map<string, string>>(new Map());
+  const [bulkScoreDraftProgress, setBulkScoreDraftProgress] = useState<{ done: number; total: number } | null>(null);
 
   const bulkDeleteProspects = useActionMutation("bulk-delete-prospects");
   const deleteProspect = useActionMutation("delete-prospect");
@@ -789,6 +790,14 @@ export default function ProspectsRoute() {
     [allProspects, selectedIds],
   );
 
+  // Score & Draft only applies to not-yet-visited lead_list-sourced rows --
+  // a real prospects row already has a fit score/draft, so bulk scoring
+  // only targets the complementary subset of the selection.
+  const selectedLeadListSourced = useMemo(
+    () => allProspects.filter((p) => selectedIds.has(p.id) && p.source === "lead_list"),
+    [allProspects, selectedIds],
+  );
+
   async function handleBulkDelete() {
     await bulkDeleteProspects.mutateAsync({ ids: selectedProspectSourced.map((p) => p.rawId) });
     setSelectedIds(new Set());
@@ -876,6 +885,42 @@ export default function ProspectsRoute() {
     refetch();
   }
 
+  // Sequential, not parallel -- this spends a real LLM call per lead
+  // (60/hr bucket, much tighter than Apollo's 1000/hr), and a rate-limit
+  // hit surfaces as a normal per-item error rather than throwing, so the
+  // batch can just keep recording errors and move on.
+  async function handleBulkScoreDraft() {
+    const targets = selectedLeadListSourced;
+    if (targets.length === 0) return;
+    setBulkScoreDraftProgress({ done: 0, total: targets.length });
+    for (const p of targets) {
+      setScoringIds((prev) => new Set(prev).add(p.id));
+      setScoringErrors((prev) => {
+        const next = new Map(prev);
+        next.delete(p.id);
+        return next;
+      });
+      try {
+        const result = await scoreLeadListItem.mutateAsync({ itemId: p.rawId });
+        if (result?.error) {
+          setScoringErrors((prev) => new Map(prev).set(p.id, result.error));
+        }
+      } catch (err) {
+        setScoringErrors((prev) => new Map(prev).set(p.id, err instanceof Error ? err.message : "Something went wrong."));
+      } finally {
+        setScoringIds((prev) => {
+          const next = new Set(prev);
+          next.delete(p.id);
+          return next;
+        });
+        setBulkScoreDraftProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+      }
+    }
+    setBulkScoreDraftProgress(null);
+    setSelectedIds(new Set());
+    refetch();
+  }
+
   const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || search;
 
   const EXPORT_FETCH_LIMIT = 5000;
@@ -948,6 +993,19 @@ export default function ProspectsRoute() {
                   <button type="button" onClick={handleBulkEnrich}
                     className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
                     <IconSparkles size={13} /> Enrich selected
+                  </button>
+                )}
+                {bulkScoreDraftProgress ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <IconLoader2 size={12} className="animate-spin" />
+                    Scoring {bulkScoreDraftProgress.done}/{bulkScoreDraftProgress.total}…
+                  </span>
+                ) : (
+                  <button type="button" onClick={handleBulkScoreDraft}
+                    disabled={selectedLeadListSourced.length === 0}
+                    title={selectedLeadListSourced.length === 0 ? "Only not-yet-visited leads can be scored here" : undefined}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
+                    <IconSparkles size={13} /> Score &amp; Draft selected
                   </button>
                 )}
                 <AddToListPopover
