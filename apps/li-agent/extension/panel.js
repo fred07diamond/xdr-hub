@@ -1005,6 +1005,7 @@ const apolloExportListTriggerLabel = document.getElementById("apollo-export-list
 const apolloExportListMenu = document.getElementById("apollo-export-list-menu");
 const apolloExportSummary = document.getElementById("apollo-export-summary");
 const apolloExportGenerateBtn = document.getElementById("apollo-export-generate-btn");
+const apolloExportPreview = document.getElementById("apollo-export-preview");
 const apolloExportFileRow = document.getElementById("apollo-export-file-row");
 const apolloExportFileChip = document.getElementById("apollo-export-file-chip");
 const apolloExportFileName = document.getElementById("apollo-export-file-name");
@@ -1472,6 +1473,27 @@ const APOLLO_LIST_ICON = '<svg width="12" height="12" viewBox="0 0 16 16" fill="
 
 let apolloExportLists = [];
 let selectedApolloExportListId = "";
+// Cached so "Generate CSV" doesn't re-fetch what the preview already pulled.
+let apolloExportCachedListId = null;
+let apolloExportCachedItems = null;
+
+// Groups by recency (same "today / this week" language as the Prospects
+// table's filter chips) so a growing list of lists stays easy to scan.
+function groupApolloExportLists(lists) {
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  const groups = { today: [], week: [], older: [] };
+  lists.forEach((l) => {
+    if (!l.updatedAt) { groups.older.push(l); return; }
+    const d = new Date(l.updatedAt);
+    const dKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const diffMs = now.getTime() - d.getTime();
+    if (dKey === todayKey) groups.today.push(l);
+    else if (diffMs <= 7 * 24 * 60 * 60 * 1000) groups.week.push(l);
+    else groups.older.push(l);
+  });
+  return groups;
+}
 
 function closeApolloExportMenu() {
   apolloExportListMenu?.classList.remove("open");
@@ -1486,6 +1508,54 @@ function openApolloExportMenu() {
 // Builds each option's DOM directly with textContent (not innerHTML) for the
 // name/description/count/time -- only the two known-safe fixed icon SVGs use
 // innerHTML, never data from the server -- to avoid XSS from list names.
+function buildApolloExportListOption(l) {
+  const isSearch = (l.name || "").startsWith("Sales Nav Search");
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.setAttribute("role", "option");
+  btn.className = "li-list-option" + (l.id === selectedApolloExportListId ? " active" : "");
+
+  const icon = document.createElement("span");
+  icon.className = "li-list-option-icon";
+  icon.innerHTML = isSearch ? APOLLO_LIST_SEARCH_ICON : APOLLO_LIST_ICON;
+  icon.title = isSearch ? "Live Sales Nav search capture" : "Saved list";
+  btn.appendChild(icon);
+
+  const body = document.createElement("div");
+  body.className = "li-list-option-body";
+
+  const name = document.createElement("div");
+  name.className = "li-list-option-name";
+  name.textContent = l.name;
+  body.appendChild(name);
+
+  const meta = document.createElement("div");
+  meta.className = "li-list-option-meta";
+  const count = document.createElement("span");
+  count.className = "li-list-option-count";
+  count.textContent = `${l.totalCount} lead${l.totalCount === 1 ? "" : "s"}`;
+  meta.appendChild(count);
+  const time = relativeTime(l.updatedAt);
+  if (time) {
+    const timeEl = document.createElement("span");
+    timeEl.className = "li-list-option-time";
+    timeEl.textContent = time;
+    meta.appendChild(timeEl);
+  }
+  body.appendChild(meta);
+
+  if (l.description) {
+    const desc = document.createElement("div");
+    desc.className = "li-list-option-desc";
+    desc.textContent = l.description;
+    body.appendChild(desc);
+  }
+
+  btn.appendChild(body);
+  btn.addEventListener("click", () => handleApolloExportListSelect(l.id, l.name));
+  return btn;
+}
+
 function renderApolloExportListMenu() {
   if (!apolloExportListMenu) return;
   apolloExportListMenu.innerHTML = "";
@@ -1498,52 +1568,58 @@ function renderApolloExportListMenu() {
     return;
   }
 
-  apolloExportLists.forEach((l) => {
-    const isSearch = (l.name || "").startsWith("Sales Nav Search");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.setAttribute("role", "option");
-    btn.className = "li-list-option" + (l.id === selectedApolloExportListId ? " active" : "");
-
-    const icon = document.createElement("span");
-    icon.className = "li-list-option-icon";
-    icon.innerHTML = isSearch ? APOLLO_LIST_SEARCH_ICON : APOLLO_LIST_ICON;
-    btn.appendChild(icon);
-
-    const body = document.createElement("div");
-    body.className = "li-list-option-body";
-
-    const name = document.createElement("div");
-    name.className = "li-list-option-name";
-    name.textContent = l.name;
-    body.appendChild(name);
-
-    const meta = document.createElement("div");
-    meta.className = "li-list-option-meta";
-    const count = document.createElement("span");
-    count.className = "li-list-option-count";
-    count.textContent = `${l.totalCount} lead${l.totalCount === 1 ? "" : "s"}`;
-    meta.appendChild(count);
-    const time = relativeTime(l.updatedAt);
-    if (time) {
-      const timeEl = document.createElement("span");
-      timeEl.className = "li-list-option-time";
-      timeEl.textContent = time;
-      meta.appendChild(timeEl);
-    }
-    body.appendChild(meta);
-
-    if (l.description) {
-      const desc = document.createElement("div");
-      desc.className = "li-list-option-desc";
-      desc.textContent = l.description;
-      body.appendChild(desc);
-    }
-
-    btn.appendChild(body);
-    btn.addEventListener("click", () => handleApolloExportListSelect(l.id, l.name));
-    apolloExportListMenu.appendChild(btn);
+  const groups = groupApolloExportLists(apolloExportLists);
+  [
+    ["Added today", groups.today],
+    ["Added this week", groups.week],
+    ["Older", groups.older],
+  ].forEach(([label, group]) => {
+    if (group.length === 0) return;
+    const labelEl = document.createElement("div");
+    labelEl.className = "li-list-group-label";
+    labelEl.textContent = label;
+    apolloExportListMenu.appendChild(labelEl);
+    group.forEach((l) => apolloExportListMenu.appendChild(buildApolloExportListOption(l)));
   });
+}
+
+const APOLLO_PREVIEW_COUNT = 5;
+
+function renderApolloExportPreview(items) {
+  if (!apolloExportPreview) return;
+  apolloExportPreview.innerHTML = "";
+  if (!items || items.length === 0) return;
+
+  const label = document.createElement("div");
+  label.className = "li-preview-label";
+  label.textContent = `Preview — ${items.length} lead${items.length === 1 ? "" : "s"}`;
+  apolloExportPreview.appendChild(label);
+
+  const listEl = document.createElement("div");
+  listEl.className = "li-preview-list";
+  items.slice(0, APOLLO_PREVIEW_COUNT).forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "li-preview-row";
+    const name = document.createElement("div");
+    name.className = "li-preview-row-name";
+    name.textContent = item.name || "Unknown";
+    row.appendChild(name);
+    const metaParts = [item.enrichedTitle || item.headline, item.company].filter(Boolean);
+    if (metaParts.length) {
+      const meta = document.createElement("div");
+      meta.className = "li-preview-row-meta";
+      meta.textContent = metaParts.join(" · ");
+      row.appendChild(meta);
+    }
+    listEl.appendChild(row);
+  });
+  if (items.length > APOLLO_PREVIEW_COUNT) {
+    const more = document.createElement("div");
+    more.className = "li-preview-more";
+    more.textContent = `+ ${items.length - APOLLO_PREVIEW_COUNT} more`;
+    listEl.appendChild(more);
+  }
+  apolloExportPreview.appendChild(listEl);
 }
 
 async function handleApolloExportListSelect(listId, listName) {
@@ -1553,15 +1629,37 @@ async function handleApolloExportListSelect(listId, listName) {
   renderApolloExportListMenu();
 
   if (apolloExportFileRow) apolloExportFileRow.style.display = "none";
+  if (apolloExportPreview) apolloExportPreview.innerHTML = "";
+  apolloExportCachedListId = null;
+  apolloExportCachedItems = null;
   if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = false;
   if (apolloExportSummary) {
     apolloExportSummary.textContent = "Summarizing…";
     apolloExportSummary.className = "loading";
   }
-  const result = await chrome.runtime.sendMessage({ type: "SUMMARIZE_LEAD_LIST", listId }).catch(() => null);
+
+  // Fetch once, cache it -- the preview and "Generate CSV" both need this
+  // list's items, so Generate CSV reuses whatever the preview already pulled
+  // instead of hitting the same endpoint twice.
+  const [summaryResult, itemsResult] = await Promise.all([
+    chrome.runtime.sendMessage({ type: "SUMMARIZE_LEAD_LIST", listId }).catch(() => null),
+    chrome.runtime.sendMessage({ type: "GET_LEAD_LIST_ITEMS", listId }).catch(() => null),
+  ]);
+
+  // Selection may have moved on to a different list while these were in
+  // flight -- don't clobber a newer selection's summary/preview with a
+  // stale response.
+  if (selectedApolloExportListId !== listId) return;
+
   if (apolloExportSummary) {
     apolloExportSummary.className = "";
-    apolloExportSummary.textContent = result?.summary || "";
+    apolloExportSummary.textContent = summaryResult?.summary || "";
+  }
+
+  if (itemsResult?.ok && itemsResult.items?.length) {
+    apolloExportCachedListId = listId;
+    apolloExportCachedItems = itemsResult.items;
+    renderApolloExportPreview(itemsResult.items);
   }
 }
 
@@ -1610,23 +1708,32 @@ apolloExportGenerateBtn?.addEventListener("click", async () => {
   apolloExportGenerateBtn.disabled = true;
   apolloExportGenerateBtn.textContent = "Generating…";
 
-  const result = await chrome.runtime
-    .sendMessage({ type: "GET_LEAD_LIST_ITEMS", listId })
-    .catch((err) => ({ ok: false, error: err.message }));
+  // Reuse whatever the preview already fetched for this same list instead
+  // of hitting get-lead-list-items-for-extension a second time.
+  let items = apolloExportCachedListId === listId ? apolloExportCachedItems : null;
+  let error = null;
+  if (!items) {
+    const result = await chrome.runtime
+      .sendMessage({ type: "GET_LEAD_LIST_ITEMS", listId })
+      .catch((err) => ({ ok: false, error: err.message }));
+    if (result?.ok && result.items?.length) items = result.items;
+    else error = result?.error || "Could not load this list's leads.";
+  }
 
   apolloExportGenerateBtn.textContent = "Generate CSV";
   apolloExportGenerateBtn.disabled = false;
 
-  if (!result?.ok || !result.list || !result.items?.length) {
+  if (!items?.length) {
     if (apolloExportSummary) {
       apolloExportSummary.className = "";
-      apolloExportSummary.textContent = result?.error || "Could not load this list's leads.";
+      apolloExportSummary.textContent = error || "Could not load this list's leads.";
     }
     return;
   }
 
-  const csv = buildApolloCsv(result.items);
-  const safeName = result.list.name.replace(/[^a-z0-9 _-]/gi, "").trim() || "leads";
+  const csv = buildApolloCsv(items);
+  const listName = apolloExportLists.find((l) => l.id === listId)?.name || "leads";
+  const safeName = listName.replace(/[^a-z0-9 _-]/gi, "").trim() || "leads";
   const filename = `${safeName}.csv`;
 
   if (apolloExportBlobUrl) URL.revokeObjectURL(apolloExportBlobUrl);

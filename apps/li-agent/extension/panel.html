@@ -1061,26 +1061,37 @@
       z-index: 20;
       padding: 4px;
     }
-    #apollo-export-list-menu.open { display: block; }
+    #apollo-export-list-menu.open { display: flex; flex-direction: column; gap: 2px; }
+    .li-list-group-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #999;
+      padding: 8px 9px 3px;
+    }
+    .li-list-group-label:first-child { padding-top: 4px; }
     .li-list-option {
       display: flex;
       align-items: flex-start;
-      gap: 8px;
+      gap: 9px;
       width: 100%;
-      padding: 8px 9px;
+      padding: 9px 10px;
+      margin-bottom: 2px;
       border: none;
       background: none;
-      border-radius: 7px;
+      border-radius: 8px;
       cursor: pointer;
       text-align: left;
       font-family: inherit;
       transition: background 0.1s;
     }
+    .li-list-option:last-child { margin-bottom: 0; }
     .li-list-option:hover, .li-list-option.active { background: #f0f4ff; }
     .li-list-option-icon {
       flex-shrink: 0;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       border-radius: 6px;
       display: flex;
       align-items: center;
@@ -1102,7 +1113,7 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      margin-top: 2px;
+      margin-top: 4px;
     }
     .li-list-option-count {
       font-size: 10.5px;
@@ -1110,11 +1121,11 @@
       color: #0a66c2;
       background: #e9f0fb;
       border-radius: 10px;
-      padding: 1px 7px;
+      padding: 2px 7px;
     }
     .li-list-option-time { font-size: 10.5px; color: #999; }
     .li-list-option-desc {
-      margin-top: 3px;
+      margin-top: 4px;
       font-size: 10.5px;
       color: #888;
       overflow: hidden;
@@ -1122,6 +1133,44 @@
       white-space: nowrap;
     }
     .li-list-empty { padding: 10px 9px; font-size: 12px; color: #888; }
+    #apollo-export-preview {
+      margin-bottom: 8px;
+    }
+    #apollo-export-preview:empty { display: none; margin: 0; }
+    .li-preview-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #999;
+      margin-bottom: 5px;
+    }
+    .li-preview-list {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .li-preview-row {
+      display: flex;
+      flex-direction: column;
+      padding: 6px 9px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .li-preview-list > *:last-child { border-bottom: none; }
+    .li-preview-row-name { font-size: 11.5px; font-weight: 600; color: #1a1a1a; }
+    .li-preview-row-meta {
+      font-size: 10.5px;
+      color: #888;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .li-preview-more {
+      padding: 6px 9px;
+      font-size: 10.5px;
+      color: #999;
+      font-style: italic;
+    }
     #apollo-export-summary {
       font-size: 11.5px;
       color: #555;
@@ -1399,6 +1448,7 @@
         <div id="apollo-export-list-menu" role="listbox"></div>
       </div>
       <div id="apollo-export-summary"></div>
+      <div id="apollo-export-preview"></div>
       <button id="apollo-export-generate-btn" type="button" disabled>Generate CSV</button>
       <div id="apollo-export-file-row" style="display:none;">
         <div id="apollo-export-file-chip" draggable="true">
