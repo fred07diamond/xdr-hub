@@ -1000,7 +1000,9 @@ const existingListPicker = document.getElementById("existing-list-picker");
 const existingListSelect = document.getElementById("existing-list-select");
 const cancelAddExistingBtn = document.getElementById("cancel-add-existing-btn");
 const confirmAddExistingBtn = document.getElementById("confirm-add-existing-btn");
-const apolloExportListSelect = document.getElementById("apollo-export-list-select");
+const apolloExportListTrigger = document.getElementById("apollo-export-list-trigger");
+const apolloExportListTriggerLabel = document.getElementById("apollo-export-list-trigger-label");
+const apolloExportListMenu = document.getElementById("apollo-export-list-menu");
 const apolloExportSummary = document.getElementById("apollo-export-summary");
 const apolloExportGenerateBtn = document.getElementById("apollo-export-generate-btn");
 const apolloExportFileRow = document.getElementById("apollo-export-file-row");
@@ -1448,46 +1450,109 @@ function buildApolloCsv(items) {
   return [header.join(","), ...rows].join("\r\n");
 }
 
-async function loadApolloExportListOptions() {
-  if (!apolloExportListSelect) return;
-  const result = await chrome.runtime
-    .sendMessage({ type: "LIST_LEAD_LISTS" })
-    .catch((err) => ({ ok: false, error: err.message, lists: [] }));
-  const lists = result?.lists || [];
-  apolloExportListSelect.innerHTML = "";
+// Relative recency ("2h ago", "3d ago") so the richer list picker shows
+// which lists were touched most recently without needing a raw timestamp.
+function relativeTime(iso) {
+  if (!iso) return "";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "Just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  const wk = Math.floor(day / 7);
+  if (wk < 5) return `${wk}w ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
-  if (!result?.ok || lists.length === 0) {
-    const opt = document.createElement("option");
-    opt.textContent = result?.ok ? "No saved lists yet" : "Could not load lists";
-    apolloExportListSelect.appendChild(opt);
-    if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = true;
+const APOLLO_LIST_SEARCH_ICON = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11 11L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+const APOLLO_LIST_ICON = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 4H13M3 8H13M3 12H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
+let apolloExportLists = [];
+let selectedApolloExportListId = "";
+
+function closeApolloExportMenu() {
+  apolloExportListMenu?.classList.remove("open");
+  apolloExportListTrigger?.setAttribute("aria-expanded", "false");
+}
+
+function openApolloExportMenu() {
+  apolloExportListMenu?.classList.add("open");
+  apolloExportListTrigger?.setAttribute("aria-expanded", "true");
+}
+
+// Builds each option's DOM directly with textContent (not innerHTML) for the
+// name/description/count/time -- only the two known-safe fixed icon SVGs use
+// innerHTML, never data from the server -- to avoid XSS from list names.
+function renderApolloExportListMenu() {
+  if (!apolloExportListMenu) return;
+  apolloExportListMenu.innerHTML = "";
+
+  if (apolloExportLists.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "li-list-empty";
+    empty.textContent = "No saved lists yet";
+    apolloExportListMenu.appendChild(empty);
     return;
   }
 
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Select a list…";
-  apolloExportListSelect.appendChild(placeholder);
-  // Build options with textContent (not innerHTML) to avoid XSS from list names.
-  lists.forEach((l) => {
-    const opt = document.createElement("option");
-    opt.value = l.id;
-    opt.textContent = `${l.name} (${l.totalCount} lead${l.totalCount === 1 ? "" : "s"})`;
-    apolloExportListSelect.appendChild(opt);
+  apolloExportLists.forEach((l) => {
+    const isSearch = (l.name || "").startsWith("Sales Nav Search");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "option");
+    btn.className = "li-list-option" + (l.id === selectedApolloExportListId ? " active" : "");
+
+    const icon = document.createElement("span");
+    icon.className = "li-list-option-icon";
+    icon.innerHTML = isSearch ? APOLLO_LIST_SEARCH_ICON : APOLLO_LIST_ICON;
+    btn.appendChild(icon);
+
+    const body = document.createElement("div");
+    body.className = "li-list-option-body";
+
+    const name = document.createElement("div");
+    name.className = "li-list-option-name";
+    name.textContent = l.name;
+    body.appendChild(name);
+
+    const meta = document.createElement("div");
+    meta.className = "li-list-option-meta";
+    const count = document.createElement("span");
+    count.className = "li-list-option-count";
+    count.textContent = `${l.totalCount} lead${l.totalCount === 1 ? "" : "s"}`;
+    meta.appendChild(count);
+    const time = relativeTime(l.updatedAt);
+    if (time) {
+      const timeEl = document.createElement("span");
+      timeEl.className = "li-list-option-time";
+      timeEl.textContent = time;
+      meta.appendChild(timeEl);
+    }
+    body.appendChild(meta);
+
+    if (l.description) {
+      const desc = document.createElement("div");
+      desc.className = "li-list-option-desc";
+      desc.textContent = l.description;
+      body.appendChild(desc);
+    }
+
+    btn.appendChild(body);
+    btn.addEventListener("click", () => handleApolloExportListSelect(l.id, l.name));
+    apolloExportListMenu.appendChild(btn);
   });
 }
-loadApolloExportListOptions();
 
-let apolloExportBlobUrl = null;
+async function handleApolloExportListSelect(listId, listName) {
+  selectedApolloExportListId = listId;
+  if (apolloExportListTriggerLabel) apolloExportListTriggerLabel.textContent = listName;
+  closeApolloExportMenu();
+  renderApolloExportListMenu();
 
-apolloExportListSelect?.addEventListener("change", async () => {
-  const listId = apolloExportListSelect.value;
   if (apolloExportFileRow) apolloExportFileRow.style.display = "none";
-  if (!listId) {
-    if (apolloExportSummary) { apolloExportSummary.textContent = ""; apolloExportSummary.className = ""; }
-    if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = true;
-    return;
-  }
   if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = false;
   if (apolloExportSummary) {
     apolloExportSummary.textContent = "Summarizing…";
@@ -1498,10 +1563,49 @@ apolloExportListSelect?.addEventListener("change", async () => {
     apolloExportSummary.className = "";
     apolloExportSummary.textContent = result?.summary || "";
   }
+}
+
+async function loadApolloExportListOptions() {
+  if (!apolloExportListTrigger) return;
+  const result = await chrome.runtime
+    .sendMessage({ type: "LIST_LEAD_LISTS" })
+    .catch((err) => ({ ok: false, error: err.message, lists: [] }));
+  apolloExportLists = result?.lists || [];
+
+  if (!result?.ok || apolloExportLists.length === 0) {
+    if (apolloExportListTriggerLabel) {
+      apolloExportListTriggerLabel.textContent = result?.ok ? "No saved lists yet" : "Could not load lists";
+    }
+    if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = true;
+    renderApolloExportListMenu();
+    return;
+  }
+
+  if (apolloExportListTriggerLabel) apolloExportListTriggerLabel.textContent = "Select a list…";
+  renderApolloExportListMenu();
+}
+loadApolloExportListOptions();
+
+apolloExportListTrigger?.addEventListener("click", () => {
+  if (apolloExportListMenu?.classList.contains("open")) closeApolloExportMenu();
+  else openApolloExportMenu();
 });
 
+document.addEventListener("click", (e) => {
+  if (!apolloExportListTrigger || !apolloExportListMenu) return;
+  if (!apolloExportListTrigger.contains(e.target) && !apolloExportListMenu.contains(e.target)) {
+    closeApolloExportMenu();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeApolloExportMenu();
+});
+
+let apolloExportBlobUrl = null;
+
 apolloExportGenerateBtn?.addEventListener("click", async () => {
-  const listId = apolloExportListSelect?.value;
+  const listId = selectedApolloExportListId;
   if (!listId) return;
   apolloExportGenerateBtn.disabled = true;
   apolloExportGenerateBtn.textContent = "Generating…";

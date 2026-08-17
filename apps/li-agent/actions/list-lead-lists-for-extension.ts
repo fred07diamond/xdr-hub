@@ -26,7 +26,13 @@ export default defineAction({
 
     const db = getDb();
     const lists = await db
-      .select({ id: leadLists.id, name: leadLists.name, totalCount: leadLists.totalCount })
+      .select({
+        id: leadLists.id,
+        name: leadLists.name,
+        description: leadLists.description,
+        totalCount: leadLists.totalCount,
+        updatedAt: leadLists.updatedAt,
+      })
       .from(leadLists)
       .where(eq(leadLists.ownerEmail, ownerEmail))
       .orderBy(desc(leadLists.updatedAt));

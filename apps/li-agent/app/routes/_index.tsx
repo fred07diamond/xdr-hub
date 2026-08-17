@@ -685,6 +685,7 @@ export default function ProspectsRoute() {
   const [verdictFilter, setVerdictFilter] = useState<NonNullable<Verdict> | "all">("all");
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [personaFilter, setPersonaFilter] = useState<string>("all");
+  const [recencyFilter, setRecencyFilter] = useState<"all" | "today" | "week">("all");
 
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
@@ -731,7 +732,7 @@ export default function ProspectsRoute() {
   // now-out-of-range page.
   useEffect(() => {
     setProspectsPage(1);
-  }, [verdictFilter, statusFilter, personaFilter, search]);
+  }, [verdictFilter, statusFilter, personaFilter, recencyFilter, search]);
 
   // Derived persona list for filter chips
   const personas = useMemo(() => [...new Map(
@@ -745,13 +746,25 @@ export default function ProspectsRoute() {
     if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) return false;
     if (statusFilter !== "all" && p.status !== statusFilter) return false;
     if (personaFilter !== "all" && p.personaName !== personaFilter) return false;
+    if (recencyFilter !== "all") {
+      if (!p.createdAt) return false;
+      const createdAt = new Date(p.createdAt).getTime();
+      const now = Date.now();
+      if (recencyFilter === "today") {
+        const d = new Date(p.createdAt);
+        const n = new Date();
+        if (d.getFullYear() !== n.getFullYear() || d.getMonth() !== n.getMonth() || d.getDate() !== n.getDate()) return false;
+      } else if (recencyFilter === "week") {
+        if (now - createdAt > 7 * 24 * 60 * 60 * 1000) return false;
+      }
+    }
     if (search) {
       const q = search.toLowerCase();
       const haystack = [p.name, p.company, p.role, p.headline].filter(Boolean).join(" ").toLowerCase();
       if (!haystack.includes(q)) return false;
     }
     return true;
-  }), [allProspects, verdictFilter, statusFilter, personaFilter, search]);
+  }), [allProspects, verdictFilter, statusFilter, personaFilter, recencyFilter, search]);
 
   const selected = allProspects.find((p) => p.id === selectedId) ?? null;
   const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
@@ -921,7 +934,7 @@ export default function ProspectsRoute() {
     refetch();
   }
 
-  const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || search;
+  const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || recencyFilter !== "all" || search;
 
   const EXPORT_FETCH_LIMIT = 5000;
   async function handleExportAll() {
@@ -1101,9 +1114,19 @@ export default function ProspectsRoute() {
           </>
         )}
 
+        <div className="h-4 w-px bg-border" />
+
+        {/* Recency -- quick way to grab everything captured today/this week
+            for a fast "select all, Add to list" pass. */}
+        <div className="flex items-center gap-1">
+          <FilterPill active={recencyFilter === "all"} onClick={() => setRecencyFilter("all")}>Any time</FilterPill>
+          <FilterPill active={recencyFilter === "today"} onClick={() => setRecencyFilter(recencyFilter === "today" ? "all" : "today")}>Added today</FilterPill>
+          <FilterPill active={recencyFilter === "week"} onClick={() => setRecencyFilter(recencyFilter === "week" ? "all" : "week")}>Added this week</FilterPill>
+        </div>
+
         {hasActiveFilter && (
           <button type="button"
-            onClick={() => { setSearch(""); setVerdictFilter("all"); setStatusFilter("all"); setPersonaFilter("all"); }}
+            onClick={() => { setSearch(""); setVerdictFilter("all"); setStatusFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
             className="ml-auto text-xs text-muted-foreground hover:text-foreground">
             Clear filters
           </button>
@@ -1123,7 +1146,7 @@ export default function ProspectsRoute() {
               {hasActiveFilter ? "No prospects match these filters" : "No prospects captured yet"}
             </p>
             {hasActiveFilter && (
-              <button type="button" onClick={() => { setSearch(""); setVerdictFilter("all"); setStatusFilter("all"); setPersonaFilter("all"); }}
+              <button type="button" onClick={() => { setSearch(""); setVerdictFilter("all"); setStatusFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
                 className="text-xs text-primary hover:underline">Clear filters</button>
             )}
           </div>

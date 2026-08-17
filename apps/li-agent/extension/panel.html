@@ -1016,17 +1016,112 @@
       line-height: 1.5;
       margin-bottom: 14px;
     }
-    #apollo-export-list-select {
+    #apollo-export-list-picker {
+      position: relative;
+      margin-bottom: 8px;
+    }
+    #apollo-export-list-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       width: 100%;
-      padding: 6px 8px;
+      padding: 8px 10px;
       border: 1.5px solid #d1d5db;
-      border-radius: 7px;
+      border-radius: 8px;
       font-size: 12px;
       font-family: inherit;
       background: #fff;
       box-sizing: border-box;
-      margin-bottom: 8px;
+      cursor: pointer;
+      color: #1a1a1a;
+      transition: border-color 0.15s;
     }
+    #apollo-export-list-trigger:hover { border-color: #0a66c2; }
+    #apollo-export-list-trigger[aria-expanded="true"] { border-color: #0a66c2; box-shadow: 0 0 0 3px rgba(10,102,194,0.12); }
+    #apollo-export-list-trigger svg { color: #888; flex-shrink: 0; transition: transform 0.15s; }
+    #apollo-export-list-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+    #apollo-export-list-trigger-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: left;
+    }
+    #apollo-export-list-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 280px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      z-index: 20;
+      padding: 4px;
+    }
+    #apollo-export-list-menu.open { display: block; }
+    .li-list-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 9px;
+      border: none;
+      background: none;
+      border-radius: 7px;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      transition: background 0.1s;
+    }
+    .li-list-option:hover, .li-list-option.active { background: #f0f4ff; }
+    .li-list-option-icon {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #e9f0fb;
+      color: #0a66c2;
+      margin-top: 1px;
+    }
+    .li-list-option-body { min-width: 0; flex: 1; }
+    .li-list-option-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #1a1a1a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .li-list-option-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .li-list-option-count {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #0a66c2;
+      background: #e9f0fb;
+      border-radius: 10px;
+      padding: 1px 7px;
+    }
+    .li-list-option-time { font-size: 10.5px; color: #999; }
+    .li-list-option-desc {
+      margin-top: 3px;
+      font-size: 10.5px;
+      color: #888;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .li-list-empty { padding: 10px 9px; font-size: 12px; color: #888; }
     #apollo-export-summary {
       font-size: 11.5px;
       color: #555;
@@ -1296,7 +1391,13 @@
     <div id="apollo-export-section" style="display:none;">
       <div id="apollo-export-heading">Export a saved list to Apollo</div>
       <div id="apollo-export-subhead">Pick a list, generate a CSV, drop it into Apollo.</div>
-      <select id="apollo-export-list-select"><option value="">Loading your lists…</option></select>
+      <div id="apollo-export-list-picker">
+        <button type="button" id="apollo-export-list-trigger" aria-haspopup="listbox" aria-expanded="false">
+          <span id="apollo-export-list-trigger-label">Loading your lists…</span>
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div id="apollo-export-list-menu" role="listbox"></div>
+      </div>
       <div id="apollo-export-summary"></div>
       <button id="apollo-export-generate-btn" type="button" disabled>Generate CSV</button>
       <div id="apollo-export-file-row" style="display:none;">
