@@ -107,13 +107,30 @@ const COMPANY_TYPE_IDS: Record<string, string> = {
   "Government Agency": "G",
 };
 
+// Confirmed from a real captured URL: excludes/includes leads already
+// tracked in the connected CRM. id is a fixed literal, not an int/letter.
+const LEADS_IN_CRM_ID = "LCRM";
+
+// LinkedIn's query mini-language uses literal "(" / ")" as structural
+// nesting delimiters throughout the whole `query=` value, decoded one level
+// at a time. encodeURIComponent leaves parens untouched (they're in its
+// unreserved set), so a value containing a literal paren -- e.g. Boolean
+// grouping in a keyword string -- collides with that structural syntax and
+// corrupts the parse (confirmed: this produced a real Sales Nav server
+// error). Fix: push parens down one encoding level, same as colons/spaces
+// in "text" values are pre-encoded before the outer encode pass doubles
+// them -- so a literal "(" survives as inert text ("%28") through
+// structural parsing instead of being read as nesting.
 function encodeLeaf(value: string | number): string {
-  return encodeURIComponent(String(value));
+  return encodeURIComponent(String(value)).replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
 
-function buildFilterEntry(type: string, entries: Array<{ id: string | number; text: string }>): string {
+function buildFilterEntry(
+  type: string,
+  entries: Array<{ id: string | number; text: string; selectionType?: "INCLUDED" | "EXCLUDED" }>,
+): string {
   const values = entries
-    .map((e) => `(id:${encodeLeaf(e.id)},text:${encodeLeaf(e.text)},selectionType:INCLUDED)`)
+    .map((e) => `(id:${encodeLeaf(e.id)},text:${encodeLeaf(e.text)},selectionType:${e.selectionType ?? "INCLUDED"})`)
     .join(",");
   return `(type:${type},values:List(${values}))`;
 }
@@ -167,16 +184,22 @@ export default defineAction({
       "(titles, seniority language, function) rather than guessing from the request's wording alone. " +
       "Reply with ONLY a JSON object on one line, no markdown, no code fences, in this exact shape: " +
       '{"function": ["..."], "seniorityLevel": ["..."], "region": ["..."], "companyHeadcount": ["..."], "companyType": ["..."], ' +
-      '"titleKeywords": "...", "summary": "one plain-English sentence describing who this search targets", "matchedPersonaName": "exact persona name or null"}\n\n' +
+      '"excludeCrmLeads": false, "titleKeywords": "...", "unsupportedNotes": "...", ' +
+      '"summary": "one plain-English sentence describing who this search targets", "matchedPersonaName": "exact persona name or null"}\n\n' +
       "Rules:\n" +
       `- "function" values MUST come only from this exact list (use the exact text): ${Object.keys(FUNCTION_IDS).join(", ")}\n` +
       `- "seniorityLevel" values MUST come only from this exact list: ${Object.keys(SENIORITY_IDS).join(", ")}\n` +
-      `- "region" values MUST come only from this exact list: ${Object.keys(REGION_IDS).join(", ")}\n` +
+      `- "region" is CONTINENT/MACRO-REGION level ONLY, and values MUST come only from this exact list: ${Object.keys(REGION_IDS).join(", ")}. ` +
+      "If the request names a specific country or city (e.g. \"United States\", \"New York\") that is NOT one of those exact region names, " +
+      "do NOT approximate or substitute the closest region -- leave \"region\" empty and instead explain the gap in \"unsupportedNotes\" " +
+      "(e.g. \"Country/city-level geography isn't supported yet, only continent-level regions -- couldn't filter to United States specifically\").\n" +
       `- "companyHeadcount" values MUST come only from this exact list: ${Object.keys(COMPANY_HEADCOUNT_IDS).join(", ")}\n` +
       `- "companyType" values MUST come only from this exact list: ${Object.keys(COMPANY_TYPE_IDS).join(", ")}\n` +
+      "- \"excludeCrmLeads\" is true only if the request explicitly wants to exclude people already tracked in the CRM (e.g. \"not in the CRM\", \"exclude existing CRM contacts\"). Otherwise false.\n" +
       "- Only include a field's array with values if the request actually implies that criterion -- leave it an empty array otherwise. Don't force a seniority or headcount guess that wasn't implied.\n" +
-      "- \"titleKeywords\" is optional and only for job-title language that isn't already covered by function/seniority (e.g. a specific title phrase like \"Head of Design\"). Leave it an empty string if function/seniority already cover it. " +
-      "Sales Navigator Boolean rules apply if used: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping, e.g. (Director OR VP OR \"Head of\") AND (Design OR \"User Experience\" OR UX OR UI).";
+      "- \"titleKeywords\" is optional and only for job-title language that isn't already covered by function/seniority (e.g. a specific title phrase like \"Head of Design\", or a domain term like \"AI\"). Leave it an empty string if function/seniority already cover it. " +
+      "Sales Navigator Boolean rules apply if used: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping, e.g. (Director OR VP OR \"Head of\") AND (Design OR \"User Experience\" OR UX OR UI).\n" +
+      "- \"unsupportedNotes\" is a short plain-English note (or empty string) about any part of the request you could NOT express in these filters (e.g. a specific company, a specific city/country, an industry). Be honest about gaps rather than silently dropping or mis-mapping them.";
 
     try {
       const ownerCtxForCall = await getOwnerCtx();
@@ -196,7 +219,9 @@ export default defineAction({
         region?: string[];
         companyHeadcount?: string[];
         companyType?: string[];
+        excludeCrmLeads?: boolean;
         titleKeywords?: string;
+        unsupportedNotes?: string;
         summary?: string;
         matchedPersonaName?: string | null;
       };
@@ -220,7 +245,7 @@ export default defineAction({
       }
       if (regionValues.length) {
         filterEntries.push(buildFilterEntry("REGION", regionValues));
-        appliedFilters.push(`Geography: ${regionValues.map((v) => v.text).join(", ")}`);
+        appliedFilters.push(`Region: ${regionValues.map((v) => v.text).join(", ")}`);
       }
       if (headcountValues.length) {
         filterEntries.push(buildFilterEntry("COMPANY_HEADCOUNT", headcountValues));
@@ -229,6 +254,12 @@ export default defineAction({
       if (companyTypeValues.length) {
         filterEntries.push(buildFilterEntry("COMPANY_TYPE", companyTypeValues));
         appliedFilters.push(`Company type: ${companyTypeValues.map((v) => v.text).join(", ")}`);
+      }
+      if (parsed.excludeCrmLeads) {
+        filterEntries.push(
+          buildFilterEntry("LEADS_IN_CRM", [{ id: LEADS_IN_CRM_ID, text: "People in CRM", selectionType: "EXCLUDED" }]),
+        );
+        appliedFilters.push("Excludes: people already in CRM");
       }
       if (titleKeywords) {
         appliedFilters.push(`Title keywords: ${titleKeywords}`);
@@ -249,6 +280,7 @@ export default defineAction({
         summary: parsed.summary ?? null,
         matchedPersonaName: parsed.matchedPersonaName ?? null,
         appliedFilters,
+        unsupportedNotes: parsed.unsupportedNotes?.trim() || null,
       };
     } catch {
       return { error: "Something went wrong generating that search -- try again." };

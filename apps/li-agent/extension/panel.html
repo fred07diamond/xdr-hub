@@ -725,6 +725,17 @@
     }
     #ai-search-filters:empty { display: none; margin: 0; }
     #ai-search-filters li strong { color: #0a4a8f; }
+    #ai-search-unsupported {
+      font-size: 11px;
+      color: #92610a;
+      background: #fff6e5;
+      border: 1px solid #f3dfa8;
+      border-radius: 6px;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+    #ai-search-unsupported:empty { display: none; margin: 0; padding: 0; border: none; }
     #ai-search-open-link {
       display: block;
       text-align: center;
@@ -1219,6 +1230,7 @@
         <div id="ai-search-result" style="display:none;">
           <div id="ai-search-summary"></div>
           <ul id="ai-search-filters"></ul>
+          <div id="ai-search-unsupported"></div>
           <a id="ai-search-open-link" target="_blank" rel="noopener noreferrer">Open in Sales Navigator</a>
         </div>
         <div id="ai-search-status"></div>

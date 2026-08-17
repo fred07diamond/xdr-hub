@@ -1012,6 +1012,7 @@ const aiSearchGenerateBtn = document.getElementById("ai-search-generate-btn");
 const aiSearchResult = document.getElementById("ai-search-result");
 const aiSearchSummary = document.getElementById("ai-search-summary");
 const aiSearchFilters = document.getElementById("ai-search-filters");
+const aiSearchUnsupported = document.getElementById("ai-search-unsupported");
 const aiSearchOpenLink = document.getElementById("ai-search-open-link");
 const aiSearchStatus = document.getElementById("ai-search-status");
 
@@ -1400,6 +1401,9 @@ aiSearchGenerateBtn?.addEventListener("click", async () => {
       li.appendChild(document.createTextNode(rest.join(": ")));
       aiSearchFilters.appendChild(li);
     }
+  }
+  if (aiSearchUnsupported) {
+    aiSearchUnsupported.textContent = result.unsupportedNotes ? `Heads up: ${result.unsupportedNotes}` : "";
   }
   if (aiSearchOpenLink) aiSearchOpenLink.href = result.searchUrl;
   if (aiSearchResult) aiSearchResult.style.display = "block";
