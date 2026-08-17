@@ -732,6 +732,8 @@ export default function ProspectsRoute() {
   // now-out-of-range page.
   useEffect(() => {
     setProspectsPage(1);
+    setAllMatchingIds(null);
+    setIsAllMatchingSelected(false);
   }, [verdictFilter, statusFilter, personaFilter, recencyFilter, search]);
 
   // Derived persona list for filter chips
@@ -741,8 +743,12 @@ export default function ProspectsRoute() {
       .map((p) => [p.personaName!, { name: p.personaName!, color: p.personaColor! }])
   ).values()], [allProspects]);
 
-  // Apply filters
-  const filtered = useMemo(() => allProspects.filter((p) => {
+  // Extracted so it can run against either the current page (`filtered`
+  // below) or a full, all-pages fetch (for "Select all N matching" --
+  // filtering only ever happens client-side, there's no server-side filter
+  // param, so selecting everything that matches the active filter requires
+  // fetching everything and re-applying this same predicate).
+  function matchesCurrentFilters(p: Prospect): boolean {
     if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) return false;
     if (statusFilter !== "all" && p.status !== statusFilter) return false;
     if (personaFilter !== "all" && p.personaName !== personaFilter) return false;
@@ -764,7 +770,40 @@ export default function ProspectsRoute() {
       if (!haystack.includes(q)) return false;
     }
     return true;
-  }), [allProspects, verdictFilter, statusFilter, personaFilter, recencyFilter, search]);
+  }
+
+  // Apply filters
+  const filtered = useMemo(
+    () => allProspects.filter(matchesCurrentFilters),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allProspects, verdictFilter, statusFilter, personaFilter, recencyFilter, search],
+  );
+
+  // Every row this session has ever fetched (current page, plus whatever a
+  // "Select all N matching" fetch pulled in) -- bulk handlers look rows up
+  // here by id so they work correctly even for a selected row that isn't on
+  // the currently-loaded page.
+  const rowsByIdRef = useRef<Map<string, Prospect>>(new Map());
+  useEffect(() => {
+    allProspects.forEach((p) => rowsByIdRef.current.set(p.id, p));
+  }, [allProspects]);
+
+  // null = not yet computed for the current filter state. Recomputed lazily
+  // (only once the header checkbox selects everything visible) rather than
+  // on every filter change, since it costs a real fetch of up to 5000 rows.
+  const [allMatchingIds, setAllMatchingIds] = useState<Set<string> | null>(null);
+  const [isFetchingAllMatches, setIsFetchingAllMatches] = useState(false);
+  const [isAllMatchingSelected, setIsAllMatchingSelected] = useState(false);
+  const SELECT_ALL_FETCH_LIMIT = 5000;
+
+  async function computeAllMatchingIds(): Promise<Set<string>> {
+    const result = await callAction("list-all-prospects", { limit: SELECT_ALL_FETCH_LIMIT, offset: 0 }, { method: "GET" });
+    const rows: Prospect[] = (result as { rows?: Prospect[] } | undefined)?.rows ?? [];
+    rows.forEach((p) => rowsByIdRef.current.set(p.id, p));
+    const ids = new Set(rows.filter(matchesCurrentFilters).map((p) => p.id));
+    setAllMatchingIds(ids);
+    return ids;
+  }
 
   const selected = allProspects.find((p) => p.id === selectedId) ?? null;
   const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
@@ -785,6 +824,7 @@ export default function ProspectsRoute() {
         filtered.forEach((p) => next.delete(p.id));
         return next;
       });
+      setIsAllMatchingSelected(false);
     } else {
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -794,26 +834,61 @@ export default function ProspectsRoute() {
     }
   }
 
+  // Once every row on the current page is checked, eagerly find out how
+  // many match across ALL pages so the "Select all N matching" banner can
+  // show a real number immediately, Gmail/Front-style, rather than only
+  // revealing it after the user clicks.
+  useEffect(() => {
+    if (allFilteredSelected && !isAllMatchingSelected && allMatchingIds === null && !isFetchingAllMatches) {
+      setIsFetchingAllMatches(true);
+      computeAllMatchingIds().finally(() => setIsFetchingAllMatches(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allFilteredSelected, isAllMatchingSelected, allMatchingIds, isFetchingAllMatches]);
+
+  async function handleSelectAllMatching() {
+    let ids = allMatchingIds;
+    if (!ids) {
+      setIsFetchingAllMatches(true);
+      try {
+        ids = await computeAllMatchingIds();
+      } finally {
+        setIsFetchingAllMatches(false);
+      }
+    }
+    setSelectedIds(new Set(ids));
+    setIsAllMatchingSelected(true);
+  }
+
   // "Add to list" and delete both operate on the real prospects table
   // (bulk-delete-prospects, add-prospects-to-lead-list) -- a lead_list-
   // sourced row isn't in that table, so those bulk actions only apply to
-  // the prospect-sourced subset of the current selection.
+  // the prospect-sourced subset of the current selection. Looked up via
+  // rowsByIdRef (not allProspects) so this stays correct even when the
+  // selection spans rows beyond the currently-loaded page.
   const selectedProspectSourced = useMemo(
-    () => allProspects.filter((p) => selectedIds.has(p.id) && p.source === "prospect"),
-    [allProspects, selectedIds],
+    () => Array.from(selectedIds)
+      .map((id) => rowsByIdRef.current.get(id))
+      .filter((p): p is Prospect => !!p && p.source === "prospect"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedIds],
   );
 
   // Score & Draft only applies to not-yet-visited lead_list-sourced rows --
   // a real prospects row already has a fit score/draft, so bulk scoring
   // only targets the complementary subset of the selection.
   const selectedLeadListSourced = useMemo(
-    () => allProspects.filter((p) => selectedIds.has(p.id) && p.source === "lead_list"),
-    [allProspects, selectedIds],
+    () => Array.from(selectedIds)
+      .map((id) => rowsByIdRef.current.get(id))
+      .filter((p): p is Prospect => !!p && p.source === "lead_list"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedIds],
   );
 
   async function handleBulkDelete() {
     await bulkDeleteProspects.mutateAsync({ ids: selectedProspectSourced.map((p) => p.rawId) });
     setSelectedIds(new Set());
+    setIsAllMatchingSelected(false);
     setBulkConfirmDelete(false);
     refetch();
   }
@@ -824,6 +899,7 @@ export default function ProspectsRoute() {
       await markSent.mutateAsync({ profileUrl: p.profileUrl! });
     }
     setSelectedIds(new Set());
+    setIsAllMatchingSelected(false);
     refetch();
   }
 
@@ -874,7 +950,7 @@ export default function ProspectsRoute() {
   // Sequential, not parallel -- keeps this well under the per-hour Apollo
   // rate limit and avoids hammering Apollo with a burst of concurrent calls.
   async function handleBulkEnrich() {
-    const targets = allProspects.filter((p) => selectedIds.has(p.id));
+    const targets = Array.from(selectedIds).map((id) => rowsByIdRef.current.get(id)).filter((p): p is Prospect => !!p);
     if (targets.length === 0) return;
     setBulkEnrichProgress({ done: 0, total: targets.length });
     for (const p of targets) {
@@ -895,6 +971,7 @@ export default function ProspectsRoute() {
     }
     setBulkEnrichProgress(null);
     setSelectedIds(new Set());
+    setIsAllMatchingSelected(false);
     refetch();
   }
 
@@ -931,6 +1008,7 @@ export default function ProspectsRoute() {
     }
     setBulkScoreDraftProgress(null);
     setSelectedIds(new Set());
+    setIsAllMatchingSelected(false);
     refetch();
   }
 
@@ -971,7 +1049,7 @@ export default function ProspectsRoute() {
         {someSelected ? (
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-foreground">{selectedIds.size} selected</span>
-            <button type="button" onClick={() => setSelectedIds(new Set())}
+            <button type="button" onClick={() => { setSelectedIds(new Set()); setIsAllMatchingSelected(false); }}
               className="text-xs text-muted-foreground hover:text-foreground">Deselect all</button>
             <div className="h-4 w-px bg-border" />
             {bulkConfirmDelete ? (
@@ -1023,7 +1101,7 @@ export default function ProspectsRoute() {
                 )}
                 <AddToListPopover
                   prospectIds={selectedProspectSourced.map((p) => p.rawId)}
-                  onDone={() => setSelectedIds(new Set())}
+                  onDone={() => { setSelectedIds(new Set()); setIsAllMatchingSelected(false); }}
                 />
               </>
             )}
@@ -1055,6 +1133,29 @@ export default function ProspectsRoute() {
           </div>
         )}
       </div>
+
+      {allFilteredSelected && !isAllMatchingSelected && (isFetchingAllMatches || (allMatchingIds !== null && allMatchingIds.size > filtered.length)) && (
+        <div className="flex items-center justify-center gap-1.5 border-b border-border bg-primary/5 px-4 py-2 text-xs text-foreground">
+          {isFetchingAllMatches && allMatchingIds === null ? (
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <IconLoader2 size={12} className="animate-spin" />
+              Checking how many match…
+            </span>
+          ) : (
+            <>
+              <span>{filtered.length} on this page selected.</span>
+              <button
+                type="button"
+                onClick={handleSelectAllMatching}
+                disabled={isFetchingAllMatches}
+                className="font-medium text-primary hover:underline disabled:opacity-50"
+              >
+                {isFetchingAllMatches ? "Selecting…" : `Select all ${allMatchingIds?.size.toLocaleString()} matching`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
