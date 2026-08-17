@@ -285,6 +285,28 @@ async function listLeadLists() {
   return await res.json(); // { lists: [{ id, name, totalCount }] }
 }
 
+async function getLeadListItems(listId) {
+  const { appUrl, apiToken } = await getSettings();
+  const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+  const res = await fetch(`${appUrl}/_agent-native/actions/get-lead-list-items-for-extension?listId=${encodeURIComponent(listId)}${tokenParam}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`get-lead-list-items-for-extension failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { list, items: [...] }
+}
+
+async function summarizeLeadList(listId) {
+  const { appUrl, apiToken } = await getSettings();
+  const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+  const res = await fetch(`${appUrl}/_agent-native/actions/summarize-lead-list-for-extension?listId=${encodeURIComponent(listId)}${tokenParam}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`summarize-lead-list-for-extension failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { summary: string | null }
+}
+
 // Scrapes the LinkedIn profile at profileUrl in a background tab, returns the
 // profile data. Opens a non-active tab, waits for load, injects the content
 // script, reads the profile, closes the tab.
@@ -468,6 +490,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     listLeadLists()
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => sendResponse({ ok: false, error: err.message, lists: [] }));
+    return true;
+  }
+
+  if (msg.type === "GET_LEAD_LIST_ITEMS") {
+    getLeadListItems(msg.listId)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message, list: null, items: [] }));
+    return true;
+  }
+
+  if (msg.type === "SUMMARIZE_LEAD_LIST") {
+    summarizeLeadList(msg.listId)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message, summary: null }));
     return true;
   }
 });

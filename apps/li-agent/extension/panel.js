@@ -990,6 +990,13 @@ const existingListPicker = document.getElementById("existing-list-picker");
 const existingListSelect = document.getElementById("existing-list-select");
 const cancelAddExistingBtn = document.getElementById("cancel-add-existing-btn");
 const confirmAddExistingBtn = document.getElementById("confirm-add-existing-btn");
+const apolloExportListSelect = document.getElementById("apollo-export-list-select");
+const apolloExportSummary = document.getElementById("apollo-export-summary");
+const apolloExportGenerateBtn = document.getElementById("apollo-export-generate-btn");
+const apolloExportFileRow = document.getElementById("apollo-export-file-row");
+const apolloExportFileChip = document.getElementById("apollo-export-file-chip");
+const apolloExportFileName = document.getElementById("apollo-export-file-name");
+const apolloExportDownloadLink = document.getElementById("apollo-export-download-link");
 
 const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
 // leadsByUrl is a plain object (not a Map) — chrome.storage.session values
@@ -1329,6 +1336,151 @@ listsSelectAllBtn?.addEventListener("click", () => {
 });
 
 tabListsBtn?.addEventListener("click", () => switchTab("lists"));
+
+// ── Export a saved list to Apollo (CSV) ──────────────────────────────
+// This workspace's Apollo API key has no write scope (contacts/create,
+// contacts/search, and list-write all live-confirmed 403 API_INACCESSIBLE)
+// -- so instead of pushing through Apollo's API, this builds a CSV
+// client-side and lets the rep drag it straight onto Apollo's own
+// "Import by CSV" drop zone, a normal Apollo product feature that needs
+// no API scope at all, only a logged-in Apollo session.
+
+function csvEscape(value) {
+  const s = value == null ? "" : String(value);
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function splitLeadName(name) {
+  if (!name) return { first: "", last: "" };
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+function buildApolloCsv(items) {
+  const header = ["First Name", "Last Name", "Company", "Title", "Email", "Phone", "LinkedIn Url", "Location"];
+  const rows = items.map((item) => {
+    const { first, last } = splitLeadName(item.name);
+    return [
+      first,
+      last,
+      item.company || "",
+      item.enrichedTitle || item.headline || "",
+      item.enrichedEmail || "",
+      item.enrichedPhone || "",
+      item.enrichedLinkedinUrl || item.salesNavLeadUrl || "",
+      item.location || "",
+    ].map(csvEscape).join(",");
+  });
+  return [header.join(","), ...rows].join("\r\n");
+}
+
+async function loadApolloExportListOptions() {
+  if (!apolloExportListSelect) return;
+  const result = await chrome.runtime
+    .sendMessage({ type: "LIST_LEAD_LISTS" })
+    .catch((err) => ({ ok: false, error: err.message, lists: [] }));
+  const lists = result?.lists || [];
+  apolloExportListSelect.innerHTML = "";
+
+  if (!result?.ok || lists.length === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = result?.ok ? "No saved lists yet" : "Could not load lists";
+    apolloExportListSelect.appendChild(opt);
+    if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = true;
+    return;
+  }
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a list…";
+  apolloExportListSelect.appendChild(placeholder);
+  // Build options with textContent (not innerHTML) to avoid XSS from list names.
+  lists.forEach((l) => {
+    const opt = document.createElement("option");
+    opt.value = l.id;
+    opt.textContent = `${l.name} (${l.totalCount} lead${l.totalCount === 1 ? "" : "s"})`;
+    apolloExportListSelect.appendChild(opt);
+  });
+}
+loadApolloExportListOptions();
+
+let apolloExportBlobUrl = null;
+
+apolloExportListSelect?.addEventListener("change", async () => {
+  const listId = apolloExportListSelect.value;
+  if (apolloExportFileRow) apolloExportFileRow.style.display = "none";
+  if (!listId) {
+    if (apolloExportSummary) { apolloExportSummary.textContent = ""; apolloExportSummary.className = ""; }
+    if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = true;
+    return;
+  }
+  if (apolloExportGenerateBtn) apolloExportGenerateBtn.disabled = false;
+  if (apolloExportSummary) {
+    apolloExportSummary.textContent = "Summarizing…";
+    apolloExportSummary.className = "loading";
+  }
+  const result = await chrome.runtime.sendMessage({ type: "SUMMARIZE_LEAD_LIST", listId }).catch(() => null);
+  if (apolloExportSummary) {
+    apolloExportSummary.className = "";
+    apolloExportSummary.textContent = result?.summary || "";
+  }
+});
+
+apolloExportGenerateBtn?.addEventListener("click", async () => {
+  const listId = apolloExportListSelect?.value;
+  if (!listId) return;
+  apolloExportGenerateBtn.disabled = true;
+  apolloExportGenerateBtn.textContent = "Generating…";
+
+  const result = await chrome.runtime
+    .sendMessage({ type: "GET_LEAD_LIST_ITEMS", listId })
+    .catch((err) => ({ ok: false, error: err.message }));
+
+  apolloExportGenerateBtn.textContent = "Generate CSV";
+  apolloExportGenerateBtn.disabled = false;
+
+  if (!result?.ok || !result.list || !result.items?.length) {
+    if (apolloExportSummary) {
+      apolloExportSummary.className = "";
+      apolloExportSummary.textContent = result?.error || "Could not load this list's leads.";
+    }
+    return;
+  }
+
+  const csv = buildApolloCsv(result.items);
+  const safeName = result.list.name.replace(/[^a-z0-9 _-]/gi, "").trim() || "leads";
+  const filename = `${safeName}.csv`;
+
+  if (apolloExportBlobUrl) URL.revokeObjectURL(apolloExportBlobUrl);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  apolloExportBlobUrl = URL.createObjectURL(blob);
+
+  if (apolloExportDownloadLink) {
+    apolloExportDownloadLink.href = apolloExportBlobUrl;
+    apolloExportDownloadLink.download = filename;
+  }
+  if (apolloExportFileName) apolloExportFileName.textContent = filename;
+  if (apolloExportFileRow) apolloExportFileRow.style.display = "flex";
+
+  // Lets the file chip be dragged directly out of this panel onto another
+  // tab's native file-drop zone -- the same "DownloadURL" trick Gmail uses
+  // to let you drag an attachment onto the desktop or into another app.
+  // Must be computed synchronously (not via FileReader) since dataTransfer
+  // can only be written inside the dragstart event, not in an async
+  // callback that fires after it. Untested from a Chrome side panel
+  // specifically -- the Download link above is a guaranteed-to-work
+  // fallback if this doesn't carry over from this surface.
+  const base64Csv = btoa(unescape(encodeURIComponent(csv)));
+  const dataUrl = `data:text/csv;charset=utf-8;base64,${base64Csv}`;
+  if (apolloExportFileChip) {
+    apolloExportFileChip.ondragstart = (e) => {
+      e.dataTransfer.setData("DownloadURL", `text/csv:${filename}:${dataUrl}`);
+      e.dataTransfer.effectAllowed = "copy";
+    };
+  }
+});
 
 // Extend the existing init and URL polling to handle post pages.
 // Patch: after the URL polling loop detects a new URL, also handle post pages.
