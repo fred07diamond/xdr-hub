@@ -656,12 +656,33 @@
     /* ── Lists tab ───────────────────────────────────────── */
     #lists-tab { display: none; }
 
+    /* ── Shared section-card chrome ──────────────────────── */
+    /* Each distinct tool in the Lists tab gets its own card +
+       colored eyebrow label, so what a section does is legible
+       from its container alone -- no explanatory paragraph needed. */
+    .li-card {
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 14px;
+      box-sizing: border-box;
+    }
+    .li-card-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 9px;
+    }
+
     /* ── AI search assistant ─────────────────────────────── */
     #ai-search-section {
-      margin-bottom: 16px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid #e5e7eb;
+      background: #f5f8ff;
+      border: 1px solid #dbe6fb;
     }
+    #ai-search-section .li-card-label { color: #0a66c2; }
     #ai-search-heading {
       font-size: 12px;
       font-weight: 700;
@@ -757,10 +778,15 @@
     #ai-search-status:empty { display: none; }
     #ai-search-status.error { color: #b91c1c; }
 
+    #lists-capture-card {
+      background: #f6faf8;
+      border: 1px solid #d9ece1;
+    }
+    #lists-capture-card .li-card-label { color: #1e7e34; }
     #lists-hint {
       font-size: 11px;
       color: #888;
-      line-height: 1.6;
+      line-height: 1.5;
       margin-bottom: 10px;
     }
     #lists-name {
@@ -776,6 +802,7 @@
       border-radius: 6px;
       background: #f0f4ff;
       font-family: inherit;
+      box-sizing: border-box;
       transition: border-color 0.15s, background 0.15s;
     }
     #lists-name::placeholder { color: #6b8fc9; font-weight: 500; }
@@ -1223,7 +1250,8 @@
        accumulates each page as it loads. -->
   <div id="lists-tab">
     <div id="lists-capture-section">
-      <div id="ai-search-section">
+      <div id="ai-search-section" class="li-card">
+        <div class="li-card-label">✨ AI Search Assistant</div>
         <div id="ai-search-heading">Describe who you're looking for</div>
         <textarea id="ai-search-prompt" placeholder="e.g. design persona folks at mid-size B2B SaaS companies…" rows="2"></textarea>
         <button id="ai-search-generate-btn" type="button">Generate search</button>
@@ -1235,17 +1263,18 @@
         </div>
         <div id="ai-search-status"></div>
       </div>
-      <div id="lists-hint">
-        Page through this list or search in Sales Navigator yourself — each page you view gets captured automatically. Click "Send to LinkedIn Agent" once you've reached the end (or whenever you want to import what's captured so far).
-      </div>
-      <input id="lists-name" type="text" placeholder="Name this list…" autocomplete="off" />
-      <textarea id="lists-description" placeholder="Add a description (optional)…" rows="2"></textarea>
-      <div id="lists-count-row">
-        <span id="lists-count">0 leads captured across 1 page</span>
-        <button id="lists-select-all-btn" type="button">Select all</button>
-      </div>
-      <div id="lists-leads">
-        <div id="lists-empty">Open a Sales Navigator saved lead list or run a search to start capturing leads.</div>
+      <div id="lists-capture-card" class="li-card">
+        <div class="li-card-label">📥 Captured Leads</div>
+        <div id="lists-hint">Auto-captured as you page through Sales Nav yourself.</div>
+        <input id="lists-name" type="text" placeholder="Name this list…" autocomplete="off" />
+        <textarea id="lists-description" placeholder="Add a description (optional)…" rows="2"></textarea>
+        <div id="lists-count-row">
+          <span id="lists-count">0 leads captured across 1 page</span>
+          <button id="lists-select-all-btn" type="button">Select all</button>
+        </div>
+        <div id="lists-leads">
+          <div id="lists-empty">Open a Sales Navigator saved lead list or run a search to start capturing leads.</div>
+        </div>
       </div>
       <div id="lists-controls">
         <button id="start-new-import-btn">Start new import</button>
