@@ -1,7 +1,7 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { callAction, useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconExternalLink, IconListCheck, IconLoader2, IconSparkles, IconTrash, IconUsers } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
@@ -210,12 +210,61 @@ export default function LeadListsPage() {
   const listsQuery = useActionQuery("list-lead-lists", {}, { refetchInterval: 30_000 });
   const lists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
 
+  // Paginated -- a list can hold up to 500 items and this used to fetch
+  // every one of them on every selection/poll. Page 1 still polls live
+  // (enrichment/reveal status changes while the tab is open); further
+  // pages are loaded on demand and appended.
+  const ITEMS_PAGE_SIZE = 200;
+  const [loadedExtraItems, setLoadedExtraItems] = useState<LeadListItem[]>([]);
+  const [isLoadingMoreItems, setIsLoadingMoreItems] = useState(false);
+  const [itemsTotalCount, setItemsTotalCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLoadedExtraItems([]);
+    setItemsTotalCount(null);
+  }, [selectedListId]);
+
   const itemsQuery = useActionQuery(
     "get-lead-list-items",
-    { listId: selectedListId ?? "" },
+    { listId: selectedListId ?? "", limit: ITEMS_PAGE_SIZE, offset: 0 },
     { enabled: !!selectedListId, refetchInterval: 5_000 },
   );
-  const items: LeadListItem[] = (itemsQuery.data as { items?: LeadListItem[] } | undefined)?.items ?? [];
+
+  useEffect(() => {
+    const tc = (itemsQuery.data as { totalCount?: number } | undefined)?.totalCount;
+    if (typeof tc === "number") setItemsTotalCount(tc);
+  }, [itemsQuery.data]);
+
+  const firstPageItems: LeadListItem[] = (itemsQuery.data as { items?: LeadListItem[] } | undefined)?.items ?? [];
+  const items: LeadListItem[] = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: LeadListItem[] = [];
+    for (const it of [...firstPageItems, ...loadedExtraItems]) {
+      if (seen.has(it.id)) continue;
+      seen.add(it.id);
+      merged.push(it);
+    }
+    return merged;
+  }, [firstPageItems, loadedExtraItems]);
+
+  const hasMoreItems = itemsTotalCount != null && items.length < itemsTotalCount;
+
+  async function handleLoadMoreItems() {
+    if (!selectedListId) return;
+    setIsLoadingMoreItems(true);
+    try {
+      const result = await callAction<{ items: LeadListItem[]; totalCount: number }>("get-lead-list-items", {
+        listId: selectedListId,
+        limit: ITEMS_PAGE_SIZE,
+        offset: items.length,
+      });
+      setLoadedExtraItems((prev) => [...prev, ...result.items]);
+      setItemsTotalCount(result.totalCount);
+    } finally {
+      setIsLoadingMoreItems(false);
+    }
+  }
+
   const activeList = (itemsQuery.data as { list?: LeadList } | undefined)?.list ?? null;
 
   const deleteList = useActionMutation("delete-lead-list");
@@ -388,7 +437,7 @@ export default function LeadListsPage() {
                 <div>
                   <h2 className="text-sm font-semibold">{activeList?.name ?? "Lead List"}</h2>
                   <p className="text-xs text-muted-foreground">
-                    {items.length} lead{items.length === 1 ? "" : "s"}
+                    {items.length}{hasMoreItems ? ` of ${itemsTotalCount}` : ""} lead{items.length === 1 ? "" : "s"}
                   </p>
                 </div>
               )}
@@ -466,6 +515,17 @@ export default function LeadListsPage() {
                 </table>
               )}
             </div>
+            {hasMoreItems && (
+              <div className="flex items-center justify-center border-t border-border px-4 py-2.5">
+                <button
+                  onClick={handleLoadMoreItems}
+                  disabled={isLoadingMoreItems}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                >
+                  {isLoadingMoreItems ? "Loading…" : `Load more (${(itemsTotalCount ?? 0) - items.length} remaining)`}
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

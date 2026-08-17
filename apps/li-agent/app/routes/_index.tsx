@@ -4,6 +4,7 @@ import {
   IconCheck,
   IconClipboard,
   IconExternalLink,
+  IconListCheck,
   IconLoader2,
   IconRefresh,
   IconSearch,
@@ -30,6 +31,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
 
@@ -781,6 +783,7 @@ export default function ProspectsRoute() {
                     <IconSparkles size={13} /> Enrich selected
                   </button>
                 )}
+                <AddToListPopover selectedIds={selectedIds} onDone={() => setSelectedIds(new Set())} />
               </>
             )}
           </div>
@@ -1016,5 +1019,138 @@ export default function ProspectsRoute() {
         />
       )}
     </div>
+  );
+}
+
+// Lets a rep build a Lead List directly from selected Prospects, mirroring
+// the extension's "Create List" / "Add to Existing List" pattern -- once a
+// prospect is in a list, Apollo enrichment, phone reveal, and the Apollo
+// CSV export all work on it identically, since lead_list_items shares the
+// same enrichment column shape as prospects.
+function AddToListPopover({ selectedIds, onDone }: { selectedIds: Set<string>; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"create" | "existing">("create");
+  const [newListName, setNewListName] = useState("");
+  const [newListDescription, setNewListDescription] = useState("");
+  const [existingListId, setExistingListId] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+
+  const listsQuery = useActionQuery("list-lead-lists", {}, { enabled: open });
+  const lists = ((listsQuery.data as { lists?: { id: string; name: string; totalCount: number }[] } | undefined)?.lists ?? []);
+  const addToList = useActionMutation("add-prospects-to-lead-list");
+
+  function resetForm() {
+    setNewListName("");
+    setNewListDescription("");
+    setExistingListId("");
+    setStatus(null);
+    setMode("create");
+  }
+
+  async function handleSubmit() {
+    setStatus(null);
+    const payload =
+      mode === "create"
+        ? { prospectIds: Array.from(selectedIds), newListName, newListDescription: newListDescription || null }
+        : { prospectIds: Array.from(selectedIds), existingListId };
+    if (mode === "create" && !newListName.trim()) {
+      setStatus("Give the new list a name.");
+      return;
+    }
+    if (mode === "existing" && !existingListId) {
+      setStatus("Pick a list.");
+      return;
+    }
+    try {
+      const result = await addToList.mutateAsync(payload);
+      if (result?.error) {
+        setStatus(result.error);
+        return;
+      }
+      setOpen(false);
+      resetForm();
+      onDone();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Something went wrong.");
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) resetForm(); }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <IconListCheck size={13} /> Add to list
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-3">
+        <div className="mb-2 flex gap-1 rounded-lg border border-border bg-muted/40 p-1">
+          <button
+            type="button"
+            onClick={() => setMode("create")}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              mode === "create" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            New list
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("existing")}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              mode === "existing" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Existing list
+          </button>
+        </div>
+
+        {mode === "create" ? (
+          <div className="space-y-2">
+            <input
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              placeholder="Name this list…"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <textarea
+              value={newListDescription}
+              onChange={(e) => setNewListDescription(e.target.value)}
+              placeholder="Description (optional)…"
+              rows={2}
+              className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+        ) : (
+          <select
+            value={existingListId}
+            onChange={(e) => setExistingListId(e.target.value)}
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="">
+              {listsQuery.isLoading ? "Loading your lists…" : lists.length === 0 ? "No lists yet" : "Select a list…"}
+            </option>
+            {lists.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name} ({l.totalCount} lead{l.totalCount === 1 ? "" : "s"})
+              </option>
+            ))}
+          </select>
+        )}
+
+        {status && <p className="mt-2 text-xs text-destructive">{status}</p>}
+
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={addToList.isPending}
+          className="mt-3 w-full rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {addToList.isPending ? "Adding…" : `Add ${selectedIds.size} prospect${selectedIds.size === 1 ? "" : "s"}`}
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
