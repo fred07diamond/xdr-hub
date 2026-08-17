@@ -1,18 +1,25 @@
 import { defineAction } from "@agent-native/core";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems, prospects } from "../server/db/schema.js";
 
 // One combined, deduped view across everything this owner has ever
 // captured -- the `prospects` table (profile-visit captures, richer: ICP
-// fit/draft note) and `leadListItems` across every lead list (shallow Sales
-// Nav imports). A lead list item's profileUrl is null until the xDR opens
-// that lead's actual profile (see leadListItems' schema comment) -- once it
-// is set, a matching prospects row exists for the same person, so it's
-// suppressed here in favor of the richer prospects row. Cross-list dedup by
-// salesNavLeadUrl already happens at import time (import-sales-nav-list.ts),
-// so no lead list item duplicates another within this owner's data.
+// fit/draft note/rating/phone-reveal) and `leadListItems` across every lead
+// list (shallow Sales Nav imports). A lead list item's profileUrl is null
+// until the xDR opens that lead's actual profile (see leadListItems' schema
+// comment) -- once it is set, a matching prospects row exists for the same
+// person, so it's suppressed here in favor of the richer prospects row.
+// Cross-list dedup by salesNavLeadUrl already happens at import time
+// (import-sales-nav-list.ts), so no lead list item duplicates another
+// within this owner's data.
+//
+// This is the ONLY row backing the main Prospects page (app/routes/_index.tsx)
+// now -- `rawId` (the real, unprefixed prospects.id or leadListItems.id) is
+// what per-row mutations (enrich, rate, note, delete, mark-sent, add-to-list)
+// must be called with; `id` is prefixed ("prospect:"/"lead_list:") only to
+// keep the two id namespaces from colliding as merged React list keys.
 //
 // Dedup/merge happens in application code, not SQL, because it spans two
 // differently-shaped tables -- both are fetched in full for this owner and
@@ -46,7 +53,12 @@ export default defineAction({
           company: prospects.company,
           profileUrl: prospects.profileUrl,
           fitVerdict: prospects.fitVerdict,
+          fitReason: prospects.fitReason,
+          draftNote: prospects.draftNote,
+          draftFollowUp: prospects.draftFollowUp,
           status: prospects.status,
+          rating: prospects.rating,
+          ratingNote: prospects.ratingNote,
           personaId: prospects.personaId,
           personaName: prospects.personaName,
           personaColor: prospects.personaColor,
@@ -58,7 +70,10 @@ export default defineAction({
           enrichedCompanyIndustry: prospects.enrichedCompanyIndustry,
           enrichedCompanySize: prospects.enrichedCompanySize,
           enrichmentError: prospects.enrichmentError,
+          phoneRevealStatus: prospects.phoneRevealStatus,
+          phoneRevealRequestedAt: prospects.phoneRevealRequestedAt,
           createdAt: prospects.createdAt,
+          updatedAt: prospects.updatedAt,
         })
         .from(prospects)
         .where(eq(prospects.ownerEmail, userEmail)),
@@ -95,6 +110,7 @@ export default defineAction({
     const merged = [
       ...prospectRows.map((p) => ({
         id: `prospect:${p.id}`,
+        rawId: p.id,
         source: "prospect" as const,
         name: p.name,
         headline: p.headline,
@@ -105,7 +121,12 @@ export default defineAction({
         salesNavLeadUrl: null as string | null,
         listName: null as string | null,
         fitVerdict: p.fitVerdict,
+        fitReason: p.fitReason,
+        draftNote: p.draftNote,
+        draftFollowUp: p.draftFollowUp,
         status: p.status as string | null,
+        rating: p.rating,
+        ratingNote: p.ratingNote,
         personaId: p.personaId,
         personaName: p.personaName,
         personaColor: p.personaColor,
@@ -117,12 +138,16 @@ export default defineAction({
         enrichedCompanyIndustry: p.enrichedCompanyIndustry,
         enrichedCompanySize: p.enrichedCompanySize,
         enrichmentError: p.enrichmentError,
+        phoneRevealStatus: p.phoneRevealStatus,
+        phoneRevealRequestedAt: p.phoneRevealRequestedAt,
         createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
       })),
       ...leadListRows
         .filter((li) => !li.profileUrl || !profileUrlSet.has(li.profileUrl))
         .map((li) => ({
           id: `lead_list:${li.id}`,
+          rawId: li.id,
           source: "lead_list" as const,
           name: li.name,
           headline: li.headline,
@@ -133,7 +158,12 @@ export default defineAction({
           salesNavLeadUrl: li.salesNavLeadUrl,
           listName: li.listName,
           fitVerdict: null as string | null,
+          fitReason: null as string | null,
+          draftNote: null as string | null,
+          draftFollowUp: null as string | null,
           status: null as string | null,
+          rating: null as number | null,
+          ratingNote: null as string | null,
           personaId: li.personaId,
           personaName: li.personaName,
           personaColor: li.personaColor,
@@ -145,7 +175,10 @@ export default defineAction({
           enrichedCompanyIndustry: li.enrichedCompanyIndustry,
           enrichedCompanySize: li.enrichedCompanySize,
           enrichmentError: li.enrichmentError,
+          phoneRevealStatus: null as string | null,
+          phoneRevealRequestedAt: null as string | null,
           createdAt: li.createdAt,
+          updatedAt: li.createdAt,
         })),
     ];
 

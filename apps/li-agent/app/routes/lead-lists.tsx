@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/Pagination";
-import { MasterProspectsTable } from "@/components/MasterProspectsTable";
 
 type LeadListItem = {
   id: string;
@@ -384,7 +383,12 @@ export default function LeadListsPage() {
       {/* Right panel — lead list items */}
       <div className="flex-1 flex flex-col min-w-0">
         {!selectedListId ? (
-          <MasterProspectsTable />
+          <div className="flex flex-1 items-center justify-center">
+            <div className="text-center">
+              <IconListCheck size={32} className="mx-auto text-muted-foreground/40" />
+              <p className="mt-3 text-sm text-muted-foreground">Select a lead list to view leads</p>
+            </div>
+          </div>
         ) : (
           <>
             {/* Header */}

@@ -1,8 +1,9 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { callAction, useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconBrandLinkedin,
   IconCheck,
   IconClipboard,
+  IconDownload,
   IconExternalLink,
   IconListCheck,
   IconLoader2,
@@ -14,6 +15,8 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
+
+import { buildMasterCsv } from "@/lib/prospects-csv";
 
 function HubSpotIcon() {
   return (
@@ -48,7 +51,16 @@ type Status = "captured" | "drafted" | "sent";
 
 interface Prospect {
   id: string;
-  profileUrl: string;
+  // The real, unprefixed prospects.id or leadListItems.id -- what per-row
+  // mutations (enrich/rate/note/delete/mark-sent/add-to-list) must target.
+  // `id` is prefixed ("prospect:"/"lead_list:") only to keep the two id
+  // namespaces from colliding as merged React list keys.
+  rawId: string;
+  source: "prospect" | "lead_list";
+  profileUrl: string | null;
+  salesNavLeadUrl: string | null;
+  listName: string | null;
+  location: string | null;
   name: string | null;
   headline: string | null;
   role: string | null;
@@ -61,7 +73,9 @@ interface Prospect {
   personaColor: string | null;
   rating: number | null;
   ratingNote: string | null;
-  status: Status;
+  // null for lead_list-sourced rows -- not yet visited, no status lifecycle
+  // has started for them.
+  status: Status | null;
   enrichmentStatus: "idle" | "enriching" | "done" | "not_found" | "failed";
   enrichedEmail: string | null;
   enrichedTitle: string | null;
@@ -74,6 +88,14 @@ interface Prospect {
   phoneRevealRequestedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+}
+
+function linkedInHref(p: Prospect): string {
+  if (p.profileUrl) return p.profileUrl;
+  if (p.enrichedLinkedinUrl) return p.enrichedLinkedinUrl;
+  if (p.salesNavLeadUrl) return p.salesNavLeadUrl;
+  const parts = [p.name, p.company].filter(Boolean);
+  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(parts.join(" "))}`;
 }
 
 // Apollo doesn't always send a phone-reveal webhook back for a genuine
@@ -110,7 +132,8 @@ function VerdictBadge({ verdict }: { verdict: Verdict }) {
   );
 }
 
-function StatusBadge({ status }: { status: Status }) {
+function StatusBadge({ status }: { status: Status | null }) {
+  if (!status) return <span className="text-xs text-muted-foreground">—</span>;
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[status]}`}>
       {status}
@@ -249,18 +272,20 @@ function ProspectSheet({
   onUpdated: () => void;
   onDeleted: () => void;
 }) {
+  const isProspect = prospect.source === "prospect";
   const markSent = useActionMutation("mark-sent");
   const updateNote = useActionMutation("update-prospect-note");
   const deleteProspect = useActionMutation("delete-prospect");
   const rateProspect = useActionMutation("rate-prospect");
   const redraft = useActionMutation("redraft-prospect");
   const enrichProspect = useActionMutation("enrich-prospect");
+  const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
   const [isEnriching, setIsEnriching] = useState(false);
 
   const crmQuery = useActionQuery(
     "check-hubspot-contact",
-    { profileUrl: prospect.profileUrl },
-    { enabled: true },
+    { profileUrl: prospect.profileUrl ?? "" },
+    { enabled: !!prospect.profileUrl },
   );
   const crm = crmQuery.data as
     | {
@@ -289,18 +314,19 @@ function ProspectSheet({
   }, [prospect.draftNote, prospect.draftFollowUp, prospect.updatedAt]);
 
   async function handleSaveNote() {
-    await updateNote.mutateAsync({ id: prospect.id, draftNote: note, draftFollowUp: followUp || null });
+    await updateNote.mutateAsync({ id: prospect.rawId, draftNote: note, draftFollowUp: followUp || null });
     setNoteDirty(false);
     onUpdated();
   }
 
   async function handleMarkSent() {
+    if (!prospect.profileUrl) return;
     await markSent.mutateAsync({ profileUrl: prospect.profileUrl });
     onUpdated();
   }
 
   async function handleRedraft() {
-    const result = await redraft.mutateAsync({ id: prospect.id });
+    const result = await redraft.mutateAsync({ id: prospect.rawId });
     if (result?.draft) {
       setNote(result.draft.draftNote ?? "");
       setFollowUp(result.draft.draftFollowUp ?? "");
@@ -312,7 +338,7 @@ function ProspectSheet({
   async function handleRate(value: 1 | -1) {
     const newRating = rating === value ? null : value;
     const note = newRating === -1 ? ratingNote : null;
-    await rateProspect.mutateAsync({ id: prospect.id, rating: newRating ?? value, ratingNote: note });
+    await rateProspect.mutateAsync({ id: prospect.rawId, rating: newRating ?? value, ratingNote: note });
     setRating(newRating);
     if (newRating === -1) setShowRatingNote(true);
     else setShowRatingNote(false);
@@ -321,13 +347,13 @@ function ProspectSheet({
 
   async function handleRatingNoteBlur() {
     if (rating === -1 && ratingNote.trim()) {
-      await rateProspect.mutateAsync({ id: prospect.id, rating: -1, ratingNote: ratingNote.trim() });
+      await rateProspect.mutateAsync({ id: prospect.rawId, rating: -1, ratingNote: ratingNote.trim() });
       onUpdated();
     }
   }
 
   async function handleDelete() {
-    await deleteProspect.mutateAsync({ id: prospect.id });
+    await deleteProspect.mutateAsync({ id: prospect.rawId });
     onClose();
     onDeleted();
   }
@@ -335,7 +361,8 @@ function ProspectSheet({
   async function handleEnrichFromSheet() {
     setIsEnriching(true);
     try {
-      await enrichProspect.mutateAsync({ id: prospect.id });
+      if (isProspect) await enrichProspect.mutateAsync({ id: prospect.rawId });
+      else await enrichLeadListItem.mutateAsync({ itemId: prospect.rawId });
     } finally {
       setIsEnriching(false);
       onUpdated();
@@ -349,15 +376,16 @@ function ProspectSheet({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <SheetTitle className="flex items-center gap-1.5 text-sm font-semibold">
-                <a href={prospect.profileUrl} target="_blank" rel="noopener noreferrer"
+                <a href={linkedInHref(prospect)} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 hover:text-primary hover:underline">
                   <IconBrandLinkedin size={15} className="shrink-0 text-[#0077B5]" />
-                  {prospect.name ?? prospect.profileUrl}
+                  {prospect.name ?? prospect.profileUrl ?? "Open LinkedIn"}
                 </a>
               </SheetTitle>
-              {(prospect.role || prospect.company) && (
+              {(prospect.role || prospect.company || prospect.listName) && (
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {[prospect.role, prospect.company].filter(Boolean).join(" · ")}
+                  {!isProspect && prospect.listName && ` · from "${prospect.listName}"`}
                 </p>
               )}
             </div>
@@ -407,50 +435,62 @@ function ProspectSheet({
               <p className="text-sm text-foreground leading-relaxed">{prospect.fitReason}</p>
             </div>
           )}
-          <div>
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connection note</p>
-            <textarea value={note} onChange={(e) => { setNote(e.target.value); setNoteDirty(true); }} rows={6}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
-            <div className="mt-1 flex items-center justify-between">
-              <span className={`text-xs ${note.length > 300 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
-                {note.length} / 300 chars
-              </span>
-              <CopyButton text={note} />
+          {isProspect && (
+            <div>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connection note</p>
+              <textarea value={note} onChange={(e) => { setNote(e.target.value); setNoteDirty(true); }} rows={6}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
+              <div className="mt-1 flex items-center justify-between">
+                <span className={`text-xs ${note.length > 300 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                  {note.length} / 300 chars
+                </span>
+                <CopyButton text={note} />
+              </div>
             </div>
-          </div>
-          <div>
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Follow-up (after they accept)</p>
-            <textarea value={followUp} onChange={(e) => { setFollowUp(e.target.value); setNoteDirty(true); }} rows={3}
-              placeholder="No follow-up drafted"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50" />
-            {followUp && <div className="mt-1 flex justify-end"><CopyButton text={followUp} label="Copy follow-up" /></div>}
-          </div>
+          )}
+          {isProspect && (
+            <div>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Follow-up (after they accept)</p>
+              <textarea value={followUp} onChange={(e) => { setFollowUp(e.target.value); setNoteDirty(true); }} rows={3}
+                placeholder="No follow-up drafted"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50" />
+              {followUp && <div className="mt-1 flex justify-end"><CopyButton text={followUp} label="Copy follow-up" /></div>}
+            </div>
+          )}
 
-          <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Was this note helpful?</p>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => handleRate(1)} disabled={rateProspect.isPending}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${rating === 1 ? "border-emerald-400 bg-emerald-500/10 text-emerald-600" : "border-border hover:bg-muted text-muted-foreground"}`}>
-                <IconThumbUp size={13} />
-                Helpful
-              </button>
-              <button type="button" onClick={() => { handleRate(-1); setShowRatingNote(true); }} disabled={rateProspect.isPending}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${rating === -1 ? "border-rose-400 bg-rose-500/10 text-rose-500" : "border-border hover:bg-muted text-muted-foreground"}`}>
-                <IconThumbDown size={13} />
-                Not helpful
-              </button>
+          {!isProspect && (
+            <p className="text-xs italic text-muted-foreground">
+              Not visited yet -- no fit scoring or draft note exists until the profile is opened in LinkedIn.
+            </p>
+          )}
+
+          {isProspect && (
+            <div>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Was this note helpful?</p>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => handleRate(1)} disabled={rateProspect.isPending}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${rating === 1 ? "border-emerald-400 bg-emerald-500/10 text-emerald-600" : "border-border hover:bg-muted text-muted-foreground"}`}>
+                  <IconThumbUp size={13} />
+                  Helpful
+                </button>
+                <button type="button" onClick={() => { handleRate(-1); setShowRatingNote(true); }} disabled={rateProspect.isPending}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${rating === -1 ? "border-rose-400 bg-rose-500/10 text-rose-500" : "border-border hover:bg-muted text-muted-foreground"}`}>
+                  <IconThumbDown size={13} />
+                  Not helpful
+                </button>
+              </div>
+              {(showRatingNote || rating === -1) && (
+                <input
+                  type="text"
+                  value={ratingNote}
+                  onChange={(e) => setRatingNote(e.target.value)}
+                  onBlur={handleRatingNoteBlur}
+                  placeholder="What was off? (optional)"
+                  className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              )}
             </div>
-            {(showRatingNote || rating === -1) && (
-              <input
-                type="text"
-                value={ratingNote}
-                onChange={(e) => setRatingNote(e.target.value)}
-                onBlur={handleRatingNoteBlur}
-                placeholder="What was off? (optional)"
-                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            )}
-          </div>
+          )}
 
           <div className="pt-4 border-t border-border">
             <div className="mb-2 flex items-center justify-between">
@@ -513,48 +553,50 @@ function ProspectSheet({
           </div>
         </div>
 
-        <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {noteDirty ? (
-              <button type="button" onClick={handleSaveNote} disabled={updateNote.isPending}
-                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {updateNote.isPending && <IconLoader2 size={12} className="animate-spin" />}
-                Save changes
-              </button>
-            ) : prospect.status !== "sent" ? (
-              <button type="button" onClick={handleMarkSent} disabled={markSent.isPending}
+        {isProspect && (
+          <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {noteDirty ? (
+                <button type="button" onClick={handleSaveNote} disabled={updateNote.isPending}
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                  {updateNote.isPending && <IconLoader2 size={12} className="animate-spin" />}
+                  Save changes
+                </button>
+              ) : prospect.status !== "sent" ? (
+                <button type="button" onClick={handleMarkSent} disabled={markSent.isPending}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
+                  {markSent.isPending ? <IconLoader2 size={12} className="animate-spin" /> : <IconCheck size={13} />}
+                  Mark sent
+                </button>
+              ) : null}
+              <button type="button" onClick={handleRedraft} disabled={redraft.isPending}
+                title="Regenerate note"
                 className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
-                {markSent.isPending ? <IconLoader2 size={12} className="animate-spin" /> : <IconCheck size={13} />}
-                Mark sent
+                {redraft.isPending ? <IconLoader2 size={12} className="animate-spin" /> : <IconRefresh size={13} />}
+                Re-draft
               </button>
-            ) : null}
-            <button type="button" onClick={handleRedraft} disabled={redraft.isPending}
-              title="Regenerate note"
-              className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
-              {redraft.isPending ? <IconLoader2 size={12} className="animate-spin" /> : <IconRefresh size={13} />}
-              Re-draft
-            </button>
-          </div>
-          <div>
-            {confirmDelete ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Delete this prospect?</span>
-                <button type="button" onClick={handleDelete} disabled={deleteProspect.isPending}
-                  className="rounded px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
-                  {deleteProspect.isPending ? "Deleting…" : "Yes, delete"}
+            </div>
+            <div>
+              {confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Delete this prospect?</span>
+                  <button type="button" onClick={handleDelete} disabled={deleteProspect.isPending}
+                    className="rounded px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
+                    {deleteProspect.isPending ? "Deleting…" : "Yes, delete"}
+                  </button>
+                  <button type="button" onClick={() => setConfirmDelete(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
+                    <IconX size={13} />
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setConfirmDelete(true)}
+                  className="rounded p-1.5 text-muted-foreground/50 hover:bg-muted hover:text-destructive transition-colors" title="Delete">
+                  <IconTrash size={15} />
                 </button>
-                <button type="button" onClick={() => setConfirmDelete(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
-                  <IconX size={13} />
-                </button>
-              </div>
-            ) : (
-              <button type="button" onClick={() => setConfirmDelete(true)}
-                className="rounded p-1.5 text-muted-foreground/50 hover:bg-muted hover:text-destructive transition-colors" title="Delete">
-                <IconTrash size={15} />
-              </button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -575,26 +617,29 @@ export default function ProspectsRoute() {
 
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const bulkDeleteProspects = useActionMutation("bulk-delete-prospects");
   const deleteProspect = useActionMutation("delete-prospect");
   const markSent = useActionMutation("mark-sent");
   const enrichProspect = useActionMutation("enrich-prospect");
+  const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
 
-  // Paginated -- list-prospects used to fetch every prospect ever captured
-  // in one unbounded query on every page load, which got slower as the
-  // table grew. Page-number navigation (25/page), not accumulating
-  // "Load more" -- only the current page polls live for in-progress
-  // captures.
+  // Paginated -- merges the prospects table with every Lead List's items,
+  // deduped (list-all-prospects.ts), so this one table is "everything ever
+  // captured," not just profile-visit prospects. Page-number navigation
+  // (25/page), not accumulating "Load more" -- only the current page polls
+  // live for in-progress captures.
   const PROSPECTS_PAGE_SIZE = 25;
   const [prospectsPage, setProspectsPage] = useState(1);
 
   const { data, refetch, isLoading } = useActionQuery(
-    "list-prospects",
+    "list-all-prospects",
     { limit: PROSPECTS_PAGE_SIZE, offset: (prospectsPage - 1) * PROSPECTS_PAGE_SIZE },
     {
       refetchInterval: (query) => {
-        const rows = (query.state.data as any)?.prospects as any[] | undefined;
+        const rows = (query.state.data as any)?.rows as any[] | undefined;
         return rows?.some((p) => p.status === "captured") ? 5000 : 30000;
       },
       refetchIntervalInBackground: false,
@@ -602,7 +647,7 @@ export default function ProspectsRoute() {
     },
   );
 
-  const allProspects: Prospect[] = (data as any)?.prospects ?? [];
+  const allProspects: Prospect[] = (data as any)?.rows ?? [];
   const prospectsTotalCount: number = (data as any)?.totalCount ?? 0;
 
   // Filtering/search only apply within the current page (each page is a
@@ -661,26 +706,40 @@ export default function ProspectsRoute() {
     }
   }
 
+  // "Add to list" and delete both operate on the real prospects table
+  // (bulk-delete-prospects, add-prospects-to-lead-list) -- a lead_list-
+  // sourced row isn't in that table, so those bulk actions only apply to
+  // the prospect-sourced subset of the current selection.
+  const selectedProspectSourced = useMemo(
+    () => allProspects.filter((p) => selectedIds.has(p.id) && p.source === "prospect"),
+    [allProspects, selectedIds],
+  );
+
   async function handleBulkDelete() {
-    await bulkDeleteProspects.mutateAsync({ ids: Array.from(selectedIds) });
+    await bulkDeleteProspects.mutateAsync({ ids: selectedProspectSourced.map((p) => p.rawId) });
     setSelectedIds(new Set());
     setBulkConfirmDelete(false);
     refetch();
   }
 
   async function handleBulkMarkSent() {
-    const toMark = allProspects.filter((p) => selectedIds.has(p.id) && p.status !== "sent");
+    const toMark = selectedProspectSourced.filter((p) => p.status !== "sent" && p.profileUrl);
     for (const p of toMark) {
-      await markSent.mutateAsync({ profileUrl: p.profileUrl });
+      await markSent.mutateAsync({ profileUrl: p.profileUrl! });
     }
     setSelectedIds(new Set());
     refetch();
   }
 
+  async function enrichOne(prospect: Prospect) {
+    if (prospect.source === "prospect") await enrichProspect.mutateAsync({ id: prospect.rawId });
+    else await enrichLeadListItem.mutateAsync({ itemId: prospect.rawId });
+  }
+
   async function handleEnrich(prospect: Prospect) {
     setEnrichingIds((prev) => new Set(prev).add(prospect.id));
     try {
-      await enrichProspect.mutateAsync({ id: prospect.id });
+      await enrichOne(prospect);
     } finally {
       setEnrichingIds((prev) => {
         const next = new Set(prev);
@@ -700,7 +759,7 @@ export default function ProspectsRoute() {
     for (const p of targets) {
       setEnrichingIds((prev) => new Set(prev).add(p.id));
       try {
-        await enrichProspect.mutateAsync({ id: p.id });
+        await enrichOne(p);
       } catch {
         // Per-item failures are surfaced via enrichmentError on that row --
         // keep going so one bad prospect doesn't stop the rest of the batch.
@@ -720,6 +779,34 @@ export default function ProspectsRoute() {
 
   const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || search;
 
+  const EXPORT_FETCH_LIMIT = 5000;
+  async function handleExportAll() {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const result = await callAction("list-all-prospects", { limit: EXPORT_FETCH_LIMIT, offset: 0 }, { method: "GET" });
+      const rows: Prospect[] = (result as { rows?: Prospect[] } | undefined)?.rows ?? [];
+      if (rows.length === 0) {
+        setExportError("Nothing to export yet.");
+        return;
+      }
+      const csv = buildMasterCsv(rows);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `all-prospects-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Could not export -- try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -732,8 +819,8 @@ export default function ProspectsRoute() {
             <div className="h-4 w-px bg-border" />
             {bulkConfirmDelete ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Delete {selectedIds.size} prospects?</span>
-                <button type="button" onClick={handleBulkDelete} disabled={bulkDeleteProspects.isPending}
+                <span className="text-xs text-muted-foreground">Delete {selectedProspectSourced.length} prospects?</span>
+                <button type="button" onClick={handleBulkDelete} disabled={bulkDeleteProspects.isPending || selectedProspectSourced.length === 0}
                   className="rounded px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
                   {bulkDeleteProspects.isPending ? "Deleting…" : "Confirm"}
                 </button>
@@ -744,7 +831,9 @@ export default function ProspectsRoute() {
             ) : (
               <>
                 <button type="button" onClick={() => setBulkConfirmDelete(true)}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10">
+                  disabled={selectedProspectSourced.length === 0}
+                  title={selectedProspectSourced.length === 0 ? "Only visited prospects can be deleted here" : undefined}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:pointer-events-none">
                   <IconTrash size={13} /> Delete
                 </button>
                 <button type="button" onClick={handleBulkMarkSent} disabled={markSent.isPending}
@@ -762,20 +851,37 @@ export default function ProspectsRoute() {
                     <IconSparkles size={13} /> Enrich selected
                   </button>
                 )}
-                <AddToListPopover selectedIds={selectedIds} onDone={() => setSelectedIds(new Set())} />
+                <AddToListPopover
+                  prospectIds={selectedProspectSourced.map((p) => p.rawId)}
+                  onDone={() => setSelectedIds(new Set())}
+                />
               </>
             )}
           </div>
         ) : (
-          <div>
-            <h1 className="text-sm font-semibold text-foreground">Prospects</h1>
-            <p className="text-xs text-muted-foreground">
-              {isLoading
-                ? "Loading…"
-                : hasActiveFilter
-                  ? `${filtered.length} of ${allProspects.length} on this page match`
-                  : `${allProspects.length} prospect${allProspects.length === 1 ? "" : "s"} on this page`}
-            </p>
+          <div className="flex w-full items-center justify-between">
+            <div>
+              <h1 className="text-sm font-semibold text-foreground">Prospects</h1>
+              <p className="text-xs text-muted-foreground">
+                {isLoading
+                  ? "Loading…"
+                  : hasActiveFilter
+                    ? `${filtered.length} of ${allProspects.length} on this page match`
+                    : `${prospectsTotalCount.toLocaleString()} prospect${prospectsTotalCount === 1 ? "" : "s"}, combined and deduped`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {exportError && <span className="text-xs text-destructive">{exportError}</span>}
+              <button
+                type="button"
+                onClick={handleExportAll}
+                disabled={isExporting || prospectsTotalCount === 0}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+              >
+                {isExporting ? <IconLoader2 size={12} className="animate-spin" /> : <IconDownload size={12} />}
+                Export CSV
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -890,7 +996,7 @@ export default function ProspectsRoute() {
               {filtered.map((p) => {
                 const isChecked = selectedIds.has(p.id);
                 const note = p.draftNote ?? "";
-                const displayName = p.name ?? p.profileUrl;
+                const displayName = p.name ?? p.profileUrl ?? "Unknown";
                 return (
                   <tr
                     key={p.id}
@@ -916,6 +1022,11 @@ export default function ProspectsRoute() {
                           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
                             <span style={{ background: p.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full" />
                             {p.personaName}
+                          </span>
+                        )}
+                        {p.source === "lead_list" && (
+                          <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0 truncate max-w-[100px]">
+                            {p.listName ?? "Lead list"}
                           </span>
                         )}
                       </div>
@@ -996,7 +1107,7 @@ export default function ProspectsRoute() {
 // prospect is in a list, Apollo enrichment, phone reveal, and the Apollo
 // CSV export all work on it identically, since lead_list_items shares the
 // same enrichment column shape as prospects.
-function AddToListPopover({ selectedIds, onDone }: { selectedIds: Set<string>; onDone: () => void }) {
+function AddToListPopover({ prospectIds, onDone }: { prospectIds: string[]; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"create" | "existing">("create");
   const [newListName, setNewListName] = useState("");
@@ -1020,8 +1131,8 @@ function AddToListPopover({ selectedIds, onDone }: { selectedIds: Set<string>; o
     setStatus(null);
     const payload =
       mode === "create"
-        ? { prospectIds: Array.from(selectedIds), newListName, newListDescription: newListDescription || null }
-        : { prospectIds: Array.from(selectedIds), existingListId };
+        ? { prospectIds, newListName, newListDescription: newListDescription || null }
+        : { prospectIds, existingListId };
     if (mode === "create" && !newListName.trim()) {
       setStatus("Give the new list a name.");
       return;
@@ -1049,7 +1160,9 @@ function AddToListPopover({ selectedIds, onDone }: { selectedIds: Set<string>; o
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          disabled={prospectIds.length === 0}
+          title={prospectIds.length === 0 ? "Only visited prospects can be added to a list" : undefined}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
         >
           <IconListCheck size={13} /> Add to list
         </button>
@@ -1114,10 +1227,10 @@ function AddToListPopover({ selectedIds, onDone }: { selectedIds: Set<string>; o
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={addToList.isPending}
+          disabled={addToList.isPending || prospectIds.length === 0}
           className="mt-3 w-full rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          {addToList.isPending ? "Adding…" : `Add ${selectedIds.size} prospect${selectedIds.size === 1 ? "" : "s"}`}
+          {addToList.isPending ? "Adding…" : `Add ${prospectIds.length} prospect${prospectIds.length === 1 ? "" : "s"}`}
         </button>
       </PopoverContent>
     </Popover>
