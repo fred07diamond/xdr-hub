@@ -462,6 +462,67 @@ export default runMigrations(
       name: "prospects-phone-reveal-requested-at",
       sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS phone_reveal_requested_at TEXT`,
     },
+    // Performance pass — no table in this app had a single index beyond its
+    // primary key. Every one of these columns is filtered on directly in a
+    // hot-path query (lead_list_items.list_id on every Lead Lists page load
+    // and every enrich call; phone_reveal_request_id on every Apollo
+    // phone-reveal webhook callback; owner_email on every dashboard list
+    // load and every analytics groupBy; profile_url on every single
+    // captured-profile check-already-contacted call). None of these were a
+    // problem at low row counts, but they turn into full sequential scans
+    // as each table grows with real usage — exactly the kind of slowdown
+    // that shows up as "the app feels a little slower now" rather than an
+    // outright error.
+    {
+      version: 76,
+      name: "index-lead-list-items-list-id",
+      sql: `CREATE INDEX IF NOT EXISTS idx_lead_list_items_list_id ON lead_list_items (list_id)`,
+    },
+    {
+      version: 77,
+      name: "index-lead-list-items-phone-reveal-request-id",
+      sql: `CREATE INDEX IF NOT EXISTS idx_lead_list_items_phone_reveal_request_id ON lead_list_items (phone_reveal_request_id)`,
+    },
+    {
+      version: 78,
+      name: "index-lead-list-items-sales-nav-lead-url",
+      sql: `CREATE INDEX IF NOT EXISTS idx_lead_list_items_sales_nav_lead_url ON lead_list_items (sales_nav_lead_url)`,
+    },
+    {
+      version: 79,
+      name: "index-lead-lists-owner-email",
+      sql: `CREATE INDEX IF NOT EXISTS idx_lead_lists_owner_email ON lead_lists (owner_email)`,
+    },
+    {
+      version: 80,
+      name: "index-prospects-owner-email",
+      sql: `CREATE INDEX IF NOT EXISTS idx_prospects_owner_email ON prospects (owner_email)`,
+    },
+    {
+      version: 81,
+      name: "index-prospects-profile-url",
+      sql: `CREATE INDEX IF NOT EXISTS idx_prospects_profile_url ON prospects (profile_url)`,
+    },
+    {
+      version: 82,
+      name: "index-send-history-profile-url-owner-email",
+      sql: `CREATE INDEX IF NOT EXISTS idx_send_history_profile_url_owner_email ON send_history (profile_url, owner_email)`,
+    },
+    {
+      version: 83,
+      name: "index-post-engagements-owner-email",
+      sql: `CREATE INDEX IF NOT EXISTS idx_post_engagements_owner_email ON post_engagements (owner_email)`,
+    },
+    {
+      version: 84,
+      name: "index-post-engagements-post-url",
+      sql: `CREATE INDEX IF NOT EXISTS idx_post_engagements_post_url ON post_engagements (post_url)`,
+    },
+    {
+      version: 85,
+      name: "index-api-tokens-token",
+      sql: `CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens (token)`,
+    },
   ],
   { table: "outreach_migrations" },
 );
