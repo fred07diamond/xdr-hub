@@ -1,4 +1,4 @@
-import { callAction, useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconBrandLinkedin,
   IconCheck,
@@ -26,7 +26,7 @@ function HubSpotIcon() {
     </svg>
   );
 }
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Sheet,
@@ -702,17 +702,22 @@ export default function ProspectsRoute() {
   const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
   const scoreLeadListItem = useActionMutation("score-lead-list-item");
 
-  // Paginated -- merges the prospects table with every Lead List's items,
-  // deduped (list-all-prospects.ts), so this one table is "everything ever
-  // captured," not just profile-visit prospects. Page-number navigation
-  // (25/page), not accumulating "Load more" -- only the current page polls
-  // live for in-progress captures.
+  // Merges the prospects table with every Lead List's items, deduped
+  // (list-all-prospects.ts), so this one table is "everything ever
+  // captured," not just profile-visit prospects. Fetches everything in one
+  // shot (real scale today is a few hundred rows, well under this cap) and
+  // does filtering + pagination entirely client-side -- filters/search must
+  // apply across ALL prospects, not just whatever page happens to be
+  // loaded, and there's no server-side filter param to push this down to.
+  // If this ever grows past the cap, this needs real server-side
+  // filtering/pagination instead.
   const PROSPECTS_PAGE_SIZE = 25;
+  const PROSPECTS_FETCH_LIMIT = 5000;
   const [prospectsPage, setProspectsPage] = useState(1);
 
   const { data, refetch, isLoading } = useActionQuery(
     "list-all-prospects",
-    { limit: PROSPECTS_PAGE_SIZE, offset: (prospectsPage - 1) * PROSPECTS_PAGE_SIZE },
+    { limit: PROSPECTS_FETCH_LIMIT, offset: 0 },
     {
       refetchInterval: (query) => {
         const rows = (query.state.data as any)?.rows as any[] | undefined;
@@ -726,13 +731,10 @@ export default function ProspectsRoute() {
   const allProspects: Prospect[] = (data as any)?.rows ?? [];
   const prospectsTotalCount: number = (data as any)?.totalCount ?? 0;
 
-  // Filtering/search only apply within the current page (each page is a
-  // fresh server fetch, not an accumulated set) -- reset to page 1 whenever
-  // a filter changes so switching filters doesn't leave you on a stale,
-  // now-out-of-range page.
+  // Reset to page 1 whenever a filter changes so switching filters doesn't
+  // leave you on a stale, now-out-of-range page.
   useEffect(() => {
     setProspectsPage(1);
-    setAllMatchingIds(null);
     setIsAllMatchingSelected(false);
   }, [verdictFilter, statusFilter, personaFilter, recencyFilter, search]);
 
@@ -743,11 +745,6 @@ export default function ProspectsRoute() {
       .map((p) => [p.personaName!, { name: p.personaName!, color: p.personaColor! }])
   ).values()], [allProspects]);
 
-  // Extracted so it can run against either the current page (`filtered`
-  // below) or a full, all-pages fetch (for "Select all N matching" --
-  // filtering only ever happens client-side, there's no server-side filter
-  // param, so selecting everything that matches the active filter requires
-  // fetching everything and re-applying this same predicate).
   function matchesCurrentFilters(p: Prospect): boolean {
     if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) return false;
     if (statusFilter !== "all" && p.status !== statusFilter) return false;
@@ -772,41 +769,28 @@ export default function ProspectsRoute() {
     return true;
   }
 
-  // Apply filters
+  // Every prospect matching the active filters, across ALL pages -- not
+  // just whatever page is currently displayed.
   const filtered = useMemo(
     () => allProspects.filter(matchesCurrentFilters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allProspects, verdictFilter, statusFilter, personaFilter, recencyFilter, search],
   );
 
-  // Every row this session has ever fetched (current page, plus whatever a
-  // "Select all N matching" fetch pulled in) -- bulk handlers look rows up
-  // here by id so they work correctly even for a selected row that isn't on
-  // the currently-loaded page.
-  const rowsByIdRef = useRef<Map<string, Prospect>>(new Map());
-  useEffect(() => {
-    allProspects.forEach((p) => rowsByIdRef.current.set(p.id, p));
-  }, [allProspects]);
+  // What's actually rendered in the table -- one page's worth of the
+  // filtered set.
+  const pageRows = useMemo(
+    () => filtered.slice((prospectsPage - 1) * PROSPECTS_PAGE_SIZE, prospectsPage * PROSPECTS_PAGE_SIZE),
+    [filtered, prospectsPage],
+  );
 
-  // null = not yet computed for the current filter state. Recomputed lazily
-  // (only once the header checkbox selects everything visible) rather than
-  // on every filter change, since it costs a real fetch of up to 5000 rows.
-  const [allMatchingIds, setAllMatchingIds] = useState<Set<string> | null>(null);
-  const [isFetchingAllMatches, setIsFetchingAllMatches] = useState(false);
+  // Whether every row on the CURRENT page is selected (header checkbox) --
+  // separate from "select all matching", which expands the selection to
+  // everything in `filtered`, across every page.
   const [isAllMatchingSelected, setIsAllMatchingSelected] = useState(false);
-  const SELECT_ALL_FETCH_LIMIT = 5000;
-
-  async function computeAllMatchingIds(): Promise<Set<string>> {
-    const result = await callAction("list-all-prospects", { limit: SELECT_ALL_FETCH_LIMIT, offset: 0 }, { method: "GET" });
-    const rows: Prospect[] = (result as { rows?: Prospect[] } | undefined)?.rows ?? [];
-    rows.forEach((p) => rowsByIdRef.current.set(p.id, p));
-    const ids = new Set(rows.filter(matchesCurrentFilters).map((p) => p.id));
-    setAllMatchingIds(ids);
-    return ids;
-  }
 
   const selected = allProspects.find((p) => p.id === selectedId) ?? null;
-  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
+  const allFilteredSelected = pageRows.length > 0 && pageRows.every((p) => selectedIds.has(p.id));
   const someSelected = selectedIds.size > 0;
 
   function toggleSelect(id: string) {
@@ -817,72 +801,48 @@ export default function ProspectsRoute() {
     });
   }
 
+  // Toggles selection for the CURRENT page only -- "Select all N matching"
+  // below is the separate action that expands to every page.
   function toggleSelectAll() {
     if (allFilteredSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        filtered.forEach((p) => next.delete(p.id));
+        pageRows.forEach((p) => next.delete(p.id));
         return next;
       });
       setIsAllMatchingSelected(false);
     } else {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        filtered.forEach((p) => next.add(p.id));
+        pageRows.forEach((p) => next.add(p.id));
         return next;
       });
     }
   }
 
-  // Once every row on the current page is checked, eagerly find out how
-  // many match across ALL pages so the "Select all N matching" banner can
-  // show a real number immediately, Gmail/Front-style, rather than only
-  // revealing it after the user clicks.
-  useEffect(() => {
-    if (allFilteredSelected && !isAllMatchingSelected && allMatchingIds === null && !isFetchingAllMatches) {
-      setIsFetchingAllMatches(true);
-      computeAllMatchingIds().finally(() => setIsFetchingAllMatches(false));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allFilteredSelected, isAllMatchingSelected, allMatchingIds, isFetchingAllMatches]);
-
-  async function handleSelectAllMatching() {
-    let ids = allMatchingIds;
-    if (!ids) {
-      setIsFetchingAllMatches(true);
-      try {
-        ids = await computeAllMatchingIds();
-      } finally {
-        setIsFetchingAllMatches(false);
-      }
-    }
-    setSelectedIds(new Set(ids));
+  // Everything matching the active filters is already loaded in `filtered`
+  // (see the fetch-everything comment above), so expanding the selection to
+  // all of it is just a synchronous set build -- no extra fetch needed.
+  function handleSelectAllMatching() {
+    setSelectedIds(new Set(filtered.map((p) => p.id)));
     setIsAllMatchingSelected(true);
   }
 
   // "Add to list" and delete both operate on the real prospects table
   // (bulk-delete-prospects, add-prospects-to-lead-list) -- a lead_list-
   // sourced row isn't in that table, so those bulk actions only apply to
-  // the prospect-sourced subset of the current selection. Looked up via
-  // rowsByIdRef (not allProspects) so this stays correct even when the
-  // selection spans rows beyond the currently-loaded page.
+  // the prospect-sourced subset of the current selection.
   const selectedProspectSourced = useMemo(
-    () => Array.from(selectedIds)
-      .map((id) => rowsByIdRef.current.get(id))
-      .filter((p): p is Prospect => !!p && p.source === "prospect"),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIds],
+    () => allProspects.filter((p) => selectedIds.has(p.id) && p.source === "prospect"),
+    [allProspects, selectedIds],
   );
 
   // Score & Draft only applies to not-yet-visited lead_list-sourced rows --
   // a real prospects row already has a fit score/draft, so bulk scoring
   // only targets the complementary subset of the selection.
   const selectedLeadListSourced = useMemo(
-    () => Array.from(selectedIds)
-      .map((id) => rowsByIdRef.current.get(id))
-      .filter((p): p is Prospect => !!p && p.source === "lead_list"),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIds],
+    () => allProspects.filter((p) => selectedIds.has(p.id) && p.source === "lead_list"),
+    [allProspects, selectedIds],
   );
 
   async function handleBulkDelete() {
@@ -950,7 +910,7 @@ export default function ProspectsRoute() {
   // Sequential, not parallel -- keeps this well under the per-hour Apollo
   // rate limit and avoids hammering Apollo with a burst of concurrent calls.
   async function handleBulkEnrich() {
-    const targets = Array.from(selectedIds).map((id) => rowsByIdRef.current.get(id)).filter((p): p is Prospect => !!p);
+    const targets = allProspects.filter((p) => selectedIds.has(p.id));
     if (targets.length === 0) return;
     setBulkEnrichProgress({ done: 0, total: targets.length });
     for (const p of targets) {
@@ -1014,18 +974,17 @@ export default function ProspectsRoute() {
 
   const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || recencyFilter !== "all" || search;
 
-  const EXPORT_FETCH_LIMIT = 5000;
   async function handleExportAll() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const result = await callAction("list-all-prospects", { limit: EXPORT_FETCH_LIMIT, offset: 0 }, { method: "GET" });
-      const rows: Prospect[] = (result as { rows?: Prospect[] } | undefined)?.rows ?? [];
-      if (rows.length === 0) {
+      // allProspects already holds everything (the main query fetches up to
+      // PROSPECTS_FETCH_LIMIT in one shot) -- no need for a separate fetch.
+      if (allProspects.length === 0) {
         setExportError("Nothing to export yet.");
         return;
       }
-      const csv = buildMasterCsv(rows);
+      const csv = buildMasterCsv(allProspects);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1115,7 +1074,7 @@ export default function ProspectsRoute() {
                 {isLoading
                   ? "Loading…"
                   : hasActiveFilter
-                    ? `${filtered.length} of ${allProspects.length} on this page match`
+                    ? `${filtered.length} of ${allProspects.length} match`
                     : `${prospectsTotalCount.toLocaleString()} prospect${prospectsTotalCount === 1 ? "" : "s"}, combined and deduped`}
               </p>
             </div>
@@ -1135,26 +1094,16 @@ export default function ProspectsRoute() {
         )}
       </div>
 
-      {allFilteredSelected && !isAllMatchingSelected && (isFetchingAllMatches || (allMatchingIds !== null && allMatchingIds.size > filtered.length)) && (
+      {allFilteredSelected && !isAllMatchingSelected && filtered.length > pageRows.length && (
         <div className="flex items-center gap-1.5 px-4 pb-2.5 text-xs text-muted-foreground">
-          {isFetchingAllMatches && allMatchingIds === null ? (
-            <span className="flex items-center gap-1.5">
-              <IconLoader2 size={12} className="animate-spin" />
-              Checking how many match…
-            </span>
-          ) : (
-            <>
-              <span>{filtered.length} on this page selected.</span>
-              <button
-                type="button"
-                onClick={handleSelectAllMatching}
-                disabled={isFetchingAllMatches}
-                className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/25 disabled:opacity-50"
-              >
-                {isFetchingAllMatches ? "Selecting…" : `Select all ${allMatchingIds?.size.toLocaleString()} matching`}
-              </button>
-            </>
-          )}
+          <span>{pageRows.length} on this page selected.</span>
+          <button
+            type="button"
+            onClick={handleSelectAllMatching}
+            className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/25"
+          >
+            Select all {filtered.length.toLocaleString()} matching
+          </button>
         </div>
       )}
       </div>
@@ -1278,7 +1227,7 @@ export default function ProspectsRoute() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => {
+              {pageRows.map((p) => {
                 const isChecked = selectedIds.has(p.id);
                 const note = p.draftNote ?? "";
                 const displayName = p.name ?? p.profileUrl ?? "Unknown";
@@ -1393,9 +1342,9 @@ export default function ProspectsRoute() {
         )}
       </div>
 
-      {prospectsTotalCount > 0 && (
+      {filtered.length > 0 && (
         <div className="flex items-center justify-end border-t border-border px-4 py-2">
-          <Pagination page={prospectsPage} pageSize={PROSPECTS_PAGE_SIZE} totalCount={prospectsTotalCount} onPageChange={setProspectsPage} />
+          <Pagination page={prospectsPage} pageSize={PROSPECTS_PAGE_SIZE} totalCount={filtered.length} onPageChange={setProspectsPage} />
         </div>
       )}
 
