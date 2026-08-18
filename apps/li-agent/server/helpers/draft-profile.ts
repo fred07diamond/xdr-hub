@@ -1,6 +1,7 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { getOutreachVoiceGuidelines } from "@xdr-hub/shared/server";
 import { getOwnerCtx } from "./get-owner-ctx.js";
+import { NO_EM_DASH_RULE, stripEmDashes } from "./style-rules.js";
 
 export interface DraftResult {
   fitVerdict: "strong" | "possible" | "weak" | "inconclusive";
@@ -37,6 +38,7 @@ export async function draftProfile({
 
     const systemPrompt = icpText
       ? "You are a LinkedIn outreach assistant. Score fit and draft a personalized connection note.\n\n" +
+        `${NO_EM_DASH_RULE}\n\n` +
         `ICP document:\n${icpText.slice(0, 3000)}\n\n` +
         messagingBlock +
         voiceBlock +
@@ -49,6 +51,7 @@ export async function draftProfile({
         '"draftNote": "<connection note, max 200 chars, genuine and specific — if recent activity is available, reference it>", ' +
         '"draftFollowUp": "<follow-up to send after they accept, max 100 chars>" }'
       : "You are a LinkedIn outreach assistant. No ICP document has been uploaded, so you cannot score fit.\n\n" +
+        `${NO_EM_DASH_RULE}\n\n` +
         messagingBlock +
         voiceBlock +
         'Reply with valid JSON only: { "fitVerdict": "inconclusive", "fitReason": "No ICP document uploaded — add ICP criteria on the ICP tab to enable fit scoring.", ' +
@@ -83,9 +86,9 @@ export async function draftProfile({
 
     const v = String(parsed.fitVerdict ?? "");
     if (v === "strong" || v === "possible" || v === "weak" || v === "inconclusive") fitVerdict = v;
-    if (parsed.fitReason) fitReason = String(parsed.fitReason);
-    if (parsed.draftNote) draftNote = String(parsed.draftNote).slice(0, 300);
-    if (parsed.draftFollowUp) draftFollowUp = String(parsed.draftFollowUp).slice(0, 150);
+    if (parsed.fitReason) fitReason = stripEmDashes(String(parsed.fitReason));
+    if (parsed.draftNote) draftNote = stripEmDashes(String(parsed.draftNote).slice(0, 300));
+    if (parsed.draftFollowUp) draftFollowUp = stripEmDashes(String(parsed.draftFollowUp).slice(0, 150));
   } catch (err) {
     fitReason = `Draft failed: ${err instanceof Error ? err.message : String(err)}`;
   }

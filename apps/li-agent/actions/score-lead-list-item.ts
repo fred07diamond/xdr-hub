@@ -51,9 +51,17 @@ export default defineAction({
     // a freshly-imported list, defeating the point of a bulk-drafting
     // feature -- live-confirmed this exact failure mode on real usage.
 
-    const profileUrl = item.profileUrl ?? item.enrichedLinkedinUrl ?? null;
+    // Every lead list item gets a salesNavLeadUrl at import time (see
+    // CLAUDE.md's Lead Lists section), so it's always available as a stable
+    // per-lead identifier even before the rep enriches or visits the real
+    // profile -- forcing enrichment first just to unblock scoring was
+    // needless friction. Same identity-merge tradeoff already accepted for
+    // enrichedLinkedinUrl below: if the real public profileUrl differs once
+    // captured later, capture-profile.ts's exact-match upsert won't
+    // reconcile the two rows. Prefer the real/enriched URL when present.
+    const profileUrl = item.profileUrl ?? item.enrichedLinkedinUrl ?? item.salesNavLeadUrl ?? null;
     if (!profileUrl) {
-      return { ok: false, error: "Enrich this lead first (or visit their profile in LinkedIn) to resolve a LinkedIn URL before scoring." };
+      return { ok: false, error: "This lead has no LinkedIn URL to score against." };
     }
 
     const role = item.enrichedTitle ?? item.headline ?? null;

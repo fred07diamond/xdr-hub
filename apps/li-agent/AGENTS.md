@@ -136,6 +136,11 @@ not an ICP fit judgment, and must not influence scoring or draft notes.
   your own initiative. HubSpot lookups the app itself performs (owner
   checks, warm-context, the HubSpot Reference node) are existing, reviewed
   product behavior, not something to add ad hoc.
+- Never use em dashes in any AI-generated messaging this app produces
+  (connection notes, follow-ups, canvas previews). Enforced in
+  `server/helpers/style-rules.ts` (`NO_EM_DASH_RULE` prompt instruction +
+  `stripEmDashes()` output sanitizer) — reuse both when adding a new
+  message-generating prompt rather than duplicating the rule inline.
 
 ## Key files
 - docs/BUILD-GUIDE.md: build steps
