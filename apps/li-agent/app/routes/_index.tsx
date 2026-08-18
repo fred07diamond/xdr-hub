@@ -936,7 +936,7 @@ export default function ProspectsRoute() {
   }
 
   // Sequential, not parallel -- this spends a real LLM call per lead
-  // (60/hr bucket, much tighter than Apollo's 1000/hr), and a rate-limit
+  // (500/hr bucket, still tighter than Apollo's 1000/hr), and a rate-limit
   // hit surfaces as a normal per-item error rather than throwing, so the
   // batch can just keep recording errors and move on.
   async function handleBulkScoreDraft() {

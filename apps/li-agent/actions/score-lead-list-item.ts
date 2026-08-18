@@ -36,7 +36,12 @@ export default defineAction({
     const listRows = await db.select().from(leadLists).where(eq(leadLists.id, item.listId));
     if (!listRows[0] || listRows[0].ownerEmail !== userEmail) return { ok: false, error: "Not authorized." };
 
-    if (!(await checkRateLimit(userEmail, "score-lead-list-item", 60))) {
+    // Raised from 60/hr (which matched capture-profile.ts's single-profile-
+    // visit pattern) -- live-confirmed this was actively blocking real usage:
+    // Score & Draft gets run in bulk across a freshly-imported list in one
+    // sitting, the same "~500 leads/day" pattern enrich-lead-list-item.ts
+    // was raised for, not a slow trickle of one-at-a-time profile visits.
+    if (!(await checkRateLimit(userEmail, "score-lead-list-item", 500))) {
       return { ok: false, error: "Rate limit reached -- try again shortly." };
     }
     if (await isOverDailyLimit(userEmail)) {
