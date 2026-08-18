@@ -523,6 +523,49 @@ export default runMigrations(
       name: "index-api-tokens-token",
       sql: `CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens (token)`,
     },
+    // prospect_tags / prospect_tag_links were added to schema.ts (the tags
+    // feature replacing the Status column) without a matching migration
+    // here -- list-all-prospects.ts's new join against these tables then
+    // failed outright in production ("relation does not exist"), which
+    // took the whole Prospects view down with it (Lead Lists was
+    // unaffected -- separate query, separate tables).
+    {
+      version: 86,
+      name: "prospect-tags-table",
+      sql: `CREATE TABLE IF NOT EXISTS prospect_tags (
+        id TEXT PRIMARY KEY,
+        owner_email TEXT,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL DEFAULT '#6366f1',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 87,
+      name: "prospect-tag-links-table",
+      sql: `CREATE TABLE IF NOT EXISTS prospect_tag_links (
+        id TEXT PRIMARY KEY,
+        prospect_id TEXT NOT NULL,
+        tag_id TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 88,
+      name: "index-prospect-tags-owner-email",
+      sql: `CREATE INDEX IF NOT EXISTS idx_prospect_tags_owner_email ON prospect_tags (owner_email)`,
+    },
+    {
+      version: 89,
+      name: "index-prospect-tag-links-prospect-id",
+      sql: `CREATE INDEX IF NOT EXISTS idx_prospect_tag_links_prospect_id ON prospect_tag_links (prospect_id)`,
+    },
+    {
+      version: 90,
+      name: "index-prospect-tag-links-tag-id",
+      sql: `CREATE INDEX IF NOT EXISTS idx_prospect_tag_links_tag_id ON prospect_tag_links (tag_id)`,
+    },
   ],
   { table: "outreach_migrations" },
 );
