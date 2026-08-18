@@ -8,7 +8,6 @@ import { buildMessagingContext } from "../server/helpers/build-messaging-context
 import { draftProfile } from "../server/helpers/draft-profile.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
-import { isOverDailyLimit } from "../server/helpers/daily-limit.js";
 
 // Generates a real ICP fit score + draft connection note for a Sales Nav
 // lead list item that hasn't been visited yet -- normally this only happens
@@ -44,9 +43,13 @@ export default defineAction({
     if (!(await checkRateLimit(userEmail, "score-lead-list-item", 500))) {
       return { ok: false, error: "Rate limit reached -- try again shortly." };
     }
-    if (await isOverDailyLimit(userEmail)) {
-      return { ok: false, error: "Daily outreach limit reached -- resets tomorrow." };
-    }
+    // Deliberately no isOverDailyLimit check here, unlike capture-profile.ts.
+    // That cap paces actual SENT outreach volume -- but this action only
+    // prepares a draft; a human still has to review it and click "Mark sent"
+    // separately (the same as any other prospect). Gating bulk drafting
+    // behind a daily send-pacing cap would trip on the very first batch of
+    // a freshly-imported list, defeating the point of a bulk-drafting
+    // feature -- live-confirmed this exact failure mode on real usage.
 
     const profileUrl = item.profileUrl ?? item.enrichedLinkedinUrl ?? null;
     if (!profileUrl) {
