@@ -31,7 +31,10 @@ export function FeedbackWidget() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    // bottom-20 (not bottom-6) so this floating bubble clears the bottom-right
+    // pagination controls that several pages (Prospects, Lead Lists) render
+    // in that same corner, instead of sitting on top of them.
+    <div className="fixed bottom-20 right-6 z-50 flex flex-col items-end gap-3">
       {open && (
         <div className="w-80 rounded-xl border border-border bg-background shadow-xl">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">

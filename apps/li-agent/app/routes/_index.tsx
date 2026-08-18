@@ -715,7 +715,7 @@ export default function ProspectsRoute() {
   const PROSPECTS_FETCH_LIMIT = 5000;
   const [prospectsPage, setProspectsPage] = useState(1);
 
-  const { data, refetch, isLoading } = useActionQuery(
+  const { data, refetch, isLoading, isFetching } = useActionQuery(
     "list-all-prospects",
     { limit: PROSPECTS_FETCH_LIMIT, offset: 0 },
     {
@@ -1080,6 +1080,16 @@ export default function ProspectsRoute() {
             </div>
             <div className="flex items-center gap-2">
               {exportError && <span className="text-xs text-destructive">{exportError}</span>}
+              <button
+                type="button"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                title="Refresh"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+              >
+                <IconRefresh size={12} className={isFetching ? "animate-spin" : undefined} />
+                Refresh
+              </button>
               <button
                 type="button"
                 onClick={handleExportAll}
