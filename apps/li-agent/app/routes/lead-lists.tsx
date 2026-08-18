@@ -4,6 +4,7 @@ import { IconCheck, IconExternalLink, IconListCheck, IconLoader2, IconPencil, Ic
 import { useEffect, useRef, useState } from "react";
 
 import { APP_TITLE } from "@/lib/app-config";
+import { applyShiftClickSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/Pagination";
 
@@ -134,6 +135,7 @@ function EnrichButton({
 
 function LeadListItemRow({
   item,
+  index,
   isEnriching,
   isChecked,
   onToggle,
@@ -141,9 +143,10 @@ function LeadListItemRow({
   onEnrich,
 }: {
   item: LeadListItem;
+  index: number;
   isEnriching: boolean;
   isChecked: boolean;
-  onToggle: (id: string) => void;
+  onToggle: (id: string, index: number, shiftKey: boolean) => void;
   onOpen: (item: LeadListItem) => void;
   onEnrich: (item: LeadListItem) => void;
 }) {
@@ -153,7 +156,8 @@ function LeadListItemRow({
         <input
           type="checkbox"
           checked={isChecked}
-          onChange={() => onToggle(item.id)}
+          onChange={() => {}}
+          onClick={(e) => { e.preventDefault(); onToggle(item.id, index, e.shiftKey); }}
           className="rounded border-border"
         />
       </td>
@@ -262,12 +266,12 @@ export default function LeadListsPage() {
     }
   }
 
-  function toggleSelectItem(id: string) {
-    setSelectedItemIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  // Anchor row (by id) for shift-click range select.
+  const lastCheckedItemIdRef = useRef<string | null>(null);
+
+  function toggleSelectItem(id: string, index: number, shiftKey: boolean) {
+    setSelectedItemIds((prev) => applyShiftClickSelection(items, index, shiftKey, lastCheckedItemIdRef.current, prev));
+    lastCheckedItemIdRef.current = id;
   }
 
   function toggleSelectAllItems() {
@@ -545,10 +549,11 @@ export default function LeadListsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item) => (
+                    {items.map((item, index) => (
                       <LeadListItemRow
                         key={item.id}
                         item={item}
+                        index={index}
                         isEnriching={enrichingIds.has(item.id)}
                         isChecked={selectedItemIds.has(item.id)}
                         onToggle={toggleSelectItem}

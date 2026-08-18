@@ -17,6 +17,7 @@ import {
 } from "@tabler/icons-react";
 
 import { buildMasterCsv } from "@/lib/prospects-csv";
+import { applyShiftClickSelection } from "@/lib/selection";
 
 function HubSpotIcon() {
   return (
@@ -26,7 +27,7 @@ function HubSpotIcon() {
     </svg>
   );
 }
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Sheet,
@@ -793,12 +794,12 @@ export default function ProspectsRoute() {
   const allFilteredSelected = pageRows.length > 0 && pageRows.every((p) => selectedIds.has(p.id));
   const someSelected = selectedIds.size > 0;
 
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  // Anchor row (by id) for shift-click range select.
+  const lastCheckedRowIdRef = useRef<string | null>(null);
+
+  function toggleSelect(id: string, index: number, shiftKey: boolean) {
+    setSelectedIds((prev) => applyShiftClickSelection(pageRows, index, shiftKey, lastCheckedRowIdRef.current, prev));
+    lastCheckedRowIdRef.current = id;
   }
 
   // Toggles selection for the CURRENT page only -- "Select all N matching"
@@ -1237,7 +1238,7 @@ export default function ProspectsRoute() {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((p) => {
+              {pageRows.map((p, rowIndex) => {
                 const isChecked = selectedIds.has(p.id);
                 const note = p.draftNote ?? "";
                 const displayName = p.name ?? p.profileUrl ?? "Unknown";
@@ -1247,12 +1248,13 @@ export default function ProspectsRoute() {
                     className={`group border-b border-border last:border-0 transition-colors cursor-pointer ${isChecked ? "bg-muted/60" : "hover:bg-muted/40"}`}
                     onClick={() => setSelectedId(p.id)}
                   >
-                    {/* Checkbox */}
+                    {/* Checkbox -- shift-click selects the whole range since the last clicked row */}
                     <td className="py-3 pl-3 pr-1 w-8" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => toggleSelect(p.id)}
+                        onChange={() => {}}
+                        onClick={(e) => { e.preventDefault(); toggleSelect(p.id, rowIndex, e.shiftKey); }}
                         className="rounded border-border"
                       />
                     </td>
