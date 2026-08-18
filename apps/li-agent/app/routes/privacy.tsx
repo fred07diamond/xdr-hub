@@ -2,12 +2,12 @@ export default function PrivacyPolicy() {
   return (
     <main className="mx-auto max-w-2xl px-6 py-12 text-sm text-foreground">
       <h1 className="mb-2 text-2xl font-bold">Privacy Policy</h1>
-      <p className="mb-8 text-muted-foreground">Builder.LI Chrome Extension — Last updated July 2026</p>
+      <p className="mb-8 text-muted-foreground">LinkedIn Agent Chrome Extension — Last updated July 2026</p>
 
       <section className="mb-6">
         <h2 className="mb-2 font-semibold">What data the extension accesses</h2>
         <p className="text-muted-foreground">
-          The Builder.LI extension reads publicly visible profile information (name, headline, company, about
+          The LinkedIn Agent extension reads publicly visible profile information (name, headline, company, about
           section) and post commenter data from LinkedIn pages you visit. This data is sent to the XDR Hub
           server to generate outreach drafts and track prospect pipeline.
         </p>

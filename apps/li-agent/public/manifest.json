@@ -1,6 +1,6 @@
 {
-  "name": "Builder.LI",
-  "short_name": "Builder.LI",
+  "name": "LinkedIn Agent",
+  "short_name": "LinkedIn Agent",
   "description": "LinkedIn outreach cockpit — capture profiles, score fit, draft connection notes",
   "start_url": ".",
   "display": "standalone",

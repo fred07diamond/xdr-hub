@@ -1,5 +1,5 @@
 /**
- * Build 1 tests for Builder.LI.
+ * Build 1 tests for LinkedIn Agent.
  *
  * Covers:
  *  1. Branding     — APP_TITLE, manifest.json, Sidebar replace Agent Native logo
@@ -66,15 +66,15 @@ async function callAction(name: string, body: Record<string, unknown>) {
 // ─── 1. Branding ─────────────────────────────────────────────────────────────
 
 describe("Branding", () => {
-  it("app-config.ts exports APP_TITLE = Builder.LI", () => {
+  it("app-config.ts exports APP_TITLE = LinkedIn Agent", () => {
     const src = readFile("app/lib/app-config.ts");
-    expect(src).toContain('rawAppTitle = "Builder.LI"');
+    expect(src).toContain('rawAppTitle = "LinkedIn Agent"');
   });
 
-  it("public/manifest.json has name = Builder.LI", () => {
+  it("public/manifest.json has name = LinkedIn Agent", () => {
     const manifest = JSON.parse(readFile("public/manifest.json"));
-    expect(manifest.name).toBe("Builder.LI");
-    expect(manifest.short_name).toBe("Builder.LI");
+    expect(manifest.name).toBe("LinkedIn Agent");
+    expect(manifest.short_name).toBe("LinkedIn Agent");
   });
 
   it("Sidebar.tsx does not reference Agent Native SVG icons", () => {
@@ -83,9 +83,9 @@ describe("Branding", () => {
     expect(src).not.toContain("agent-native-icon-dark.svg");
   });
 
-  it("Sidebar.tsx contains BLI badge", () => {
+  it("Sidebar.tsx contains LI badge", () => {
     const src = readFile("app/components/layout/Sidebar.tsx");
-    expect(src).toContain("BLI");
+    expect(src).toContain('badge: "LI"');
   });
 
   it("root.tsx tracking uses builder-li app key", () => {

@@ -1,5 +1,5 @@
 const rawAppName = "chat";
-const rawAppTitle = "Builder.LI";
+const rawAppTitle = "LinkedIn Agent";
 
 const APP_NAME_PLACEHOLDER = "{" + "{APP_NAME}}";
 const APP_TITLE_PLACEHOLDER = "{" + "{APP_TITLE}}";

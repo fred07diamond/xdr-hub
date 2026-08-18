@@ -42,7 +42,7 @@ export default function FeedbackRoute() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">How is Builder.LI working for you?</CardTitle>
+          <CardTitle className="text-sm font-medium">How is LinkedIn Agent working for you?</CardTitle>
         </CardHeader>
         <CardContent>
           {submitted ? (
@@ -53,7 +53,7 @@ export default function FeedbackRoute() {
               <div>
                 <p className="font-semibold">Thank you for your feedback!</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Your input helps us improve Builder.LI for everyone.
+                  Your input helps us improve LinkedIn Agent for everyone.
                 </p>
               </div>
               <button

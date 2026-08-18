@@ -58,7 +58,7 @@ function ApiTokenCard() {
           Personal API Token
         </CardTitle>
         <CardDescription>
-          Paste this token into the Builder.LI Chrome extension so your captures are linked to your account.
+          Paste this token into the LinkedIn Agent Chrome extension so your captures are linked to your account.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -91,7 +91,7 @@ function ApiTokenCard() {
           className="flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
         >
           <IconExternalLink size={13} />
-          Get the Builder.LI Chrome extension
+          Get the LinkedIn Agent Chrome extension
         </a>
         <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
           <p className="font-medium text-foreground">Extension setup</p>
@@ -104,7 +104,7 @@ function ApiTokenCard() {
                 rel="noreferrer"
                 className="text-primary underline underline-offset-2 hover:text-primary/80"
               >
-                Builder.LI Chrome extension
+                LinkedIn Agent Chrome extension
               </a>
               .
             </li>

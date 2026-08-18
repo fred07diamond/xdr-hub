@@ -62,7 +62,7 @@ const navItems: Array<{
 ];
 
 const WORKSPACE_APPS = [
-  { name: "LinkedIn Agent", badge: "BLI", color: "#0a66c2", href: "/li-agent" },
+  { name: "LinkedIn Agent", badge: "LI", color: "#0a66c2", href: "/li-agent" },
   { name: "XDR Booking", badge: "BK", color: "#6366f1", href: "/booking" },
   { name: "Dispatch", badge: "XDR", color: "#64748b", href: "/dispatch" },
   { name: "Prospecting Hub", badge: "PRO", color: "#0d9488", href: "/prospecting-hub" },

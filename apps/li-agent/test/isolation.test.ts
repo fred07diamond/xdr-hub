@@ -1,5 +1,5 @@
 /**
- * Per-user isolation tests for Builder.LI.
+ * Per-user isolation tests for LinkedIn Agent.
  *
  * Verifies:
  *  1. DB schema    — owner_email columns, api_tokens table, compound unique index

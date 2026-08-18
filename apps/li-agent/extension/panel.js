@@ -542,7 +542,7 @@ draftBtn.addEventListener("click", async () => {
       return;
     }
 
-    setStatus("Sending to Builder.LI… (the agent is drafting, this takes ~30s)");
+    setStatus("Sending to LinkedIn Agent… (the agent is drafting, this takes ~30s)");
 
     const selectedCanvasId = canvasSelect.value || null;
     if (selectedCanvasId) {

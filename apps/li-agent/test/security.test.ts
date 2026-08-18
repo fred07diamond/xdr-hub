@@ -1,5 +1,5 @@
 /**
- * Security tests for Builder.LI access control.
+ * Security tests for LinkedIn Agent access control.
  *
  * Three layers must work together to prevent unauthorized access:
  *

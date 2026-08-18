@@ -45,7 +45,7 @@ export default defineAction({
       return { ok: false, error: "RESEND_API_KEY is not configured — add it in Netlify environment variables" };
     }
 
-    const from = process.env.EMAIL_FROM ?? "Builder.LI <onboarding@resend.dev>";
+    const from = process.env.EMAIL_FROM ?? "LinkedIn Agent <onboarding@resend.dev>";
 
     const emailRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -56,9 +56,9 @@ export default defineAction({
       body: JSON.stringify({
         from,
         to: rows[0].email,
-        subject: "You're invited to Builder.LI",
+        subject: "You're invited to LinkedIn Agent",
         html: buildInviteHtml({ invitee: rows[0].email, inviter, appUrl }),
-        text: `${inviter} has invited you to join Builder.LI. Sign in to accept: ${appUrl}`,
+        text: `${inviter} has invited you to join LinkedIn Agent. Sign in to accept: ${appUrl}`,
       }),
     });
 
@@ -92,7 +92,7 @@ function buildInviteHtml({ invitee, inviter, appUrl }: { invitee: string; invite
       <ol style="margin:0;padding-left:20px;color:#666;">
         <li>Click the button above and sign in with Google</li>
         <li>Go to Settings → copy your Personal API Token</li>
-        <li>Install the Builder.LI Chrome extension</li>
+        <li>Install the LinkedIn Agent Chrome extension</li>
         <li>Open a LinkedIn profile and click "Draft note"</li>
       </ol>
     </div>

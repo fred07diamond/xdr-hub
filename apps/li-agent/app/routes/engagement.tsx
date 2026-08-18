@@ -407,7 +407,7 @@ export default function EngagementRoute() {
         ))}
         {!posts.length && !isLoading && (
           <p className="mt-4 text-xs text-muted-foreground leading-relaxed">
-            Open a LinkedIn post and load commenters from the Builder.LI extension.
+            Open a LinkedIn post and load commenters from the LinkedIn Agent extension.
           </p>
         )}
       </aside>

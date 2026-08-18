@@ -14,7 +14,7 @@ import { isOverDailyLimit } from "../server/helpers/daily-limit.js";
 
 export default defineAction({
   description:
-    "Ingest a LinkedIn profile captured by the Builder.LI extension. Upserts the prospect row, scores fit, and drafts a connection note synchronously.",
+    "Ingest a LinkedIn profile captured by the LinkedIn Agent extension. Upserts the prospect row, scores fit, and drafts a connection note synchronously.",
   schema: z.object({
     profileUrl: z.string().url().describe("LinkedIn profile URL"),
     name: z.string().nullish(),

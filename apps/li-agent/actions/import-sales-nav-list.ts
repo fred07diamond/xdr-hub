@@ -14,7 +14,7 @@ const IMPORT_LIMIT = 500;
 
 export default defineAction({
   description:
-    "Import a Sales Navigator saved lead list captured by the Builder.LI extension. Shallow import only -- no ICP scoring or draft note generation happens here; that still happens later, per-lead, through the existing capture-profile flow when the xDR opens that lead's profile page.",
+    "Import a Sales Navigator saved lead list captured by the LinkedIn Agent extension. Shallow import only -- no ICP scoring or draft note generation happens here; that still happens later, per-lead, through the existing capture-profile flow when the xDR opens that lead's profile page.",
   schema: z.object({
     listName: z.string().describe("Name of the Sales Navigator list, or a derived/fallback name"),
     listDescription: z.string().nullish().describe("Optional description, only used when creating a new list (ignored if existingListId is set)"),

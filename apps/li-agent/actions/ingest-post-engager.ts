@@ -27,7 +27,7 @@ async function generatePostName(rawText: string): Promise<string> {
 }
 
 export default defineAction({
-  description: "Ingest a LinkedIn post commenter captured by the Builder.LI extension. Creates a post_engagements row and returns its id for status polling.",
+  description: "Ingest a LinkedIn post commenter captured by the LinkedIn Agent extension. Creates a post_engagements row and returns its id for status polling.",
   schema: z.object({
     postUrl: z.string().url().describe("URL of the LinkedIn post"),
     postTitle: z.string().nullish().describe("First ~200 chars of the post text"),

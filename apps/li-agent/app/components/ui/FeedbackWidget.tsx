@@ -54,7 +54,7 @@ export function FeedbackWidget() {
                 <div>
                   <p className="text-sm font-semibold">Thank you for your feedback!</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Your input helps us improve Builder.LI.
+                    Your input helps us improve LinkedIn Agent.
                   </p>
                 </div>
                 <button

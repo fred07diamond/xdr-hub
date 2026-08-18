@@ -23,11 +23,11 @@ async function callResendApi(apiKey: string, to: string): Promise<{ status: numb
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM ?? "Builder.LI <onboarding@resend.dev>",
+      from: process.env.EMAIL_FROM ?? "LinkedIn Agent <onboarding@resend.dev>",
       to,
-      subject: "Builder.LI — invite test",
-      html: "<p>Test email from Builder.LI diagnostic suite.</p>",
-      text: "Test email from Builder.LI diagnostic suite.",
+      subject: "LinkedIn Agent — invite test",
+      html: "<p>Test email from LinkedIn Agent diagnostic suite.</p>",
+      text: "Test email from LinkedIn Agent diagnostic suite.",
     }),
   });
   const body = await res.json().catch(() => null);
@@ -76,7 +76,7 @@ describe("local env: RESEND_API_KEY status", () => {
     } else {
       console.warn('✗ EMAIL_FROM is NOT set — using sandbox default "onboarding@resend.dev"');
       console.warn("  ⚠ Sandbox mode: emails can only be sent to the Resend account owner's email.");
-      console.warn("  Fix: verify a domain in Resend → set EMAIL_FROM=Builder.LI <you@yourdomain.com> in Netlify");
+      console.warn("  Fix: verify a domain in Resend → set EMAIL_FROM=LinkedIn Agent <you@yourdomain.com> in Netlify");
     }
   });
 });

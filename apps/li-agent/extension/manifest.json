@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Builder.LI",
-  "version": "2.14",
+  "name": "LinkedIn Agent",
+  "version": "3.0",
   "description": "Score LinkedIn profiles against your ICP and draft personalized connection notes.",
   "permissions": ["activeTab", "storage", "sidePanel", "scripting"],
   "host_permissions": [
@@ -43,6 +43,6 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "Builder.LI"
+    "default_title": "LinkedIn Agent"
   }
 }

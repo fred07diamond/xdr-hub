@@ -93,7 +93,7 @@ export default function ChatRoute() {
         composerSlot={
           <div className="mx-auto mb-5 max-w-xl px-4 text-center">
             <h1 className="text-2xl font-semibold tracking-normal text-foreground sm:text-3xl">
-              Builder.LI
+              LinkedIn Agent
             </h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Ask about your prospects or update your ICP.

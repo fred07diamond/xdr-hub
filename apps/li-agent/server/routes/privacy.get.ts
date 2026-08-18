@@ -5,7 +5,7 @@ const PRIVACY_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Privacy Policy — Builder.LI</title>
+  <title>Privacy Policy — LinkedIn Agent</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -45,11 +45,11 @@ const PRIVACY_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <div class="container">
-    <div class="logo">BLI</div>
+    <div class="logo">LI</div>
     <h1>Privacy Policy</h1>
     <p class="updated">Last updated: July 2026</p>
 
-    <p>Builder.LI ("we", "our") operates a Chrome extension and web application that helps teams score LinkedIn profiles against their Ideal Customer Profile (ICP) and draft personalized connection notes. This policy explains what data we collect, why, and how it is handled.</p>
+    <p>LinkedIn Agent ("we", "our") operates a Chrome extension and web application that helps teams score LinkedIn profiles against their Ideal Customer Profile (ICP) and draft personalized connection notes. This policy explains what data we collect, why, and how it is handled.</p>
 
     <h2>What data the extension collects</h2>
     <p>When you visit a LinkedIn profile page and click "Draft note", the extension reads the following fields from the page you are already viewing:</p>
@@ -62,7 +62,7 @@ const PRIVACY_HTML = `<!DOCTYPE html>
     <p>The extension reads <strong>only the profile you explicitly open</strong>, on a manual click, one profile at a time. It does not browse LinkedIn automatically, access your connections, messages, feed, or any other part of LinkedIn.</p>
 
     <h2>How that data is used</h2>
-    <p>The profile fields are sent to your team's Builder.LI workspace (hosted on Netlify) where they are:</p>
+    <p>The profile fields are sent to your team's LinkedIn Agent workspace (hosted on Netlify) where they are:</p>
     <ul>
       <li>Scored against your team's uploaded ICP document</li>
       <li>Used to generate a personalized connection note draft</li>
@@ -71,10 +71,10 @@ const PRIVACY_HTML = `<!DOCTYPE html>
     <p>Profile data is never sold, shared with third parties, or used for advertising.</p>
 
     <h2>Authentication data</h2>
-    <p>The extension stores a personal API token in Chrome's local extension storage (<code>chrome.storage.local</code>). This token links extension requests to your Builder.LI account. It is never transmitted to any service other than your own Builder.LI workspace.</p>
+    <p>The extension stores a personal API token in Chrome's local extension storage (<code>chrome.storage.local</code>). This token links extension requests to your LinkedIn Agent account. It is never transmitted to any service other than your own LinkedIn Agent workspace.</p>
 
     <h2>Data storage and retention</h2>
-    <p>Profile drafts are stored in your workspace's Postgres database on Neon (neon.tech). Data is retained until you delete it or close your workspace. Builder.LI does not access your workspace data.</p>
+    <p>Profile drafts are stored in your workspace's Postgres database on Neon (neon.tech). Data is retained until you delete it or close your workspace. LinkedIn Agent does not access your workspace data.</p>
 
     <h2>Permissions used</h2>
     <ul>

@@ -1,5 +1,5 @@
 /**
- * Diagnostic test suite for the Builder.LI outreach app.
+ * Diagnostic test suite for the LinkedIn Agent outreach app.
  *
  * Covers:
  *  1. DB schema       — icp_text column, prospects columns
