@@ -2,6 +2,7 @@ import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconBrandLinkedin,
   IconCheck,
+  IconChevronDown,
   IconClipboard,
   IconDownload,
   IconExternalLink,
@@ -732,7 +733,8 @@ export default function ProspectsRoute() {
   // Filters
   const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<NonNullable<Verdict> | "all">("all");
-  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [tagFilterIds, setTagFilterIds] = useState<Set<string>>(new Set());
+  const [tagFilterMode, setTagFilterMode] = useState<"any" | "all">("any");
   const [personaFilter, setPersonaFilter] = useState<string>("all");
   const [recencyFilter, setRecencyFilter] = useState<"all" | "today" | "week">("all");
 
@@ -793,7 +795,7 @@ export default function ProspectsRoute() {
   useEffect(() => {
     setProspectsPage(1);
     setIsAllMatchingSelected(false);
-  }, [verdictFilter, tagFilter, personaFilter, recencyFilter, search]);
+  }, [verdictFilter, tagFilterIds, tagFilterMode, personaFilter, recencyFilter, search]);
 
   // Derived persona list for filter chips
   const personas = useMemo(() => [...new Map(
@@ -804,7 +806,13 @@ export default function ProspectsRoute() {
 
   function matchesCurrentFilters(p: Prospect): boolean {
     if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) return false;
-    if (tagFilter !== "all" && !p.tags.some((t) => t.id === tagFilter)) return false;
+    if (tagFilterIds.size > 0) {
+      const prospectTagIds = new Set(p.tags.map((t) => t.id));
+      const matches = tagFilterMode === "any"
+        ? [...tagFilterIds].some((id) => prospectTagIds.has(id))
+        : [...tagFilterIds].every((id) => prospectTagIds.has(id));
+      if (!matches) return false;
+    }
     if (personaFilter !== "all" && p.personaName !== personaFilter) return false;
     if (recencyFilter !== "all") {
       if (!p.createdAt) return false;
@@ -831,7 +839,7 @@ export default function ProspectsRoute() {
   const filtered = useMemo(
     () => allProspects.filter(matchesCurrentFilters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allProspects, verdictFilter, tagFilter, personaFilter, recencyFilter, search],
+    [allProspects, verdictFilter, tagFilterIds, tagFilterMode, personaFilter, recencyFilter, search],
   );
 
   // What's actually rendered in the table -- one page's worth of the
@@ -947,7 +955,12 @@ export default function ProspectsRoute() {
     await deleteTag.mutateAsync({ id });
     tagsQuery.refetch();
     refetch();
-    if (tagFilter === id) setTagFilter("all");
+    setTagFilterIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }
 
   async function handleBulkTag(tagId: string) {
@@ -1066,7 +1079,7 @@ export default function ProspectsRoute() {
     refetch();
   }
 
-  const hasActiveFilter = verdictFilter !== "all" || tagFilter !== "all" || personaFilter !== "all" || recencyFilter !== "all" || search;
+  const hasActiveFilter = verdictFilter !== "all" || tagFilterIds.size > 0 || personaFilter !== "all" || recencyFilter !== "all" || search;
 
   async function handleExportAll() {
     setIsExporting(true);
@@ -1265,20 +1278,13 @@ export default function ProspectsRoute() {
 
         {/* Tags */}
         {allTags.length > 0 && (
-          <div className="flex items-center gap-1">
-            <FilterPill active={tagFilter === "all"} onClick={() => setTagFilter("all")}>All tags</FilterPill>
-            {allTags.map((tag) => (
-              <FilterPill
-                key={tag.id}
-                active={tagFilter === tag.id}
-                color={tag.color}
-                onClick={() => setTagFilter(tagFilter === tag.id ? "all" : tag.id)}
-              >
-                <span style={{ background: tag.color }} className="inline-block h-1.5 w-1.5 rounded-full" />
-                {tag.name}
-              </FilterPill>
-            ))}
-          </div>
+          <TagFilterControl
+            allTags={allTags}
+            selectedIds={tagFilterIds}
+            onChangeSelected={setTagFilterIds}
+            mode={tagFilterMode}
+            onChangeMode={setTagFilterMode}
+          />
         )}
 
         {/* Persona */}
@@ -1314,7 +1320,7 @@ export default function ProspectsRoute() {
 
         {hasActiveFilter && (
           <button type="button"
-            onClick={() => { setSearch(""); setVerdictFilter("all"); setTagFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
+            onClick={() => { setSearch(""); setVerdictFilter("all"); setTagFilterIds(new Set()); setPersonaFilter("all"); setRecencyFilter("all"); }}
             className="ml-auto text-xs text-muted-foreground hover:text-foreground">
             Clear filters
           </button>
@@ -1334,7 +1340,7 @@ export default function ProspectsRoute() {
               {hasActiveFilter ? "No prospects match these filters" : "No prospects captured yet"}
             </p>
             {hasActiveFilter && (
-              <button type="button" onClick={() => { setSearch(""); setVerdictFilter("all"); setTagFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
+              <button type="button" onClick={() => { setSearch(""); setVerdictFilter("all"); setTagFilterIds(new Set()); setPersonaFilter("all"); setRecencyFilter("all"); }}
                 className="text-xs text-primary hover:underline">Clear filters</button>
             )}
           </div>
@@ -1935,6 +1941,110 @@ function BulkTagPopover({
             </button>
           ))
         )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// One chip that opens a dropdown of every tag as a search-filterable
+// checkbox list, plus an "any of"/"all of" match-mode select -- instead of
+// one FilterPill per tag (which doesn't scale once there are more than a
+// handful of tags).
+function TagFilterControl({
+  allTags,
+  selectedIds,
+  onChangeSelected,
+  mode,
+  onChangeMode,
+}: {
+  allTags: Tag[];
+  selectedIds: Set<string>;
+  onChangeSelected: (next: Set<string>) => void;
+  mode: "any" | "all";
+  onChangeMode: (next: "any" | "all") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const visibleTags = allTags.filter((t) => t.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  function toggle(id: string) {
+    const next = new Set(selectedIds);
+    next.has(id) ? next.delete(id) : next.add(id);
+    onChangeSelected(next);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery(""); }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+            selectedIds.size > 0
+              ? "border-foreground/30 bg-foreground/10 text-foreground"
+              : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+          }`}
+        >
+          <IconTag size={11} />
+          {selectedIds.size === 0 ? "Tags" : `Tags (${selectedIds.size})`}
+          {selectedIds.size > 0 ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onChangeSelected(new Set()); }}
+              className="ml-0.5 rounded-full p-0.5 hover:bg-foreground/10"
+            >
+              <IconX size={11} />
+            </span>
+          ) : (
+            <IconChevronDown size={11} />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 p-2">
+        <select
+          value={mode}
+          onChange={(e) => onChangeMode(e.target.value as "any" | "all")}
+          className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="any">Match any of</option>
+          <option value="all">Match all of</option>
+        </select>
+
+        <div className="relative mt-1.5">
+          <IconSearch size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find tags…"
+            autoFocus
+            className="w-full rounded-md border border-border bg-background py-1 pl-6 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+
+        <div className="mt-1.5 max-h-56 overflow-y-auto">
+          {visibleTags.length === 0 ? (
+            <p className="px-1 py-3 text-center text-xs text-muted-foreground">No matching tags.</p>
+          ) : (
+            visibleTags.map((tag) => (
+              <label
+                key={tag.id}
+                className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-xs hover:bg-muted/60 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(tag.id)}
+                  onChange={() => toggle(tag.id)}
+                  className="shrink-0 rounded border-border"
+                />
+                <span style={{ background: tag.color }} className="inline-block h-2 w-2 shrink-0 rounded-full" />
+                <span className="min-w-0 flex-1 truncate">{tag.name}</span>
+                {typeof tag.prospectCount === "number" && (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{tag.prospectCount}</span>
+                )}
+              </label>
+            ))
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
