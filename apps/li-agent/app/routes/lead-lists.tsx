@@ -1,7 +1,7 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconExternalLink, IconListCheck, IconLoader2, IconSparkles, IconTrash, IconUsers } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { IconCheck, IconExternalLink, IconListCheck, IconLoader2, IconPencil, IconSparkles, IconTrash, IconUsers, IconX } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
 
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
@@ -207,6 +207,9 @@ export default function LeadListsPage() {
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [renamingListId, setRenamingListId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   const listsQuery = useActionQuery("list-lead-lists", {}, { refetchInterval: 30_000 });
   const lists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
@@ -234,6 +237,7 @@ export default function LeadListsPage() {
   const activeList = (itemsQuery.data as { list?: LeadList } | undefined)?.list ?? null;
 
   const deleteList = useActionMutation("delete-lead-list");
+  const renameList = useActionMutation("rename-lead-list");
   const enrichItem = useActionMutation("enrich-lead-list-item");
 
   const enrichEligibleCount = items.filter(
@@ -319,6 +323,30 @@ export default function LeadListsPage() {
     listsQuery.refetch();
   }
 
+  function startRenameList(list: LeadList) {
+    setRenamingListId(list.id);
+    setRenameValue(list.name);
+    requestAnimationFrame(() => renameInputRef.current?.focus());
+  }
+
+  function cancelRenameList() {
+    setRenamingListId(null);
+    setRenameValue("");
+  }
+
+  async function commitRenameList() {
+    const listId = renamingListId;
+    const name = renameValue.trim();
+    if (!listId || !name) {
+      cancelRenameList();
+      return;
+    }
+    setRenamingListId(null);
+    await renameList.mutateAsync({ listId, name });
+    listsQuery.refetch();
+    if (selectedListId === listId) itemsQuery.refetch();
+  }
+
   return (
     <div className="flex h-full min-h-0">
       {/* Left panel — lead list list */}
@@ -348,31 +376,82 @@ export default function LeadListsPage() {
             <ul className="divide-y divide-border">
               {lists.map((l) => (
                 <li key={l.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectList(l.id)}
-                    className={cn(
-                      "group w-full text-left px-4 py-3 transition-colors hover:bg-muted/50",
-                      selectedListId === l.id && "bg-muted",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{l.name}</p>
-                        {l.description ? (
-                          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{l.description}</p>
-                        ) : null}
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{l.totalCount} leads</p>
+                  {renamingListId === l.id ? (
+                    <div className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <input
+                          ref={renameInputRef}
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRenameList();
+                            if (e.key === "Escape") cancelRenameList();
+                          }}
+                          maxLength={120}
+                          className="flex-1 min-w-0 rounded-md border border-primary/50 bg-background px-2 py-1 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                        <button
+                          type="button"
+                          onClick={commitRenameList}
+                          className="shrink-0 rounded p-1 text-emerald-600 hover:bg-emerald-500/10"
+                          title="Save"
+                        >
+                          <IconCheck size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelRenameList}
+                          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted"
+                          title="Cancel"
+                        >
+                          <IconX size={14} />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteList(l.id); }}
-                        className="mt-0.5 shrink-0 rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-opacity"
-                      >
-                        <IconTrash size={13} />
-                      </button>
+                      {l.description ? (
+                        <p className="text-[11px] text-muted-foreground mt-1 truncate">{l.description}</p>
+                      ) : null}
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{l.totalCount} leads</p>
                     </div>
-                  </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectList(l.id)}
+                      onDoubleClick={() => startRenameList(l)}
+                      className={cn(
+                        "group w-full text-left px-4 py-3 transition-colors hover:bg-muted/50",
+                        selectedListId === l.id && "bg-muted",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{l.name}</p>
+                          {l.description ? (
+                            <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{l.description}</p>
+                          ) : null}
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{l.totalCount} leads</p>
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); startRenameList(l); }}
+                            className="mt-0.5 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            title="Rename"
+                          >
+                            <IconPencil size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteList(l.id); }}
+                            className="mt-0.5 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            title="Delete"
+                          >
+                            <IconTrash size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
