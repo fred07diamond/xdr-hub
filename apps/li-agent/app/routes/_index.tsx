@@ -133,8 +133,13 @@ const VERDICT_STYLES: Record<NonNullable<Verdict>, string> = {
 };
 
 // Same swatch set as ICP Personas (app/routes/icp.tsx) for visual consistency
-// across the app's two "user creates a named, colored thing" features.
+// across the app's two "user creates a named, colored thing" features. Tag
+// color is cosmetic only (just tints the chip) -- there's no manual picker,
+// a new tag just gets a random one of these assigned.
 const TAG_COLORS = ["#6366f1", "#f97316", "#22c55e", "#ec4899", "#0ea5e9", "#eab308", "#a855f7", "#ef4444"];
+function randomTagColor(): string {
+  return TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+}
 
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   if (!verdict) return <span className="text-xs text-muted-foreground">—</span>;
@@ -349,11 +354,6 @@ function ProspectSheet({
     tagsQuery.refetch();
   }
 
-  async function handleRecolorTag(id: string, color: string) {
-    await updateTag.mutateAsync({ id, color });
-    tagsQuery.refetch();
-  }
-
   async function handleDeleteTag(id: string) {
     await deleteTag.mutateAsync({ id });
     tagsQuery.refetch();
@@ -501,7 +501,6 @@ function ProspectSheet({
                 onToggleTag={handleToggleTag}
                 onCreateTag={handleCreateTag}
                 onRenameTag={handleRenameTag}
-                onRecolorTag={handleRecolorTag}
                 onDeleteTag={handleDeleteTag}
               />
             )}
@@ -946,11 +945,6 @@ export default function ProspectsRoute() {
     tagsQuery.refetch();
   }
 
-  async function handleRecolorTag(id: string, color: string) {
-    await updateTag.mutateAsync({ id, color });
-    tagsQuery.refetch();
-  }
-
   async function handleDeleteTag(id: string) {
     await deleteTag.mutateAsync({ id });
     tagsQuery.refetch();
@@ -1205,7 +1199,6 @@ export default function ProspectsRoute() {
                 allTags={allTags}
                 onCreateTag={handleCreateTag}
                 onRenameTag={handleRenameTag}
-                onRecolorTag={handleRecolorTag}
                 onDeleteTag={handleDeleteTag}
               />
               <button
@@ -1447,7 +1440,6 @@ export default function ProspectsRoute() {
                           onToggleTag={(tagId) => handleToggleProspectTag(p, tagId)}
                           onCreateTag={handleCreateTag}
                           onRenameTag={handleRenameTag}
-                          onRecolorTag={handleRecolorTag}
                           onDeleteTag={handleDeleteTag}
                         />
                       ) : (
@@ -1668,7 +1660,6 @@ function TagManagerPopover({
   onToggleAssign,
   onCreateTag,
   onRenameTag,
-  onRecolorTag,
   onDeleteTag,
 }: {
   trigger: React.ReactNode;
@@ -1677,7 +1668,6 @@ function TagManagerPopover({
   onToggleAssign?: (tagId: string) => void;
   onCreateTag: (name: string, color: string) => Promise<TagMutationResult>;
   onRenameTag: (id: string, name: string) => Promise<void>;
-  onRecolorTag: (id: string, color: string) => Promise<void>;
   onDeleteTag: (id: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -1685,7 +1675,6 @@ function TagManagerPopover({
   const [editName, setEditName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState(TAG_COLORS[0]);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -1713,13 +1702,12 @@ function TagManagerPopover({
     setCreating(true);
     setError(null);
     try {
-      const result = await onCreateTag(trimmed, newColor);
+      const result = await onCreateTag(trimmed, randomTagColor());
       if (result?.error) {
         setError(result.error);
         return;
       }
       setNewName("");
-      setNewColor(TAG_COLORS[0]);
     } finally {
       setCreating(false);
     }
@@ -1736,21 +1724,18 @@ function TagManagerPopover({
           {allTags.map((tag) => (
             <div key={tag.id} className="group flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-muted/60">
               {editingId === tag.id ? (
-                <>
-                  <span style={{ background: tag.color }} className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" />
-                  <input
-                    autoFocus
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") commitEditName(tag);
-                      if (e.key === "Escape") setEditingId(null);
-                    }}
-                    onBlur={() => commitEditName(tag)}
-                    maxLength={40}
-                    className="min-w-0 flex-1 rounded border border-primary/50 bg-background px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </>
+                <input
+                  autoFocus
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitEditName(tag);
+                    if (e.key === "Escape") setEditingId(null);
+                  }}
+                  onBlur={() => commitEditName(tag)}
+                  maxLength={40}
+                  className="min-w-0 flex-1 rounded border border-primary/50 bg-background px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
               ) : confirmDeleteId === tag.id ? (
                 <>
                   <span className="flex-1 truncate text-xs text-muted-foreground">Delete "{tag.name}"?</span>
@@ -1771,20 +1756,15 @@ function TagManagerPopover({
                     type="button"
                     onClick={() => onToggleAssign?.(tag.id)}
                     disabled={!onToggleAssign}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left disabled:cursor-default"
                   >
-                    {onToggleAssign ? (
+                    <span className="min-w-0 flex-1 truncate text-xs">{tag.name}</span>
+                    {onToggleAssign && (
                       <input type="checkbox" readOnly checked={assignedTagIds?.has(tag.id) ?? false} className="shrink-0 rounded border-border" />
-                    ) : (
-                      <span style={{ background: tag.color }} className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" />
-                    )}
-                    <span className="truncate text-xs">{tag.name}</span>
-                    {typeof tag.prospectCount === "number" && (
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{tag.prospectCount}</span>
                     )}
                   </button>
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                    <button type="button" onClick={() => startEdit(tag)} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="Rename / recolor">
+                    <button type="button" onClick={() => startEdit(tag)} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="Rename">
                       <IconPencil size={12} />
                     </button>
                     <button type="button" onClick={() => setConfirmDeleteId(tag.id)} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
@@ -1797,37 +1777,8 @@ function TagManagerPopover({
           ))}
         </div>
 
-        {editingId && (
-          <div className="mt-1.5 flex gap-1.5 border-t border-border pt-2">
-            {TAG_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => onRecolorTag(editingId, c)}
-                style={{ background: c }}
-                className="h-4 w-4 shrink-0 rounded-full transition-transform hover:scale-110"
-                aria-label={c}
-              />
-            ))}
-          </div>
-        )}
-
         <div className="mt-2 border-t border-border pt-2">
-          <div className="flex items-center gap-1.5">
-            {TAG_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setNewColor(c)}
-                style={{ background: c }}
-                className="h-4 w-4 shrink-0 rounded-full transition-transform hover:scale-110"
-                aria-label={c}
-              >
-                {newColor === c && <IconCheck size={9} className="mx-auto text-white" strokeWidth={3} />}
-              </button>
-            ))}
-          </div>
-          <div className="mt-1.5 flex gap-1.5">
+          <div className="flex gap-1.5">
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
@@ -1858,7 +1809,6 @@ function TagPickerCell({
   onToggleTag,
   onCreateTag,
   onRenameTag,
-  onRecolorTag,
   onDeleteTag,
 }: {
   prospect: Prospect;
@@ -1866,7 +1816,6 @@ function TagPickerCell({
   onToggleTag: (tagId: string) => void;
   onCreateTag: (name: string, color: string) => Promise<TagMutationResult>;
   onRenameTag: (id: string, name: string) => Promise<void>;
-  onRecolorTag: (id: string, color: string) => Promise<void>;
   onDeleteTag: (id: string) => Promise<void>;
 }) {
   const assignedIds = useMemo(() => new Set(prospect.tags.map((t) => t.id)), [prospect.tags]);
@@ -1896,7 +1845,6 @@ function TagPickerCell({
         onToggleAssign={onToggleTag}
         onCreateTag={onCreateTag}
         onRenameTag={onRenameTag}
-        onRecolorTag={onRecolorTag}
         onDeleteTag={onDeleteTag}
       />
     </div>
@@ -2004,22 +1952,19 @@ function TagFilterControl({
         <select
           value={mode}
           onChange={(e) => onChangeMode(e.target.value as "any" | "all")}
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
         >
-          <option value="any">Match any of</option>
-          <option value="all">Match all of</option>
+          <option value="any">any of</option>
+          <option value="all">all of</option>
         </select>
 
-        <div className="relative mt-1.5">
-          <IconSearch size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find tags…"
-            autoFocus
-            className="w-full rounded-md border border-border bg-background py-1 pl-6 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-        </div>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Find tags…"
+          autoFocus
+          className="mt-1.5 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        />
 
         <div className="mt-1.5 max-h-56 overflow-y-auto">
           {visibleTags.length === 0 ? (
@@ -2028,19 +1973,15 @@ function TagFilterControl({
             visibleTags.map((tag) => (
               <label
                 key={tag.id}
-                className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-xs hover:bg-muted/60 cursor-pointer"
+                className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1.5 text-xs hover:bg-muted/60 cursor-pointer"
               >
+                <span className="min-w-0 flex-1 truncate">{tag.name}</span>
                 <input
                   type="checkbox"
                   checked={selectedIds.has(tag.id)}
                   onChange={() => toggle(tag.id)}
                   className="shrink-0 rounded border-border"
                 />
-                <span style={{ background: tag.color }} className="inline-block h-2 w-2 shrink-0 rounded-full" />
-                <span className="min-w-0 flex-1 truncate">{tag.name}</span>
-                {typeof tag.prospectCount === "number" && (
-                  <span className="shrink-0 text-[10px] text-muted-foreground">{tag.prospectCount}</span>
-                )}
               </label>
             ))
           )}
