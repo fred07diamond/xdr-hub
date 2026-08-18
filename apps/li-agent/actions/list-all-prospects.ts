@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { leadLists, leadListItems, prospects } from "../server/db/schema.js";
+import { leadLists, leadListItems, prospects, prospectTags, prospectTagLinks } from "../server/db/schema.js";
 
 // One combined, deduped view across everything this owner has ever
 // captured -- the `prospects` table (profile-visit captures, richer: ICP
@@ -43,7 +43,7 @@ export default defineAction({
     if (!userEmail) return { rows: [], totalCount: 0 };
 
     const db = getDb();
-    const [prospectRows, leadListRows] = await Promise.all([
+    const [prospectRows, leadListRows, tagLinkRows] = await Promise.all([
       db
         .select({
           id: prospects.id,
@@ -103,7 +103,24 @@ export default defineAction({
         .from(leadListItems)
         .innerJoin(leadLists, eq(leadListItems.listId, leadLists.id))
         .where(eq(leadLists.ownerEmail, userEmail)),
+      db
+        .select({
+          prospectId: prospectTagLinks.prospectId,
+          id: prospectTags.id,
+          name: prospectTags.name,
+          color: prospectTags.color,
+        })
+        .from(prospectTagLinks)
+        .innerJoin(prospectTags, eq(prospectTagLinks.tagId, prospectTags.id))
+        .where(eq(prospectTags.ownerEmail, userEmail)),
     ]);
+
+    const tagsByProspectId = new Map<string, { id: string; name: string; color: string }[]>();
+    for (const link of tagLinkRows) {
+      const list = tagsByProspectId.get(link.prospectId) ?? [];
+      list.push({ id: link.id, name: link.name, color: link.color });
+      tagsByProspectId.set(link.prospectId, list);
+    }
 
     const profileUrlSet = new Set(prospectRows.map((p) => p.profileUrl).filter((u): u is string => !!u));
 
@@ -125,6 +142,7 @@ export default defineAction({
         draftNote: p.draftNote,
         draftFollowUp: p.draftFollowUp,
         status: p.status as string | null,
+        tags: tagsByProspectId.get(p.id) ?? [],
         rating: p.rating,
         ratingNote: p.ratingNote,
         personaId: p.personaId,
@@ -162,6 +180,7 @@ export default defineAction({
           draftNote: null as string | null,
           draftFollowUp: null as string | null,
           status: null as string | null,
+          tags: [] as { id: string; name: string; color: string }[],
           rating: null as number | null,
           ratingNote: null as string | null,
           personaId: li.personaId,

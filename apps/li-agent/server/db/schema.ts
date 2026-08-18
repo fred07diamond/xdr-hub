@@ -70,6 +70,29 @@ export const prospects = table("prospects", {
   updatedAt: text("updated_at").default(now()),
 });
 
+// User-created tags for labeling prospects -- replaces the old fixed
+// captured/drafted/sent status column on the Prospects table with something
+// the user defines themselves. Prospects-only, same scope as
+// note/rating/mark-sent (see AGENTS.md's Lead Lists section): a lead list
+// item has to be promoted into a real prospects row (via
+// score-lead-list-item.ts or capture-profile.ts) before it can be tagged.
+export const prospectTags = table("prospect_tags", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email"),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#6366f1"),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
+
+// Many-to-many join between prospects and prospectTags.
+export const prospectTagLinks = table("prospect_tag_links", {
+  id: text("id").primaryKey(),
+  prospectId: text("prospect_id").notNull(),
+  tagId: text("tag_id").notNull(),
+  createdAt: text("created_at").default(now()),
+});
+
 // One row per manual send — written by mark-sent, read by check-already-contacted.
 export const sendHistory = table("send_history", {
   id: text("id").primaryKey(),

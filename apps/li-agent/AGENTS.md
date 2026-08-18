@@ -127,6 +127,33 @@ not an ICP fit judgment, and must not influence scoring or draft notes.
   does not implement Apollo's separate paid async reveal_phone_number+webhook
   flow.
 
+## Prospect tags
+
+Replaced the old fixed captured/drafted/sent Status column on the Prospects
+table (`/`) with user-created tags — named, colored labels the user defines
+themselves, shown as chips in a "Tags" column and filterable via pills in the
+toolbar (same style as the Persona filter). The underlying `status` lifecycle
+on `prospects` (captured → drafted → sent) still exists and still drives
+real logic (the "Drafting…" placeholder, gating "Mark sent", the daily-limit
+count) — only its dedicated UI column and filter were removed.
+
+- Schema: `prospectTags` (id, ownerEmail, name, color) and `prospectTagLinks`
+  (many-to-many join: prospectId, tagId).
+- Actions: `list-prospect-tags` (with per-tag prospect counts),
+  `create-prospect-tag`, `update-prospect-tag` (rename/recolor),
+  `delete-prospect-tag` (cascades its links), `set-prospect-tags` (replaces
+  one prospect's full tag set), `bulk-tag-prospects` (adds one tag to many
+  prospects at once, e.g. from a multi-select).
+- Tags are prospects-only, same scope as rating/note/mark-sent (see the Lead
+  Lists section above) — a lead list item has to be promoted into a real
+  `prospects` row before it can be tagged. `list-all-prospects.ts` always
+  returns `tags: []` for lead_list-sourced rows.
+- Tag management (create/rename/recolor/delete) lives inside the same
+  `TagManagerPopover` component used for per-row assignment (in
+  `app/routes/_index.tsx`) — reachable either from a prospect's own tag
+  picker or from the "Manage tags" button in the page header. Don't build a
+  separate tags settings page; extend that one component instead.
+
 ## Hard rules
 - Never fabricate facts about a prospect. Personalize only from
   what the capture actually contains. If a field is missing, work

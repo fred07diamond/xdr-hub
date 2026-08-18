@@ -7,9 +7,12 @@ import {
   IconExternalLink,
   IconListCheck,
   IconLoader2,
+  IconPencil,
+  IconPlus,
   IconRefresh,
   IconSearch,
   IconSparkles,
+  IconTag,
   IconThumbDown,
   IconThumbUp,
   IconTrash,
@@ -50,6 +53,13 @@ export function meta() {
 type Verdict = "strong" | "possible" | "weak" | null;
 type Status = "captured" | "drafted" | "sent";
 
+interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  prospectCount?: number;
+}
+
 interface Prospect {
   id: string;
   // The real, unprefixed prospects.id or leadListItems.id -- what per-row
@@ -77,6 +87,9 @@ interface Prospect {
   // null for lead_list-sourced rows -- not yet visited, no status lifecycle
   // has started for them.
   status: Status | null;
+  // Always empty for lead_list-sourced rows -- tags are prospects-only, same
+  // scope as rating/note (see AGENTS.md's Lead Lists section).
+  tags: Tag[];
   enrichmentStatus: "idle" | "enriching" | "done" | "not_found" | "failed";
   enrichedEmail: string | null;
   enrichedTitle: string | null;
@@ -118,26 +131,15 @@ const VERDICT_STYLES: Record<NonNullable<Verdict>, string> = {
   weak: "bg-rose-500/15 text-rose-500 dark:text-rose-400",
 };
 
-const STATUS_STYLES: Record<Status, string> = {
-  captured: "bg-muted text-muted-foreground",
-  drafted: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  sent: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-};
+// Same swatch set as ICP Personas (app/routes/icp.tsx) for visual consistency
+// across the app's two "user creates a named, colored thing" features.
+const TAG_COLORS = ["#6366f1", "#f97316", "#22c55e", "#ec4899", "#0ea5e9", "#eab308", "#a855f7", "#ef4444"];
 
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   if (!verdict) return <span className="text-xs text-muted-foreground">—</span>;
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${VERDICT_STYLES[verdict]}`}>
       {verdict}
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: Status | null }) {
-  if (!status) return <span className="text-xs text-muted-foreground">—</span>;
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[status]}`}>
-      {status}
     </span>
   );
 }
@@ -321,6 +323,42 @@ function ProspectSheet({
   const [isScoring, setIsScoring] = useState(false);
   const [scoreError, setScoreError] = useState<string | null>(null);
 
+  const tagsQuery = useActionQuery("list-prospect-tags", {});
+  const allTags: Tag[] = ((tagsQuery.data as { tags?: Tag[] } | undefined)?.tags ?? []);
+  const createTag = useActionMutation("create-prospect-tag");
+  const updateTag = useActionMutation("update-prospect-tag");
+  const deleteTag = useActionMutation("delete-prospect-tag");
+  const setProspectTags = useActionMutation("set-prospect-tags");
+
+  async function handleToggleTag(tagId: string) {
+    const nextIds = new Set(prospect.tags.map((t) => t.id));
+    nextIds.has(tagId) ? nextIds.delete(tagId) : nextIds.add(tagId);
+    await setProspectTags.mutateAsync({ prospectId: prospect.rawId, tagIds: [...nextIds] });
+    onUpdated();
+  }
+
+  async function handleCreateTag(name: string, color: string) {
+    const result = await createTag.mutateAsync({ name, color });
+    tagsQuery.refetch();
+    return result as { ok: boolean; error?: string };
+  }
+
+  async function handleRenameTag(id: string, name: string) {
+    await updateTag.mutateAsync({ id, name });
+    tagsQuery.refetch();
+  }
+
+  async function handleRecolorTag(id: string, color: string) {
+    await updateTag.mutateAsync({ id, color });
+    tagsQuery.refetch();
+  }
+
+  async function handleDeleteTag(id: string) {
+    await deleteTag.mutateAsync({ id });
+    tagsQuery.refetch();
+    onUpdated();
+  }
+
   const crmQuery = useActionQuery(
     "check-hubspot-contact",
     { profileUrl: prospect.profileUrl ?? "" },
@@ -455,7 +493,17 @@ function ProspectSheet({
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <VerdictBadge verdict={prospect.fitVerdict} />
-            <StatusBadge status={prospect.status} />
+            {isProspect && (
+              <TagPickerCell
+                prospect={prospect}
+                allTags={allTags}
+                onToggleTag={handleToggleTag}
+                onCreateTag={handleCreateTag}
+                onRenameTag={handleRenameTag}
+                onRecolorTag={handleRecolorTag}
+                onDeleteTag={handleDeleteTag}
+              />
+            )}
             {prospect.personaName && prospect.personaColor && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                 <span style={{ background: prospect.personaColor }} className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" />
@@ -684,7 +732,7 @@ export default function ProspectsRoute() {
   // Filters
   const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<NonNullable<Verdict> | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
+  const [tagFilter, setTagFilter] = useState<string>("all");
   const [personaFilter, setPersonaFilter] = useState<string>("all");
   const [recencyFilter, setRecencyFilter] = useState<"all" | "today" | "week">("all");
 
@@ -702,6 +750,14 @@ export default function ProspectsRoute() {
   const enrichProspect = useActionMutation("enrich-prospect");
   const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
   const scoreLeadListItem = useActionMutation("score-lead-list-item");
+
+  const tagsQuery = useActionQuery("list-prospect-tags", {});
+  const allTags: Tag[] = ((tagsQuery.data as { tags?: Tag[] } | undefined)?.tags ?? []);
+  const createTag = useActionMutation("create-prospect-tag");
+  const updateTag = useActionMutation("update-prospect-tag");
+  const deleteTag = useActionMutation("delete-prospect-tag");
+  const setProspectTags = useActionMutation("set-prospect-tags");
+  const bulkTagProspects = useActionMutation("bulk-tag-prospects");
 
   // Merges the prospects table with every Lead List's items, deduped
   // (list-all-prospects.ts), so this one table is "everything ever
@@ -737,7 +793,7 @@ export default function ProspectsRoute() {
   useEffect(() => {
     setProspectsPage(1);
     setIsAllMatchingSelected(false);
-  }, [verdictFilter, statusFilter, personaFilter, recencyFilter, search]);
+  }, [verdictFilter, tagFilter, personaFilter, recencyFilter, search]);
 
   // Derived persona list for filter chips
   const personas = useMemo(() => [...new Map(
@@ -748,7 +804,7 @@ export default function ProspectsRoute() {
 
   function matchesCurrentFilters(p: Prospect): boolean {
     if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) return false;
-    if (statusFilter !== "all" && p.status !== statusFilter) return false;
+    if (tagFilter !== "all" && !p.tags.some((t) => t.id === tagFilter)) return false;
     if (personaFilter !== "all" && p.personaName !== personaFilter) return false;
     if (recencyFilter !== "all") {
       if (!p.createdAt) return false;
@@ -775,7 +831,7 @@ export default function ProspectsRoute() {
   const filtered = useMemo(
     () => allProspects.filter(matchesCurrentFilters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allProspects, verdictFilter, statusFilter, personaFilter, recencyFilter, search],
+    [allProspects, verdictFilter, tagFilter, personaFilter, recencyFilter, search],
   );
 
   // What's actually rendered in the table -- one page's worth of the
@@ -859,6 +915,43 @@ export default function ProspectsRoute() {
     for (const p of toMark) {
       await markSent.mutateAsync({ profileUrl: p.profileUrl! });
     }
+    setSelectedIds(new Set());
+    setIsAllMatchingSelected(false);
+    refetch();
+  }
+
+  async function handleToggleProspectTag(prospect: Prospect, tagId: string) {
+    const nextIds = new Set(prospect.tags.map((t) => t.id));
+    nextIds.has(tagId) ? nextIds.delete(tagId) : nextIds.add(tagId);
+    await setProspectTags.mutateAsync({ prospectId: prospect.rawId, tagIds: [...nextIds] });
+    refetch();
+  }
+
+  async function handleCreateTag(name: string, color: string) {
+    const result = await createTag.mutateAsync({ name, color });
+    tagsQuery.refetch();
+    return result as { ok: boolean; error?: string };
+  }
+
+  async function handleRenameTag(id: string, name: string) {
+    await updateTag.mutateAsync({ id, name });
+    tagsQuery.refetch();
+  }
+
+  async function handleRecolorTag(id: string, color: string) {
+    await updateTag.mutateAsync({ id, color });
+    tagsQuery.refetch();
+  }
+
+  async function handleDeleteTag(id: string) {
+    await deleteTag.mutateAsync({ id });
+    tagsQuery.refetch();
+    refetch();
+    if (tagFilter === id) setTagFilter("all");
+  }
+
+  async function handleBulkTag(tagId: string) {
+    await bulkTagProspects.mutateAsync({ prospectIds: selectedProspectSourced.map((p) => p.rawId), tagId });
     setSelectedIds(new Set());
     setIsAllMatchingSelected(false);
     refetch();
@@ -973,7 +1066,7 @@ export default function ProspectsRoute() {
     refetch();
   }
 
-  const hasActiveFilter = verdictFilter !== "all" || statusFilter !== "all" || personaFilter !== "all" || recencyFilter !== "all" || search;
+  const hasActiveFilter = verdictFilter !== "all" || tagFilter !== "all" || personaFilter !== "all" || recencyFilter !== "all" || search;
 
   async function handleExportAll() {
     setIsExporting(true);
@@ -1064,6 +1157,11 @@ export default function ProspectsRoute() {
                   prospectIds={selectedProspectSourced.map((p) => p.rawId)}
                   onDone={() => { setSelectedIds(new Set()); setIsAllMatchingSelected(false); }}
                 />
+                <BulkTagPopover
+                  prospectIds={selectedProspectSourced.map((p) => p.rawId)}
+                  allTags={allTags}
+                  onApply={handleBulkTag}
+                />
               </>
             )}
           </div>
@@ -1081,6 +1179,22 @@ export default function ProspectsRoute() {
             </div>
             <div className="flex items-center gap-2">
               {exportError && <span className="text-xs text-destructive">{exportError}</span>}
+              <TagManagerPopover
+                trigger={
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                  >
+                    <IconTag size={12} />
+                    Manage tags
+                  </button>
+                }
+                allTags={allTags}
+                onCreateTag={handleCreateTag}
+                onRenameTag={handleRenameTag}
+                onRecolorTag={handleRecolorTag}
+                onDeleteTag={handleDeleteTag}
+              />
               <button
                 type="button"
                 onClick={() => refetch()}
@@ -1149,12 +1263,23 @@ export default function ProspectsRoute() {
 
         <div className="h-4 w-px bg-border" />
 
-        {/* Status */}
-        <div className="flex items-center gap-1">
-          <FilterPill active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All statuses</FilterPill>
-          <FilterPill active={statusFilter === "drafted"} onClick={() => setStatusFilter(statusFilter === "drafted" ? "all" : "drafted")}>Drafted</FilterPill>
-          <FilterPill active={statusFilter === "sent"} onClick={() => setStatusFilter(statusFilter === "sent" ? "all" : "sent")}>Sent</FilterPill>
-        </div>
+        {/* Tags */}
+        {allTags.length > 0 && (
+          <div className="flex items-center gap-1">
+            <FilterPill active={tagFilter === "all"} onClick={() => setTagFilter("all")}>All tags</FilterPill>
+            {allTags.map((tag) => (
+              <FilterPill
+                key={tag.id}
+                active={tagFilter === tag.id}
+                color={tag.color}
+                onClick={() => setTagFilter(tagFilter === tag.id ? "all" : tag.id)}
+              >
+                <span style={{ background: tag.color }} className="inline-block h-1.5 w-1.5 rounded-full" />
+                {tag.name}
+              </FilterPill>
+            ))}
+          </div>
+        )}
 
         {/* Persona */}
         {personas.length > 1 && (
@@ -1189,7 +1314,7 @@ export default function ProspectsRoute() {
 
         {hasActiveFilter && (
           <button type="button"
-            onClick={() => { setSearch(""); setVerdictFilter("all"); setStatusFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
+            onClick={() => { setSearch(""); setVerdictFilter("all"); setTagFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
             className="ml-auto text-xs text-muted-foreground hover:text-foreground">
             Clear filters
           </button>
@@ -1209,7 +1334,7 @@ export default function ProspectsRoute() {
               {hasActiveFilter ? "No prospects match these filters" : "No prospects captured yet"}
             </p>
             {hasActiveFilter && (
-              <button type="button" onClick={() => { setSearch(""); setVerdictFilter("all"); setStatusFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
+              <button type="button" onClick={() => { setSearch(""); setVerdictFilter("all"); setTagFilter("all"); setPersonaFilter("all"); setRecencyFilter("all"); }}
                 className="text-xs text-primary hover:underline">Clear filters</button>
             )}
           </div>
@@ -1230,7 +1355,7 @@ export default function ProspectsRoute() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
@@ -1307,8 +1432,22 @@ export default function ProspectsRoute() {
                       )}
                     </td>
 
-                    {/* Status */}
-                    <td className="px-3 py-3"><StatusBadge status={p.status} /></td>
+                    {/* Tags */}
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      {p.source === "prospect" ? (
+                        <TagPickerCell
+                          prospect={p}
+                          allTags={allTags}
+                          onToggleTag={(tagId) => handleToggleProspectTag(p, tagId)}
+                          onCreateTag={handleCreateTag}
+                          onRenameTag={handleRenameTag}
+                          onRecolorTag={handleRecolorTag}
+                          onDeleteTag={handleDeleteTag}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
 
                     {/* Draft note */}
                     <td className="px-3 py-3 max-w-xs">
@@ -1502,6 +1641,300 @@ function AddToListPopover({ prospectIds, onDone }: { prospectIds: string[]; onDo
         >
           {addToList.isPending ? "Adding…" : `Add ${prospectIds.length} prospect${prospectIds.length === 1 ? "" : "s"}`}
         </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── Tags ─────────────────────────────────────────────────────────────────────
+
+type TagMutationResult = { ok: boolean; error?: string };
+
+// Reused for both assigning tags to one prospect (assignedTagIds/onToggleAssign
+// set -- shows a checkbox per tag) and pure tag management from the page
+// header (those two props omitted -- just create/rename/recolor/delete, no
+// checkboxes). Same create-and-color-swatch pattern as ICP Personas
+// (app/routes/icp.tsx) for visual consistency.
+function TagManagerPopover({
+  trigger,
+  allTags,
+  assignedTagIds,
+  onToggleAssign,
+  onCreateTag,
+  onRenameTag,
+  onRecolorTag,
+  onDeleteTag,
+}: {
+  trigger: React.ReactNode;
+  allTags: Tag[];
+  assignedTagIds?: Set<string>;
+  onToggleAssign?: (tagId: string) => void;
+  onCreateTag: (name: string, color: string) => Promise<TagMutationResult>;
+  onRenameTag: (id: string, name: string) => Promise<void>;
+  onRecolorTag: (id: string, color: string) => Promise<void>;
+  onDeleteTag: (id: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(TAG_COLORS[0]);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  function reset() {
+    setEditingId(null);
+    setConfirmDeleteId(null);
+    setError(null);
+  }
+
+  function startEdit(tag: Tag) {
+    setEditingId(tag.id);
+    setEditName(tag.name);
+    setConfirmDeleteId(null);
+  }
+
+  async function commitEditName(tag: Tag) {
+    const trimmed = editName.trim();
+    setEditingId(null);
+    if (trimmed && trimmed !== tag.name) await onRenameTag(tag.id, trimmed);
+  }
+
+  async function handleCreate() {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const result = await onCreateTag(trimmed, newColor);
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      setNewName("");
+      setNewColor(TAG_COLORS[0]);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); }}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2">
+        <div className="max-h-64 overflow-y-auto">
+          {allTags.length === 0 && (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">No tags yet -- create one below.</p>
+          )}
+          {allTags.map((tag) => (
+            <div key={tag.id} className="group flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-muted/60">
+              {editingId === tag.id ? (
+                <>
+                  <span style={{ background: tag.color }} className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" />
+                  <input
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitEditName(tag);
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    onBlur={() => commitEditName(tag)}
+                    maxLength={40}
+                    className="min-w-0 flex-1 rounded border border-primary/50 bg-background px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </>
+              ) : confirmDeleteId === tag.id ? (
+                <>
+                  <span className="flex-1 truncate text-xs text-muted-foreground">Delete "{tag.name}"?</span>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteTag(tag.id)}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-destructive hover:bg-destructive/10"
+                  >
+                    Confirm
+                  </button>
+                  <button type="button" onClick={() => setConfirmDeleteId(null)} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted">
+                    <IconX size={12} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onToggleAssign?.(tag.id)}
+                    disabled={!onToggleAssign}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
+                  >
+                    {onToggleAssign ? (
+                      <input type="checkbox" readOnly checked={assignedTagIds?.has(tag.id) ?? false} className="shrink-0 rounded border-border" />
+                    ) : (
+                      <span style={{ background: tag.color }} className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" />
+                    )}
+                    <span className="truncate text-xs">{tag.name}</span>
+                    {typeof tag.prospectCount === "number" && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{tag.prospectCount}</span>
+                    )}
+                  </button>
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                    <button type="button" onClick={() => startEdit(tag)} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="Rename / recolor">
+                      <IconPencil size={12} />
+                    </button>
+                    <button type="button" onClick={() => setConfirmDeleteId(tag.id)} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
+                      <IconTrash size={12} />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {editingId && (
+          <div className="mt-1.5 flex gap-1.5 border-t border-border pt-2">
+            {TAG_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onRecolorTag(editingId, c)}
+                style={{ background: c }}
+                className="h-4 w-4 shrink-0 rounded-full transition-transform hover:scale-110"
+                aria-label={c}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="mt-2 border-t border-border pt-2">
+          <div className="flex items-center gap-1.5">
+            {TAG_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setNewColor(c)}
+                style={{ background: c }}
+                className="h-4 w-4 shrink-0 rounded-full transition-transform hover:scale-110"
+                aria-label={c}
+              >
+                {newColor === c && <IconCheck size={9} className="mx-auto text-white" strokeWidth={3} />}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 flex gap-1.5">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+              placeholder="New tag name…"
+              maxLength={40}
+              className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={!newName.trim() || creating}
+              className="shrink-0 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {creating ? <IconLoader2 size={12} className="animate-spin" /> : "Add"}
+            </button>
+          </div>
+          {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TagPickerCell({
+  prospect,
+  allTags,
+  onToggleTag,
+  onCreateTag,
+  onRenameTag,
+  onRecolorTag,
+  onDeleteTag,
+}: {
+  prospect: Prospect;
+  allTags: Tag[];
+  onToggleTag: (tagId: string) => void;
+  onCreateTag: (name: string, color: string) => Promise<TagMutationResult>;
+  onRenameTag: (id: string, name: string) => Promise<void>;
+  onRecolorTag: (id: string, color: string) => Promise<void>;
+  onDeleteTag: (id: string) => Promise<void>;
+}) {
+  const assignedIds = useMemo(() => new Set(prospect.tags.map((t) => t.id)), [prospect.tags]);
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {prospect.tags.map((tag) => (
+        <span
+          key={tag.id}
+          className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+          style={{ background: `${tag.color}26`, color: tag.color }}
+        >
+          {tag.name}
+        </span>
+      ))}
+      <TagManagerPopover
+        trigger={
+          <button
+            type="button"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground hover:border-border hover:text-foreground"
+            title="Edit tags"
+          >
+            <IconPlus size={11} />
+          </button>
+        }
+        allTags={allTags}
+        assignedTagIds={assignedIds}
+        onToggleAssign={onToggleTag}
+        onCreateTag={onCreateTag}
+        onRenameTag={onRenameTag}
+        onRecolorTag={onRecolorTag}
+        onDeleteTag={onDeleteTag}
+      />
+    </div>
+  );
+}
+
+function BulkTagPopover({
+  prospectIds,
+  allTags,
+  onApply,
+}: {
+  prospectIds: string[];
+  allTags: Tag[];
+  onApply: (tagId: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={prospectIds.length === 0}
+          title={prospectIds.length === 0 ? "Only visited prospects can be tagged" : undefined}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
+        >
+          <IconTag size={13} /> Tag selected
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 p-1.5">
+        {allTags.length === 0 ? (
+          <p className="px-2 py-3 text-center text-xs text-muted-foreground">No tags yet -- create one from any prospect's tag picker.</p>
+        ) : (
+          allTags.map((tag) => (
+            <button
+              key={tag.id}
+              type="button"
+              onClick={async () => { await onApply(tag.id); setOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+            >
+              <span style={{ background: tag.color }} className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" />
+              {tag.name}
+            </button>
+          ))
+        )}
       </PopoverContent>
     </Popover>
   );
