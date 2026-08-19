@@ -63,11 +63,11 @@ function AppAccessRow({ member, onUpdate }: {
         value={member.role}
         onValueChange={(v) => onUpdate(member.email, { role: v as Role })}
       >
-        <SelectTrigger className="w-28">
+        <SelectTrigger className="w-36">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="admin">Admin</SelectItem>
+          <SelectItem value="admin">Workspace Admin</SelectItem>
           <SelectItem value="ae">AE</SelectItem>
           <SelectItem value="xdr">XDR</SelectItem>
           <SelectItem value="none">None</SelectItem>
@@ -143,23 +143,17 @@ export default function WorkspaceAccessRoute() {
           </p>
         </div>
 
-        <Card>
+        <Card className="border-primary/30">
           <CardHeader>
-            <CardTitle className="text-base">Invite &amp; Org Members</CardTitle>
+            <CardTitle className="text-base">Workspace Role &amp; App Access</CardTitle>
             <CardDescription>
-              Invite colleagues via email. They'll receive a sign-in link to XDR Hub.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TeamPage showTitle={false} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">App Access &amp; Roles</CardTitle>
-            <CardDescription>
-              Set each member's XDR Hub role and which apps they can use.
+              This is what actually controls access to admin-only features like
+              Analytics, and which apps (LinkedIn Agent, Booking) someone can
+              open at all. It's separate from the org "Admin"/"Member" role
+              below, which only controls inviting people and org settings — a
+              person can be an org Admin below with no Workspace Admin access
+              here, or the reverse. Only an existing Workspace Admin (or the
+              workspace owner) can change this.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -188,11 +182,11 @@ export default function WorkspaceAccessRoute() {
                   className="max-w-xs"
                 />
                 <Select value={newRole} onValueChange={(v) => setNewRole(v as Role)}>
-                  <SelectTrigger className="w-28">
+                  <SelectTrigger className="w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="admin">Workspace Admin</SelectItem>
                     <SelectItem value="ae">AE</SelectItem>
                     <SelectItem value="xdr">XDR</SelectItem>
                   </SelectContent>
@@ -214,6 +208,21 @@ export default function WorkspaceAccessRoute() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Invite &amp; Org Members</CardTitle>
+            <CardDescription>
+              Invite colleagues via email and manage org-level "Admin"/"Member"
+              status (invites, org settings, deleting the org). This does
+              <em> not</em> grant access to any app or admin feature — use the
+              Workspace Role &amp; App Access card above for that.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TeamPage showTitle={false} />
           </CardContent>
         </Card>
 
