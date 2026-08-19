@@ -97,9 +97,14 @@ function findIdField(obj, depth, seen = new Set()) {
   return null;
 }
 
+const MIN_TRANSCRIPT_TEXT_LENGTH = 40;
+
 function getTranscriptContainer() {
   // Explicit selector candidates first, in case a future Nooks redesign
-  // adds one of these.
+  // adds one of these -- but only accept a match with real text. Live
+  // testing found `[aria-label*="transcript" i]`/`[data-testid*="transcript" i]`
+  // matches the Transcript TAB button itself (empty/near-empty innerText),
+  // which was winning over the actual content below and always returning "".
   const candidates = [
     '[data-testid*="transcript" i]',
     '[aria-label*="transcript" i]',
@@ -108,7 +113,7 @@ function getTranscriptContainer() {
   ];
   for (const sel of candidates) {
     const el = document.querySelector(sel);
-    if (el) return el;
+    if (el && el.innerText && el.innerText.trim().length > MIN_TRANSCRIPT_TEXT_LENGTH) return el;
   }
 
   // Observed real layout: speaker-turn blocks sit as siblings directly
@@ -120,7 +125,7 @@ function getTranscriptContainer() {
   if (audio) {
     let node = audio.parentElement;
     for (let i = 0; i < 5 && node; i++) {
-      if (node.innerText && node.innerText.length > 40) return node;
+      if (node.innerText && node.innerText.trim().length > MIN_TRANSCRIPT_TEXT_LENGTH) return node;
       node = node.parentElement;
     }
   }
