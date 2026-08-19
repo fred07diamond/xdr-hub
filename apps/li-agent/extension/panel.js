@@ -991,11 +991,15 @@ const listsLeadsEl = document.getElementById("lists-leads");
 const listsEmpty = document.getElementById("lists-empty");
 const listsStatus = document.getElementById("lists-status");
 const startNewImportBtn = document.getElementById("start-new-import-btn");
-const listsNameInput = document.getElementById("lists-name");
-const listsDescriptionInput = document.getElementById("lists-description");
+const listsNameLabel = document.getElementById("lists-name-label");
 const listsSelectAllBtn = document.getElementById("lists-select-all-btn");
 const createListBtn = document.getElementById("create-list-btn");
 const addExistingListBtn = document.getElementById("add-existing-list-btn");
+const createListPicker = document.getElementById("create-list-picker");
+const createListNameInput = document.getElementById("create-list-name");
+const createListDescriptionInput = document.getElementById("create-list-description");
+const cancelCreateListBtn = document.getElementById("cancel-create-list-btn");
+const confirmCreateListBtn = document.getElementById("confirm-create-list-btn");
 const existingListPicker = document.getElementById("existing-list-picker");
 const existingListSelect = document.getElementById("existing-list-select");
 const cancelAddExistingBtn = document.getElementById("cancel-add-existing-btn");
@@ -1116,14 +1120,18 @@ function toggleLeadExcluded(salesNavLeadUrl) {
 function renderListsTab() {
   if (!listsCount) return;
 
-  // Don't stomp the field while the xDR is actively typing in it -- this
-  // fires on every scrape/merge, which would otherwise reset the cursor
-  // position (or the draft text itself) mid-keystroke.
-  if (listsNameInput && document.activeElement !== listsNameInput) {
-    listsNameInput.value = listImportSession.listName || "";
+  if (listsNameLabel) {
+    listsNameLabel.textContent = listImportSession.listName || "Untitled list";
   }
-  if (listsDescriptionInput && document.activeElement !== listsDescriptionInput) {
-    listsDescriptionInput.value = listImportSession.listDescription || "";
+  // Don't stomp the create-list prompt's fields while the xDR is actively
+  // typing in them -- this fires on every scrape/merge, which would
+  // otherwise reset the cursor position (or the draft text itself)
+  // mid-keystroke.
+  if (createListNameInput && document.activeElement !== createListNameInput) {
+    createListNameInput.value = listImportSession.listName || "";
+  }
+  if (createListDescriptionInput && document.activeElement !== createListDescriptionInput) {
+    createListDescriptionInput.value = listImportSession.listDescription || "";
   }
 
   const leads = Object.values(listImportSession.leadsByUrl);
@@ -1238,14 +1246,15 @@ function includedLeadsCount() {
 
 // Shared send path for both "Create List" and "Add to Existing List" --
 // existingListId set means append (server skips creating a new lead_lists
-// row and ignores listDescription); omitted means create a new list.
-async function sendImport({ existingListId } = {}) {
+// row and ignores listDescription); omitted means create a new list, using
+// whatever name/description the create-list prompt was confirmed with.
+async function sendImport({ existingListId, listName: nameArg, listDescription: descriptionArg } = {}) {
   const leads = Object.values(listImportSession.leadsByUrl).filter((l) => !isLeadExcluded(l));
   if (leads.length === 0) return false;
   listsStatus.textContent = "";
 
-  const listName = (listsNameInput?.value || listImportSession.listName || "").trim() || "Sales Navigator List";
-  const listDescription = (listsDescriptionInput?.value || "").trim() || null;
+  const listName = (nameArg || listImportSession.listName || "").trim() || "Sales Navigator List";
+  const listDescription = (descriptionArg || "").trim() || null;
 
   const result = await chrome.runtime.sendMessage({
     type: "IMPORT_SALES_NAV_LIST",
@@ -1277,18 +1286,37 @@ async function sendImport({ existingListId } = {}) {
   return false;
 }
 
-createListBtn?.addEventListener("click", async () => {
+createListBtn?.addEventListener("click", () => {
+  if (includedLeadsCount() === 0 || !createListPicker || !createListNameInput) return;
+  if (existingListPicker) existingListPicker.style.display = "none";
+  createListNameInput.value = listImportSession.listName || "";
+  if (createListDescriptionInput) createListDescriptionInput.value = listImportSession.listDescription || "";
+  createListPicker.style.display = "flex";
+  createListNameInput.focus();
+  createListNameInput.select();
+});
+
+cancelCreateListBtn?.addEventListener("click", () => {
+  if (createListPicker) createListPicker.style.display = "none";
+});
+
+confirmCreateListBtn?.addEventListener("click", async () => {
   if (includedLeadsCount() === 0) return;
-  createListBtn.disabled = true;
-  if (addExistingListBtn) addExistingListBtn.disabled = true;
-  createListBtn.textContent = "Creating…";
-  await sendImport();
-  createListBtn.textContent = "＋ Create List";
+  confirmCreateListBtn.disabled = true;
+  confirmCreateListBtn.textContent = "Creating…";
+  listImportSession.listName = createListNameInput?.value || "";
+  listImportSession.listDescription = createListDescriptionInput?.value || "";
+  saveListImportSession();
+  await sendImport({ listName: createListNameInput?.value, listDescription: createListDescriptionInput?.value });
+  confirmCreateListBtn.disabled = false;
+  confirmCreateListBtn.textContent = "＋ Create List";
+  if (createListPicker) createListPicker.style.display = "none";
   renderListsTab();
 });
 
 addExistingListBtn?.addEventListener("click", async () => {
   if (includedLeadsCount() === 0 || !existingListPicker || !existingListSelect) return;
+  if (createListPicker) createListPicker.style.display = "none";
   existingListPicker.style.display = "flex";
   existingListSelect.innerHTML = "";
   const loadingOpt = document.createElement("option");
@@ -1338,13 +1366,14 @@ startNewImportBtn.addEventListener("click", () => {
   listsStatus.textContent = "";
 });
 
-listsNameInput?.addEventListener("input", () => {
-  listImportSession.listName = listsNameInput.value;
+createListNameInput?.addEventListener("input", () => {
+  listImportSession.listName = createListNameInput.value;
   saveListImportSession();
+  if (listsNameLabel) listsNameLabel.textContent = createListNameInput.value || "Untitled list";
 });
 
-listsDescriptionInput?.addEventListener("input", () => {
-  listImportSession.listDescription = listsDescriptionInput.value;
+createListDescriptionInput?.addEventListener("input", () => {
+  listImportSession.listDescription = createListDescriptionInput.value;
   saveListImportSession();
 });
 
