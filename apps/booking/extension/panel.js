@@ -40,12 +40,15 @@ async function getApiToken() {
 async function sendToContentScript(tabId, message) {
   try {
     return await chrome.tabs.sendMessage(tabId, message);
-  } catch {
+  } catch (firstErr) {
     try {
       await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
       return await chrome.tabs.sendMessage(tabId, message);
-    } catch {
-      return null;
+    } catch (secondErr) {
+      // Surface the actual failure instead of a bare null -- this is what
+      // showed up as an opaque "couldn't read the transcript" with no way
+      // to tell a messaging failure apart from an empty scrape result.
+      return { __messagingError: `${firstErr?.message ?? firstErr} / ${secondErr?.message ?? secondErr}` };
     }
   }
 }
@@ -67,6 +70,10 @@ async function refresh() {
   currentTabId = tab.id;
 
   const state = await sendToContentScript(tab.id, { type: "SCRAPE_CALL_STATE" });
+  if (state && state.__messagingError) {
+    showError("Couldn't talk to the Nooks page.", refresh, state);
+    return;
+  }
   if (!state || !state.onCallPage) {
     showView("notNooks");
     return;
@@ -79,13 +86,13 @@ async function refresh() {
 
   currentCallId = state.callId;
   if (!currentCallId) {
-    showError("Couldn't find a call ID on this page. Try refreshing the Nooks tab.", refresh);
+    showError("Couldn't find a call ID on this page. Try refreshing the Nooks tab.", refresh, state);
     return;
   }
 
   const transcriptResult = await sendToContentScript(tab.id, { type: "SCRAPE_TRANSCRIPT" });
-  if (!transcriptResult || !transcriptResult.text) {
-    showError("Couldn't read the transcript from this page.", refresh);
+  if (!transcriptResult || transcriptResult.__messagingError || !transcriptResult.text) {
+    showError("Couldn't read the transcript from this page.", refresh, { state, transcriptResult });
     return;
   }
 
@@ -98,9 +105,16 @@ async function refresh() {
   showView("ready");
 }
 
-function showError(message, onRetry = handleSend) {
+function showError(message, onRetry = handleSend, debugData = null) {
   document.getElementById("error-message").textContent = message;
   retryAction = onRetry;
+  const debugEl = document.getElementById("debug-details");
+  if (debugData) {
+    debugEl.textContent = JSON.stringify(debugData, null, 2);
+    debugEl.style.display = "block";
+  } else {
+    debugEl.style.display = "none";
+  }
   showView("error");
 }
 
