@@ -6,13 +6,14 @@ import { scoreLeadListItem } from "./score-lead-list-item.js";
 
 type Db = ReturnType<typeof getDb>;
 
-// Batch size + time budget per tick -- the sweep is invoked from request
-// middleware (see server/middleware/lead-pipeline-sweep.ts), so a tick must
-// stay comfortably inside both the app's function timeout and the
-// framework's own keep-warm health-check fetch timeout (25s) so a slow tick
-// never makes an unrelated request look like a health failure.
-const BATCH_SIZE = 5;
-const TICK_BUDGET_MS = 20_000;
+// Batch size + time budget per tick -- the sweep is invoked (debounced)
+// from request middleware (see server/middleware/lead-pipeline-sweep.ts)
+// on REAL incoming requests, since this deployment has no other reliable
+// trigger (see that file's comment). Kept small and awaited so it can
+// never meaningfully delay whichever real page load/action call happens
+// to carry it.
+const BATCH_SIZE = 2;
+const TICK_BUDGET_MS = 8_000;
 
 // A claimed lead stuck in "enriching" this long (a tick that crashed
 // mid-Apollo-call, or the process was recycled) is treated as abandoned and
