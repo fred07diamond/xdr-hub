@@ -60,13 +60,6 @@
     }
     button:hover { background: #3730a3; }
     button:disabled { background: #a5a6f0; cursor: default; }
-    button.secondary {
-      background: transparent;
-      color: #4338ca;
-      border: 1px solid #4338ca;
-      margin-top: 8px;
-    }
-    button.secondary:hover { background: #eef2ff; }
     a.link { color: #4338ca; text-decoration: none; font-weight: 600; }
     a.link:hover { text-decoration: underline; }
     .spinner {
@@ -102,26 +95,6 @@
     }
     .row { display: flex; gap: 6px; }
     .row > * { flex: 1; min-width: 0; }
-    button.link-btn {
-      width: auto;
-      background: none;
-      color: #4338ca;
-      padding: 0;
-      font-size: 12px;
-      font-weight: 500;
-      text-decoration: underline;
-      text-underline-offset: 2px;
-    }
-    button.link-btn:hover { background: none; color: #3730a3; }
-    .picker-box {
-      background: #f3f4f6;
-      border-radius: 8px;
-      padding: 10px;
-      margin-top: 6px;
-    }
-    .picker-box button {
-      margin-top: 6px;
-    }
     .slot-summary {
       font-size: 12px;
       color: #3730a3;
@@ -130,79 +103,117 @@
       padding: 6px 8px;
       margin-top: 8px;
     }
+    /* Tab bar -- mirrors Nooks' own Dashboard/Activity/Battlecards/Transcript
+       tab pattern, so the Calendar view (check an AE's availability live,
+       while still on the call) and the Transcript/Generate Note view are
+       peers instead of one being buried inside the other. */
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .tab-btn {
+      width: auto;
+      flex: 1;
+      background: none;
+      color: #888;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 4px;
+      border-radius: 0;
+      border-bottom: 2px solid transparent;
+    }
+    .tab-btn:hover { background: none; color: #4338ca; }
+    .tab-btn.active { color: #4338ca; border-bottom-color: #4338ca; }
   </style>
 </head>
 <body>
   <h1>Booking Agent — Nooks Capture</h1>
-
-  <div id="view-loading" class="card">
-    <p class="muted">Checking the current tab…</p>
-  </div>
-
-  <div id="view-not-nooks" class="card" style="display:none">
-    <p>Open a Nooks call to use this extension.</p>
-  </div>
 
   <div id="view-no-token" class="card" style="display:none">
     <p>No personal API token configured yet.</p>
     <button id="open-options-btn">Open Settings</button>
   </div>
 
-  <div id="view-in-call" class="card" style="display:none">
-    <p class="muted">Call in progress — the Send button appears when the call ends.</p>
-  </div>
-
-  <div id="view-not-connected" class="card" style="display:none">
-    <p class="muted">
-      Disposition is "<span id="not-connected-disposition"></span>" — this extension only sends
-      transcripts for calls dispositioned as a connected meeting.
-    </p>
-  </div>
-
-  <div id="view-ready" class="card" style="display:none">
-    <p>Call ended. Transcript captured.</p>
-    <div id="truncated-warning" class="warning" style="display:none">
-      Transcript may be incomplete (capture hit its length limit).
+  <div id="main-ui" style="display:none">
+    <div class="tab-bar">
+      <button type="button" class="tab-btn active" id="tab-btn-calendar">Calendar</button>
+      <button type="button" class="tab-btn" id="tab-btn-transcript">Transcript</button>
     </div>
-    <div id="transcript-preview" class="preview"></div>
-    <p class="muted" id="char-count"></p>
 
-    <label class="field-label" for="ae-select">Account Executive (optional)</label>
-    <select id="ae-select">
-      <option value="">-- Select AE --</option>
-    </select>
+    <!-- Calendar tab: always available, independent of call state -- check
+         an AE's availability and pick a time live, while still on the call
+         with the prospect. -->
+    <div id="tab-calendar" class="tab-panel">
+      <div class="card">
+        <label class="field-label" for="ae-select">Account Executive</label>
+        <select id="ae-select">
+          <option value="">-- Select AE --</option>
+        </select>
 
-    <button type="button" id="find-time-btn" class="link-btn" style="display:none">Find a time</button>
-    <div id="time-picker-box" class="picker-box" style="display:none">
-      <div class="row">
-        <input type="date" id="picker-date" />
-        <select id="picker-timezone"></select>
+        <label class="field-label">Date &amp; timezone</label>
+        <div class="row">
+          <input type="date" id="picker-date" />
+          <select id="picker-timezone"></select>
+        </div>
+        <button type="button" id="show-times-btn" style="margin-top:8px">Show available times</button>
+        <p class="muted" id="availability-message" style="display:none;margin-top:6px"></p>
+        <select id="slot-select" style="display:none;margin-top:6px">
+          <option value="">Pick a time…</option>
+        </select>
+        <div id="slot-summary" class="slot-summary" style="display:none"></div>
       </div>
-      <button type="button" id="show-times-btn">Show available times</button>
-      <p class="muted" id="availability-message" style="display:none;margin-top:6px"></p>
-      <select id="slot-select" style="display:none;margin-top:6px">
-        <option value="">Pick a time…</option>
-      </select>
     </div>
-    <div id="slot-summary" class="slot-summary" style="display:none"></div>
 
-    <button id="send-btn" style="margin-top:12px">Send to Booking Agent</button>
-  </div>
+    <!-- Transcript tab: gated on the Nooks call's own state. -->
+    <div id="tab-transcript" class="tab-panel" style="display:none">
+      <div id="view-loading" class="card">
+        <p class="muted">Checking the current tab…</p>
+      </div>
 
-  <div id="view-sending" class="card" style="display:none">
-    <p><span class="spinner"></span>Sending transcript… generating notes, this can take ~20s.</p>
-  </div>
+      <div id="view-not-nooks" class="card" style="display:none">
+        <p>Open a Nooks call to use this extension.</p>
+      </div>
 
-  <div id="view-done" class="card" style="display:none">
-    <p><span class="success-icon">✓</span> Notes generated.</p>
-    <p id="done-message" class="muted"></p>
-    <a id="open-meeting-link" class="link" href="#" target="_blank">Open Booking Agent →</a>
-  </div>
+      <div id="view-in-call" class="card" style="display:none">
+        <p class="muted">Call in progress — the transcript appears here when the call ends.</p>
+      </div>
 
-  <div id="view-error" class="card" style="display:none">
-    <p class="error-text" id="error-message"></p>
-    <button id="retry-btn">Retry</button>
-    <pre id="debug-details" class="preview" style="margin-top:12px;font-size:11px;display:none"></pre>
+      <div id="view-not-connected" class="card" style="display:none">
+        <p class="muted">
+          Disposition is "<span id="not-connected-disposition"></span>" — this extension only
+          generates notes for calls dispositioned as a connected meeting.
+        </p>
+      </div>
+
+      <div id="view-ready" class="card" style="display:none">
+        <p>Call ended. Transcript captured.</p>
+        <div id="truncated-warning" class="warning" style="display:none">
+          Transcript may be incomplete (capture hit its length limit).
+        </div>
+        <div id="transcript-preview" class="preview"></div>
+        <p class="muted" id="char-count"></p>
+        <p class="muted" id="booking-summary-note" style="display:none"></p>
+        <button id="send-btn">Generate Note</button>
+      </div>
+
+      <div id="view-sending" class="card" style="display:none">
+        <p><span class="spinner"></span>Generating note… this can take ~20s.</p>
+      </div>
+
+      <div id="view-done" class="card" style="display:none">
+        <p><span class="success-icon">✓</span> Note generated.</p>
+        <p id="done-message" class="muted"></p>
+        <a id="open-meeting-link" class="link" href="#" target="_blank">Open Booking Agent →</a>
+      </div>
+
+      <div id="view-error" class="card" style="display:none">
+        <p class="error-text" id="error-message"></p>
+        <button id="retry-btn">Retry</button>
+        <pre id="debug-details" class="preview" style="margin-top:12px;font-size:11px;display:none"></pre>
+      </div>
+    </div>
   </div>
 
   <script src="panel.js"></script>

@@ -18,10 +18,13 @@ const COMMON_TIMEZONES = [
   "UTC",
 ];
 
+// Transcript tab's internal state machine. The Calendar tab (AE + time
+// picker) has no states of its own -- it's always available, independent
+// of what's happening on the Nooks page, so a rep can check availability
+// and propose a time live while still on the call.
 const views = {
   loading: document.getElementById("view-loading"),
   notNooks: document.getElementById("view-not-nooks"),
-  noToken: document.getElementById("view-no-token"),
   inCall: document.getElementById("view-in-call"),
   notConnected: document.getElementById("view-not-connected"),
   ready: document.getElementById("view-ready"),
@@ -30,21 +33,37 @@ const views = {
   error: document.getElementById("view-error"),
 };
 
+const mainUi = document.getElementById("main-ui");
+const noTokenView = document.getElementById("view-no-token");
+const tabCalendar = document.getElementById("tab-calendar");
+const tabTranscript = document.getElementById("tab-transcript");
+const tabBtnCalendar = document.getElementById("tab-btn-calendar");
+const tabBtnTranscript = document.getElementById("tab-btn-transcript");
+
 const aeSelect = document.getElementById("ae-select");
-const findTimeBtn = document.getElementById("find-time-btn");
-const timePickerBox = document.getElementById("time-picker-box");
 const pickerDateInput = document.getElementById("picker-date");
 const pickerTimezoneSelect = document.getElementById("picker-timezone");
 const showTimesBtn = document.getElementById("show-times-btn");
 const availabilityMessage = document.getElementById("availability-message");
 const slotSelect = document.getElementById("slot-select");
 const slotSummary = document.getElementById("slot-summary");
+const bookingSummaryNote = document.getElementById("booking-summary-note");
 
 function showView(name) {
   for (const key of Object.keys(views)) {
     views[key].style.display = key === name ? "block" : "none";
   }
 }
+
+function showTab(name) {
+  tabCalendar.style.display = name === "calendar" ? "block" : "none";
+  tabTranscript.style.display = name === "transcript" ? "block" : "none";
+  tabBtnCalendar.classList.toggle("active", name === "calendar");
+  tabBtnTranscript.classList.toggle("active", name === "transcript");
+}
+
+tabBtnCalendar.addEventListener("click", () => showTab("calendar"));
+tabBtnTranscript.addEventListener("click", () => showTab("transcript"));
 
 let currentTabId = null;
 let currentCallId = null;
@@ -89,14 +108,17 @@ function sendToBackground(type, data) {
   });
 }
 
-function resetTimePicker() {
-  pickedMeetingDatetimeISO = null;
-  timePickerBox.style.display = "none";
-  slotSummary.style.display = "none";
-  availabilityMessage.style.display = "none";
-  slotSelect.style.display = "none";
-  slotSelect.innerHTML = '<option value="">Pick a time…</option>';
-  pickerDateInput.value = new Date().toISOString().slice(0, 10);
+function updateBookingSummaryNote() {
+  if (!aeSelect.value || !pickedMeetingDatetimeISO) {
+    bookingSummaryNote.style.display = "none";
+    return;
+  }
+  const label = new Date(pickedMeetingDatetimeISO).toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZone: pickerTimezoneSelect.value,
+  });
+  bookingSummaryNote.textContent = `Will also book: ${aeSelect.options[aeSelect.selectedIndex]?.textContent ?? aeSelect.value} at ${label}.`;
+  bookingSummaryNote.style.display = "block";
 }
 
 async function loadAccountExecutives() {
@@ -162,23 +184,31 @@ async function handleShowTimes() {
 }
 
 function handleSlotPicked() {
-  if (!slotSelect.value) return;
+  if (!slotSelect.value) {
+    pickedMeetingDatetimeISO = null;
+    slotSummary.style.display = "none";
+    updateBookingSummaryNote();
+    return;
+  }
   pickedMeetingDatetimeISO = slotSelect.value;
   const label = new Date(pickedMeetingDatetimeISO).toLocaleString("en-US", {
     weekday: "short", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit", timeZone: pickerTimezoneSelect.value,
   });
-  slotSummary.textContent = `Will book: ${label} (${pickerTimezoneSelect.value.replace(/_/g, " ")})`;
+  slotSummary.textContent = `Picked: ${label} (${pickerTimezoneSelect.value.replace(/_/g, " ")})`;
   slotSummary.style.display = "block";
-  timePickerBox.style.display = "none";
+  updateBookingSummaryNote();
 }
 
 async function refresh() {
   const token = await getApiToken();
   if (!token) {
-    showView("noToken");
+    mainUi.style.display = "none";
+    noTokenView.style.display = "block";
     return;
   }
+  noTokenView.style.display = "none";
+  mainUi.style.display = "block";
 
   let tab;
   try {
@@ -232,6 +262,7 @@ async function refresh() {
   document.getElementById("truncated-warning").style.display = currentTruncated ? "block" : "none";
   document.getElementById("transcript-preview").textContent = currentTranscript.slice(0, 500) + (currentTranscript.length > 500 ? "…" : "");
   document.getElementById("char-count").textContent = `${currentTranscript.length} characters captured`;
+  updateBookingSummaryNote();
   showView("ready");
 }
 
@@ -262,10 +293,10 @@ async function handleSend() {
   });
 
   if (!response || !response.ok) {
-    showError(response?.error || "Something went wrong sending the transcript.");
+    showError(response?.error || "Something went wrong generating the note.");
     return;
   }
-  const bits = ["Notes generated"];
+  const bits = ["Note generated"];
   if (response.booking) bits.push("meeting booked on the calendar");
   else if (response.calendarBookingError) bits.push(`calendar booking failed (${response.calendarBookingError})`);
   document.getElementById("done-message").textContent = response.selfHealed
@@ -278,18 +309,11 @@ async function handleSend() {
 document.getElementById("send-btn").addEventListener("click", handleSend);
 document.getElementById("retry-btn").addEventListener("click", () => retryAction());
 document.getElementById("open-options-btn").addEventListener("click", () => chrome.runtime.openOptionsPage());
-findTimeBtn.addEventListener("click", () => {
-  timePickerBox.style.display = timePickerBox.style.display === "none" ? "block" : "none";
-});
 showTimesBtn.addEventListener("click", handleShowTimes);
 slotSelect.addEventListener("change", handleSlotPicked);
 aeSelect.addEventListener("change", () => {
-  findTimeBtn.style.display = aeSelect.value ? "inline" : "none";
-  if (!aeSelect.value) {
-    timePickerBox.style.display = "none";
-    slotSummary.style.display = "none";
-    pickedMeetingDatetimeISO = null;
-  }
+  slotSelect.value = "";
+  handleSlotPicked();
 });
 
 // Timezone select setup
@@ -301,9 +325,10 @@ for (const tz of Array.from(new Set([defaultTimezone, ...COMMON_TIMEZONES]))) {
   pickerTimezoneSelect.appendChild(opt);
 }
 pickerTimezoneSelect.value = defaultTimezone;
+pickerDateInput.value = new Date().toISOString().slice(0, 10);
 
-resetTimePicker();
 loadAccountExecutives();
+showTab("calendar");
 
 showView("loading");
 refresh();
