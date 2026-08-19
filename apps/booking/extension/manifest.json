@@ -5,7 +5,7 @@
   "description": "Send your Nooks call transcript to the Booking Agent so notes are ready when you open it.",
   "permissions": ["activeTab", "storage", "sidePanel", "scripting"],
   "host_permissions": [
-    "https://app.nooks.ai/*",
+    "https://*.nooks.in/*",
     "https://xdr-hub.netlify.app/*"
   ],
   "icons": {
@@ -16,7 +16,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://app.nooks.ai/*"],
+      "matches": ["https://*.nooks.in/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
