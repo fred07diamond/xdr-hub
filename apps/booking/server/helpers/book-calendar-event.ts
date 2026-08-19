@@ -1,11 +1,11 @@
 import { getOAuthAccounts } from "@agent-native/core/server";
 import { saveOAuthTokens } from "@agent-native/core/oauth-tokens";
+import { MEETING_DURATION_MIN } from "./meeting-constants.js";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 // sendUpdates=all makes Google email the invite to attendees on create/change.
 const CALENDAR_EVENTS_URL =
   "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all";
-const MEETING_DURATION_MIN = 45;
 // A Google access token is only good for ~1hr, so any request made after the
 // app has sat idle for a day always hits this refresh path — unlike
 // commonroom-client.ts's callMcpToolWithTimeout and hubspot-client.ts's

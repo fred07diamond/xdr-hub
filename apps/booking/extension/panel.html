@@ -83,6 +83,53 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .error-text { color: #b91c1c; font-size: 13px; margin-bottom: 10px; }
     .success-icon { color: #15803d; font-size: 20px; }
+    label.field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #444;
+      margin: 10px 0 4px;
+    }
+    select, input[type="date"] {
+      width: 100%;
+      padding: 7px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      background: #fff;
+      color: #1a1a1a;
+    }
+    .row { display: flex; gap: 6px; }
+    .row > * { flex: 1; min-width: 0; }
+    button.link-btn {
+      width: auto;
+      background: none;
+      color: #4338ca;
+      padding: 0;
+      font-size: 12px;
+      font-weight: 500;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    button.link-btn:hover { background: none; color: #3730a3; }
+    .picker-box {
+      background: #f3f4f6;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 6px;
+    }
+    .picker-box button {
+      margin-top: 6px;
+    }
+    .slot-summary {
+      font-size: 12px;
+      color: #3730a3;
+      background: #eef2ff;
+      border-radius: 6px;
+      padding: 6px 8px;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -105,6 +152,13 @@
     <p class="muted">Call in progress — the Send button appears when the call ends.</p>
   </div>
 
+  <div id="view-not-connected" class="card" style="display:none">
+    <p class="muted">
+      Disposition is "<span id="not-connected-disposition"></span>" — this extension only sends
+      transcripts for calls dispositioned as a connected meeting.
+    </p>
+  </div>
+
   <div id="view-ready" class="card" style="display:none">
     <p>Call ended. Transcript captured.</p>
     <div id="truncated-warning" class="warning" style="display:none">
@@ -112,7 +166,27 @@
     </div>
     <div id="transcript-preview" class="preview"></div>
     <p class="muted" id="char-count"></p>
-    <button id="send-btn">Send to Booking Agent</button>
+
+    <label class="field-label" for="ae-select">Account Executive (optional)</label>
+    <select id="ae-select">
+      <option value="">-- Select AE --</option>
+    </select>
+
+    <button type="button" id="find-time-btn" class="link-btn" style="display:none">Find a time</button>
+    <div id="time-picker-box" class="picker-box" style="display:none">
+      <div class="row">
+        <input type="date" id="picker-date" />
+        <select id="picker-timezone"></select>
+      </div>
+      <button type="button" id="show-times-btn">Show available times</button>
+      <p class="muted" id="availability-message" style="display:none;margin-top:6px"></p>
+      <select id="slot-select" style="display:none;margin-top:6px">
+        <option value="">Pick a time…</option>
+      </select>
+    </div>
+    <div id="slot-summary" class="slot-summary" style="display:none"></div>
+
+    <button id="send-btn" style="margin-top:12px">Send to Booking Agent</button>
   </div>
 
   <div id="view-sending" class="card" style="display:none">

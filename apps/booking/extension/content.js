@@ -47,6 +47,45 @@ function isCallEnded() {
   return !!findEndedBadge();
 }
 
+// Must match server/helpers/nooks-disposition.ts's CONNECTED_MEETING_RE
+// exactly -- this app only ever books connected meetings, never
+// no-answers/voicemails/hung-ups. Duplicated here (client bundle can't
+// import server code); the server independently re-checks the same
+// pattern on every capture-nooks-transcript call, so a drift here is a UX
+// annoyance (wrong button state), not a real gate to rely on alone.
+const CONNECTED_MEETING_RE = /connected[\s_-]*meeting|meeting[\s_-]*(booked|set|scheduled)/i;
+
+function getDispositionText() {
+  const label = [...document.querySelectorAll("*")].find(
+    (el) => el.children.length === 0 && /^disposition$/i.test(el.textContent.trim()),
+  );
+  if (!label) return null;
+
+  // A real <select> near the label, if Nooks uses one.
+  let container = label.parentElement;
+  for (let i = 0; i < 3 && container; i++) {
+    const select = container.querySelector("select");
+    if (select) {
+      const opt = select.options[select.selectedIndex];
+      if (opt) return opt.textContent.trim();
+    }
+    container = container.parentElement;
+  }
+
+  // Fallback: a custom combobox -- take the nearby container's text minus
+  // the label itself.
+  container = label.parentElement;
+  for (let i = 0; i < 3 && container; i++) {
+    const text = container.textContent.trim();
+    if (text && text.toLowerCase() !== "disposition") {
+      return text.replace(/^disposition\s*/i, "").trim();
+    }
+    container = container.parentElement;
+  }
+
+  return null;
+}
+
 function getCallId() {
   // 1. The <audio> player's src is the real recording URL and embeds the
   // Twilio Call SID directly -- the most reliable source found so far.
@@ -170,10 +209,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "SCRAPE_CALL_STATE") {
     const onCallPage = isOnNooksCallPage();
     const callEnded = onCallPage && isCallEnded();
+    const disposition = onCallPage ? getDispositionText() : null;
     sendResponse({
       onCallPage,
       callEnded,
       callId: onCallPage ? getCallId() : null,
+      disposition,
+      isConnectedMeeting: !!disposition && CONNECTED_MEETING_RE.test(disposition),
       transcriptAvailable: !!getTranscriptContainer() || callEnded,
     });
     return; // synchronous

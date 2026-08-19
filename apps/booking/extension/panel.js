@@ -1,16 +1,44 @@
 const APP_URL = "https://xdr-hub.netlify.app/booking";
 const POLL_INTERVAL_MS = 2000;
 
+const COMMON_TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "UTC",
+];
+
 const views = {
   loading: document.getElementById("view-loading"),
   notNooks: document.getElementById("view-not-nooks"),
   noToken: document.getElementById("view-no-token"),
   inCall: document.getElementById("view-in-call"),
+  notConnected: document.getElementById("view-not-connected"),
   ready: document.getElementById("view-ready"),
   sending: document.getElementById("view-sending"),
   done: document.getElementById("view-done"),
   error: document.getElementById("view-error"),
 };
+
+const aeSelect = document.getElementById("ae-select");
+const findTimeBtn = document.getElementById("find-time-btn");
+const timePickerBox = document.getElementById("time-picker-box");
+const pickerDateInput = document.getElementById("picker-date");
+const pickerTimezoneSelect = document.getElementById("picker-timezone");
+const showTimesBtn = document.getElementById("show-times-btn");
+const availabilityMessage = document.getElementById("availability-message");
+const slotSelect = document.getElementById("slot-select");
+const slotSummary = document.getElementById("slot-summary");
 
 function showView(name) {
   for (const key of Object.keys(views)) {
@@ -22,6 +50,8 @@ let currentTabId = null;
 let currentCallId = null;
 let currentTranscript = null;
 let currentTruncated = false;
+let currentDisposition = null;
+let pickedMeetingDatetimeISO = null;
 let pollTimer = null;
 // Which action to re-run when the rep clicks Retry -- a scrape failure
 // (during refresh()) needs a fresh refresh(), not a re-send of a transcript
@@ -53,6 +83,96 @@ async function sendToContentScript(tabId, message) {
   }
 }
 
+function sendToBackground(type, data) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type, data }, (response) => resolve(response));
+  });
+}
+
+function resetTimePicker() {
+  pickedMeetingDatetimeISO = null;
+  timePickerBox.style.display = "none";
+  slotSummary.style.display = "none";
+  availabilityMessage.style.display = "none";
+  slotSelect.style.display = "none";
+  slotSelect.innerHTML = '<option value="">Pick a time…</option>';
+  pickerDateInput.value = new Date().toISOString().slice(0, 10);
+}
+
+async function loadAccountExecutives() {
+  const response = await sendToBackground("LIST_ACCOUNT_EXECUTIVES", {});
+  aeSelect.innerHTML = '<option value="">-- Select AE --</option>';
+  if (!response || !response.ok || !response.aes) return;
+  for (const email of response.aes) {
+    const opt = document.createElement("option");
+    opt.value = email;
+    opt.textContent = email;
+    aeSelect.appendChild(opt);
+  }
+}
+
+async function handleShowTimes() {
+  availabilityMessage.style.display = "none";
+  slotSelect.style.display = "none";
+  if (!aeSelect.value) {
+    availabilityMessage.textContent = "Select an AE first.";
+    availabilityMessage.style.display = "block";
+    return;
+  }
+  showTimesBtn.disabled = true;
+  showTimesBtn.textContent = "Loading…";
+  const response = await sendToBackground("GET_AE_AVAILABILITY", {
+    aeEmail: aeSelect.value,
+    date: pickerDateInput.value,
+    timezone: pickerTimezoneSelect.value,
+  });
+  showTimesBtn.disabled = false;
+  showTimesBtn.textContent = "Show available times";
+
+  if (!response || !response.ok) {
+    availabilityMessage.textContent = response?.error || "Couldn't load availability.";
+    availabilityMessage.style.display = "block";
+    return;
+  }
+  if (!response.connected) {
+    availabilityMessage.textContent = response.reason === "no_calendar_scope"
+      ? "Can't view this AE's calendar (not shared with you). Pick a time manually with them instead."
+      : `Couldn't load this AE's calendar (${response.reason ?? "unknown reason"}).`;
+    availabilityMessage.style.display = "block";
+    return;
+  }
+  if (!response.slots || response.slots.length === 0) {
+    availabilityMessage.textContent = "No open slots that day -- try another date.";
+    availabilityMessage.style.display = "block";
+    return;
+  }
+
+  slotSelect.innerHTML = '<option value="">Pick a time…</option>';
+  for (const iso of response.slots) {
+    const opt = document.createElement("option");
+    opt.value = iso;
+    opt.textContent = new Date(iso).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: pickerTimezoneSelect.value,
+    });
+    slotSelect.appendChild(opt);
+  }
+  slotSelect.style.display = "block";
+}
+
+function handleSlotPicked() {
+  if (!slotSelect.value) return;
+  pickedMeetingDatetimeISO = slotSelect.value;
+  const label = new Date(pickedMeetingDatetimeISO).toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZone: pickerTimezoneSelect.value,
+  });
+  slotSummary.textContent = `Will book: ${label} (${pickerTimezoneSelect.value.replace(/_/g, " ")})`;
+  slotSummary.style.display = "block";
+  timePickerBox.style.display = "none";
+}
+
 async function refresh() {
   const token = await getApiToken();
   if (!token) {
@@ -81,6 +201,13 @@ async function refresh() {
 
   if (!state.callEnded) {
     showView("inCall");
+    return;
+  }
+
+  currentDisposition = state.disposition;
+  if (!state.isConnectedMeeting) {
+    document.getElementById("not-connected-disposition").textContent = state.disposition || "unknown";
+    showView("notConnected");
     return;
   }
 
@@ -122,35 +249,65 @@ async function handleSend() {
   if (!currentCallId || !currentTranscript) return;
   showView("sending");
 
-  chrome.runtime.sendMessage(
-    {
-      type: "CAPTURE_TRANSCRIPT",
-      data: { nooksCallId: currentCallId, transcript: currentTranscript, truncated: currentTruncated },
-    },
-    (response) => {
-      if (!response || !response.ok) {
-        showError(response?.error || "Something went wrong sending the transcript.");
-        return;
-      }
-      document.getElementById("done-message").textContent = response.selfHealed
-        ? "Notes generated — matching to your Nooks record now."
-        : "Notes generated and ready to review.";
-      document.getElementById("open-meeting-link").href = `${APP_URL}/meetings`;
-      showView("done");
-    },
-  );
+  const response = await sendToBackground("CAPTURE_TRANSCRIPT", {
+    nooksCallId: currentCallId,
+    transcript: currentTranscript,
+    disposition: currentDisposition,
+    truncated: currentTruncated,
+    aeEmail: aeSelect.value || undefined,
+    meetingDatetime: pickedMeetingDatetimeISO || undefined,
+  });
+
+  if (!response || !response.ok) {
+    showError(response?.error || "Something went wrong sending the transcript.");
+    return;
+  }
+  const bits = ["Notes generated"];
+  if (response.booking) bits.push("meeting booked on the calendar");
+  else if (response.calendarBookingError) bits.push(`calendar booking failed (${response.calendarBookingError})`);
+  document.getElementById("done-message").textContent = response.selfHealed
+    ? `${bits.join(", ")} — matching to your Nooks record now.`
+    : `${bits.join(", ")} and ready to review.`;
+  document.getElementById("open-meeting-link").href = `${APP_URL}/meetings`;
+  showView("done");
 }
 
 document.getElementById("send-btn").addEventListener("click", handleSend);
 document.getElementById("retry-btn").addEventListener("click", () => retryAction());
 document.getElementById("open-options-btn").addEventListener("click", () => chrome.runtime.openOptionsPage());
+findTimeBtn.addEventListener("click", () => {
+  timePickerBox.style.display = timePickerBox.style.display === "none" ? "block" : "none";
+});
+showTimesBtn.addEventListener("click", handleShowTimes);
+slotSelect.addEventListener("change", handleSlotPicked);
+aeSelect.addEventListener("change", () => {
+  findTimeBtn.style.display = aeSelect.value ? "inline" : "none";
+  if (!aeSelect.value) {
+    timePickerBox.style.display = "none";
+    slotSummary.style.display = "none";
+    pickedMeetingDatetimeISO = null;
+  }
+});
+
+// Timezone select setup
+const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+for (const tz of Array.from(new Set([defaultTimezone, ...COMMON_TIMEZONES]))) {
+  const opt = document.createElement("option");
+  opt.value = tz;
+  opt.textContent = tz.replace(/_/g, " ");
+  pickerTimezoneSelect.appendChild(opt);
+}
+pickerTimezoneSelect.value = defaultTimezone;
+
+resetTimePicker();
+loadAccountExecutives();
 
 showView("loading");
 refresh();
 pollTimer = setInterval(() => {
-  // Don't yank the rep out of the sending/done/error/ready states with a
-  // background re-poll -- only refresh while we're waiting to see if a call
-  // just ended, or after Send completes and the tab moves on.
+  // Don't yank the rep out of the sending/done/error/ready/notConnected
+  // states with a background re-poll -- only refresh while we're waiting
+  // to see if a call just ended, or after Send completes and the tab moves on.
   const activeView = Object.keys(views).find((k) => views[k].style.display === "block");
   if (activeView === "notNooks" || activeView === "inCall" || activeView === "loading") {
     refresh();

@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { getDb } from "../db/index.js";
 import { bookedMeetings, generatedNotes } from "../db/schema.js";
 import { getSharedDb, workspaceUserRoles } from "../db/workspace.js";
+import { CONNECTED_MEETING_RE } from "../helpers/nooks-disposition.js";
 
 // Nooks `call.logged` webhook receiver (see the Nooks partner API spec).
 // A server route rather than an action because signature verification needs
@@ -15,7 +16,6 @@ import { getSharedDb, workspaceUserRoles } from "../db/workspace.js";
 //   2. the rep is a member of workspace_user_roles (Team & Access roster).
 // Everything else is acknowledged and dropped — no rows, no transcripts kept.
 
-const CONNECTED_MEETING_RE = /connected[\s_-]*meeting|meeting[\s_-]*(booked|set|scheduled)/i;
 const MAX_SIGNATURE_AGE_MS = 5 * 60 * 1000;
 
 function timingSafeEq(a: string, b: string): boolean {

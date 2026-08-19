@@ -70,6 +70,23 @@ const MONTHS = [
 ];
 const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
 
+const COMMON_TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "UTC",
+];
+
 // ─── Calendar helpers ─────────────────────────────────────────────────────────
 
 function isSameDay(a: Date, b: Date) {
@@ -223,10 +240,12 @@ function MeetingCard({
   onToggle,
   onUpdated,
   names,
+  aes,
 }: {
   meeting: Meeting;
   isExpanded: boolean;
   onToggle: () => void;
+  aes: string[];
   onUpdated: () => void;
   names: Record<string, string>;
 }) {
@@ -251,6 +270,39 @@ function MeetingCard({
   const generateFromTranscript = useActionMutation("generate-notes-for-meeting") as any;
   const [transcriptDraft, setTranscriptDraft] = useState("");
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+
+  // "Find a time" -- computed available slots for the selected AE on a
+  // given day/timezone, an alternative to hand-picking a datetime.
+  const [pickerDate, setPickerDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [pickerTimezone, setPickerTimezone] = useState(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const getAvailability = useActionMutation("get-ae-availability") as any;
+  const [availability, setAvailability] = useState<{
+    slots: string[];
+    connected: boolean;
+    reason: string | null;
+  } | null>(null);
+
+  async function handleFindTimes() {
+    setAvailability(null);
+    if (!draft.aeUserEmail) return;
+    const result = await getAvailability.mutateAsync({
+      aeEmail: draft.aeUserEmail,
+      date: pickerDate,
+      timezone: pickerTimezone,
+    });
+    setAvailability(result);
+  }
+
+  function formatSlot(iso: string): string {
+    return new Date(iso).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: pickerTimezone,
+    });
+  }
 
   const saving = updateMeeting.isPending || bookCalendar.isPending;
   // Saving a confirmed meeting with a date also creates/moves the Google
@@ -302,6 +354,8 @@ function MeetingCard({
       aeUserEmail: m.aeUserEmail,
       status: (m.status as EditDraft["status"]) ?? "pending",
     });
+    setPickerOpen(false);
+    setAvailability(null);
     setIsEditing(true);
     if (!isExpanded) onToggle();
   }
@@ -476,14 +530,30 @@ function MeetingCard({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">AE Email</Label>
-              <Input
-                type="email"
-                value={draft.aeUserEmail}
-                onChange={(e) => setDraft((d) => ({ ...d, aeUserEmail: e.target.value }))}
-                className="h-8 text-sm"
-                placeholder="ae@builder.io"
-              />
+              <Label className="text-xs text-muted-foreground">AE</Label>
+              <select
+                value={aes.includes(draft.aeUserEmail) ? draft.aeUserEmail : draft.aeUserEmail ? "__other__" : ""}
+                onChange={(e) => {
+                  setAvailability(null);
+                  setDraft((d) => ({ ...d, aeUserEmail: e.target.value === "__other__" ? d.aeUserEmail : e.target.value }));
+                }}
+                className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">-- Select AE --</option>
+                {aes.map((email) => (
+                  <option key={email} value={email}>{names[email] ?? email}</option>
+                ))}
+                <option value="__other__">Other (enter email)…</option>
+              </select>
+              {(!aes.includes(draft.aeUserEmail)) && (
+                <Input
+                  type="email"
+                  value={draft.aeUserEmail}
+                  onChange={(e) => setDraft((d) => ({ ...d, aeUserEmail: e.target.value }))}
+                  className="h-8 text-sm mt-1"
+                  placeholder="ae@builder.io"
+                />
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Meeting Date & Time</Label>
@@ -493,6 +563,66 @@ function MeetingCard({
                 onChange={(e) => setDraft((d) => ({ ...d, meetingDatetime: e.target.value }))}
                 className="h-8 text-sm"
               />
+              <button
+                type="button"
+                onClick={() => setPickerOpen((o) => !o)}
+                className="text-xs text-primary underline-offset-2 hover:underline"
+              >
+                {pickerOpen ? "Hide" : "Find a time"} for this AE
+              </button>
+              {pickerOpen && (
+                <div className="rounded-md border border-border bg-muted/40 p-2.5 space-y-2">
+                  <div className="flex gap-1.5">
+                    <Input
+                      type="date"
+                      value={pickerDate}
+                      onChange={(e) => { setPickerDate(e.target.value); setAvailability(null); }}
+                      className="h-7 text-xs flex-1"
+                    />
+                    <select
+                      value={pickerTimezone}
+                      onChange={(e) => { setPickerTimezone(e.target.value); setAvailability(null); }}
+                      className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      {Array.from(new Set([pickerTimezone, ...COMMON_TIMEZONES])).map((tz) => (
+                        <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFindTimes}
+                    disabled={!draft.aeUserEmail || getAvailability.isPending}
+                    className="h-7 w-full rounded-md border border-border text-xs font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    {getAvailability.isPending ? "Loading…" : !draft.aeUserEmail ? "Select an AE first" : "Show available times"}
+                  </button>
+                  {availability && !availability.connected && (
+                    <p className="text-xs text-amber-600">
+                      Can't view this AE's calendar ({availability.reason === "no_calendar_scope" ? "not shared with you" : availability.reason}). Pick a time manually above instead.
+                    </p>
+                  )}
+                  {availability && availability.connected && availability.slots.length === 0 && (
+                    <p className="text-xs text-muted-foreground">No open slots that day -- try another date.</p>
+                  )}
+                  {availability && availability.connected && availability.slots.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        setDraft((d) => ({ ...d, meetingDatetime: toLocalDatetimeValue(e.target.value) }));
+                        setPickerOpen(false);
+                      }}
+                      className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="">Pick a time…</option>
+                      {availability.slots.map((slot) => (
+                        <option key={slot} value={slot}>{formatSlot(slot)}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Status</Label>
@@ -694,11 +824,13 @@ function WeekCalendar({
   onWeekChange,
   onMeetingClick,
   names,
+  aes,
 }: {
   meetings: Meeting[];
   onWeekChange: (from: string, to: string) => void;
   onMeetingClick?: (id: string) => void;
   names: Record<string, string>;
+  aes: string[];
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -723,10 +855,17 @@ function WeekCalendar({
 
   const suggestions = useMemo(() => {
     const q = calInput.toLowerCase();
-    return Object.entries(names)
+    // Union of everyone with a resolved name (from past meetings) and every
+    // real AE (workspaceUserRoles role=ae) -- an AE with no meeting history
+    // yet still needs to show up here to be "meet with"-able.
+    const byEmail = new Map(Object.entries(names));
+    for (const email of aes) {
+      if (!byEmail.has(email)) byEmail.set(email, email);
+    }
+    return Array.from(byEmail.entries())
       .filter(([email, name]) => !q || name.toLowerCase().includes(q) || email.toLowerCase().includes(q))
       .map(([email, name]) => ({ email, name }));
-  }, [calInput, names]);
+  }, [calInput, names, aes]);
 
   function selectCalendar(email: string) {
     setViewingCalendar(email);
@@ -1029,19 +1168,29 @@ export default function MeetingsRoute() {
 
   const allMeetings = ((meetingsData as any)?.meetings ?? []) as Meeting[];
 
-  // Collect unique internal emails to resolve to full names from HubSpot
+  const { data: aesData } = useActionQuery("list-account-executives", {}) as {
+    data: { aes: string[] } | undefined;
+  };
+  const aes = aesData?.aes ?? [];
+
+  // Collect unique internal emails to resolve to full names from HubSpot --
+  // every AE (even one with no meeting history yet) plus everyone seen on
+  // an existing meeting.
   const emailsToResolve = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(aes);
     for (const m of allMeetings) {
       if (m.aeUserEmail) set.add(m.aeUserEmail);
       if (m.xdrUserEmail) set.add(m.xdrUserEmail);
     }
     return Array.from(set);
-  }, [allMeetings]);
+  }, [allMeetings, aes]);
 
   const { data: namesData } = useActionQuery(
+    // get-user-names caps at 20 emails per call -- fine for a small team,
+    // but slice defensively so a bigger roster can't turn into a hard
+    // validation error that breaks the whole page.
     "get-user-names",
-    { emails: emailsToResolve },
+    { emails: emailsToResolve.slice(0, 20) },
     { enabled: emailsToResolve.length > 0 },
   ) as { data: { names: Record<string, string> } | undefined };
 
@@ -1069,6 +1218,7 @@ export default function MeetingsRoute() {
             onWeekChange={(from, to) => setCalendarRange({ from, to })}
             onMeetingClick={handleMeetingClick}
             names={names}
+            aes={aes}
           />
         </div>
       </div>
@@ -1095,6 +1245,7 @@ export default function MeetingsRoute() {
                 onToggle={() => setExpandedId((prev) => (prev === m.id ? null : m.id))}
                 onUpdated={() => refetch()}
                 names={names}
+                aes={aes}
               />
             ))
           )}

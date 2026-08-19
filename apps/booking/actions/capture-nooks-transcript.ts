@@ -5,25 +5,38 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { bookedMeetings } from "../server/db/schema.js";
 import { applyGeneratedNotes } from "../server/helpers/apply-generated-notes.js";
+import { bookMeetingOnCalendar } from "../server/helpers/book-meeting-on-calendar.js";
 import { generateNotes } from "../server/helpers/generate-notes.js";
+import { isConnectedMeetingDisposition } from "../server/helpers/nooks-disposition.js";
 import { requireRole } from "../server/helpers/require-role.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
 
 export default defineAction({
   description:
-    "Ingest a call transcript captured by the Nooks Capture browser extension and generate meeting notes for the matching booked meeting, self-healing the meeting row if Nooks' own call.logged webhook hasn't created it yet.",
+    "Ingest a call transcript captured by the Nooks Capture browser extension and generate meeting notes for the matching booked meeting, self-healing the meeting row if Nooks' own call.logged webhook hasn't created it yet. If aeEmail+meetingDatetime are both provided (the rep picked a time in the extension), confirms the meeting and books the real Google Calendar invite too. Only accepts calls dispositioned as a connected meeting -- this app only books meetings, never no-answers/voicemails/etc.",
   schema: z.object({
     nooksCallId: z.string().min(1),
     transcript: z.string().min(1),
+    disposition: z.string().nullish(),
     truncated: z.boolean().nullish(),
+    aeEmail: z.string().email().nullish(),
+    meetingDatetime: z.string().nullish(),
     apiToken: z.string().nullish(),
   }),
   requiresAuth: false,
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
   http: { method: "POST" },
-  run: async ({ nooksCallId, transcript, truncated, apiToken }, ctx) => {
+  run: async ({ nooksCallId, transcript, disposition, truncated, aeEmail, meetingDatetime, apiToken }, ctx) => {
     const ownerEmail = await resolveOwner(apiToken, ctx);
     await requireRole(ownerEmail ?? undefined, ["xdr", "admin"]);
+
+    // Defense in depth: the extension already gates this client-side, but
+    // this app only ever books connected meetings -- never accept a
+    // no-answer/voicemail/hung-up transcript regardless of what called us.
+    // Reject before spending an LLM call or touching the DB.
+    if (!isConnectedMeetingDisposition(disposition)) {
+      return { ok: false, error: `Disposition "${disposition ?? "unknown"}" is not a connected meeting -- nothing was saved.` };
+    }
 
     const db = getDb();
 
@@ -79,6 +92,23 @@ export default defineAction({
       throw Object.assign(new Error("Failed to create or find the booked meeting."), { statusCode: 500 });
     }
 
+    // The rep picked an AE + time in the extension before sending -- apply
+    // it and confirm the meeting. Runs regardless of which branch above
+    // resolved `meeting`, so it still applies correctly even when the
+    // webhook won the self-heal race above.
+    if (aeEmail && meetingDatetime) {
+      await db
+        .update(bookedMeetings)
+        .set({ aeUserEmail: aeEmail, meetingDatetime, status: "confirmed" })
+        .where(eq(bookedMeetings.id, meeting.id));
+      const [refreshed] = await db
+        .select()
+        .from(bookedMeetings)
+        .where(eq(bookedMeetings.id, meeting.id))
+        .limit(1);
+      meeting = refreshed ?? meeting;
+    }
+
     // Reuse the already-generated notes when this action just created the
     // meeting, instead of calling the LLM a second time for the same call.
     const { fields } = await applyGeneratedNotes({
@@ -90,6 +120,25 @@ export default defineAction({
       precomputedNotes: notesResult ?? undefined,
     });
 
-    return { meetingId: meeting.id, selfHealed, truncated: truncated ?? false, generatedNotes: fields };
+    let booking: { calendarEventId: string; meetingLink: string; warnings: string[] } | null = null;
+    let calendarBookingError: string | null = null;
+    if (aeEmail && meetingDatetime) {
+      try {
+        booking = await bookMeetingOnCalendar({ db, meeting, meetingAgenda: fields.meetingAgenda });
+      } catch (err) {
+        // Don't let a calendar-booking failure discard the notes work that
+        // already succeeded -- surface it as a soft error instead.
+        calendarBookingError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    return {
+      meetingId: meeting.id,
+      selfHealed,
+      truncated: truncated ?? false,
+      generatedNotes: fields,
+      booking,
+      calendarBookingError,
+    };
   },
 });
