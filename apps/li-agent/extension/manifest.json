@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Agent",
-  "version": "3.3",
+  "version": "3.4",
   "description": "Score LinkedIn profiles against your ICP and draft personalized connection notes.",
   "permissions": ["activeTab", "storage", "sidePanel", "scripting"],
   "host_permissions": [
