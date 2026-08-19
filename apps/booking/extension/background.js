@@ -9,7 +9,11 @@ async function getSettings() {
   return { appUrl: APP_URL, apiToken: result.apiToken || "" };
 }
 
-async function callAction(name, args) {
+// The framework enforces each action's declared http.method strictly (a
+// POST to a GET-declared action 405s) -- capture-nooks-transcript is a real
+// mutation (POST), but list-account-executives/get-ae-availability are
+// declared readOnly GET, so they need query-string args instead of a body.
+async function callActionPost(name, args) {
   const { appUrl, apiToken } = await getSettings();
   const res = await fetch(`${appUrl}/_agent-native/actions/${name}`, {
     method: "POST",
@@ -23,8 +27,23 @@ async function callAction(name, args) {
   return res.json();
 }
 
+async function callActionGet(name, args) {
+  const { appUrl, apiToken } = await getSettings();
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(args)) {
+    if (value !== undefined && value !== null && value !== "") params.set(key, value);
+  }
+  if (apiToken) params.set("apiToken", apiToken);
+  const res = await fetch(`${appUrl}/_agent-native/actions/${name}?${params}`, { method: "GET" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${name} failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
 async function captureTranscript({ nooksCallId, transcript, disposition, truncated, aeEmail, meetingDatetime }) {
-  return callAction("capture-nooks-transcript", {
+  return callActionPost("capture-nooks-transcript", {
     nooksCallId,
     transcript,
     disposition,
@@ -35,11 +54,11 @@ async function captureTranscript({ nooksCallId, transcript, disposition, truncat
 }
 
 async function listAccountExecutives() {
-  return callAction("list-account-executives", {});
+  return callActionGet("list-account-executives", {});
 }
 
 async function getAeAvailability({ aeEmail, date, timezone }) {
-  return callAction("get-ae-availability", { aeEmail, date, timezone });
+  return callActionGet("get-ae-availability", { aeEmail, date, timezone });
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
