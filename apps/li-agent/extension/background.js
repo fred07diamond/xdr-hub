@@ -14,6 +14,15 @@ async function getSettings() {
   };
 }
 
+// This poll loop's setTimeout waits (up to POLL_TIMEOUT_MS) don't themselves
+// reset the service worker's 30s idle timer, but that's not a real risk
+// here: it only ever runs from the DRAFT_REQUEST onMessage handler below,
+// which returns `true` and leaves sendResponse uncalled until this promise
+// settles -- Chrome treats that outstanding response as an active task and
+// keeps the worker alive for it, the same mechanism the LOAD_POST_ENGAGERS
+// port relies on further down. Don't reach for chrome.alarms here; alarms
+// have a 1-minute minimum granularity and can't drive this reasonably-fast
+// exponential backoff anyway.
 async function captureThenPoll(profileData) {
   const { appUrl, apiToken } = await getSettings();
   if (!appUrl) throw new Error("App URL not set. Open Options and paste your outreach app URL.");
@@ -146,6 +155,29 @@ async function resolveConnectButton(profileName, candidates) {
   return await res.json();
 }
 
+// Reflects the daily send limit on the extension icon itself -- the one
+// genuinely actionable at-a-glance state this extension has (per
+// feedback-badge-status: keep badge text under 4 characters, only show it
+// when there's something to act on). Cleared entirely below 80% of the
+// limit so the icon stays quiet during normal use.
+function updateBadgeFromDailyStats(stats) {
+  if (!stats || stats.limit == null) {
+    chrome.action.setBadgeText({ text: "" });
+    return;
+  }
+  const { capturedToday = 0, limit } = stats;
+  if (capturedToday >= limit) {
+    chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
+    chrome.action.setBadgeText({ text: "MAX" });
+  } else if (capturedToday >= limit * 0.8) {
+    const remaining = Math.max(0, limit - capturedToday);
+    chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" });
+    chrome.action.setBadgeText({ text: String(remaining) });
+  } else {
+    chrome.action.setBadgeText({ text: "" });
+  }
+}
+
 async function getDailyStats() {
   const { appUrl, apiToken } = await getSettings();
   if (!appUrl) return null;
@@ -155,7 +187,9 @@ async function getDailyStats() {
       `${appUrl}/_agent-native/actions/get-daily-stats${tokenParam}`,
     );
     if (!res.ok) return null;
-    return await res.json();
+    const stats = await res.json();
+    updateBadgeFromDailyStats(stats);
+    return stats;
   } catch {
     return null;
   }

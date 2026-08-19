@@ -7,6 +7,36 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* Visible keyboard focus on every tabbable element. Sits alongside each
+       control's own :focus border-color swap (mouse clicks still get that
+       subtler treatment); :focus-visible only engages for keyboard/other
+       non-pointer focus, so this never adds a ring on a plain mouse click. */
+    /* Visually hidden but still announced by screen readers -- for labels
+       whose text would be redundant to show visibly (e.g. a placeholder
+       already states it), used instead of relying on the placeholder alone
+       as the only accessible name. */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible,
+    a:focus-visible,
+    [tabindex]:focus-visible {
+      outline: 2px solid #0a66c2;
+      outline-offset: 2px;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 13px;
@@ -36,7 +66,7 @@
       cursor: pointer;
       padding: 3px;
       border-radius: 5px;
-      color: #888;
+      color: #595959;
       font-size: 16px;
       line-height: 1;
       transition: color 0.1s, background 0.1s;
@@ -48,9 +78,9 @@
     #settings-view { display: none; }
 
     .settings-section-title {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
-      color: #888;
+      color: #595959;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 10px;
@@ -112,8 +142,8 @@
     #clear-token-btn:hover { border-color: #c0392b; }
 
     .settings-hint {
-      font-size: 11px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       margin-top: 10px;
       line-height: 1.6;
     }
@@ -137,7 +167,7 @@
 
     #profile-loading {
       font-size: 12px;
-      color: #888;
+      color: #595959;
       text-align: center;
       padding: 8px 0;
     }
@@ -169,7 +199,7 @@
     }
 
     #profile-location {
-      font-size: 11px;
+      font-size: 12px;
       color: #666;
       margin-top: 5px;
       display: none;
@@ -193,7 +223,7 @@
       text-decoration: none;
       align-items: center;
       justify-content: center;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       line-height: 1;
       transition: opacity 0.15s;
@@ -204,8 +234,8 @@
       display: inline-block;
       border-radius: 12px;
       padding: 2px 9px;
-      font-size: 11px;
-      font-weight: 500;
+      font-size: 12px;
+      font-weight: 600;
     }
     .role-chip { background: #e9f0fb; color: #0a66c2; }
     .company-chip { background: #e6f4ea; color: #1e7e34; }
@@ -276,7 +306,7 @@
 
     label {
       display: block;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       color: #555;
       text-transform: uppercase;
@@ -300,8 +330,8 @@
     textarea:focus { outline: none; border-color: #0a66c2; }
 
     #char-count {
-      font-size: 11px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       text-align: right;
       margin-top: 2px;
     }
@@ -354,7 +384,7 @@
       border: 1.5px solid #d1d5db;
       border-radius: 8px;
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
       font-family: inherit;
@@ -364,7 +394,7 @@
 
     .auto-mode-label {
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 600;
       color: #444;
       text-transform: none;
       letter-spacing: 0;
@@ -412,7 +442,7 @@
     }
 
     #feedback-prompt {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       color: #555;
       text-transform: uppercase;
@@ -432,7 +462,7 @@
       border: 1.5px solid #d1d5db;
       border-radius: 8px;
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       font-family: inherit;
       color: #555;
@@ -481,7 +511,7 @@
       font-family: inherit;
       color: #555;
     }
-    #feedback-skip-btn:hover { border-color: #888; }
+    #feedback-skip-btn:hover { border-color: #595959; }
 
     #feedback-submit-btn {
       padding: 6px 14px;
@@ -507,7 +537,7 @@
     #not-linkedin {
       padding: 24px 0;
       text-align: center;
-      color: #888;
+      color: #595959;
       font-size: 12px;
       line-height: 1.6;
     }
@@ -527,7 +557,7 @@
       border: none;
       border-radius: 5px;
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       background: transparent;
       color: #555;
@@ -609,7 +639,7 @@
       text-overflow: ellipsis;
     }
     .engager-headline {
-      font-size: 11.5px;
+      font-size: 12px;
       color: #444;
       margin-top: 2px;
       line-height: 1.4;
@@ -619,8 +649,8 @@
       overflow: hidden;
     }
     .engager-comment {
-      font-size: 11px;
-      color: #777;
+      font-size: 12px;
+      color: #4a4a4a;
       margin-top: 5px;
       padding: 5px 8px;
       background: #f6f6f6;
@@ -633,8 +663,8 @@
       font-style: italic;
     }
     .engager-status {
-      font-size: 11px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       white-space: nowrap;
       flex-shrink: 0;
       margin-top: 2px;
@@ -648,7 +678,7 @@
     #engagers-empty {
       text-align: center;
       font-size: 12px;
-      color: #888;
+      color: #595959;
       padding: 24px 0;
       line-height: 1.6;
     }
@@ -670,7 +700,7 @@
       display: flex;
       align-items: center;
       gap: 5px;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.05em;
       text-transform: uppercase;
@@ -684,6 +714,7 @@
     }
     #ai-search-section .li-card-label { color: #0a66c2; }
     #ai-search-heading {
+      display: block;
       font-size: 12px;
       font-weight: 700;
       color: #1a1a1a;
@@ -705,7 +736,7 @@
       box-sizing: border-box;
       transition: border-color 0.15s, background 0.15s;
     }
-    #ai-search-prompt::placeholder { color: #999; }
+    #ai-search-prompt::placeholder { color: #5b5b5b; }
     #ai-search-prompt:hover { background: #f3f4f6; }
     #ai-search-prompt:focus { outline: none; border-color: #0a66c2; background: #fff; }
     #ai-search-generate-btn {
@@ -732,7 +763,7 @@
       border-radius: 8px;
     }
     #ai-search-summary {
-      font-size: 11.5px;
+      font-size: 12px;
       color: #333;
       line-height: 1.5;
       margin-bottom: 8px;
@@ -740,14 +771,14 @@
     #ai-search-filters {
       margin: 0 0 8px;
       padding-left: 16px;
-      font-size: 11px;
+      font-size: 12px;
       color: #333;
       line-height: 1.5;
     }
     #ai-search-filters:empty { display: none; margin: 0; }
     #ai-search-filters li strong { color: #0a4a8f; }
     #ai-search-unsupported {
-      font-size: 11px;
+      font-size: 12px;
       color: #92610a;
       background: #fff6e5;
       border: 1px solid #f3dfa8;
@@ -771,8 +802,8 @@
     #ai-search-open-link:hover { background: #004182; }
     #ai-search-status {
       margin-top: 6px;
-      font-size: 11px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       line-height: 1.5;
     }
     #ai-search-status:empty { display: none; }
@@ -784,8 +815,8 @@
     }
     #lists-capture-card .li-card-label { color: #1e7e34; }
     #lists-hint {
-      font-size: 11px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       line-height: 1.5;
       margin-bottom: 10px;
     }
@@ -820,7 +851,7 @@
       color: #1a1a1a;
     }
     #lists-select-all-btn {
-      font-size: 11.5px;
+      font-size: 12px;
       color: #0a66c2;
       background: none;
       border: none;
@@ -882,8 +913,8 @@
       max-width: 100%;
       border-radius: 12px;
       padding: 3px 10px;
-      font-size: 11.5px;
-      font-weight: 500;
+      font-size: 12px;
+      font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -893,7 +924,7 @@
     #lists-empty {
       text-align: center;
       font-size: 12px;
-      color: #888;
+      color: #595959;
       padding: 24px 0;
       line-height: 1.6;
     }
@@ -1014,7 +1045,7 @@
     #create-list-picker-actions #confirm-create-list-btn { flex: 2; margin: 0; }
     #lists-status {
       margin-top: 8px;
-      font-size: 11px;
+      font-size: 12px;
       color: #666;
       line-height: 1.5;
     }
@@ -1027,8 +1058,8 @@
       margin-bottom: 4px;
     }
     #apollo-export-subhead {
-      font-size: 11.5px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       line-height: 1.5;
       margin-bottom: 14px;
     }
@@ -1054,7 +1085,7 @@
     }
     #apollo-export-list-trigger:hover { border-color: #0a66c2; }
     #apollo-export-list-trigger[aria-expanded="true"] { border-color: #0a66c2; box-shadow: 0 0 0 3px rgba(10,102,194,0.12); }
-    #apollo-export-list-trigger svg { color: #888; flex-shrink: 0; transition: transform 0.15s; }
+    #apollo-export-list-trigger svg { color: #595959; flex-shrink: 0; transition: transform 0.15s; }
     #apollo-export-list-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
     #apollo-export-list-trigger-label {
       overflow: hidden;
@@ -1079,11 +1110,11 @@
     }
     #apollo-export-list-menu.open { display: flex; flex-direction: column; gap: 2px; }
     .li-list-group-label {
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: #999;
+      color: #5b5b5b;
       padding: 8px 9px 3px;
     }
     .li-list-group-label:first-child { padding-top: 4px; }
@@ -1132,33 +1163,33 @@
       margin-top: 4px;
     }
     .li-list-option-count {
-      font-size: 10.5px;
+      font-size: 12px;
       font-weight: 600;
       color: #0a66c2;
       background: #e9f0fb;
       border-radius: 10px;
       padding: 2px 7px;
     }
-    .li-list-option-time { font-size: 10.5px; color: #999; }
+    .li-list-option-time { font-size: 12px; color: #5b5b5b; }
     .li-list-option-desc {
       margin-top: 4px;
-      font-size: 10.5px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .li-list-empty { padding: 10px 9px; font-size: 12px; color: #888; }
+    .li-list-empty { padding: 10px 9px; font-size: 12px; color: #595959; }
     #apollo-export-preview {
       margin-bottom: 8px;
     }
     #apollo-export-preview:empty { display: none; margin: 0; }
     .li-preview-label {
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: #999;
+      color: #5b5b5b;
       margin-bottom: 5px;
     }
     .li-preview-list {
@@ -1173,29 +1204,29 @@
       border-bottom: 1px solid #f0f0f0;
     }
     .li-preview-list > *:last-child { border-bottom: none; }
-    .li-preview-row-name { font-size: 11.5px; font-weight: 600; color: #1a1a1a; }
+    .li-preview-row-name { font-size: 12px; font-weight: 600; color: #1a1a1a; }
     .li-preview-row-meta {
-      font-size: 10.5px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .li-preview-more {
       padding: 6px 9px;
-      font-size: 10.5px;
-      color: #999;
+      font-size: 12px;
+      color: #5b5b5b;
       font-style: italic;
     }
     #apollo-export-summary {
-      font-size: 11.5px;
+      font-size: 12px;
       color: #555;
       line-height: 1.5;
       margin-bottom: 8px;
       min-height: 0;
     }
     #apollo-export-summary:empty { display: none; }
-    #apollo-export-summary.loading { color: #999; font-style: italic; }
+    #apollo-export-summary.loading { color: #5b5b5b; font-style: italic; }
     #apollo-export-generate-btn {
       width: 100%;
       padding: 7px 12px;
@@ -1232,7 +1263,7 @@
     }
     #apollo-export-file-chip:active { cursor: grabbing; }
     #apollo-export-file-name {
-      font-size: 11.5px;
+      font-size: 12px;
       color: #0a66c2;
       font-weight: 600;
       white-space: nowrap;
@@ -1241,7 +1272,7 @@
     }
     #apollo-export-download-link {
       flex-shrink: 0;
-      font-size: 11px;
+      font-size: 12px;
       color: #555;
       text-decoration: none;
       border: 1px solid #d1d5db;
@@ -1251,8 +1282,8 @@
     }
     #apollo-export-download-link:hover { background: #f3f4f6; }
     #apollo-export-hint {
-      font-size: 10.5px;
-      color: #888;
+      font-size: 12px;
+      color: #595959;
       line-height: 1.5;
       margin-top: 8px;
     }
@@ -1261,7 +1292,7 @@
 <body>
   <div class="header">
     <h1>LinkedIn Agent</h1>
-    <button id="settings-btn" title="Settings">⚙</button>
+    <button id="settings-btn" title="Settings" aria-label="Settings">⚙</button>
   </div>
 
   <!-- Tab switcher — visible on profile, post, and Sales Nav list pages -->
@@ -1273,8 +1304,9 @@
 
   <!-- Settings view — shown on gear click or when no token -->
   <div id="settings-view">
-    <div class="settings-section-title">Settings</div>
+    <h2 class="settings-section-title">Settings</h2>
     <div id="token-status-badge" class="token-status missing">⚠ No API token — paste yours below</div>
+    <label for="token-input" class="sr-only">Personal API token</label>
     <input id="token-input" type="password" placeholder="Paste your Personal API Token" />
     <div class="settings-row">
       <button id="save-token-btn">Save</button>
@@ -1286,7 +1318,7 @@
       <a href="https://xdr-hub.netlify.app/li-agent/settings#api-token" target="_blank">LinkedIn Agent → Settings</a>.
     </div>
     <div style="margin-top:16px; padding-top:14px; border-top:1px solid #e5e7eb;">
-      <div class="settings-section-title" style="margin-bottom:10px;">Behaviour</div>
+      <h3 class="settings-section-title" style="margin-bottom:10px;">Behaviour</h3>
       <label id="auto-mode-row" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:7px 0; text-transform:none; letter-spacing:0; font-weight:normal; color:inherit; margin-bottom:0;">
         <span class="auto-mode-label">Auto-connect after drafting</span>
         <span class="toggle-switch">
@@ -1294,7 +1326,7 @@
           <span class="toggle-slider"></span>
         </span>
       </label>
-      <p style="font-size:11px; color:#888; margin-top:4px; line-height:1.5;">When on, the extension automatically clicks Connect &amp; send after a draft appears.</p>
+      <p style="font-size: 12px; color:#595959; margin-top:4px; line-height:1.5;">When on, the extension automatically clicks Connect &amp; send after a draft appears.</p>
     </div>
   </div>
 
@@ -1308,12 +1340,12 @@
       <div id="profile-data">
         <div id="profile-name-row">
           <div id="profile-full-name" style="flex:1; margin-bottom:0;"></div>
-          <a id="hubspot-link" href="#" target="_blank" rel="noopener noreferrer" title="Open in HubSpot">H</a>
+          <a id="hubspot-link" href="#" target="_blank" rel="noopener noreferrer" title="Open in HubSpot" aria-label="Open in HubSpot">H</a>
         </div>
         <div id="profile-headline-text"></div>
         <div id="profile-meta"></div>
         <div id="profile-location"></div>
-        <div id="hubspot-owner" style="display:none; margin-top:6px; font-size:11px; color:#888;"></div>
+        <div id="hubspot-owner" style="display:none; margin-top:6px; font-size: 12px; color:#595959;"></div>
       </div>
     </div>
 
@@ -1324,7 +1356,7 @@
     <div id="already-contacted">⚠️ Already contacted — you sent a request to this person.</div>
 
     <div id="daily-meter" style="display:none; margin-bottom:10px;">
-      <div style="display:flex; justify-content:space-between; font-size:11px; color:#666; margin-bottom:3px;">
+      <div style="display:flex; justify-content:space-between; font-size: 12px; color:#666; margin-bottom:3px;">
         <span>Today's outreach</span>
         <span id="daily-meter-text"></span>
       </div>
@@ -1334,7 +1366,7 @@
     </div>
 
     <div id="canvas-picker-section" style="display:none;margin-bottom:10px">
-      <label style="font-size:11px;color:#888;display:block;margin-bottom:4px;text-transform:none;letter-spacing:0;font-weight:500">Canvas</label>
+      <label for="canvas-select" style="font-size: 12px;color:#595959;display:block;margin-bottom:4px;text-transform:none;letter-spacing:0;font-weight: 600">Canvas</label>
       <select id="canvas-select" style="width:100%;font-size:12px;padding:4px 6px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;color:#1a1a1a">
         <option value="">Loading canvases…</option>
       </select>
@@ -1346,7 +1378,7 @@
     <div id="verdict-section">
       <div class="verdict-row">
         <div id="verdict-badge"></div>
-        <span id="persona-chip" style="display:none; align-items:center; gap:5px; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:500; background:#f3f4f6; color:#555;">
+        <span id="persona-chip" style="display:none; align-items:center; gap:5px; padding:2px 8px; border-radius:12px; font-size: 12px; font-weight: 600; background:#f3f4f6; color:#555;">
           <span id="persona-indicator" style="width:8px; height:8px; border-radius:50%; flex-shrink:0; display:inline-block;"></span>
           <span id="persona-name-label"></span>
         </span>
@@ -1354,14 +1386,14 @@
       <div id="fit-reason"></div>
 
       <div id="note-section">
-        <label>Connection note</label>
+        <label for="note-text">Connection note</label>
         <textarea id="note-text" rows="5"></textarea>
         <div id="char-count"></div>
         <button class="copy-btn" id="copy-note-btn">Copy note</button>
       </div>
 
       <div id="followup-section" style="display:none">
-        <label>Follow-up (after they accept)</label>
+        <label for="followup-text">Follow-up (after they accept)</label>
         <textarea id="followup-text" rows="3"></textarea>
         <button class="copy-btn" id="copy-followup-btn">Copy follow-up</button>
       </div>
@@ -1384,7 +1416,7 @@
             <button id="feedback-submit-btn">Send feedback</button>
           </div>
         </div>
-        <div id="feedback-error" style="font-size:11px; color:#c0392b; margin-top:4px;"></div>
+        <div id="feedback-error" style="font-size: 12px; color:#c0392b; margin-top:4px;"></div>
         <div id="feedback-thanks">✓ Thanks for your feedback!</div>
       </div>
     </div>
@@ -1411,8 +1443,8 @@
   <div id="lists-tab">
     <div id="lists-capture-section">
       <div id="ai-search-section" class="li-card">
-        <div class="li-card-label">✨ AI Search Assistant</div>
-        <div id="ai-search-heading">Describe who you're looking for</div>
+        <h2 class="li-card-label">✨ AI Search Assistant</h2>
+        <label id="ai-search-heading" for="ai-search-prompt">Describe who you're looking for</label>
         <textarea id="ai-search-prompt" placeholder="e.g. design persona folks at mid-size B2B SaaS companies…" rows="2"></textarea>
         <button id="ai-search-generate-btn" type="button">Generate search</button>
         <div id="ai-search-result" style="display:none;">
@@ -1424,7 +1456,7 @@
         <div id="ai-search-status"></div>
       </div>
       <div id="lists-capture-card" class="li-card">
-        <div class="li-card-label">📥 Captured Leads</div>
+        <h2 class="li-card-label">📥 Captured Leads</h2>
         <div id="lists-hint">Auto-captured as you page through Sales Nav yourself.</div>
         <div id="lists-name-label"></div>
         <div id="lists-count-row">
@@ -1443,7 +1475,9 @@
         <button id="add-existing-list-btn" disabled>Add to Existing List</button>
       </div>
       <div id="create-list-picker">
+        <label for="create-list-name" class="sr-only">List name</label>
         <input id="create-list-name" type="text" placeholder="Name this list…" autocomplete="off" />
+        <label for="create-list-description" class="sr-only">List description</label>
         <textarea id="create-list-description" placeholder="Add a description (optional)…" rows="2"></textarea>
         <div id="create-list-picker-actions">
           <button id="cancel-create-list-btn" type="button">Cancel</button>
@@ -1461,7 +1495,7 @@
     </div>
 
     <div id="apollo-export-section" style="display:none;">
-      <div id="apollo-export-heading">Export a saved list to Apollo</div>
+      <h2 id="apollo-export-heading">Export a saved list to Apollo</h2>
       <div id="apollo-export-subhead">Pick a list, generate a CSV, drop it into Apollo.</div>
       <div id="apollo-export-list-picker">
         <button type="button" id="apollo-export-list-trigger" aria-haspopup="listbox" aria-expanded="false">

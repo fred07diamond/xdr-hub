@@ -1,3 +1,32 @@
+// Translates known technical/Chrome-runtime error strings into plain,
+// actionable copy for the status line -- raw messages like "Could not
+// establish connection. Receiving end does not exist." or a bare network
+// error are meaningless to an xDR and should never reach the UI verbatim.
+// Full detail always still goes to console.error at the call site; this is
+// only about what gets shown on screen.
+function friendlyError(err) {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  console.error(err);
+  const lower = raw.toLowerCase();
+  if (!raw) return "Something went wrong. Try again.";
+  if (lower.includes("could not establish connection") || lower.includes("receiving end does not exist")) {
+    return "Lost connection to the extension. Try reloading this page.";
+  }
+  if (lower.includes("failed to fetch") || lower.includes("networkerror") || lower.includes("network request failed")) {
+    return "Couldn't reach the LinkedIn Agent server. Check your connection and try again.";
+  }
+  if (lower.includes("timed out") || lower.includes("timeout")) {
+    return "That took too long and timed out. Try again.";
+  }
+  if (lower.includes("unauthorized") || lower.includes("401")) {
+    return "Your API token isn't valid. Check it in Settings.";
+  }
+  if (lower.includes("rate limit")) {
+    return "You're doing that a bit too fast -- try again shortly.";
+  }
+  return raw;
+}
+
 const draftBtn = document.getElementById("draft-btn");
 const statusEl = document.getElementById("status");
 const verdictSection = document.getElementById("verdict-section");
@@ -559,7 +588,7 @@ draftBtn.addEventListener("click", async () => {
     setStatus("");
     showVerdict(result.draft, { triggerAuto: true });
   } catch (err) {
-    setStatus(`Error: ${err.message}`);
+    setStatus(friendlyError(err));
     draftBtn.disabled = false;
   }
 });
@@ -636,7 +665,7 @@ async function doSubmitFeedback(skipMessage) {
     sentiment: feedbackSentiment,
     message,
     draftNote: noteText.value,
-  }).catch(() => null);
+  }).catch((err) => ({ ok: false, error: friendlyError(err) }));
 
   if (result?.ok) {
     hideFeedbackAfterSubmit();
@@ -645,7 +674,7 @@ async function doSubmitFeedback(skipMessage) {
     feedbackSubmitBtn.textContent = "Retry";
     feedbackSubmitBtn.style.background = "#c0392b";
     const errEl = document.getElementById("feedback-error");
-    if (errEl) errEl.textContent = result?.error || "Failed — check service worker console";
+    if (errEl) errEl.textContent = result?.error || "Couldn't submit your feedback. Try again.";
   }
 }
 
@@ -691,7 +720,7 @@ autoConnectBtn.addEventListener("click", async () => {
     markSentBtn.disabled = true;
     alreadyContacted.style.display = "block";
   } catch (err) {
-    setStatus(`Error: ${err.message}`);
+    setStatus(friendlyError(err));
     autoConnectBtn.disabled = false;
     markSentBtn.disabled = false;
   }
@@ -1263,7 +1292,7 @@ async function sendImport({ existingListId, listName: nameArg, listDescription: 
     listUrl: listImportSession.listUrl,
     existingListId: existingListId || null,
     leads,
-  }).catch((err) => ({ ok: false, error: err.message }));
+  }).catch((err) => ({ ok: false, error: friendlyError(err) }));
 
   // result.ok only reflects the HTTP call succeeding — the action itself can
   // return a normal 200 response with an `error` field set (e.g. rate
@@ -1326,7 +1355,7 @@ addExistingListBtn?.addEventListener("click", async () => {
 
   const result = await chrome.runtime
     .sendMessage({ type: "LIST_LEAD_LISTS" })
-    .catch((err) => ({ ok: false, error: err.message, lists: [] }));
+    .catch((err) => ({ ok: false, error: friendlyError(err), lists: [] }));
   const lists = result?.lists || [];
 
   existingListSelect.innerHTML = "";
@@ -1404,7 +1433,7 @@ aiSearchGenerateBtn?.addEventListener("click", async () => {
 
   const result = await chrome.runtime
     .sendMessage({ type: "GENERATE_SALES_NAV_SEARCH", prompt })
-    .catch((err) => ({ ok: false, error: err.message }));
+    .catch((err) => ({ ok: false, error: friendlyError(err) }));
 
   aiSearchGenerateBtn.disabled = false;
   aiSearchGenerateBtn.textContent = "Generate search";
@@ -1696,7 +1725,7 @@ async function loadApolloExportListOptions() {
   if (!apolloExportListTrigger) return;
   const result = await chrome.runtime
     .sendMessage({ type: "LIST_LEAD_LISTS" })
-    .catch((err) => ({ ok: false, error: err.message, lists: [] }));
+    .catch((err) => ({ ok: false, error: friendlyError(err), lists: [] }));
   apolloExportLists = result?.lists || [];
 
   if (!result?.ok || apolloExportLists.length === 0) {
@@ -1711,7 +1740,10 @@ async function loadApolloExportListOptions() {
   if (apolloExportListTriggerLabel) apolloExportListTriggerLabel.textContent = "Select a list…";
   renderApolloExportListMenu();
 }
-loadApolloExportListOptions();
+// Lazy: only fetched the first time the Apollo export section actually
+// becomes visible (see the isApolloUrl branch below), not unconditionally
+// on every panel load regardless of what page the xDR is looking at.
+let apolloExportListOptionsLoaded = false;
 
 apolloExportListTrigger?.addEventListener("click", () => {
   if (apolloExportListMenu?.classList.contains("open")) closeApolloExportMenu();
@@ -1744,7 +1776,7 @@ apolloExportGenerateBtn?.addEventListener("click", async () => {
   if (!items) {
     const result = await chrome.runtime
       .sendMessage({ type: "GET_LEAD_LIST_ITEMS", listId })
-      .catch((err) => ({ ok: false, error: err.message }));
+      .catch((err) => ({ ok: false, error: friendlyError(err) }));
     if (result?.ok && result.items?.length) items = result.items;
     else error = result?.error || "Could not load this list's leads.";
   }
@@ -1901,6 +1933,10 @@ function startUrlPollingWithEngagers() {
       if (listsCaptureSection) listsCaptureSection.style.display = "none";
       if (apolloExportSection) apolloExportSection.style.display = "block";
       switchTab("lists");
+      if (!apolloExportListOptionsLoaded) {
+        apolloExportListOptionsLoaded = true;
+        loadApolloExportListOptions();
+      }
     } else {
       // Non-LinkedIn page: hide tab switcher, show not-LinkedIn message.
       // currentPostUrl/currentListUrl are intentionally NOT cleared here so

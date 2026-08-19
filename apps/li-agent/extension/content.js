@@ -350,6 +350,30 @@ function stopWatchingSalesNavList() {
   clearTimeout(salesNavListDebounceTimer);
 }
 
+// Safety net alongside the panel's explicit STOP_WATCHING_SALES_NAV_LIST
+// message: LinkedIn is a React SPA that navigates via pushState/replaceState
+// without a real page load, so this content script instance keeps running
+// across those navigations. If the panel ever fails to send the stop
+// message (closed panel, dropped message, etc.), the observer would
+// otherwise keep watching a container that no longer belongs to a Sales Nav
+// list page. This detects any URL change and disconnects automatically once
+// the page is no longer a Sales Nav list.
+(function watchForSalesNavNavigation() {
+  let lastHref = location.href;
+  function onUrlChange() {
+    if (location.href === lastHref) return;
+    lastHref = location.href;
+    if (salesNavListObserver && !isSalesNavListUrl()) {
+      stopWatchingSalesNavList();
+    }
+  }
+  const originalPushState = history.pushState.bind(history);
+  const originalReplaceState = history.replaceState.bind(history);
+  history.pushState = (...args) => { originalPushState(...args); onUrlChange(); };
+  history.replaceState = (...args) => { originalReplaceState(...args); onUrlChange(); };
+  window.addEventListener("popstate", onUrlChange);
+})();
+
 function scrapeProfile() {
   const getAll = (sel, limit = 3) =>
     Array.from(document.querySelectorAll(sel))
