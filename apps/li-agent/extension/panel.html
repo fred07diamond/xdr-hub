@@ -979,45 +979,34 @@
     #confirm-add-existing-btn:hover:not(:disabled),
     #confirm-create-list-btn:hover:not(:disabled) { background: #004182; }
     #add-existing-list-btn:hover:not(:disabled) { background: #f0f4ff; }
-    #existing-list-picker {
-      display: none;
-      flex-direction: column;
-      gap: 6px;
-    }
-    #existing-list-select {
-      width: 100%;
-      padding: 6px 8px;
-      border: 1.5px solid #d1d5db;
-      border-radius: 7px;
-      font-size: 12px;
-      font-family: inherit;
-      background: #fff;
-      box-sizing: border-box;
-    }
-    #existing-list-picker-actions {
-      display: flex;
-      gap: 8px;
-    }
-    #existing-list-picker-actions #cancel-add-existing-btn {
-      flex: 1;
-      padding: 7px 12px;
-      background: none;
-      border: 1px solid #d1d5db;
-      border-radius: 7px;
-      font-size: 12px;
-      color: #555;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    #existing-list-picker-actions #confirm-add-existing-btn { flex: 2; margin: 0; }
+    /* Both pickers share one card treatment -- a bordered, tinted container
+       consistent with the panel's other cards, instead of bare form fields
+       floating in the button stack. */
+    #existing-list-picker,
     #create-list-picker {
       display: none;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
+      background: #f5f8ff;
+      border: 1px solid #dbe6fb;
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 2px;
     }
-    #create-list-name, #create-list-description {
+    .picker-field-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #0a66c2;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: -2px;
+    }
+    #existing-list-select,
+    #create-list-name,
+    #create-list-description {
       width: 100%;
-      padding: 6px 8px;
+      padding: 8px 10px;
       border: 1.5px solid #d1d5db;
       border-radius: 7px;
       font-size: 12px;
@@ -1026,11 +1015,16 @@
       box-sizing: border-box;
       resize: none;
     }
-    #create-list-name:focus, #create-list-description:focus { outline: none; border-color: #0a66c2; }
+    #existing-list-select:focus,
+    #create-list-name:focus,
+    #create-list-description:focus { outline: none; border-color: #0a66c2; }
+    #existing-list-picker-actions,
     #create-list-picker-actions {
       display: flex;
       gap: 8px;
+      margin-top: 2px;
     }
+    #existing-list-picker-actions #cancel-add-existing-btn,
     #create-list-picker-actions #cancel-create-list-btn {
       flex: 1;
       padding: 7px 12px;
@@ -1042,6 +1036,7 @@
       cursor: pointer;
       font-family: inherit;
     }
+    #existing-list-picker-actions #confirm-add-existing-btn,
     #create-list-picker-actions #confirm-create-list-btn { flex: 2; margin: 0; }
     #lists-status {
       margin-top: 8px;
@@ -1475,16 +1470,17 @@
         <button id="add-existing-list-btn" disabled>Add to Existing List</button>
       </div>
       <div id="create-list-picker">
-        <label for="create-list-name" class="sr-only">List name</label>
+        <label for="create-list-name" class="picker-field-label">List name</label>
         <input id="create-list-name" type="text" placeholder="Name this list…" autocomplete="off" />
-        <label for="create-list-description" class="sr-only">List description</label>
-        <textarea id="create-list-description" placeholder="Add a description (optional)…" rows="2"></textarea>
+        <label for="create-list-description" class="picker-field-label">Description (optional)</label>
+        <textarea id="create-list-description" placeholder="Add a description…" rows="2"></textarea>
         <div id="create-list-picker-actions">
           <button id="cancel-create-list-btn" type="button">Cancel</button>
           <button id="confirm-create-list-btn" type="button">＋ Create List</button>
         </div>
       </div>
       <div id="existing-list-picker">
+        <label for="existing-list-select" class="picker-field-label">Add to</label>
         <select id="existing-list-select"><option value="">Loading your lists…</option></select>
         <div id="existing-list-picker-actions">
           <button id="cancel-add-existing-btn" type="button">Cancel</button>
