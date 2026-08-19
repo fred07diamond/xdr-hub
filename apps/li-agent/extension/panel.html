@@ -981,17 +981,27 @@
     #add-existing-list-btn:hover:not(:disabled) { background: #f0f4ff; }
     /* Both pickers share one card treatment -- a bordered, tinted container
        consistent with the panel's other cards, instead of bare form fields
-       floating in the button stack. */
+       floating in the button stack. Each label+field pair is its own
+       flex group with a tight internal gap; the outer container uses a
+       larger gap between groups -- deliberately NOT relying on margins
+       (a global `label { margin-bottom: 4px }` rule elsewhere in this file
+       was fighting an earlier margin-based version of this and produced
+       uneven, unpredictable spacing). */
     #existing-list-picker,
     #create-list-picker {
       display: none;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
       background: #f5f8ff;
       border: 1px solid #dbe6fb;
       border-radius: 12px;
       padding: 12px;
       margin-top: 2px;
+    }
+    .picker-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
     .picker-field-label {
       display: block;
@@ -1000,7 +1010,7 @@
       color: #0a66c2;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      margin-bottom: -2px;
+      margin: 0;
     }
     #existing-list-select,
     #create-list-name,
@@ -1022,7 +1032,6 @@
     #create-list-picker-actions {
       display: flex;
       gap: 8px;
-      margin-top: 2px;
     }
     #existing-list-picker-actions #cancel-add-existing-btn,
     #create-list-picker-actions #cancel-create-list-btn {
@@ -1470,18 +1479,24 @@
         <button id="add-existing-list-btn" disabled>Add to Existing List</button>
       </div>
       <div id="create-list-picker">
-        <label for="create-list-name" class="picker-field-label">List name</label>
-        <input id="create-list-name" type="text" placeholder="Name this list…" autocomplete="off" />
-        <label for="create-list-description" class="picker-field-label">Description (optional)</label>
-        <textarea id="create-list-description" placeholder="Add a description…" rows="2"></textarea>
+        <div class="picker-field">
+          <label for="create-list-name" class="picker-field-label">List name</label>
+          <input id="create-list-name" type="text" placeholder="Name this list…" autocomplete="off" />
+        </div>
+        <div class="picker-field">
+          <label for="create-list-description" class="picker-field-label">Description (optional)</label>
+          <textarea id="create-list-description" placeholder="Add a description…" rows="2"></textarea>
+        </div>
         <div id="create-list-picker-actions">
           <button id="cancel-create-list-btn" type="button">Cancel</button>
           <button id="confirm-create-list-btn" type="button">＋ Create List</button>
         </div>
       </div>
       <div id="existing-list-picker">
-        <label for="existing-list-select" class="picker-field-label">Add to</label>
-        <select id="existing-list-select"><option value="">Loading your lists…</option></select>
+        <div class="picker-field">
+          <label for="existing-list-select" class="picker-field-label">Add to</label>
+          <select id="existing-list-select"><option value="">Loading your lists…</option></select>
+        </div>
         <div id="existing-list-picker-actions">
           <button id="cancel-add-existing-btn" type="button">Cancel</button>
           <button id="confirm-add-existing-btn" type="button" disabled>Add to List</button>
