@@ -472,14 +472,14 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
           <TrendChart data={[...trend]} series={[{ key: "leads", ...PIPELINE.leads }]} height={160} />
         </BentoTile>
 
-        <BentoTile className="col-span-2" title="Apollo Enrichment">
+        <BentoTile className="col-span-2" title="Apollo Enrichment" sub="Enrichment is per-lead and on-demand, so most leads sit unenriched until someone clicks Enrich.">
           <DonutBreakdown
             segments={[
               { label: "Done", value: data.enrichmentStatusCounts.done, color: "#10b981" },
               { label: "Not Found", value: data.enrichmentStatusCounts.not_found, color: "#9ca3af" },
               { label: "Failed", value: data.enrichmentStatusCounts.failed, color: VERDICT_COLOR.weak },
               { label: "Enriching", value: data.enrichmentStatusCounts.enriching, color: PIPELINE.leads.color },
-              { label: "Idle", value: data.enrichmentStatusCounts.idle, color: "#d1d5db" },
+              { label: "Not Enriched", value: data.enrichmentStatusCounts.idle, color: "#d1d5db" },
             ]}
           />
         </BentoTile>
