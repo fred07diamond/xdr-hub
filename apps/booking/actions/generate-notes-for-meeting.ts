@@ -1,10 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { bookedMeetings, generatedNotes } from "../server/db/schema.js";
-import { generateNotes } from "../server/helpers/generate-notes.js";
+import { bookedMeetings } from "../server/db/schema.js";
+import { applyGeneratedNotes } from "../server/helpers/apply-generated-notes.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -30,46 +29,15 @@ export default defineAction({
       throw Object.assign(new Error("Meeting not found"), { statusCode: 404 });
     }
 
-    const notes = await generateNotes(transcript);
-
-    const [existing] = await db
-      .select()
-      .from(generatedNotes)
-      .where(eq(generatedNotes.meetingId, meetingId))
-      .limit(1);
-
-    const fields = {
-      meetingAgenda: notes.meetingAgenda,
-      xdrPain: notes.xdrPain,
-      xdrEnterpriseNeed: notes.xdrEnterpriseNeed,
-      xdrContactQualification: notes.xdrContactQualification,
-      xdrNotes: notes.xdrNotes,
-      followUpEmail: notes.followUpEmail,
-      emailSubject: notes.emailSubject,
-    };
-
-    if (existing) {
-      await db.update(generatedNotes).set(fields).where(eq(generatedNotes.id, existing.id));
-    } else {
-      await db.insert(generatedNotes).values({
-        id: nanoid(),
-        meetingId,
-        xdrUserEmail: ctx!.userEmail,
-        crmNotes: "",
-        status: "draft",
-        createdAt: new Date().toISOString(),
-        ...fields,
-      });
-    }
-
-    // The webhook-created meeting often has no confirmed time yet -- fill it
-    // in from the transcript if the meeting doesn't already have one.
-    if (!meeting.meetingDatetime && notes.meetingDatetime) {
-      await db
-        .update(bookedMeetings)
-        .set({ meetingDatetime: notes.meetingDatetime })
-        .where(eq(bookedMeetings.id, meetingId));
-    }
+    // The webhook-created meeting often has no confirmed time yet --
+    // applyGeneratedNotes fills it in from the transcript when empty.
+    const { fields } = await applyGeneratedNotes({
+      db,
+      meetingId,
+      meetingDatetime: meeting.meetingDatetime,
+      xdrUserEmail: ctx!.userEmail,
+      transcript,
+    });
 
     return { meetingId, generatedNotes: fields };
   },

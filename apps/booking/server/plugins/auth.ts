@@ -8,7 +8,12 @@ export default createAuthPlugin({
   // Nooks delivers call-logging webhooks (and its save-time test ping)
   // without a session — the global auth guard must let the path through.
   // Authenticity is enforced inside the route via the HMAC signing key.
-  publicPaths: ["/nooks-webhook"],
+  // capture-nooks-transcript is called by the Nooks Capture browser
+  // extension, which has no session cookie -- it authenticates via a
+  // personal API token instead (resolve-owner.ts + requireRole inside the
+  // action itself). No second registration needed for app-access.ts:
+  // it already no-ops when event.context.userEmail is unset.
+  publicPaths: ["/nooks-webhook", "/_agent-native/actions/capture-nooks-transcript"],
   // Must match google/add-account/auth-url.get.ts's CALENDAR_SCOPES exactly.
   // @agent-native/core mirrors every Google sign-in/session-refresh's token
   // into the same oauth_tokens row book-calendar-event.ts reads from

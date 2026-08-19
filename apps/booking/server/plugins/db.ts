@@ -369,6 +369,24 @@ export default runMigrations(
       name: "inbound-leads-intro-champion-rationale",
       sql: `ALTER TABLE inbound_leads ADD COLUMN IF NOT EXISTS intro_champion_rationale TEXT`,
     },
+    // Personal API tokens for browser extensions (Nooks Capture) to identify
+    // callers without a session cookie -- mirrors apps/li-agent's api_tokens
+    // table/migration exactly.
+    {
+      version: 62,
+      name: "api-tokens-table",
+      sql: `CREATE TABLE IF NOT EXISTS api_tokens (
+        id TEXT PRIMARY KEY,
+        user_email TEXT NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 63,
+      name: "index-api-tokens-token",
+      sql: `CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token)`,
+    },
   ],
   { table: "booking_agent_migrations" },
 );

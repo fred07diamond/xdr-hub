@@ -9,9 +9,9 @@ import {
   type SettingsSearchEntry,
 } from "@agent-native/core/client/settings";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { useActionMutation } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconCircleCheck, IconCircleX, IconExternalLink } from "@tabler/icons-react";
+import { IconCheck, IconCircleCheck, IconCircleX, IconClipboard, IconExternalLink, IconKey, IconLoader2 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -84,6 +84,66 @@ function useNooksStatus() {
     },
     staleTime: 15_000,
   });
+}
+
+function ApiTokenCard() {
+  const { data, isLoading } = useActionQuery("get-api-token", {});
+  const token = (data as any)?.token as string | undefined;
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    if (!token) return;
+    navigator.clipboard.writeText(token).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <Card id="api-token" className="scroll-mt-16">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <IconKey size={16} />
+          Personal API Token
+        </CardTitle>
+        <CardDescription>
+          Paste this token into the Nooks Capture browser extension so your captured call transcripts are linked to your account.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <IconLoader2 size={14} className="animate-spin" />
+            Loading…
+          </div>
+        ) : token ? (
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
+              {token}
+            </code>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs hover:bg-muted"
+            >
+              {copied ? <IconCheck size={13} /> : <IconClipboard size={13} />}
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Failed to load token.</p>
+        )}
+        <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">Extension setup</p>
+          <ol className="list-decimal ps-4 space-y-0.5">
+            <li>Load the Nooks Capture extension (chrome://extensions → Load unpacked).</li>
+            <li>Click the extension icon → Options.</li>
+            <li>Paste this token, then save.</li>
+          </ol>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function SettingsRoute() {
@@ -253,6 +313,8 @@ export default function SettingsRoute() {
           <p className="text-sm leading-6 text-muted-foreground">
             {t("settings.description")}
           </p>
+
+          <ApiTokenCard />
 
           <Card id="google-calendar" className="scroll-mt-16">
             <CardHeader>

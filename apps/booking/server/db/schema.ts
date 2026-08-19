@@ -1,5 +1,14 @@
 import { table, text, integer, now } from "@agent-native/core/db/schema";
 
+// Personal API tokens -- one per user, used by browser extensions (e.g. the
+// Nooks Capture extension) to identify a caller without a session cookie.
+export const apiTokens = table("api_tokens", {
+  id: text("id").primaryKey(),
+  userEmail: text("user_email").notNull(),
+  token: text("token").notNull(),
+  createdAt: text("created_at").default(now()),
+});
+
 // One row per user. Email is the primary key to match ctx.userEmail pattern.
 export const userRoles = table("user_roles", {
   email: text("email").primaryKey(),
