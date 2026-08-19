@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery, useSession } from "@agent-native/core/client";
 import { DispatchShell } from "@agent-native/dispatch/components";
 import { Badge } from "@agent-native/dispatch/components/ui/badge";
 import { Button } from "@agent-native/dispatch/components/ui/button";
@@ -88,6 +88,7 @@ function AppAccessRow({ member, onUpdate }: {
 
 export default function WorkspaceAccessRoute() {
   const qc = useQueryClient();
+  const { session } = useSession();
   const teamQuery = useActionQuery<{ users: WorkspaceMember[] }>("list-workspace-team", {});
   const updateMember = useActionMutation("update-workspace-member");
   const [saving, setSaving] = useState<string | null>(null);
@@ -141,6 +142,14 @@ export default function WorkspaceAccessRoute() {
           <p className="mt-1 text-sm text-muted-foreground">
             Invite team members and control which apps each person can access.
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Signed in as{" "}
+            <span className="font-medium text-foreground">
+              {session?.email ?? "unknown — not signed in"}
+            </span>
+            . Whether the card below loads depends on this account's
+            Workspace Role, not the org role in the card underneath it.
+          </p>
         </div>
 
         <Card className="border-primary/30">
@@ -162,7 +171,8 @@ export default function WorkspaceAccessRoute() {
             )}
             {teamQuery.isError && (
               <p className="text-sm text-destructive">
-                Could not load team — admin access required.
+                Could not load team:{" "}
+                {teamQuery.error instanceof Error ? teamQuery.error.message : String(teamQuery.error)}
               </p>
             )}
             {teamQuery.data?.users?.length === 0 && (
