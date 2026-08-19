@@ -1,6 +1,6 @@
 import { defineEventHandler, getRequestURL, setResponseStatus } from "h3";
 import { eq, and } from "drizzle-orm";
-import { getSharedDb, isWorkspaceMember, workspaceAppAccess } from "@xdr-hub/shared/server";
+import { getSharedDb, getWorkspaceRole, isWorkspaceMember, workspaceAppAccess } from "@xdr-hub/shared/server";
 import { getDb } from "../db/index.js";
 
 const APP_NAME = "li-agent" as const;
@@ -20,6 +20,18 @@ export default defineEventHandler(async (event) => {
   if (!userEmail) return;
 
   if (userEmail === process.env.WORKSPACE_OWNER_EMAIL) return;
+
+  // Workspace admins always have access to every app, including its
+  // admin-only surfaces (e.g. the Analytics page) -- being made an admin
+  // via set-workspace-user-role.ts is a deliberate, privileged grant that
+  // must not then get silently blocked by the separate org-membership
+  // check below. This was the actual cause of "some admins can't see
+  // Analytics": this middleware only ever auto-granted based on org
+  // membership, never on workspace role, so an admin who wasn't also a
+  // recognized org member got 403'd here before get-analytics.ts's own
+  // requireAdmin check ever ran.
+  const role = await getWorkspaceRole(userEmail);
+  if (role === "admin") return;
 
   const db = getSharedDb();
 

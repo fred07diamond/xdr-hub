@@ -227,7 +227,7 @@ function OverviewTab({
 
       <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
         <TrendChart
-          data={d.trend}
+          data={[...d.trend]}
           series={[
             { key: "prospects", ...PIPELINE.prospects },
             { key: "engagers", ...PIPELINE.engagers },
@@ -292,7 +292,7 @@ function ProspectsTab({
         <KpiCard label="Users" value={d.byUser.length} />
 
         <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
-          <TrendChart data={d.trend} series={[{ key: "prospects", ...PIPELINE.prospects }]} height={160} />
+          <TrendChart data={[...d.trend]} series={[{ key: "prospects", ...PIPELINE.prospects }]} height={160} />
         </BentoTile>
 
         <BentoTile className="col-span-2" title="Fit Verdict">
@@ -381,7 +381,7 @@ function EngagementTab({ data, trend }: { data: PostEngagementData; trend: Trend
         <KpiCard label="New Opportunities" value={data.newOpportunities} sub="no existing HubSpot contact" />
 
         <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
-          <TrendChart data={trend} series={[{ key: "engagers", ...PIPELINE.engagers }]} height={160} />
+          <TrendChart data={[...trend]} series={[{ key: "engagers", ...PIPELINE.engagers }]} height={160} />
         </BentoTile>
 
         <BentoTile className="col-span-2" title="Fit Verdict">
@@ -469,7 +469,7 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
         <KpiCard label="Enriched" value={data.enrichmentStatusCounts.done} sub={`${pct(data.enrichmentStatusCounts.done, data.totalLeads)} of leads`} />
 
         <BentoTile className="col-span-2 sm:col-span-4" title="Activity, last 14 days">
-          <TrendChart data={trend} series={[{ key: "leads", ...PIPELINE.leads }]} height={160} />
+          <TrendChart data={[...trend]} series={[{ key: "leads", ...PIPELINE.leads }]} height={160} />
         </BentoTile>
 
         <BentoTile className="col-span-2" title="Apollo Enrichment">
@@ -681,7 +681,7 @@ function TeamSection({
         </button>
       </CardHeader>
       <CardContent className={showTable ? "overflow-x-auto p-0" : undefined}>
-        {showTable ? table : <Leaderboard rows={rows.sort((a, b) => b.value - a.value)} color={color} />}
+        {showTable ? table : <Leaderboard rows={[...rows].sort((a, b) => b.value - a.value)} color={color} />}
       </CardContent>
     </Card>
   );
