@@ -14,7 +14,7 @@ const IMPORT_LIMIT = 500;
 
 export default defineAction({
   description:
-    "Import a Sales Navigator saved lead list captured by the LinkedIn Agent extension. Shallow import only -- no ICP scoring or draft note generation happens here; that still happens later, per-lead, through the existing capture-profile flow when the xDR opens that lead's profile page.",
+    "Import a Sales Navigator saved lead list captured by the LinkedIn Agent extension. The import itself stays a fast, shallow insert -- Apollo enrichment, ICP fit scoring, and connection-note drafting run afterward, automatically and in the background (server/helpers/lead-pipeline-sweep.ts), independent of the extension or browser staying open.",
   schema: z.object({
     listName: z.string().describe("Name of the Sales Navigator list, or a derived/fallback name"),
     listDescription: z.string().nullish().describe("Optional description, only used when creating a new list (ignored if existingListId is set)"),
@@ -183,6 +183,12 @@ export default defineAction({
           personaId: persona?.personaId ?? null,
           personaName: persona?.personaName ?? null,
           personaColor: persona?.personaColor ?? null,
+          // Opts every newly-imported lead into the automatic enrich ->
+          // score -> draft background pipeline (server/helpers/
+          // lead-pipeline-sweep.ts). Every imported lead is expected to be
+          // reached out to, so this is unconditional for new imports --
+          // pre-existing rows stay excluded (see schema.ts comment).
+          autoEnrich: 1,
           createdAt: now,
           updatedAt: now,
         };

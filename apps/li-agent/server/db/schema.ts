@@ -269,6 +269,21 @@ export const leadListItems = table("lead_list_items", {
   phoneRevealStatus: text("phone_reveal_status", { enum: ["requested", "done", "no_match", "failed"] }),
   phoneRevealRequestId: text("phone_reveal_request_id"),
   phoneRevealRequestedAt: text("phone_reveal_requested_at"),
+  // Opt-in flag for the automatic enrich+score+draft background pipeline
+  // (server/helpers/lead-pipeline-sweep.ts). Only set true by
+  // import-sales-nav-list.ts going forward -- pre-existing rows imported
+  // before this shipped stay false/excluded, so shipping this doesn't
+  // suddenly auto-enrich the entire historical backlog (real Apollo/LLM
+  // cost spike for leads nobody decided to act on).
+  autoEnrich: integer("auto_enrich").notNull().default(0),
+  // Poison-lead guard for the sweep's atomic claim step -- capped at 3
+  // attempts, then the lead is marked enrichmentStatus "failed" instead of
+  // being retried forever.
+  pipelineAttempts: integer("pipeline_attempts").notNull().default(0),
+  // Set once this lead has been scored, drafted, and upserted into
+  // `prospects` by the automatic pipeline. Lets the sweep skip already-done
+  // rows and lets the UI show "in Prospects" instead of the enrich badges.
+  promotedProspectId: text("promoted_prospect_id"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });

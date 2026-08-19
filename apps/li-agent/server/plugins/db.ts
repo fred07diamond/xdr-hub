@@ -566,6 +566,25 @@ export default runMigrations(
       name: "index-prospect-tag-links-tag-id",
       sql: `CREATE INDEX IF NOT EXISTS idx_prospect_tag_links_tag_id ON prospect_tag_links (tag_id)`,
     },
+    // Automatic enrich+score+draft background pipeline (lead-pipeline-
+    // sweep.ts) -- autoEnrich opts newly-imported lead_list_items rows in
+    // going forward, pipelineAttempts bounds the sweep's retry loop, and
+    // promotedProspectId marks a row as already turned into a prospect.
+    {
+      version: 91,
+      name: "lead-list-items-auto-enrich",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS auto_enrich INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      version: 92,
+      name: "lead-list-items-pipeline-attempts",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS pipeline_attempts INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      version: 93,
+      name: "lead-list-items-promoted-prospect-id",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS promoted_prospect_id TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

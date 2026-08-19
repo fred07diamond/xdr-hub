@@ -993,7 +993,8 @@ export default function ProspectsRoute() {
     try {
       const result = await scoreLeadListItem.mutateAsync({ itemId: prospect.rawId });
       if (result?.error) {
-        setScoringErrors((prev) => new Map(prev).set(prospect.id, result.error));
+        const message = result.error;
+        setScoringErrors((prev) => new Map(prev).set(prospect.id, message));
         return;
       }
       refetch();
@@ -1054,7 +1055,8 @@ export default function ProspectsRoute() {
       try {
         const result = await scoreLeadListItem.mutateAsync({ itemId: p.rawId });
         if (result?.error) {
-          setScoringErrors((prev) => new Map(prev).set(p.id, result.error));
+          const message = result.error;
+          setScoringErrors((prev) => new Map(prev).set(p.id, message));
         }
       } catch (err) {
         setScoringErrors((prev) => new Map(prev).set(p.id, err instanceof Error ? err.message : "Something went wrong."));

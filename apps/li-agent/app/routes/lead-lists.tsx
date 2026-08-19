@@ -30,6 +30,7 @@ type LeadListItem = {
   enrichmentError: string | null;
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
   phoneRevealRequestedAt: string | null;
+  promotedProspectId: string | null;
 };
 
 // Apollo doesn't always send a phone-reveal webhook back for a genuine
@@ -169,6 +170,16 @@ function LeadListItemRow({
               <span style={{ background: item.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full" />
               {item.personaName}
             </span>
+          )}
+          {item.promotedProspectId && (
+            <a
+              href="/"
+              title="Scored, drafted, and promoted into Prospects by the automatic pipeline"
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 shrink-0 hover:bg-emerald-500/20"
+            >
+              <IconCheck size={10} />
+              In Prospects
+            </a>
           )}
         </div>
         {item.location && (

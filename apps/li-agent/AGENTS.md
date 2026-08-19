@@ -66,18 +66,53 @@ panel. A search capture gets a generated name like "Sales Nav Search — Aug 14,
 9:04 AM" instead of a real list name, since a search results page has no name
 to read off the page the way a saved list's tab title does.
 
-This is a shallow import: `name`, `headline` (the job title scraped from Sales
-Nav's list rows), `company`, `location`, and a `salesNavLeadUrl` for each lead,
-with `profileUrl` left null. `import-sales-nav-list` DOES assign a persona at
-import time (via `selectPersonasBatch` — one batched LLM call classifying the
-whole list against active ICP personas, not one call per lead), so
-`personaId`/`personaName`/`personaColor` get set then. This is persona
-classification only, not full ICP fit scoring: it does NOT set a fit
-verdict/reasoning or draft a connection note as part of the import — those still
-happen later, one lead at a time, through the normal `capture-profile` flow when
-the xDR actually opens that lead's profile page, at which point `profileUrl` also
-gets resolved. Treat a Lead Lists row as a "to visit" item, not as a
-captured prospect ready for outreach.
+The import itself is a shallow insert: `name`, `headline` (the job title
+scraped from Sales Nav's list rows), `company`, `location`, and a
+`salesNavLeadUrl` for each lead, with `profileUrl` left null. `import-sales-
+nav-list` DOES assign a persona at import time (via `selectPersonasBatch` —
+one batched LLM call classifying the whole list against active ICP personas,
+not one call per lead), so `personaId`/`personaName`/`personaColor` get set
+then.
+
+**Every newly-imported lead is also opted into an automatic background
+pipeline** (`autoEnrich: true`, enforced by `server/helpers/lead-pipeline-
+sweep.ts`) that enriches (Apollo), scores ICP fit, drafts a connection note,
+and promotes the lead into a real `prospects` row — with no further action
+from the xDR and no dependency on the browser/extension staying open. This
+is a deliberate policy change from the old "on-demand only" rule: every
+imported lead is expected to be reached out to, so there's no "decide
+later" step to gate on anymore. Concretely:
+
+- The sweep runs as a debounced tick inside `server/middleware/lead-
+  pipeline-sweep.ts`, triggered by the framework's own Netlify Scheduled
+  Function that pings `/_agent-native/health` every 60s regardless of any
+  visitor — li-agent has no cron primitive of its own, so this is the real
+  trigger, not a metaphor. It only ever runs on that health-check request,
+  never a real page load, so it can never slow down an xDR.
+- A lead moves `enrichmentStatus: idle → enriching → done/not_found/failed`
+  (reusing `server/helpers/enrich-lead-list-item.ts`), then immediately
+  gets scored + drafted + upserted into `prospects` via `server/helpers/
+  score-lead-list-item.ts` (status: `drafted`), and `promotedProspectId`
+  gets set once that lands — shown in the Lead Lists UI as an "In
+  Prospects" badge.
+- A lead stuck in `enriching` for over 2 minutes is retried, up to 3
+  attempts, then marked `failed` (poison-lead guard).
+- An Apollo phone reveal stuck at `requested` for over 5 minutes is
+  dispositioned `failed` — same threshold `lead-lists.tsx`'s
+  `PHONE_REVEAL_STALE_AFTER_MS` already used for display, now persisted for
+  real so it shows correctly in Analytics' Phone Reveal "Failed" bucket
+  instead of silently vanishing.
+- **Scope**: only leads imported through this flow going forward have
+  `autoEnrich: true`. Lists imported before this shipped are NOT
+  retroactively swept — that would trigger a large, sudden Apollo-credit
+  and LLM-call spike for leads nobody decided to act on. They still work
+  exactly as before: on-demand "Enrich" + the manual "Score & Draft" button
+  on the Prospects page.
+- **Known gap**: a lead promoted via the `salesNavLeadUrl` fallback (Apollo
+  didn't resolve a real `linkedin.com/in/...` URL) can end up as a second,
+  separate `prospects` row if the xDR later visits the real profile page
+  through `capture-profile.ts` — the two rows are keyed by different
+  `profileUrl` values and don't get reconciled.
 
 There is deliberately no pending/visited/skipped status tracking on these rows
 (removed — it added a filter/skip workflow that wasn't giving the xDR anything
@@ -95,8 +130,9 @@ only, requires auth) that calls Apollo.io (`server/helpers/apollo-client.ts`) fo
 person match + company search, populating `enrichedEmail`, `enrichedTitle`,
 `enrichedLinkedinUrl`, `enrichedCompanyIndustry`, `enrichedCompanySize` on that
 item. This is separate from and does not affect ICP scoring — it's a data lookup,
-not a fit judgment. Never trigger it automatically at import time or in bulk
-without being asked; it spends Apollo credits per call.
+not a fit judgment. This is still the right action to reach for when manually
+re-enriching a pre-existing (non-`autoEnrich`) row or a single row on demand;
+only bulk/automatic triggering at import time changed.
 
 ## Apollo enrichment
 
