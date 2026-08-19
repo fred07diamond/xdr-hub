@@ -1327,6 +1327,7 @@ createListBtn?.addEventListener("click", () => {
 
 cancelCreateListBtn?.addEventListener("click", () => {
   if (createListPicker) createListPicker.style.display = "none";
+  createListBtn?.focus();
 });
 
 confirmCreateListBtn?.addEventListener("click", async () => {
@@ -1340,6 +1341,7 @@ confirmCreateListBtn?.addEventListener("click", async () => {
   confirmCreateListBtn.disabled = false;
   confirmCreateListBtn.textContent = "＋ Create List";
   if (createListPicker) createListPicker.style.display = "none";
+  createListBtn?.focus();
   renderListsTab();
 });
 
@@ -1553,15 +1555,42 @@ function groupApolloExportLists(lists) {
   return groups;
 }
 
-function closeApolloExportMenu() {
+function closeApolloExportMenu({ returnFocus = false } = {}) {
   apolloExportListMenu?.classList.remove("open");
   apolloExportListTrigger?.setAttribute("aria-expanded", "false");
+  if (returnFocus) apolloExportListTrigger?.focus();
 }
 
 function openApolloExportMenu() {
   apolloExportListMenu?.classList.add("open");
   apolloExportListTrigger?.setAttribute("aria-expanded", "true");
+  // Move focus into the open menu, onto the currently-selected option if
+  // there is one -- standard listbox behavior, and required for the
+  // arrow-key roving below to have anywhere to start from.
+  requestAnimationFrame(() => {
+    const active = apolloExportListMenu?.querySelector('[role="option"].active')
+      || apolloExportListMenu?.querySelector('[role="option"]');
+    active?.focus();
+  });
 }
+
+// Arrow-key roving between options -- this menu declares role="listbox"/
+// role="option" but options are plain, naturally-tabbable <button>s, so
+// without this Up/Down did nothing despite the ARIA role implying they
+// should move selection.
+apolloExportListMenu?.addEventListener("keydown", (e) => {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+  const options = Array.from(apolloExportListMenu.querySelectorAll('[role="option"]'));
+  if (options.length === 0) return;
+  e.preventDefault();
+  const currentIndex = options.indexOf(document.activeElement);
+  let nextIndex;
+  if (e.key === "Home") nextIndex = 0;
+  else if (e.key === "End") nextIndex = options.length - 1;
+  else if (e.key === "ArrowDown") nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % options.length;
+  else nextIndex = currentIndex < 0 ? options.length - 1 : (currentIndex - 1 + options.length) % options.length;
+  options[nextIndex].focus();
+});
 
 // Builds each option's DOM directly with textContent (not innerHTML) for the
 // name/description/count/time -- only the two known-safe fixed icon SVGs use
@@ -1683,7 +1712,7 @@ function renderApolloExportPreview(items) {
 async function handleApolloExportListSelect(listId, listName) {
   selectedApolloExportListId = listId;
   if (apolloExportListTriggerLabel) apolloExportListTriggerLabel.textContent = listName;
-  closeApolloExportMenu();
+  closeApolloExportMenu({ returnFocus: true });
   renderApolloExportListMenu();
 
   if (apolloExportFileRow) apolloExportFileRow.style.display = "none";
@@ -1758,7 +1787,9 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeApolloExportMenu();
+  if (e.key === "Escape" && apolloExportListMenu?.classList.contains("open")) {
+    closeApolloExportMenu({ returnFocus: true });
+  }
 });
 
 let apolloExportBlobUrl = null;
