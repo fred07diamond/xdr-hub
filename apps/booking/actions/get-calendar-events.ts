@@ -29,7 +29,15 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
     }),
     signal: AbortSignal.timeout(GOOGLE_TOKEN_TIMEOUT_MS),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // Surface the real Google error (invalid_grant, insufficient_scope,
+    // etc.) instead of collapsing every refresh failure into a silent null
+    // -- this is what made the scope-clobbering bug (see auth.ts) take a
+    // source dive to diagnose instead of one log line.
+    const body = await res.text().catch(() => "");
+    console.error(`[get-calendar-events] token refresh failed (${res.status}): ${body.slice(0, 300)}`);
+    return null;
+  }
   const data = (await res.json()) as { access_token?: string };
   return data.access_token ?? null;
 }
@@ -93,6 +101,8 @@ export default defineAction({
       }
 
       if (res.status === 401 || res.status === 403) {
+        const body = await res.text().catch(() => "");
+        console.error(`[get-calendar-events] events fetch failed after refresh (${res.status}) for ${accountEmail}: ${body.slice(0, 300)}`);
         return { events: [], connected: false, reason: "no_calendar_scope" as const };
       }
       if (!res.ok) {
