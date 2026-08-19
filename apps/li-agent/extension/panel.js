@@ -239,11 +239,34 @@ async function scrapeTab(tabId, { retryMs = 0, maxRetries = 1, prevName = null, 
   return result;
 }
 
+// Profile-tab banners (HubSpot warning, already-contacted, daily meter) each
+// resolve independently and, once shown, push #draft-btn down -- a jarring
+// pop with no transition. hideBanner() is instant (used on reset/genuine
+// absence); showBanner() fades + slides the banner in instead of snapping
+// it into place. The forced reflow (void el.offsetHeight) between setting
+// display and adding the animate-in class is required: without it the
+// browser can coalesce both changes into one frame and skip the transition
+// entirely, since it never sees the "just appeared, not yet faded in" state
+// as a committed frame.
+function hideBanner(el) {
+  if (!el) return;
+  el.style.display = "none";
+  el.classList.remove("li-banner-in");
+}
+
+function showBanner(el, display = "block") {
+  if (!el) return;
+  el.style.display = display;
+  el.classList.remove("li-banner-in");
+  void el.offsetHeight;
+  requestAnimationFrame(() => el.classList.add("li-banner-in"));
+}
+
 // ── Daily meter ──────────────────────────────────────────────────────────────
 
 function renderDailyMeter(stats) {
   if (!stats || stats.limit == null) {
-    dailyMeter.style.display = "none";
+    hideBanner(dailyMeter);
     return;
   }
   const { capturedToday = 0, limit } = stats;
@@ -260,7 +283,7 @@ function renderDailyMeter(stats) {
     dailyMeterBar.style.background = "#0a66c2";
     dailyMeterText.style.color = "#666";
   }
-  dailyMeter.style.display = "block";
+  showBanner(dailyMeter);
 }
 
 // ── Background enrichment ────────────────────────────────────────────────────
@@ -300,13 +323,13 @@ function resetPanel() {
   profileMeta.innerHTML = "";
   profileLocation.style.display = "none";
 
-  alreadyContacted.style.display = "none";
+  hideBanner(alreadyContacted);
   hubspotLink.style.display = "none";
   hubspotLink.href = "#";
   hubspotOwner.style.display = "none";
   hubspotOwner.textContent = "";
-  hubspotSequenceWarn.style.display = "none";
-  dailyMeter.style.display = "none";
+  hideBanner(hubspotSequenceWarn);
+  hideBanner(dailyMeter);
   draftBtn.disabled = true;
   draftBtn.textContent = "Draft note";
   setStatus("");
@@ -432,7 +455,7 @@ async function init({ navTriggered = false } = {}) {
       hubspotOwner.style.display = "block";
     }
     if (hsRes.isInSequence) {
-      hubspotSequenceWarn.style.display = "block";
+      showBanner(hubspotSequenceWarn);
     }
   }).catch(() => {});
 
@@ -444,7 +467,7 @@ async function init({ navTriggered = false } = {}) {
     new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
   ]).then((contactedRes) => {
     if (currentProfileUrl === urlForCheck && contactedRes?.contacted) {
-      alreadyContacted.style.display = "block";
+      showBanner(alreadyContacted);
     }
   }).catch(() => {});
 }
@@ -718,7 +741,7 @@ autoConnectBtn.addEventListener("click", async () => {
     markSentBtn.textContent = "✓ Sent";
     markSentBtn.classList.add("sent");
     markSentBtn.disabled = true;
-    alreadyContacted.style.display = "block";
+    showBanner(alreadyContacted);
   } catch (err) {
     setStatus(friendlyError(err));
     autoConnectBtn.disabled = false;
@@ -740,7 +763,7 @@ markSentBtn.addEventListener("click", async () => {
   if (result?.ok) {
     markSentBtn.textContent = "✓ Sent";
     markSentBtn.classList.add("sent");
-    alreadyContacted.style.display = "block";
+    showBanner(alreadyContacted);
   } else {
     markSentBtn.disabled = false;
     setStatus("Failed to mark as sent. Try again.");

@@ -240,6 +240,33 @@
     .role-chip { background: #e9f0fb; color: #0a66c2; }
     .company-chip { background: #e6f4ea; color: #1e7e34; }
 
+    /* Softens the profile-tab banners popping in as each independent async
+       check (HubSpot, already-contacted, daily meter) resolves -- doesn't
+       stop #draft-btn from moving down (the space is reserved the instant
+       display flips), but the banner's own content fades + slides in
+       instead of snapping fully-formed into place, so it reads as an
+       intentional reveal rather than a layout jump. */
+    #hubspot-sequence-warn,
+    #already-contacted,
+    #daily-meter {
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+    }
+    #hubspot-sequence-warn.li-banner-in,
+    #already-contacted.li-banner-in,
+    #daily-meter.li-banner-in {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #hubspot-sequence-warn,
+      #already-contacted,
+      #daily-meter {
+        transition: none;
+      }
+    }
+
     #already-contacted {
       background: #fff8e1;
       border: 1px solid #f9c02d;
