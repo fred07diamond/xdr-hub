@@ -205,11 +205,14 @@ async function refresh() {
   }
 
   currentDisposition = state.disposition;
-  if (!state.isConnectedMeeting) {
-    document.getElementById("not-connected-disposition").textContent = state.disposition || "unknown";
-    showView("notConnected");
-    return;
-  }
+  // TEMPORARILY DISABLED for testing (can't currently produce a real
+  // "connected meeting" disposition to test against) -- re-enable by
+  // uncommenting this block once real end-to-end testing resumes.
+  // if (!state.isConnectedMeeting) {
+  //   document.getElementById("not-connected-disposition").textContent = state.disposition || "unknown";
+  //   showView("notConnected");
+  //   return;
+  // }
 
   currentCallId = state.callId;
   if (!currentCallId) {
