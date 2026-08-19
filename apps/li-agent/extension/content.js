@@ -359,6 +359,16 @@ function stopWatchingSalesNavList() {
 // list page. This detects any URL change and disconnects automatically once
 // the page is no longer a Sales Nav list.
 (function watchForSalesNavNavigation() {
+  // Idempotency guard: background.js's scrapeProfileInBackground() can
+  // inject this exact script into a live tab via chrome.scripting.
+  // executeScript on top of a normal content_scripts-matched load. If that
+  // ever happens on the same page, without this flag each load would wrap
+  // history.pushState/replaceState again, stacking duplicate onUrlChange
+  // calls per navigation -- harmless individually, but wasteful and a latent
+  // bug if it ever compounds further.
+  if (window.__bliNavWatcherInstalled) return;
+  window.__bliNavWatcherInstalled = true;
+
   let lastHref = location.href;
   function onUrlChange() {
     if (location.href === lastHref) return;

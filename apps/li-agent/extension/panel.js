@@ -544,7 +544,7 @@ clearTokenBtn.addEventListener("click", () => {
     tokenInput.value = "";
     updateTokenStatusBadge(false);
     tokenInput.placeholder = "Paste your Personal API Token";
-    tokenSaveStatus.style.color = "#888";
+    tokenSaveStatus.style.color = "#595959";
     tokenSaveStatus.textContent = "Token cleared.";
     setTimeout(() => { tokenSaveStatus.textContent = ""; }, 1500);
   });
@@ -905,9 +905,9 @@ function renderEngagerRow(engager, idx) {
   let statusExtra = "";
   if (loaded) {
     const v = loaded.fitVerdict;
-    if (v === "strong")       { statusText = "● Strong";   statusExtra = " verdict-strong"; }
-    else if (v === "possible"){ statusText = "● Possible"; statusExtra = " verdict-possible"; }
-    else if (v === "weak")    { statusText = "● Weak";     statusExtra = " verdict-weak"; }
+    if (v === "strong")       { statusText = "● Strong";   statusExtra = " engager-verdict-strong"; }
+    else if (v === "possible"){ statusText = "● Possible"; statusExtra = " engager-verdict-possible"; }
+    else if (v === "weak")    { statusText = "● Weak";     statusExtra = " engager-verdict-weak"; }
     else if (loaded.status === "done")      { statusText = "✓ Done"; }
     else if (loaded.status === "enriching") { statusText = "Enriching…"; }
     else                                    { statusText = "Pending…"; }
@@ -1402,6 +1402,7 @@ addExistingListBtn?.addEventListener("click", async () => {
 
 cancelAddExistingBtn?.addEventListener("click", () => {
   if (existingListPicker) existingListPicker.style.display = "none";
+  addExistingListBtn?.focus();
 });
 
 confirmAddExistingBtn?.addEventListener("click", async () => {
@@ -1412,6 +1413,7 @@ confirmAddExistingBtn?.addEventListener("click", async () => {
   await sendImport({ existingListId });
   confirmAddExistingBtn.textContent = "Add to List";
   if (existingListPicker) existingListPicker.style.display = "none";
+  addExistingListBtn?.focus();
   renderListsTab();
 });
 
