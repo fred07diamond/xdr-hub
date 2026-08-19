@@ -158,7 +158,7 @@ function LeadListItemRow({
           type="checkbox"
           checked={isChecked}
           onChange={() => {}}
-          onClick={(e) => { e.preventDefault(); onToggle(item.id, index, e.shiftKey); }}
+          onClick={(e) => onToggle(item.id, index, e.shiftKey)}
           className="rounded border-border"
         />
       </td>

@@ -475,7 +475,7 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
         <BentoTile className="col-span-2" title="Apollo Enrichment" sub="Enrichment is per-lead and on-demand, so most leads sit unenriched until someone clicks Enrich.">
           <DonutBreakdown
             segments={[
-              { label: "Done", value: data.enrichmentStatusCounts.done, color: "#10b981" },
+              { label: "Enriched", value: data.enrichmentStatusCounts.done, color: "#10b981" },
               { label: "Not Found", value: data.enrichmentStatusCounts.not_found, color: "#9ca3af" },
               { label: "Failed", value: data.enrichmentStatusCounts.failed, color: VERDICT_COLOR.weak },
               { label: "Enriching", value: data.enrichmentStatusCounts.enriching, color: PIPELINE.leads.color },
@@ -490,7 +490,7 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
           ) : (
             <DonutBreakdown
               segments={[
-                { label: "Done", value: data.phoneRevealStatusCounts.done, color: "#10b981" },
+                { label: "Revealed", value: data.phoneRevealStatusCounts.done, color: "#10b981" },
                 { label: "No Match", value: data.phoneRevealStatusCounts.no_match, color: "#9ca3af" },
                 { label: "Requested", value: data.phoneRevealStatusCounts.requested, color: PIPELINE.leads.color },
                 { label: "Failed", value: data.phoneRevealStatusCounts.failed, color: VERDICT_COLOR.weak },
