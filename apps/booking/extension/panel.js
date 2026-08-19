@@ -23,6 +23,10 @@ let currentCallId = null;
 let currentTranscript = null;
 let currentTruncated = false;
 let pollTimer = null;
+// Which action to re-run when the rep clicks Retry -- a scrape failure
+// (during refresh()) needs a fresh refresh(), not a re-send of a transcript
+// that was never successfully captured in the first place.
+let retryAction = refresh;
 
 async function getApiToken() {
   const { apiToken } = await chrome.storage.local.get(["apiToken"]);
@@ -75,13 +79,13 @@ async function refresh() {
 
   currentCallId = state.callId;
   if (!currentCallId) {
-    showError("Couldn't find a call ID on this page. Try refreshing the Nooks tab.");
+    showError("Couldn't find a call ID on this page. Try refreshing the Nooks tab.", refresh);
     return;
   }
 
   const transcriptResult = await sendToContentScript(tab.id, { type: "SCRAPE_TRANSCRIPT" });
   if (!transcriptResult || !transcriptResult.text) {
-    showError("Couldn't read the transcript from this page.");
+    showError("Couldn't read the transcript from this page.", refresh);
     return;
   }
 
@@ -94,8 +98,9 @@ async function refresh() {
   showView("ready");
 }
 
-function showError(message) {
+function showError(message, onRetry = handleSend) {
   document.getElementById("error-message").textContent = message;
+  retryAction = onRetry;
   showView("error");
 }
 
@@ -123,7 +128,7 @@ async function handleSend() {
 }
 
 document.getElementById("send-btn").addEventListener("click", handleSend);
-document.getElementById("retry-btn").addEventListener("click", handleSend);
+document.getElementById("retry-btn").addEventListener("click", () => retryAction());
 document.getElementById("open-options-btn").addEventListener("click", () => chrome.runtime.openOptionsPage());
 
 showView("loading");
