@@ -251,13 +251,23 @@ export default function LeadListsPage() {
 
   const activeList = (itemsQuery.data as { list?: LeadList } | undefined)?.list ?? null;
 
+  // Full list (up to IMPORT_LIMIT=500), independent of page navigation --
+  // powers "select all N leads" and "Enrich all" so both operate over the
+  // WHOLE list instead of silently only the current 25-row page.
+  const allItemsQuery = useActionQuery(
+    "get-lead-list-items",
+    { listId: selectedListId ?? "", limit: 500, offset: 0 },
+    { enabled: !!selectedListId, refetchInterval: 15_000 },
+  );
+  const allItems: LeadListItem[] = (allItemsQuery.data as { items?: LeadListItem[] } | undefined)?.items ?? [];
+
   const deleteList = useActionMutation("delete-lead-list");
   const renameList = useActionMutation("rename-lead-list");
   const enrichItem = useActionMutation("enrich-lead-list-item");
 
-  const enrichEligibleCount = items.filter(
+  const enrichEligibleItems = allItems.filter(
     (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
-  ).length;
+  );
 
   function handleOpenLinkedIn(item: LeadListItem) {
     window.open(linkedInUrl(item), "_blank", "noopener,noreferrer");
@@ -290,6 +300,10 @@ export default function LeadListsPage() {
     setSelectedItemIds(allSelected ? new Set() : new Set(items.map((i) => i.id)));
   }
 
+  function selectAllAcrossList() {
+    setSelectedItemIds(new Set(allItems.map((i) => i.id)));
+  }
+
   // Sequential, not parallel -- keeps this well under the per-hour Apollo
   // rate limit and avoids hammering Apollo with a burst of concurrent calls.
   async function runBulkEnrich(targets: LeadListItem[]) {
@@ -313,18 +327,21 @@ export default function LeadListsPage() {
     }
     setBulkEnrichProgress(null);
     itemsQuery.refetch();
+    allItemsQuery.refetch();
   }
 
   function handleBulkEnrichAllEligible() {
-    return runBulkEnrich(items.filter(
-      (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
-    ));
+    return runBulkEnrich(enrichEligibleItems);
   }
 
   async function handleBulkEnrichSelected() {
-    const targets = items.filter((i) => selectedItemIds.has(i.id));
+    // Source from allItems, not the current page's `items` -- a selection
+    // made via "select all N leads in this list" can span pages that
+    // aren't currently loaded into `items`.
+    const targets = allItems.filter((i) => selectedItemIds.has(i.id));
     await runBulkEnrich(targets);
     setSelectedItemIds(new Set());
+    allItemsQuery.refetch();
   }
 
   function handleSelectList(listId: string) {
@@ -446,20 +463,20 @@ export default function LeadListsPage() {
                           ) : null}
                           <p className="text-[11px] text-muted-foreground mt-0.5">{l.totalCount} leads</p>
                         </div>
-                        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-0.5 shrink-0">
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); startRenameList(l); }}
-                            className="mt-0.5 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                            title="Rename"
+                            className="mt-0.5 rounded p-1 text-muted-foreground/60 opacity-100 hover:bg-muted hover:text-foreground"
+                            title="Rename list"
                           >
                             <IconPencil size={13} />
                           </button>
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); handleDeleteList(l.id); }}
-                            className="mt-0.5 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            title="Delete"
+                            className="mt-0.5 rounded p-1 text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                            title="Delete list"
                           >
                             <IconTrash size={13} />
                           </button>
@@ -490,6 +507,12 @@ export default function LeadListsPage() {
               {selectedItemIds.size > 0 ? (
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-semibold text-foreground">{selectedItemIds.size} selected</span>
+                  {selectedItemIds.size < itemsTotalCount && items.every((i) => selectedItemIds.has(i.id)) && (
+                    <button type="button" onClick={selectAllAcrossList}
+                      className="text-xs text-primary hover:underline">
+                      Select all {itemsTotalCount} leads in this list
+                    </button>
+                  )}
                   <button type="button" onClick={() => setSelectedItemIds(new Set())}
                     className="text-xs text-muted-foreground hover:text-foreground">Deselect all</button>
                 </div>
@@ -515,14 +538,14 @@ export default function LeadListsPage() {
                   <IconSparkles size={12} />
                   Enrich selected ({selectedItemIds.size})
                 </button>
-              ) : enrichEligibleCount > 0 ? (
+              ) : enrichEligibleItems.length > 0 ? (
                 <button
                   type="button"
                   onClick={handleBulkEnrichAllEligible}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
                 >
                   <IconSparkles size={12} />
-                  Enrich all ({enrichEligibleCount})
+                  Enrich all ({enrichEligibleItems.length})
                 </button>
               ) : null}
             </div>
