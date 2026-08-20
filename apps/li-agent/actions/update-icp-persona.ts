@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { icpPersonas } from "../server/db/schema.js";
+import { icpPersonas, leadListItems, postEngagements, prospects } from "../server/db/schema.js";
 import { requireAdmin } from "../server/helpers/require-admin.js";
 
 function extractSummary(text: string): string {
@@ -29,6 +29,26 @@ export default defineAction({
       patch.summary = extractSummary(icpText);
     }
     await db.update(icpPersonas).set(patch).where(eq(icpPersonas.id, id));
+
+    // personaName/personaColor are DENORMALIZED onto every scored row
+    // (prospects, leadListItems, postEngagements -- see selectPersonasBatch).
+    // Without propagating a rename/recolor here, existing rows keep the old
+    // name forever, and anything that groups by personaName rather than
+    // personaId shows the same persona twice: Analytics' Personas chart
+    // renders one bar per distinct name, so a rename silently split one
+    // persona into an old bar plus a new bar. The Prospects/Lead Lists
+    // persona filter pills are built the same way and duplicated too.
+    const rowPatch: Record<string, unknown> = {};
+    if (name !== undefined) rowPatch.personaName = name;
+    if (color !== undefined) rowPatch.personaColor = color;
+    if (Object.keys(rowPatch).length > 0) {
+      await Promise.all([
+        db.update(prospects).set(rowPatch).where(eq(prospects.personaId, id)),
+        db.update(leadListItems).set(rowPatch).where(eq(leadListItems.personaId, id)),
+        db.update(postEngagements).set(rowPatch).where(eq(postEngagements.personaId, id)),
+      ]);
+    }
+
     return { ok: true };
   },
 });

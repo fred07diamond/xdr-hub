@@ -658,6 +658,35 @@ export default runMigrations(
         JOIN lead_list_items li ON li.list_id = ll.id
         GROUP BY ll.owner_email`,
     },
+    // One-time repair for personas renamed BEFORE update-icp-persona.ts
+    // started propagating name/color to the denormalized personaName/
+    // personaColor columns on scored rows. Those rows kept the old name,
+    // and anything grouping by name (Analytics' Personas chart, the
+    // Prospects/Lead Lists filter pills) rendered the same persona twice --
+    // once under its old name, once under its new one. Re-syncs from
+    // icp_personas by persona_id, which was always correct. Idempotent:
+    // re-running is a no-op once names already agree.
+    {
+      version: 103,
+      name: "resync-denormalized-persona-names",
+      sql: [
+        `UPDATE prospects SET
+           persona_name = (SELECT name FROM icp_personas WHERE icp_personas.id = prospects.persona_id),
+           persona_color = (SELECT color FROM icp_personas WHERE icp_personas.id = prospects.persona_id)
+         WHERE persona_id IS NOT NULL
+           AND EXISTS (SELECT 1 FROM icp_personas WHERE icp_personas.id = prospects.persona_id)`,
+        `UPDATE lead_list_items SET
+           persona_name = (SELECT name FROM icp_personas WHERE icp_personas.id = lead_list_items.persona_id),
+           persona_color = (SELECT color FROM icp_personas WHERE icp_personas.id = lead_list_items.persona_id)
+         WHERE persona_id IS NOT NULL
+           AND EXISTS (SELECT 1 FROM icp_personas WHERE icp_personas.id = lead_list_items.persona_id)`,
+        `UPDATE post_engagements SET
+           persona_name = (SELECT name FROM icp_personas WHERE icp_personas.id = post_engagements.persona_id),
+           persona_color = (SELECT color FROM icp_personas WHERE icp_personas.id = post_engagements.persona_id)
+         WHERE persona_id IS NOT NULL
+           AND EXISTS (SELECT 1 FROM icp_personas WHERE icp_personas.id = post_engagements.persona_id)`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );
