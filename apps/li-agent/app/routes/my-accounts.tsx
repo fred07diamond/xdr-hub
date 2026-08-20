@@ -1,5 +1,5 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
-import { IconBriefcase, IconChevronDown, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconX } from "@tabler/icons-react";
+import { IconBriefcase, IconChevronDown, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconUsers, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -112,14 +112,16 @@ interface GenerateSearchResult {
   error?: string;
 }
 
-// Persona criteria (titles/seniority language) live only as free text on
-// icpPersonas (icpText/summary) -- generate-sales-nav-search.ts already
-// does the one real translation of that text into actual Sales Nav filter
-// chips (Function/Seniority/etc), grounded by matching the persona's name.
-// This just also passes the account's company name through so the result
-// stays scoped to this one account instead of every "Design Persona"-
-// shaped lead on LinkedIn.
-function PersonaSearchPopover({ companyName, personas }: { companyName: string; personas: IcpPersona[] }) {
+// One entry point for every LinkedIn search off an account, rather than a
+// separate "everyone here" button plus a persona button.
+//
+// "Everyone" is a plain client-built CURRENT_COMPANY link (no round trip).
+// Persona entries go through generate-sales-nav-search.ts, which does the
+// real translation of a persona's free-text criteria (icpText -- titles,
+// seniority language) into actual Sales Nav filter chips, and takes the
+// account's company name so the result stays scoped to this one account
+// instead of every "Design Persona"-shaped lead on LinkedIn.
+function QuickSearchPopover({ companyName, personas }: { companyName: string; personas: IcpPersona[] }) {
   const [open, setOpen] = useState(false);
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>(null);
   const generateSearch = useActionMutation("generate-sales-nav-search");
@@ -142,8 +144,6 @@ function PersonaSearchPopover({ companyName, personas }: { companyName: string; 
     }
   }
 
-  if (personas.length === 0) return null;
-
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -151,28 +151,46 @@ function PersonaSearchPopover({ companyName, personas }: { companyName: string; 
           type="button"
           className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
         >
-          By persona <IconChevronDown size={10} />
+          <IconSearch size={11} /> Quick search <IconChevronDown size={10} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-56 p-1.5">
-        <p className="px-1.5 py-1 text-[11px] font-medium text-muted-foreground">Search {companyName} for…</p>
+      <PopoverContent align="end" className="w-60 p-1.5">
+        <p className="px-1.5 py-1 text-[11px] font-medium text-muted-foreground">Search LinkedIn for…</p>
         <div className="grid gap-0.5">
-          {personas.map((persona) => (
-            <button
-              key={persona.id}
-              type="button"
-              disabled={generateSearch.isPending}
-              onClick={() => handlePersonaClick(persona)}
-              className="flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-50"
-            >
-              {pendingPersonaId === persona.id ? (
-                <IconLoader2 size={10} className="shrink-0 animate-spin text-muted-foreground" />
-              ) : (
-                <span style={{ background: persona.color }} className="inline-block size-1.5 shrink-0 rounded-full" />
-              )}
-              <span className="truncate">{persona.name}</span>
-            </button>
-          ))}
+          <a
+            href={salesNavSearchHref(companyName)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-xs hover:bg-muted"
+          >
+            <IconUsers size={11} className="shrink-0 text-muted-foreground" />
+            <span className="truncate">Everyone at {companyName}</span>
+            <IconExternalLink size={10} className="ml-auto shrink-0 text-muted-foreground" />
+          </a>
+
+          {personas.length > 0 && (
+            <>
+              <div className="my-1 h-px bg-border" />
+              <p className="px-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">By persona</p>
+              {personas.map((persona) => (
+                <button
+                  key={persona.id}
+                  type="button"
+                  disabled={generateSearch.isPending}
+                  onClick={() => handlePersonaClick(persona)}
+                  className="flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-50"
+                >
+                  {pendingPersonaId === persona.id ? (
+                    <IconLoader2 size={11} className="shrink-0 animate-spin text-muted-foreground" />
+                  ) : (
+                    <span style={{ background: persona.color }} className="inline-block size-1.5 shrink-0 rounded-full" />
+                  )}
+                  <span className="truncate">{persona.name}</span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -366,17 +384,7 @@ export default function MyAccounts() {
                     <span className="text-xs text-muted-foreground tabular-nums">{formatEmployeeCount(c.employeeCount)}</span>
                   </td>
                   <td className="py-3 pl-3 pr-4">
-                    <div className="flex items-center gap-1.5">
-                      <a
-                        href={salesNavSearchHref(c.name)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
-                      >
-                        <IconSearch size={11} /> Search on LinkedIn <IconExternalLink size={10} />
-                      </a>
-                      <PersonaSearchPopover companyName={c.name} personas={personas} />
-                    </div>
+                    <QuickSearchPopover companyName={c.name} personas={personas} />
                   </td>
                 </tr>
               ))}
