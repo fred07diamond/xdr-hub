@@ -17,6 +17,7 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconActivity,
+  IconBriefcase,
   IconList,
   IconMessages,
   IconPin,
@@ -54,6 +55,7 @@ const navItems: Array<{
 }> = [
   { icon: IconUsers, labelKey: "navigation.prospects", href: "/", view: "prospects" },
   { icon: IconList, labelKey: "navigation.leadLists", label: "Lead Lists", href: "/lead-lists", view: "lead-lists" },
+  { icon: IconBriefcase, labelKey: "navigation.myAccounts", label: "My Accounts", href: "/my-accounts", view: "my-accounts" },
   { icon: IconTarget, labelKey: "navigation.icp", href: "/icp", view: "icp" },
   { icon: IconMessages, labelKey: "navigation.messaging", href: "/messaging", view: "messaging" },
   { icon: IconActivity, labelKey: "navigation.engagement", label: "Engagement", href: "/engagement", view: "engagement" },
