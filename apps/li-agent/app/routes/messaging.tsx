@@ -37,12 +37,14 @@ import {
   IconArrowForwardUp,
   IconFileUpload,
   IconLayoutGrid,
+  IconList,
   IconLock,
   IconMicrophone2,
   IconNote,
   IconPlus,
   IconRefresh,
   IconRoute,
+  IconSitemap,
   IconSparkles,
   IconStar,
   IconSword,
@@ -1346,6 +1348,99 @@ function useCanvasHistory() {
   return { push, undo, redo, canUndo: depths.undo > 0, canRedo: depths.redo > 0 };
 }
 
+// ── Outline view ───────────────────────────────────────────────────────────────
+// Alternative to the canvas -- personas as section headers, their connected
+// nodes as a nested list, using the exact same graph data the canvas
+// already has (no separate fetch). Selecting a row opens the same docked
+// NodePropertiesPanel the canvas uses, so editing is identical either way.
+
+interface OutlineRow {
+  node: MessagingNode;
+  depth: number;
+}
+
+function buildOutlineRows(graph: GraphData): { personaSections: { persona: Persona; rows: OutlineRow[] }[]; otherRows: OutlineRow[] } {
+  const childrenBySource = new Map<string, string[]>();
+  for (const e of graph.edges) {
+    const list = childrenBySource.get(e.sourceId) ?? [];
+    list.push(e.targetId);
+    childrenBySource.set(e.sourceId, list);
+  }
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+  const visited = new Set<string>();
+
+  function collect(nodeId: string, depth: number, out: OutlineRow[]) {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = nodeById.get(nodeId);
+    if (!node) return;
+    out.push({ node, depth });
+    for (const childId of childrenBySource.get(nodeId) ?? []) collect(childId, depth + 1, out);
+  }
+
+  const personaSections = graph.personas.map((persona) => {
+    const anchor = graph.nodes.find((n) => n.type === "persona" && n.personaId === persona.id);
+    const rows: OutlineRow[] = [];
+    if (anchor) collect(anchor.id, 0, rows);
+    return { persona, rows };
+  });
+
+  const otherRows: OutlineRow[] = [];
+  for (const n of graph.nodes) {
+    if (!visited.has(n.id)) collect(n.id, 0, otherRows);
+  }
+
+  return { personaSections, otherRows };
+}
+
+function OutlineRowButton({ row, onSelect }: { row: OutlineRow; onSelect: (n: MessagingNode) => void }) {
+  const cfg = NODE_CONFIG[row.node.type as NodeKind] ?? NODE_CONFIG.tone;
+  const isGlobal = (row.node.type as string) === "global";
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(row.node)}
+      style={{ paddingLeft: `${12 + row.depth * 20}px` }}
+      className="flex w-full items-center gap-2 py-1.5 pr-3 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+    >
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded" style={{ background: isGlobal ? "#71717a" : cfg.color }}>
+        <cfg.Icon size={11} className="text-white" />
+      </div>
+      <span className="truncate text-zinc-800 dark:text-zinc-100">{row.node.title}</span>
+      <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{isGlobal ? "Global" : cfg.label}</span>
+    </button>
+  );
+}
+
+function MessagingOutlineView({ graph, onSelect }: { graph: GraphData; onSelect: (n: MessagingNode) => void }) {
+  const { personaSections, otherRows } = useMemo(() => buildOutlineRows(graph), [graph]);
+  return (
+    <div className="h-full overflow-y-auto bg-white dark:bg-zinc-950">
+      {personaSections.map(({ persona, rows }) => (
+        <div key={persona.id} className="border-b border-zinc-100 dark:border-zinc-800">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: persona.color }} />
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{persona.name}</h3>
+          </div>
+          {rows.length === 0 ? (
+            <p className="px-3 pb-2 pl-[35px] text-xs italic text-zinc-400">No messaging nodes yet.</p>
+          ) : (
+            rows.map((row) => <OutlineRowButton key={row.node.id} row={row} onSelect={onSelect} />)
+          )}
+        </div>
+      ))}
+      {otherRows.length > 0 && (
+        <div>
+          <div className="px-3 py-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Other nodes</h3>
+          </div>
+          {otherRows.map((row) => <OutlineRowButton key={row.node.id} row={row} onSelect={onSelect} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Canvas ─────────────────────────────────────────────────────────────────────
 
 function toFlowNode(
@@ -1441,6 +1536,7 @@ function MessagingCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [editingNode, setEditingNode] = useState<MessagingNode | null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [viewMode, setViewMode] = useState<"canvas" | "outline">("canvas");
   const [buildOpen, setBuildOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -2052,6 +2148,28 @@ function MessagingCanvas() {
         <p className="text-xs text-zinc-500 flex-1 hidden sm:block">
           Personas are root anchors. Branch off nodes to add messaging rules. Drag to multi-select · Delete to remove. · Share a doc in Chat to auto-build nodes.
         </p>
+        <div className="flex gap-0.5 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
+          <button
+            type="button"
+            onClick={() => setViewMode("canvas")}
+            title="Canvas view"
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              viewMode === "canvas" ? "bg-white shadow-sm dark:bg-zinc-800" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            }`}
+          >
+            <IconSitemap size={13} /> Canvas
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("outline")}
+            title="Outline view"
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              viewMode === "outline" ? "bg-white shadow-sm dark:bg-zinc-800" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            }`}
+          >
+            <IconList size={13} /> Outline
+          </button>
+        </div>
         <Button
           size="sm"
           variant="outline"
@@ -2150,37 +2268,41 @@ function MessagingCanvas() {
         <NodePaletteRail onSelect={handleAddNode} />
 
         <div className="flex-1 relative">
-          <ZoomLevelProvider>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={handleConnect}
-              onEdgesDelete={handleEdgesDelete}
-              onNodesDelete={handleNodesDelete}
-              onBeforeDelete={handleBeforeDelete}
-              onNodeDragStop={handleNodeDragStop}
-              fitView
-              fitViewOptions={{ padding: 0.2 }}
-              deleteKeyCode={["Delete", "Backspace"]}
-              selectionOnDrag
-              className="bg-zinc-50 dark:bg-zinc-950"
-            >
-              <Background color="#e4e4e7" gap={20} />
-              <Controls />
-              <MiniMap
-                nodeColor={(n) => {
-                  if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
-                  return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
-                }}
-                maskColor="rgba(0,0,0,0.15)"
-                style={{ background: "hsl(var(--background))" }}
-              />
-            </ReactFlow>
-          </ZoomLevelProvider>
+          {viewMode === "canvas" ? (
+            <ZoomLevelProvider>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={handleConnect}
+                onEdgesDelete={handleEdgesDelete}
+                onNodesDelete={handleNodesDelete}
+                onBeforeDelete={handleBeforeDelete}
+                onNodeDragStop={handleNodeDragStop}
+                fitView
+                fitViewOptions={{ padding: 0.2 }}
+                deleteKeyCode={["Delete", "Backspace"]}
+                selectionOnDrag
+                className="bg-zinc-50 dark:bg-zinc-950"
+              >
+                <Background color="#e4e4e7" gap={20} />
+                <Controls />
+                <MiniMap
+                  nodeColor={(n) => {
+                    if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
+                    return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
+                  }}
+                  maskColor="rgba(0,0,0,0.15)"
+                  style={{ background: "hsl(var(--background))" }}
+                />
+              </ReactFlow>
+            </ZoomLevelProvider>
+          ) : (
+            <MessagingOutlineView graph={graph!} onSelect={openEditor} />
+          )}
           <PreviewPanel
             open={previewOpen}
             onClose={() => setPreviewOpen(false)}
