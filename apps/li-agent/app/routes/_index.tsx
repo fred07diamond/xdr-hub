@@ -27,6 +27,7 @@ import { applyShiftClickSelection } from "@/lib/selection";
 // Prospects table columns a user can hide -- Person and Actions are load-
 // bearing (selection + row identity, primary actions) and stay put.
 const PROSPECT_HIDEABLE_COLUMNS: { key: string; label: string }[] = [
+  { key: "company", label: "Company" },
   { key: "persona", label: "Persona" },
   { key: "jobTitle", label: "Job Title" },
   { key: "fit", label: "Fit" },
@@ -1499,7 +1500,7 @@ export default function ProspectsRoute() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-3 pr-1 w-8">
+                <th scope="col" className="sticky top-0 z-10 bg-muted py-2 pl-3 pr-1 w-8">
                   <input
                     type="checkbox"
                     checked={allFilteredSelected}
@@ -1508,29 +1509,32 @@ export default function ProspectsRoute() {
                     title="Select all"
                   />
                 </th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-2 pr-3 text-left text-xs font-medium text-muted-foreground">Person</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted py-2 pl-2 pr-3 text-left text-xs font-medium text-muted-foreground">Person</th>
+                {!hiddenColumns.has("company") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Company</th>
+                )}
                 {!hiddenColumns.has("persona") && (
-                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
                 )}
                 {!hiddenColumns.has("jobTitle") && (
-                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
                 )}
                 {!hiddenColumns.has("fit") && (
-                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
                 )}
                 {!hiddenColumns.has("tags") && (
-                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
                 )}
                 {!hiddenColumns.has("draftNote") && (
-                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
                 )}
                 {!hiddenColumns.has("email") && (
-                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
                 )}
                 {!hiddenColumns.has("phone") && (
-                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
+                  <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
                 )}
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1566,10 +1570,16 @@ export default function ProspectsRoute() {
                           </span>
                         )}
                       </div>
-                      {p.company && (
-                        <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-[240px]">{p.company}</p>
-                      )}
                     </td>
+
+                    {/* Company -- own column (was a truncated sub-line
+                        buried under Person) so it's scannable on its own,
+                        matching Persona/Job Title's treatment. */}
+                    {!hiddenColumns.has("company") && (
+                      <td className="px-3 py-3">
+                        <span className="text-xs text-muted-foreground truncate max-w-[180px] block">{p.company || "—"}</span>
+                      </td>
+                    )}
 
                     {/* Persona -- own column (not just a chip buried in the
                         Person cell) so scanning/filtering by persona is
