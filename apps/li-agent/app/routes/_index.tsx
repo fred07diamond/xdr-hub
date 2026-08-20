@@ -1250,6 +1250,7 @@ export default function ProspectsRoute() {
   const [bulkScoreDraftProgress, setBulkScoreDraftProgress] = useState<{ done: number; total: number } | null>(null);
 
   const bulkDeleteProspects = useActionMutation("bulk-delete-prospects");
+  const bulkDeleteLeadListItems = useActionMutation("bulk-delete-lead-list-items");
   const deleteProspect = useActionMutation("delete-prospect");
   const markSent = useActionMutation("mark-sent");
   const enrichProspect = useActionMutation("enrich-prospect");
@@ -1414,7 +1415,17 @@ export default function ProspectsRoute() {
   );
 
   async function handleBulkDelete() {
-    await bulkDeleteProspects.mutateAsync({ ids: selectedProspectSourced.map((p) => p.rawId) });
+    // Deletes both halves of a mixed selection -- a promoted prospects row
+    // and a not-yet-promoted lead_list row are different tables with no
+    // shared delete endpoint, so this always needs up to two calls.
+    await Promise.all([
+      selectedProspectSourced.length > 0
+        ? bulkDeleteProspects.mutateAsync({ ids: selectedProspectSourced.map((p) => p.rawId) })
+        : null,
+      selectedLeadListSourced.length > 0
+        ? bulkDeleteLeadListItems.mutateAsync({ ids: selectedLeadListSourced.map((p) => p.rawId) })
+        : null,
+    ]);
     setSelectedIds(new Set());
     setIsAllMatchingSelected(false);
     setBulkConfirmDelete(false);
@@ -1621,10 +1632,10 @@ export default function ProspectsRoute() {
             <div className="h-4 w-px bg-border" />
             {bulkConfirmDelete ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Delete {selectedProspectSourced.length} prospects?</span>
-                <button type="button" onClick={handleBulkDelete} disabled={bulkDeleteProspects.isPending || selectedProspectSourced.length === 0}
+                <span className="text-xs text-muted-foreground">Delete {selectedIds.size} leads?</span>
+                <button type="button" onClick={handleBulkDelete} disabled={bulkDeleteProspects.isPending || bulkDeleteLeadListItems.isPending}
                   className="rounded px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
-                  {bulkDeleteProspects.isPending ? "Deleting…" : "Confirm"}
+                  {bulkDeleteProspects.isPending || bulkDeleteLeadListItems.isPending ? "Deleting…" : "Confirm"}
                 </button>
                 <button type="button" onClick={() => setBulkConfirmDelete(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
                   <IconX size={13} />
@@ -1633,9 +1644,7 @@ export default function ProspectsRoute() {
             ) : (
               <>
                 <button type="button" onClick={() => setBulkConfirmDelete(true)}
-                  disabled={selectedProspectSourced.length === 0}
-                  title={selectedProspectSourced.length === 0 ? "Only visited prospects can be deleted here" : undefined}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:pointer-events-none">
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10">
                   <IconTrash size={13} /> Delete
                 </button>
                 <button type="button" onClick={handleBulkMarkSent} disabled={markSent.isPending}
