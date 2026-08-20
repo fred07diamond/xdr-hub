@@ -33,6 +33,8 @@ import {
   IconChecklist,
   IconCoin,
   IconFileText,
+  IconArrowBackUp,
+  IconArrowForwardUp,
   IconFileUpload,
   IconLayoutGrid,
   IconLock,
@@ -1263,6 +1265,87 @@ function computeAutoLayout(nodes: MessagingNode[], edges: MessagingEdge[]): Map<
   return positions;
 }
 
+// Field payload for re-creating a deleted node on undo -- shared by
+// handleBeforeDelete (batch/keyboard delete) and handleNodeDeleted
+// (hover/context-menu/panel single-node delete) so both stay in sync.
+// canvasId isn't part of the frontend MessagingNode type (get-messaging-
+// graph doesn't return it), so it's passed in separately -- both call
+// sites already have activeCanvasId in scope. nodeType is cast because
+// create-messaging-node's schema excludes "persona"/"global" -- callers
+// already guarantee n is never one of those (handleBeforeDelete filters
+// them out, and delete-messaging-node rejects/admin-gates them, so neither
+// can ever actually reach a delete-then-undo path).
+function recreateNodePayload(n: MessagingNode, canvasId: string) {
+  return {
+    canvasId, nodeType: n.type as Exclude<NodeKind, "persona" | "global">, title: n.title,
+    positionX: n.positionX, positionY: n.positionY, personaId: n.personaId,
+    tone: n.tone, valueProps: n.valueProps, phrasesToUse: n.phrasesToUse,
+    phrasesToAvoid: n.phrasesToAvoid, exampleNotes: n.exampleNotes, notes: n.notes,
+  };
+}
+
+// ── Undo/redo ──────────────────────────────────────────────────────────────────
+// Scoped to structural operations only (create/delete node, create/delete
+// edge, reposition) -- every mutation here is a direct, immediately-
+// committed server write with no client-side snapshot of its own, so "undo"
+// means invoking the inverse action, not restoring in-memory state. In-panel
+// text-field edits (Notes/Tone/Use/Avoid content) are deliberately excluded:
+// those are authored edits with their own explicit Save step, not the kind
+// of instant/irreversible action (a stray Delete key, a mis-drag) this is
+// meant to protect against.
+
+interface HistoryEntry {
+  label: string;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+}
+
+const HISTORY_LIMIT = 50;
+
+function useCanvasHistory() {
+  const undoStack = useRef<HistoryEntry[]>([]);
+  const redoStack = useRef<HistoryEntry[]>([]);
+  // Undo/redo button disabled-state needs a re-render on stack changes;
+  // the stacks themselves stay in refs so pushing doesn't churn renders.
+  const [depths, setDepths] = useState({ undo: 0, redo: 0 });
+  const sync = () => setDepths({ undo: undoStack.current.length, redo: redoStack.current.length });
+
+  const push = useCallback((entry: HistoryEntry) => {
+    undoStack.current.push(entry);
+    if (undoStack.current.length > HISTORY_LIMIT) undoStack.current.shift();
+    redoStack.current = [];
+    sync();
+  }, []);
+
+  const undo = useCallback(async () => {
+    const entry = undoStack.current.pop();
+    if (!entry) return;
+    try {
+      await entry.undo();
+      redoStack.current.push(entry);
+    } catch {
+      toast.error(`Couldn't undo "${entry.label}" — try again.`);
+      undoStack.current.push(entry);
+    }
+    sync();
+  }, []);
+
+  const redo = useCallback(async () => {
+    const entry = redoStack.current.pop();
+    if (!entry) return;
+    try {
+      await entry.redo();
+      undoStack.current.push(entry);
+    } catch {
+      toast.error(`Couldn't redo "${entry.label}" — try again.`);
+      redoStack.current.push(entry);
+    }
+    sync();
+  }, []);
+
+  return { push, undo, redo, canUndo: depths.undo > 0, canRedo: depths.redo > 0 };
+}
+
 // ── Canvas ─────────────────────────────────────────────────────────────────────
 
 function toFlowNode(
@@ -1352,6 +1435,7 @@ function MessagingCanvas() {
   const deleteNode = useActionMutation("delete-messaging-node");
   const updateNode = useActionMutation("update-messaging-node");
   const generatePreview = useActionMutation("generate-canvas-preview");
+  const history = useCanvasHistory();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -1388,6 +1472,10 @@ function MessagingCanvas() {
   const personasRef = useRef<Persona[]>([]);
   const hasAutoInitializedRef = useRef(false);
   const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Last-persisted position per node, for undo/redo on drag -- `graph.nodes`
+  // itself only refreshes on an explicit refetch, so it can't be trusted as
+  // "the position before this drag" after more than one drag in a row.
+  const lastKnownPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const pendingBuildRef = useRef(false);
   const addConnectedRef = useRef<((sourceId: string, type: PaletteKind) => void) | null>(null);
   const stableAddConnected = useCallback(
@@ -1397,6 +1485,24 @@ function MessagingCanvas() {
 
   // Clear any pending drag-save timer when the canvas unmounts
   useEffect(() => () => { if (dragTimerRef.current) clearTimeout(dragTimerRef.current); }, []);
+
+  // Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z redo -- skipped while focus is inside
+  // a text input/textarea (e.g. the properties panel) so the browser's own
+  // native text-undo isn't hijacked; canvas undo/redo is scoped to
+  // structural operations, not in-panel field edits, anyway (see the
+  // useCanvasHistory comment above).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) history.redo();
+      else history.undo();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [history.undo, history.redo]);
 
   // Auto-refetch canvas after agent finishes a Build with AI run. Using this
   // hook's own `send` (not the raw sendToAgentChat import) scopes isGenerating
@@ -1590,9 +1696,34 @@ function MessagingCanvas() {
             nodeById, ancestorPersonaMap, personasRef.current,
           ),
         ]);
+
+        // One combined entry -- undoing "add connected node" should remove
+        // both the node and the edge it was created with in a single step.
+        let currentNodeId = newNode.id;
+        let currentEdgeId = edgeRes.id;
+        history.push({
+          label: "Add connected node",
+          undo: async () => {
+            await deleteEdge.mutateAsync({ id: currentEdgeId });
+            await deleteNode.mutateAsync({ id: currentNodeId });
+            await refetch();
+          },
+          redo: async () => {
+            const recreatedNode = await createNode.mutateAsync({
+              canvasId: activeCanvasId, nodeType: type,
+              positionX: sourceNode.positionX + 280, positionY: sourceNode.positionY,
+            }) as MessagingNode;
+            currentNodeId = recreatedNode.id;
+            const recreatedEdge = await createEdge.mutateAsync({
+              canvasId: activeCanvasId, sourceId: sourceNodeId, targetId: currentNodeId,
+            }) as any;
+            currentEdgeId = recreatedEdge.id;
+            await refetch();
+          },
+        });
       }
     },
-    [activeCanvasId, graph, createNode, createEdge, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, stableAddConnected, ancestorPersonaMap],
+    [activeCanvasId, graph, createNode, createEdge, deleteNode, deleteEdge, refetch, history.push, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, stableAddConnected, ancestorPersonaMap],
   );
 
   // Keep ref current so stableAddConnected always calls the latest closure
@@ -1605,6 +1736,7 @@ function MessagingCanvas() {
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     setNodes(graph.nodes.map((n) => toFlowNode(n, graph.personas, ancestorPersonaMap, isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, handlePersonaSelect, stableAddConnected)));
     setEdges(graph.edges.map((e) => toFlowEdge(e, nodeById, ancestorPersonaMap, graph.personas)));
+    for (const n of graph.nodes) lastKnownPositionsRef.current.set(n.id, { x: n.positionX, y: n.positionY });
 
     // Auto-fill persona nodes — only admins may write to shared persona nodes
     if (!isAdmin) return;
@@ -1643,20 +1775,54 @@ function MessagingCanvas() {
   async function handleAddNode(nodeType: PaletteKind) {
     if (!activeCanvasId || !graph) return;
     const pos = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const positionX = Math.round(pos.x);
+    const positionY = Math.round(pos.y);
     const result = await createNode.mutateAsync({
       canvasId: graph!.activeCanvasId,
       nodeType,
-      positionX: Math.round(pos.x),
-      positionY: Math.round(pos.y),
+      positionX,
+      positionY,
     }) as MessagingNode;
     setNodes((nds) => [...nds, toFlowNode(result, personasRef.current, new Map(), isAdmin, openEditor, handleNodeContextMenu, handleHoverDelete, undefined, stableAddConnected)]);
     setEditingNode(result);
+
+    // currentId is reassigned on redo, since re-creating gets a new id --
+    // this closure has to track "whichever id currently represents this
+    // node" rather than the one captured at push time.
+    let currentId = result.id;
+    history.push({
+      label: "Create node",
+      undo: async () => { await deleteNode.mutateAsync({ id: currentId }); await refetch(); },
+      redo: async () => {
+        const recreated = await createNode.mutateAsync({ canvasId: activeCanvasId, nodeType, positionX, positionY }) as MessagingNode;
+        currentId = recreated.id;
+        await refetch();
+      },
+    });
   }
 
   function handleNodeDragStop(_: unknown, node: Node) {
+    const oldPos = lastKnownPositionsRef.current.get(node.id);
+    const newPos = { x: Math.round(node.position.x), y: Math.round(node.position.y) };
     if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
     dragTimerRef.current = setTimeout(() => {
-      updateNode.mutate({ id: node.id, positionX: Math.round(node.position.x), positionY: Math.round(node.position.y) });
+      updateNode.mutate({ id: node.id, positionX: newPos.x, positionY: newPos.y });
+      lastKnownPositionsRef.current.set(node.id, newPos);
+      if (oldPos && (oldPos.x !== newPos.x || oldPos.y !== newPos.y)) {
+        history.push({
+          label: "Move node",
+          undo: async () => {
+            await updateNode.mutateAsync({ id: node.id, positionX: oldPos.x, positionY: oldPos.y });
+            lastKnownPositionsRef.current.set(node.id, oldPos);
+            await refetch();
+          },
+          redo: async () => {
+            await updateNode.mutateAsync({ id: node.id, positionX: newPos.x, positionY: newPos.y });
+            lastKnownPositionsRef.current.set(node.id, newPos);
+            await refetch();
+          },
+        });
+      }
     }, 300);
   }
 
@@ -1672,26 +1838,81 @@ function MessagingCanvas() {
         setEdges((eds) => eds.map((e) =>
           e.source === conn.source && e.target === conn.target && e.id !== res.id ? { ...e, id: res.id } : e,
         ));
+        let currentEdgeId = res.id;
+        history.push({
+          label: "Connect nodes",
+          undo: async () => { await deleteEdge.mutateAsync({ id: currentEdgeId }); await refetch(); },
+          redo: async () => {
+            const recreated = await createEdge.mutateAsync({ canvasId: graph!.activeCanvasId, sourceId: conn.source!, targetId: conn.target! }) as any;
+            currentEdgeId = recreated.id;
+            await refetch();
+          },
+        });
       }
     },
-    [edges, createEdge, graph],
+    [edges, createEdge, deleteEdge, refetch, history.push, graph],
   );
 
+  // Edge deletion is always preceded by handleBeforeDelete in React Flow's
+  // deletion pipeline (keyboard delete AND the per-edge delete button, which
+  // calls deleteElements() -- same pipeline), so the combined undo entry
+  // pushed there already covers this. Just perform the mutation here.
   const handleEdgesDelete = useCallback(
     (deleted: Edge[]) => { for (const e of deleted) deleteEdge.mutate({ id: e.id }); },
     [deleteEdge],
   );
 
-  // Prevent persona/global nodes from being deleted via keyboard or selection
+  // Prevent persona/global nodes from being deleted via keyboard or selection.
+  // Also the single recording point for a keyboard/selection-driven delete
+  // (as opposed to the hover-delete/context-menu/panel single-node paths,
+  // recorded in handleNodeDeleted below) -- nodes and their about-to-cascade
+  // edges arrive together here, so one user action becomes one undo entry
+  // instead of a separate entry per node/edge that could undo out of order.
   const handleBeforeDelete = useCallback(
-    async ({ nodes: toDelete, edges: toDeleteEdges }: { nodes: Node[]; edges: Edge[] }) => ({
-      nodes: toDelete.filter((n) => {
+    async ({ nodes: toDelete, edges: toDeleteEdges }: { nodes: Node[]; edges: Edge[] }) => {
+      const filteredNodes = toDelete.filter((n) => {
         const t = n.type as string;
         return t !== "persona" && t !== "global";
-      }),
-      edges: toDeleteEdges,
-    }),
-    [],
+      });
+      if (filteredNodes.length > 0 || toDeleteEdges.length > 0) {
+        const nodeSnapshots = filteredNodes.map((n) => (n.data as NodeData).dbNode);
+        const edgeSnapshots = toDeleteEdges.map((e) => ({ id: e.id, sourceId: e.source, targetId: e.target }));
+        // Maps each snapshot's ORIGINAL id to whichever id currently
+        // represents it -- re-creating on undo always gets a new id, so a
+        // later redo (or a repeat undo/redo cycle) has to look the current
+        // one up rather than reuse what was captured at push time.
+        const currentNodeId = new Map(nodeSnapshots.map((n) => [n.id, n.id]));
+        const currentEdgeId = new Map(edgeSnapshots.map((e) => [e.id, e.id]));
+        history.push({
+          label: filteredNodes.length > 0 ? "Delete node" : "Delete edge",
+          undo: async () => {
+            for (const n of nodeSnapshots) {
+              const recreated = await createNode.mutateAsync(recreateNodePayload(n, activeCanvasId!)) as MessagingNode;
+              currentNodeId.set(n.id, recreated.id);
+            }
+            for (const e of edgeSnapshots) {
+              const recreated = await createEdge.mutateAsync({
+                canvasId: activeCanvasId!,
+                sourceId: currentNodeId.get(e.sourceId) ?? e.sourceId,
+                targetId: currentNodeId.get(e.targetId) ?? e.targetId,
+              }) as any;
+              if (recreated?.id) currentEdgeId.set(e.id, recreated.id);
+            }
+            await refetch();
+          },
+          redo: async () => {
+            // Edges first -- deleting a node cascades its edges server-side,
+            // so an edge-only deletion (no connected node in this batch)
+            // still needs its own explicit delete.
+            for (const e of edgeSnapshots) await deleteEdge.mutateAsync({ id: currentEdgeId.get(e.id) ?? e.id });
+            for (const n of nodeSnapshots) await deleteNode.mutateAsync({ id: currentNodeId.get(n.id) ?? n.id });
+            await refetch();
+          },
+        });
+      }
+      return { nodes: filteredNodes, edges: toDeleteEdges };
+    },
+    [activeCanvasId, createNode, createEdge, deleteNode, deleteEdge, refetch, history.push],
   );
 
   const handleNodesDelete = useCallback(
@@ -1710,7 +1931,44 @@ function MessagingCanvas() {
     ));
   }
 
+  // Single recording point for the hover-delete / context-menu / properties-
+  // panel delete paths -- all three bypass React Flow's own deletion
+  // pipeline (unlike keyboard/selection delete, recorded in
+  // handleBeforeDelete above) and call this directly once their own
+  // deleteNode mutation has already fired. Local nodes/edges state still
+  // has the full snapshot at this point since this function is what clears
+  // it, so read it BEFORE filtering.
   function handleNodeDeleted(id: string) {
+    const deletedNode = nodes.find((n) => n.id === id);
+    if (deletedNode) {
+      const nodeSnapshot = (deletedNode.data as NodeData).dbNode;
+      const edgeSnapshots = edges
+        .filter((e) => e.source === id || e.target === id)
+        .map((e) => ({ id: e.id, sourceId: e.source, targetId: e.target }));
+      const currentNodeId = new Map([[nodeSnapshot.id, nodeSnapshot.id]]);
+      const currentEdgeId = new Map(edgeSnapshots.map((e) => [e.id, e.id]));
+      history.push({
+        label: "Delete node",
+        undo: async () => {
+          const recreated = await createNode.mutateAsync(recreateNodePayload(nodeSnapshot, activeCanvasId!)) as MessagingNode;
+          currentNodeId.set(nodeSnapshot.id, recreated.id);
+          for (const e of edgeSnapshots) {
+            const recreatedEdge = await createEdge.mutateAsync({
+              canvasId: activeCanvasId!,
+              sourceId: currentNodeId.get(e.sourceId) ?? e.sourceId,
+              targetId: currentNodeId.get(e.targetId) ?? e.targetId,
+            }) as any;
+            if (recreatedEdge?.id) currentEdgeId.set(e.id, recreatedEdge.id);
+          }
+          await refetch();
+        },
+        redo: async () => {
+          for (const e of edgeSnapshots) await deleteEdge.mutateAsync({ id: currentEdgeId.get(e.id) ?? e.id });
+          await deleteNode.mutateAsync({ id: currentNodeId.get(nodeSnapshot.id) ?? nodeSnapshot.id });
+          await refetch();
+        },
+      });
+    }
     setNodes((nds) => nds.filter((n) => n.id !== id));
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
   }
@@ -1825,6 +2083,24 @@ function MessagingCanvas() {
         >
           {isAutoArranging ? <IconRefresh size={14} className="animate-spin" /> : <IconLayoutGrid size={14} />}
           Auto-arrange
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!history.canUndo}
+          onClick={() => history.undo()}
+          title="Undo (⌘Z)"
+        >
+          <IconArrowBackUp size={14} />
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!history.canRedo}
+          onClick={() => history.redo()}
+          title="Redo (⌘⇧Z)"
+        >
+          <IconArrowForwardUp size={14} />
         </Button>
         <Button size="sm" variant="outline" onClick={() => refetch()}>
           <IconRefresh size={14} />
