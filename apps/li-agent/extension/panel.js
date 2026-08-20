@@ -1474,9 +1474,14 @@ aiSearchGenerateBtn?.addEventListener("click", async () => {
   }
 
   if (aiSearchSummary) {
-    aiSearchSummary.textContent = result.matchedPersonaName
-      ? `${result.summary || ""} (matched "${result.matchedPersonaName}")`
-      : result.summary || "Search generated.";
+    const bits = [];
+    if (result.summary) bits.push(result.summary);
+    if (result.matchedPersonaName) bits.push(`(matched "${result.matchedPersonaName}")`);
+    // Name the accounts a "my accounts" reference actually resolved to --
+    // "top 3 by activity" is only trustworthy if the rep can see which
+    // three it picked.
+    if (result.scopedAccounts?.length) bits.push(`Scoped to your accounts: ${result.scopedAccounts.join(", ")}.`);
+    aiSearchSummary.textContent = bits.join(" ") || "Search generated.";
   }
   if (aiSearchFilters) {
     aiSearchFilters.innerHTML = "";

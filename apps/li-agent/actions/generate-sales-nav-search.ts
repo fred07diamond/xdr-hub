@@ -7,6 +7,12 @@ import { icpPersonas } from "../server/db/schema.js";
 import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
+import { accountMatchesTagQuery, fetchOwnedAccounts, rankAccounts } from "../server/helpers/owned-accounts.js";
+
+// When a request references "my accounts" without naming a count, cap how
+// many become Current-company chips -- an unbounded book of 271 accounts
+// would produce a useless search and a gigantic URL.
+const DEFAULT_ACCOUNT_SCOPE_LIMIT = 10;
 
 // Turns a plain-English prompt ("design persona folks") into a real Sales
 // Navigator search URL the rep can click -- never fills Sales Nav's own
@@ -182,7 +188,7 @@ function resolveEnumValues<T extends string | number>(
 }
 
 export default defineAction({
-  description: "Generate a Sales Navigator search URL with real filter chips (Current job title, Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one -- a persona's exact \"Common titles\" list becomes a real multi-value Current job title filter, not just a keyword search. Pass companyName to scope the search to one account (e.g. from My Accounts) -- becomes a real \"Current company\" filter chip, so it returns only people who work there now, not former employees.",
+  description: "Generate a Sales Navigator search URL with real filter chips (Current job title, Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one -- a persona's exact \"Common titles\" list becomes a real multi-value Current job title filter, not just a keyword search. Pass companyName to scope the search to one account (e.g. from My Accounts) -- becomes a real \"Current company\" filter chip, so it returns only people who work there now, not former employees. Also resolves references to the rep's own HubSpot book of accounts (\"product folks at my top 3 accounts by activity\") into concrete Current-company chips.",
   schema: z.object({
     prompt: z.string().min(1),
     companyName: z
@@ -227,7 +233,8 @@ export default defineAction({
       "(titles, seniority language, function) rather than guessing from the request's wording alone. " +
       "Reply with ONLY a JSON object on one line, no markdown, no code fences, in this exact shape: " +
       '{"function": ["..."], "seniorityLevel": ["..."], "region": ["..."], "companyHeadcount": ["..."], "companyType": ["..."], ' +
-      '"titles": ["..."], "companies": ["..."], "excludeCrmLeads": false, "titleKeywords": "...", "unsupportedNotes": "...", ' +
+      '"titles": ["..."], "companies": ["..."], "accountScope": {"useMyAccounts": false, "rankBy": null, "limit": null, "tagQuery": null}, ' +
+      '"excludeCrmLeads": false, "titleKeywords": "...", "unsupportedNotes": "...", ' +
       '"summary": "one plain-English sentence describing who this search targets", "matchedPersonaName": "exact persona name or null"}\n\n' +
       "Rules:\n" +
       `- "function" values MUST come only from this exact list (use the exact text): ${Object.keys(FUNCTION_IDS).join(", ")}\n` +
@@ -250,6 +257,11 @@ export default defineAction({
       "- \"titleKeywords\" is a separate, optional field ONLY for title-adjacent language that doesn't reduce to a clean list of titles (e.g. a domain term like \"AI\", or \"recently promoted\"). Leave it empty whenever \"titles\" already covers the request -- don't duplicate the same titles into both fields. Sales Navigator Boolean rules apply if used: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping.\n" +
       "- \"unsupportedNotes\" is a short plain-English note (or empty string) about any part of the request you could NOT express in these filters (e.g. a specific company, a specific city/country, an industry). Be honest about gaps rather than silently dropping or mis-mapping them. Keep it to one sentence.\n" +
       "- \"companies\" is for CURRENT employer targeting: if the request names specific companies (e.g. \"folks at Acme and Globex\"), put each exact company name as its own array entry. This becomes a real \"Current company\" filter (matching ANY of them), so it only returns people who work there NOW, not former employees. Leave it an empty array if no company was named. Past/former-employer targeting is still NOT supported -- if the request explicitly asks for people who USED to work somewhere, note that in \"unsupportedNotes\" instead.\n" +
+      "- \"accountScope\" handles requests that reference the rep's OWN book of accounts in HubSpot rather than naming companies outright. Set \"useMyAccounts\": true when the request says things like \"my accounts\", \"accounts I own\", \"my book\", \"my top accounts\", \"my Tier 1 accounts\". Then:\n" +
+      "  - \"rankBy\": \"activity\" for \"most active\"/\"most recently active\"/\"top by activity\"; \"employees\" for \"biggest\"/\"largest\"; otherwise null.\n" +
+      "  - \"limit\": the number requested (\"top 3 accounts\" -> 3). Null if no count was given.\n" +
+      "  - \"tagQuery\": a short phrase to match against the account's HubSpot attributes when the request narrows by one (\"Tier 1\", \"churned\", \"prospect\"). Null otherwise.\n" +
+      "  Leave \"useMyAccounts\": false (and the other three null) whenever the request does NOT reference the rep's own accounts. When useMyAccounts is true, leave \"companies\" empty -- the real company list is resolved from HubSpot afterward, not by you.\n" +
       "- You must ALWAYS reply with the exact JSON shape above, even when most of the request can't be expressed in these filters. Never reply with plain prose, an apology, or an explanation instead of the JSON object -- put anything unsupported in \"unsupportedNotes\" and still return whatever filters you can. Keep \"summary\" and \"unsupportedNotes\" each to one short sentence so the reply stays compact.";
 
     try {
@@ -272,6 +284,12 @@ export default defineAction({
         companyType?: string[];
         titles?: string[];
         companies?: string[];
+        accountScope?: {
+          useMyAccounts?: boolean;
+          rankBy?: "activity" | "employees" | null;
+          limit?: number | null;
+          tagQuery?: string | null;
+        };
         excludeCrmLeads?: boolean;
         titleKeywords?: string;
         unsupportedNotes?: string;
@@ -335,8 +353,55 @@ export default defineAction({
       // account search) is authoritative and goes first; anything the model
       // pulled out of the prompt itself is merged in after, deduped.
       const trimmedCompanyName = companyName?.trim() || "";
+
+      // Resolve "my accounts"-style references against the rep's real
+      // HubSpot book of business (same list the My Accounts page shows),
+      // turning "top 3 accounts by activity" into three concrete company
+      // names before they become CURRENT_COMPANY filter chips.
+      const scope = parsed.accountScope;
+      let resolvedAccountNames: string[] = [];
+      let accountScopeNote: string | null = null;
+      if (scope?.useMyAccounts) {
+        try {
+          const owned = await fetchOwnedAccounts(ownerEmail);
+          if (owned.status !== "ok") {
+            accountScopeNote =
+              owned.status === "notConnected"
+                ? "Couldn't scope to your accounts -- HubSpot isn't connected."
+                : "Couldn't scope to your accounts -- no HubSpot owner record matches your email.";
+          } else {
+            let pool = owned.accounts;
+            if (scope.tagQuery) {
+              const narrowed = pool.filter((a) => accountMatchesTagQuery(a, scope.tagQuery!));
+              // An unmatched tag phrase would otherwise silently return zero
+              // accounts and produce a search scoped to nothing.
+              if (narrowed.length > 0) pool = narrowed;
+              else accountScopeNote = `No accounts matched "${scope.tagQuery}", so all of your accounts were used instead.`;
+            }
+
+            const rankBy = scope.rankBy ?? "name";
+            const ranked = rankAccounts(pool, rankBy);
+            const limit = Math.min(
+              typeof scope.limit === "number" && scope.limit > 0 ? scope.limit : DEFAULT_ACCOUNT_SCOPE_LIMIT,
+              MAX_COMPANIES,
+            );
+            const picked = ranked.slice(0, limit);
+            resolvedAccountNames = picked.map((a) => a.name);
+
+            if (rankBy === "activity" && picked.every((a) => !a.lastActivityAt)) {
+              accountScopeNote =
+                "None of those accounts have logged HubSpot activity, so they couldn't be ranked by activity.";
+            }
+          }
+        } catch (err) {
+          accountScopeNote = `Couldn't scope to your accounts: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
       const companyNames = Array.from(
-        new Set([trimmedCompanyName, ...(parsed.companies ?? []).map((c) => c.trim())].filter(Boolean)),
+        new Set(
+          [trimmedCompanyName, ...resolvedAccountNames, ...(parsed.companies ?? []).map((c) => c.trim())].filter(Boolean),
+        ),
       ).slice(0, MAX_COMPANIES);
       if (companyNames.length) {
         filterEntries.push(buildFilterEntry("CURRENT_COMPANY", companyNames.map((c) => ({ text: c }))));
@@ -353,12 +418,19 @@ export default defineAction({
       const rawQuery = `(${queryParts.join(",")})`;
       const searchUrl = `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent(rawQuery)}`;
 
+      // Account-scope caveats matter more than the model's own
+      // unsupportedNotes here -- if "my top 3 accounts" silently resolved to
+      // something other than what was asked, the rep needs to know before
+      // trusting the results.
+      const notes = [accountScopeNote, parsed.unsupportedNotes?.trim() || null].filter(Boolean).join(" ");
+
       return {
         searchUrl,
         summary: parsed.summary ?? null,
         matchedPersonaName: parsed.matchedPersonaName ?? null,
         appliedFilters,
-        unsupportedNotes: parsed.unsupportedNotes?.trim() || null,
+        unsupportedNotes: notes || null,
+        scopedAccounts: resolvedAccountNames.length ? resolvedAccountNames : null,
       };
     } catch {
       return { error: "Something went wrong generating that search -- try again." };

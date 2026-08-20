@@ -747,6 +747,12 @@
       color: #1a1a1a;
       margin-bottom: 8px;
     }
+    #ai-search-hint {
+      font-size: 11px;
+      color: #6b7280;
+      line-height: 1.45;
+      margin: -4px 0 8px;
+    }
     #ai-search-prompt {
       display: block;
       width: 100%;
@@ -1476,7 +1482,8 @@
       <div id="ai-search-section" class="li-card">
         <h2 class="li-card-label">✨ AI Search Assistant</h2>
         <label id="ai-search-heading" for="ai-search-prompt">Describe who you're looking for</label>
-        <textarea id="ai-search-prompt" placeholder="e.g. design persona folks at mid-size B2B SaaS companies…" rows="2"></textarea>
+        <textarea id="ai-search-prompt" placeholder="e.g. product folks at my top 3 accounts by activity…" rows="2"></textarea>
+        <div id="ai-search-hint">Knows your ICP personas and your HubSpot accounts — try “my Tier 1 accounts”, “design persona”, or name a company.</div>
         <button id="ai-search-generate-btn" type="button">Generate search</button>
         <div id="ai-search-result" style="display:none;">
           <div id="ai-search-summary"></div>
