@@ -287,6 +287,22 @@ async function getPostEngager(id, apiToken) {
   return await res.json();
 }
 
+// Powers content.js's "already in your list" chip -- given the batch of
+// salesNavLeadUrls visible on the current page, returns which ones this
+// owner already captured into any lead list. Best-effort: a failed check
+// just means no chip shows for that batch, never surfaced as an error to
+// the xDR (this is a passive visual hint, not a blocking action).
+async function checkSalesNavLeadsCaptured(salesNavLeadUrls) {
+  const { appUrl, apiToken } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/check-sales-nav-leads-captured`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ salesNavLeadUrls, ...(apiToken ? { apiToken } : {}) }),
+  });
+  if (!res.ok) return { capturedUrls: [] };
+  return await res.json(); // { capturedUrls: string[] }
+}
+
 async function importSalesNavList({ listName, listDescription, listUrl, existingListId, leads }) {
   const { appUrl, apiToken } = await getSettings();
   const res = await fetch(`${appUrl}/_agent-native/actions/import-sales-nav-list`, {
@@ -559,6 +575,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     generateSalesNavSearch(msg.prompt)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "CHECK_SALES_NAV_LEADS_CAPTURED") {
+    checkSalesNavLeadsCaptured(msg.salesNavLeadUrls)
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ capturedUrls: [] }));
     return true;
   }
 });

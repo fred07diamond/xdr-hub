@@ -257,7 +257,13 @@ function isSalesNavListUrl(url) {
 // strategy LinkedIn exposes for Sales Nav — but the row-scope walk-up may
 // need adjustment once tested live (use window.__bliDiagnoseSalesNavList()
 // below).
-function scrapeSalesNavListRows() {
+// Internal variant that also keeps the row's DOM element attached --
+// scrapeSalesNavListRows() below strips it before returning, since that
+// data crosses chrome.runtime.sendMessage to the panel and a DOM node
+// can't survive structured-clone serialization. The captured-lead chip
+// feature needs the element itself (to insert into), so it calls this
+// directly instead.
+function scrapeSalesNavListRowsWithElements() {
   const rows = [];
   const seen = new Set();
   const nameEls = Array.from(document.querySelectorAll('[data-anonymize="person-name"]'));
@@ -305,10 +311,93 @@ function scrapeSalesNavListRows() {
 
     if (!name || !salesNavLeadUrl || seen.has(salesNavLeadUrl)) continue;
     seen.add(salesNavLeadUrl);
-    rows.push({ name, headline, company, location, salesNavLeadUrl });
+    rows.push({ name, headline, company, location, salesNavLeadUrl, _el: rowScope });
   }
 
   return rows;
+}
+
+function scrapeSalesNavListRows() {
+  return scrapeSalesNavListRowsWithElements().map(({ _el, ...rest }) => rest);
+}
+
+// ── "Already in your list" chip ────────────────────────────────────────────
+// Purely visual, read-only DOM annotation -- no clicking, no navigation, so
+// it doesn't touch the "never automate LinkedIn navigation" boundary the
+// rest of this file follows. Runs independently of the panel's own
+// watch/accumulate flow (startWatchingSalesNavList), so it works just from
+// browsing a Sales Nav list/search page with the panel closed.
+const BLI_CHIP_CLASS = "bli-captured-chip";
+const BLI_CHIP_CHECKED_ATTR = "data-bli-chip-checked";
+
+function insertCapturedChip(rowScope) {
+  if (rowScope.querySelector(`.${BLI_CHIP_CLASS}`)) return;
+  const nameEl = rowScope.querySelector('[data-anonymize="person-name"]');
+  if (!nameEl) return;
+  const chip = document.createElement("span");
+  chip.className = BLI_CHIP_CLASS;
+  chip.textContent = "In your list";
+  chip.title = "Already captured in LinkedIn Agent";
+  chip.style.cssText =
+    "display:inline-flex;align-items:center;margin-left:8px;padding:1px 8px;" +
+    "border-radius:9999px;background:#eef2ff;color:#4338ca;font-size:11px;" +
+    "font-weight:600;line-height:1.6;white-space:nowrap;vertical-align:middle;";
+  const anchor = nameEl.closest("a") || nameEl;
+  anchor.insertAdjacentElement("afterend", chip);
+}
+
+let bliChipCheckInFlight = false;
+async function refreshCapturedChips() {
+  if (!isSalesNavListUrl() || bliChipCheckInFlight) return;
+  const rows = scrapeSalesNavListRowsWithElements();
+  // Once a row's been checked, don't re-check it every mutation batch --
+  // Sales Nav's list here is a full page-navigated list (not virtualized/
+  // infinite-scroll, see the "never auto-clicks pagination" note above), so
+  // a row's element is never silently recycled to represent a different
+  // person within the same page load.
+  const unchecked = rows.filter((r) => r.salesNavLeadUrl && !r._el.hasAttribute(BLI_CHIP_CHECKED_ATTR));
+  if (!unchecked.length) return;
+
+  bliChipCheckInFlight = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "CHECK_SALES_NAV_LEADS_CAPTURED",
+      salesNavLeadUrls: unchecked.map((r) => r.salesNavLeadUrl),
+    });
+    const capturedSet = new Set(response?.capturedUrls ?? []);
+    for (const row of unchecked) {
+      row._el.setAttribute(BLI_CHIP_CHECKED_ATTR, "1");
+      if (capturedSet.has(row.salesNavLeadUrl)) insertCapturedChip(row._el);
+    }
+  } catch {
+    // best-effort -- a failed check just means no chip shows this pass;
+    // the rows stay unmarked so the next mutation batch retries them.
+  } finally {
+    bliChipCheckInFlight = false;
+  }
+}
+
+let bliChipObserver = null;
+let bliChipDebounceTimer = null;
+
+function startChipObserver() {
+  if (bliChipObserver) return;
+  const firstNameEl = document.querySelector('[data-anonymize="person-name"]');
+  const container = firstNameEl?.closest("ul") || firstNameEl?.closest("table") || firstNameEl?.closest("main") || document.body;
+  bliChipObserver = new MutationObserver(() => {
+    clearTimeout(bliChipDebounceTimer);
+    bliChipDebounceTimer = setTimeout(refreshCapturedChips, 500);
+  });
+  bliChipObserver.observe(container, { childList: true, subtree: true });
+  refreshCapturedChips();
+}
+
+function stopChipObserver() {
+  if (bliChipObserver) {
+    bliChipObserver.disconnect();
+    bliChipObserver = null;
+  }
+  clearTimeout(bliChipDebounceTimer);
 }
 
 // Watches the list container for DOM changes after the xDR clicks "Next"
@@ -376,6 +465,11 @@ function stopWatchingSalesNavList() {
     if (salesNavListObserver && !isSalesNavListUrl()) {
       stopWatchingSalesNavList();
     }
+    if (isSalesNavListUrl()) {
+      startChipObserver();
+    } else {
+      stopChipObserver();
+    }
   }
   const originalPushState = history.pushState.bind(history);
   const originalReplaceState = history.replaceState.bind(history);
@@ -383,6 +477,11 @@ function stopWatchingSalesNavList() {
   history.replaceState = (...args) => { originalReplaceState(...args); onUrlChange(); };
   window.addEventListener("popstate", onUrlChange);
 })();
+
+// Covers the very first load of a Sales Nav list/search page -- onUrlChange
+// above only fires on a LATER navigation, not the page this script started
+// on.
+if (isSalesNavListUrl()) startChipObserver();
 
 function scrapeProfile() {
   const getAll = (sel, limit = 3) =>
