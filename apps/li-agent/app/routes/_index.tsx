@@ -198,16 +198,35 @@ function companyAvatarColor(name: string): string {
   return COMPANY_AVATAR_COLORS[Math.abs(hash) % COMPANY_AVATAR_COLORS.length];
 }
 
+const COMPANY_SUFFIX_RE = /\s*[,]?\s*\b(inc\.?|llc\.?|ltd\.?|corp\.?|corporation|company|co\.?|gmbh|plc)\b\.?\s*$/i;
+
+// companyDomain only backfills once a prospect is re-enriched (see
+// CLAUDE.md), so most existing rows have none yet. Guessing a plausible
+// domain from the company name lets the logo work today for common
+// companies instead of every pre-existing row showing only the letter
+// fallback -- worst case a wrong guess just 404s and CompanyLogo falls
+// back to the same lettered avatar it would have shown anyway.
+function guessCompanyDomain(name: string): string | null {
+  const cleaned = name
+    .replace(/\([^)]*\)/g, "")
+    .replace(COMPANY_SUFFIX_RE, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  return cleaned ? `${cleaned}.com` : null;
+}
+
 // Clearbit's free public logo API keyed by domain -- HubSpot has no logo
 // field at all, this is the standard non-HubSpot trick for "give me a logo
 // for this domain." Falls back to a lettered avatar when there's no domain
 // or the image 404s.
 function CompanyLogo({ name, domain }: { name: string | null; domain: string | null }) {
   const [imgFailed, setImgFailed] = useState(false);
-  if (domain && !imgFailed) {
+  const effectiveDomain = domain ?? (name ? guessCompanyDomain(name) : null);
+  if (effectiveDomain && !imgFailed) {
     return (
       <img
-        src={`https://logo.clearbit.com/${domain}`}
+        src={`https://logo.clearbit.com/${effectiveDomain}`}
         onError={() => setImgFailed(true)}
         alt=""
         className="h-5 w-5 shrink-0 rounded-sm bg-white object-contain ring-1 ring-black/5"
@@ -391,7 +410,9 @@ function CompanyCell({ company, companyDomain }: { company: string | null; compa
       <HoverCardTrigger asChild>
         <button type="button" className="flex max-w-[180px] items-center gap-1.5 text-left">
           <CompanyLogo name={company} domain={companyDomain} />
-          <span className="truncate text-xs text-muted-foreground">{company}</span>
+          <span className="truncate text-xs text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2">
+            {company}
+          </span>
         </button>
       </HoverCardTrigger>
       <HoverCardContent align="start" className="w-72" onClick={(e) => e.stopPropagation()}>
