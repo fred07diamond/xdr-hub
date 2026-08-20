@@ -41,6 +41,7 @@ const SIDEBAR_COLLAPSE_KEY = "chat.sidebar.collapsed";
 function routeOwnsToolbar(pathname: string): boolean {
   return (
     pathname === "/" ||
+    pathname === "/my-accounts" ||
     pathname === "/icp" ||
     pathname === "/chat" ||
     pathname.startsWith("/chat/") ||

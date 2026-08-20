@@ -5,8 +5,28 @@ import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { CompanyLogo } from "@/components/company-logo";
+import { Pagination } from "@/components/Pagination";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { APP_TITLE } from "@/lib/app-config";
+import { cn } from "@/lib/utils";
+
+const ACCOUNTS_PAGE_SIZE = 25;
+
+// Same pill styling as the Prospects table's filter row (FilterPill there).
+function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+        active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function meta() {
   return [{ title: `${APP_TITLE} — My Accounts` }];
@@ -45,11 +65,18 @@ interface MyOwnedAccountsData {
 // Same "just open a URL, no scraping or auto-navigation" pattern as the
 // existing LinkedIn fallback links in _index.tsx/lead-lists.tsx --
 // /sales/search/people is Sales Navigator's own search view (see
-// extension/content.js's comment on why the Lead tab specifically), pre-
-// filled with the company name as a keyword so the xDR lands on a results
-// page instead of a blank search.
+// extension/content.js's comment on why the Lead tab specifically).
+//
+// Uses a real CURRENT_COMPANY filter chip rather than a keyword string:
+// LinkedIn keyword search matches text anywhere on a profile INCLUDING
+// past roles, so a keyword company search surfaces former employees. The
+// id-less entry shape here is live-verified -- see the long comment in
+// actions/generate-sales-nav-search.ts, which builds the same filter
+// server-side for the persona-scoped searches.
 function salesNavSearchHref(companyName: string): string {
-  return `https://www.linkedin.com/sales/search/people?keywords=${encodeURIComponent(companyName)}`;
+  const encodeLeaf = (v: string) => encodeURIComponent(v).replace(/\(/g, "%28").replace(/\)/g, "%29");
+  const rawQuery = `(filters:List((type:CURRENT_COMPANY,values:List((text:${encodeLeaf(companyName)},selectionType:INCLUDED)))))`;
+  return `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent(rawQuery)}`;
 }
 
 // HubSpot's industry property is a raw enum ("COMPUTER_SOFTWARE") -- title
@@ -157,13 +184,31 @@ export default function MyAccounts() {
   const personasQuery = useActionQuery<{ personas: IcpPersona[] }>("list-icp-personas", {});
   const personas = personasQuery.data?.personas ?? [];
   const [search, setSearch] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState<"all" | MatchedVia>("all");
+  const [page, setPage] = useState(1);
 
   const companies = data?.companies ?? [];
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return companies;
-    return companies.filter((c) => c.name.toLowerCase().includes(q) || (c.industry ?? "").toLowerCase().includes(q));
-  }, [companies, search]);
+    return companies.filter((c) => {
+      if (q && !c.name.toLowerCase().includes(q) && !(c.industry ?? "").toLowerCase().includes(q)) return false;
+      if (ownerFilter === "all") return true;
+      // "both" counts as a match for either single-owner filter -- an
+      // account you own in both roles is genuinely one of your Company-owner
+      // accounts AND one of your xDR-owner accounts.
+      if (ownerFilter === "companyOwner") return c.matchedVia === "companyOwner" || c.matchedVia === "both";
+      if (ownerFilter === "xdrOwner") return c.matchedVia === "xdrOwner" || c.matchedVia === "both";
+      return c.matchedVia === ownerFilter;
+    });
+  }, [companies, search, ownerFilter]);
+
+  const hasActiveFilter = search.trim() !== "" || ownerFilter !== "all";
+
+  // Reset to page 1 whenever filters change, so a filtered set can't leave
+  // you stranded on a page that no longer exists.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / ACCOUNTS_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((safePage - 1) * ACCOUNTS_PAGE_SIZE, safePage * ACCOUNTS_PAGE_SIZE);
 
   return (
     <div className="flex h-full flex-col">
@@ -175,8 +220,10 @@ export default function MyAccounts() {
             <p className="text-xs text-muted-foreground">
               {isLoading
                 ? "Loading…"
-                : `${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"} where you're the Company Owner or xDR Owner in HubSpot`}
-              {data?.truncated ? ` (of ${data.total.toLocaleString()} total)` : ""}
+                : hasActiveFilter
+                  ? `${filtered.length.toLocaleString()} of ${companies.length.toLocaleString()} match`
+                  : `${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"} where you're the Company owner or xDR owner in HubSpot`}
+              {data?.truncated ? ` — showing the first ${companies.length.toLocaleString()} of ${data.total.toLocaleString()}` : ""}
             </p>
           </div>
           <button
@@ -199,16 +246,44 @@ export default function MyAccounts() {
             <IconSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search company or industry…"
               className="h-7 w-56 rounded-md border border-border bg-muted/40 pl-7 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
             />
             {search && (
-              <button type="button" onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <button type="button" onClick={() => { setSearch(""); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                 <IconX size={11} />
               </button>
             )}
           </div>
+
+          <div className="h-4 w-px bg-border" />
+
+          <div className="flex items-center gap-1">
+            <FilterPill active={ownerFilter === "all"} onClick={() => { setOwnerFilter("all"); setPage(1); }}>All accounts</FilterPill>
+            <FilterPill
+              active={ownerFilter === "companyOwner"}
+              onClick={() => { setOwnerFilter(ownerFilter === "companyOwner" ? "all" : "companyOwner"); setPage(1); }}
+            >
+              Company owner
+            </FilterPill>
+            <FilterPill
+              active={ownerFilter === "xdrOwner"}
+              onClick={() => { setOwnerFilter(ownerFilter === "xdrOwner" ? "all" : "xdrOwner"); setPage(1); }}
+            >
+              xDR owner
+            </FilterPill>
+          </div>
+
+          {hasActiveFilter && (
+            <button
+              type="button"
+              onClick={() => { setSearch(""); setOwnerFilter("all"); setPage(1); }}
+              className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       )}
 
@@ -246,12 +321,16 @@ export default function MyAccounts() {
             <IconBriefcase size={32} className="text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">
               {companies.length === 0
-                ? "No companies are currently assigned to you as Company Owner or xDR Owner in HubSpot."
-                : "No accounts match this search"}
+                ? "No companies are currently assigned to you as Company owner or xDR owner in HubSpot."
+                : "No accounts match these filters"}
             </p>
-            {search && (
-              <button type="button" onClick={() => setSearch("")} className="text-xs text-primary hover:underline">
-                Clear search
+            {hasActiveFilter && (
+              <button
+                type="button"
+                onClick={() => { setSearch(""); setOwnerFilter("all"); setPage(1); }}
+                className="text-xs text-primary hover:underline"
+              >
+                Clear filters
               </button>
             )}
           </div>
@@ -267,7 +346,7 @@ export default function MyAccounts() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => (
+              {pageRows.map((c) => (
                 <tr key={c.id} className="group border-b border-border last:border-0 transition-colors hover:bg-muted/40">
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
@@ -305,6 +384,12 @@ export default function MyAccounts() {
           </table>
         )}
       </div>
+
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-end border-t border-border px-4 py-2">
+          <Pagination page={safePage} pageSize={ACCOUNTS_PAGE_SIZE} totalCount={filtered.length} onPageChange={setPage} />
+        </div>
+      )}
     </div>
   );
 }

@@ -3,10 +3,15 @@ import { z } from "zod";
 import { getHubSpotToken, hubspotFetch } from "@xdr-hub/shared/server";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
-// HubSpot companies search caps a single page at 100 -- same limit
-// prospecting-hub's search-hubspot-companies-by-owner.ts already accepts
-// for one owner's book of accounts.
-const MAX_RESULTS = 100;
+// HubSpot's companies search caps a single page at 100, so a book of
+// business larger than that needs real cursor pagination -- unlike
+// prospecting-hub's search-hubspot-companies-by-owner.ts, which
+// deliberately accepts one page. Here the whole list is the point (it's
+// the user's own account list, and they page/filter it client-side the
+// same way the Prospects table does), so this pages through and returns
+// everything up to a hard ceiling.
+const PAGE_LIMIT = 100;
+const MAX_PAGES = 20; // hard stop so a pathological paging loop can't run away (2000 companies)
 
 interface HubSpotOwner {
   id?: string;
@@ -72,11 +77,13 @@ export default defineAction({
       return { connected: true, matched: false, companies: [], total: 0, noOwnerRecord: true };
     }
 
-    let searchResult: { results?: HubSpotCompanyResult[]; total?: number } = {};
+    const rawResults: HubSpotCompanyResult[] = [];
+    let reportedTotal: number | null = null;
+    let after: string | undefined;
+    let page = 0;
     try {
-      searchResult = (await hubspotFetch("/crm/v3/objects/companies/search", {
-        method: "POST",
-        body: JSON.stringify({
+      for (;;) {
+        const body: Record<string, unknown> = {
           // filterGroups entries are OR'd together, filters within one
           // group are ANDed -- two single-filter groups here gives a pure
           // OR across the two owner properties, same semantics
@@ -87,15 +94,26 @@ export default defineAction({
           ],
           properties: ["name", "domain", "industry", "numberofemployees", "hubspot_owner_id", "xdr_owner"],
           sorts: [{ propertyName: "name", direction: "ASCENDING" }],
-          limit: MAX_RESULTS,
-        }),
-      })) as typeof searchResult;
+          limit: PAGE_LIMIT,
+        };
+        if (after) body.after = after;
+        const res = (await hubspotFetch("/crm/v3/objects/companies/search", {
+          method: "POST",
+          body: JSON.stringify(body),
+        })) as { results?: HubSpotCompanyResult[]; total?: number; paging?: { next?: { after?: string } } };
+
+        rawResults.push(...(res.results ?? []));
+        if (reportedTotal === null && typeof res.total === "number") reportedTotal = res.total;
+        page++;
+        after = res.paging?.next?.after;
+        if (!after || page >= MAX_PAGES) break;
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw Object.assign(new Error(`HubSpot company search failed: ${message}`), { statusCode: 502 });
     }
 
-    const companies = (searchResult.results ?? []).map((r) => {
+    const companies = rawResults.map((r) => {
       const isCompanyOwner = r.properties?.hubspot_owner_id === ownerId;
       const isXdrOwner = r.properties?.xdr_owner === ownerId;
       const matchedVia: MatchedVia = isCompanyOwner && isXdrOwner ? "both" : isXdrOwner ? "xdrOwner" : "companyOwner";
@@ -109,9 +127,10 @@ export default defineAction({
       };
     });
 
-    // Same truncation signal search-hubspot-companies-by-owner.ts uses --
-    // HubSpot's own `total` vs. the page actually returned.
-    const total = typeof searchResult.total === "number" ? searchResult.total : companies.length;
+    // HubSpot's own `total` (the real count matching the filter) vs. what
+    // paging actually returned -- only differs now if MAX_PAGES capped it,
+    // which the UI surfaces rather than silently hiding.
+    const total = reportedTotal ?? companies.length;
     return { connected: true, matched: true, companies, total, truncated: total > companies.length };
   },
 });
