@@ -83,15 +83,6 @@ export const COMPANY_TAG_SPECS: CompanyTagSpec[] = [
     minNumeric: 0,
   },
   {
-    key: "partnerReferred",
-    label: "Partner referred",
-    candidateNames: ["partner_referred_", "partner_referred"],
-    matchLabels: ["partner referred?", "partner referred"],
-    tone: "warm",
-    emphasis: true,
-    hideValues: ["", "no", "false", "none", "n/a"],
-  },
-  {
     key: "abxProgram",
     label: "ABX program",
     candidateNames: ["abx_program_type"],

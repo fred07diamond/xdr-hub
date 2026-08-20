@@ -58,8 +58,9 @@ interface OwnedCompany {
 }
 
 // Tier gets the strongest treatment since it's the primary value signal;
-// warm (partner-referred) and positive (target account, qualified contacts)
-// read as opportunity; neutral is context, not priority.
+// positive (target account, qualified contacts) reads as opportunity;
+// neutral is context, not priority. `warm` is currently unused -- kept as
+// an available slot in the palette for a future opportunity-signal tag.
 const TAG_TONE_CLASS: Record<TagTone, string> = {
   tier: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
   positive: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
