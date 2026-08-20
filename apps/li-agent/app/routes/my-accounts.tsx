@@ -1,5 +1,5 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
-import { IconBriefcase, IconChevronDown, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconUsers, IconX } from "@tabler/icons-react";
+import { IconBriefcase, IconChevronDown, IconCoin, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconUsers, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { CompanyLogo } from "@/components/company-logo";
 import { Pagination } from "@/components/Pagination";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { APP_TITLE } from "@/lib/app-config";
+import { formatDealAmount, formatRelativeActivity, useHubSpotCompany } from "@/lib/hubspot-company";
 import { cn } from "@/lib/utils";
 
 const ACCOUNTS_PAGE_SIZE = 25;
@@ -197,6 +199,165 @@ function QuickSearchPopover({ companyName, personas }: { companyName: string; pe
   );
 }
 
+function SheetSection({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="pt-4 border-t border-border first:border-t-0 first:pt-0">
+      <div className="mb-2 flex items-center gap-1.5">
+        {icon}
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DealRows({ deals }: { deals: Array<{ name: string; amount: string | null; closeDate: string | null }> }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
+      {deals.map((d, i) => (
+        <div key={i} className="flex items-center justify-between gap-3 px-3 py-2">
+          <span className="truncate text-xs text-foreground">{d.name || "Untitled deal"}</span>
+          <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">{formatDealAmount(d.amount) ?? "—"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Mirrors ProspectSheet's detail panel (same Sheet chrome, same section
+// styling), but keyed to a company rather than a person. Reads the same
+// get-hubspot-company action the Prospects table's Company hover card
+// uses, so opening a row here is a cache hit if it was already fetched.
+function CompanySheet({ company, personas, onClose }: { company: OwnedCompany; personas: IcpPersona[]; onClose: () => void }) {
+  const query = useHubSpotCompany(company.domain, company.name, true);
+  const data = query.data;
+  const hs = data?.company;
+
+  const infoRows = [
+    { label: "Industry", value: formatIndustry(company.industry) },
+    { label: "Employees", value: formatEmployeeCount(company.employeeCount) },
+    { label: "Domain", value: company.domain },
+    { label: "Country", value: hs?.country ?? null },
+    { label: "Company owner", value: hs?.companyOwnerName ?? null },
+    { label: "xDR owner", value: hs?.xdrOwnerName ?? null },
+  ];
+
+  const openDeals = data?.openDeals ?? [];
+  const closedLost = data?.closedLostDeals ?? [];
+  const topProspects = data?.topProspects ?? [];
+
+  return (
+    <Sheet open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <SheetContent showClose={false} className="flex w-full flex-col gap-0 p-0 sm:max-w-lg overflow-hidden">
+        <SheetHeader className="border-b border-border px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <CompanyLogo name={company.name} domain={company.domain} />
+              <div className="min-w-0">
+                <SheetTitle className="truncate text-sm font-semibold">{company.name}</SheetTitle>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {[formatIndustry(company.industry) !== "—" ? formatIndustry(company.industry) : null, company.domain]
+                    .filter(Boolean)
+                    .join(" · ") || "—"}
+                </p>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted">
+              <IconX size={16} />
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {MATCHED_VIA_LABEL[company.matchedVia]}
+            </span>
+            {data?.recordUrl && (
+              <a
+                href={data.recordUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium no-underline"
+                style={{ background: "rgba(255,122,89,0.15)", color: "#ff7a59" }}
+              >
+                HubSpot <IconExternalLink size={9} />
+              </a>
+            )}
+            <QuickSearchPopover companyName={company.name} personas={personas} />
+          </div>
+        </SheetHeader>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <SheetSection icon={<IconBriefcase size={12} className="text-muted-foreground" />} label="Company">
+            <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
+              {infoRows.map((row) => (
+                <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="shrink-0 text-[11px] text-muted-foreground">{row.label}</span>
+                  <span className={cn("truncate text-right text-xs", row.value ? "text-foreground" : "text-muted-foreground/60")}>
+                    {row.value ?? "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </SheetSection>
+
+          {query.isLoading ? (
+            <p className="flex items-center gap-1.5 pt-4 text-xs text-muted-foreground border-t border-border">
+              <IconLoader2 size={12} className="animate-spin" /> Loading HubSpot data…
+            </p>
+          ) : !data?.connected ? (
+            <p className="pt-4 text-xs text-muted-foreground border-t border-border">HubSpot isn't connected.</p>
+          ) : !data.matched ? (
+            <p className="pt-4 text-xs italic text-muted-foreground border-t border-border">
+              This company wasn't found in HubSpot's company search, so deals and contacts couldn't be loaded.
+            </p>
+          ) : (
+            <>
+              <SheetSection icon={<IconCoin size={12} className="text-muted-foreground" />} label={`Open deals (${openDeals.length})`}>
+                {openDeals.length === 0 ? (
+                  <p className="text-xs italic text-muted-foreground/70">No open deals.</p>
+                ) : (
+                  <DealRows deals={openDeals} />
+                )}
+              </SheetSection>
+
+              <SheetSection icon={<IconCoin size={12} className="text-muted-foreground" />} label={`Closed lost (${closedLost.length})`}>
+                {closedLost.length === 0 ? (
+                  <p className="text-xs italic text-muted-foreground/70">No closed-lost deals.</p>
+                ) : (
+                  <DealRows deals={closedLost} />
+                )}
+              </SheetSection>
+
+              <SheetSection icon={<IconUsers size={12} className="text-muted-foreground" />} label={`Top prospects by activity (${topProspects.length})`}>
+                {topProspects.length === 0 ? (
+                  <p className="text-xs italic text-muted-foreground/70">No contacts on record at this company.</p>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
+                    {topProspects.map((c, i) => (
+                      <div key={i} className="px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate text-xs font-medium text-foreground">{c.name}</span>
+                          <span className="shrink-0 text-right text-[11px] text-muted-foreground">
+                            {formatRelativeActivity(c.lastActivityAt) ?? "no activity"}
+                          </span>
+                        </div>
+                        {(c.title || c.email) && (
+                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                            {[c.title, c.email].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SheetSection>
+            </>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 export default function MyAccounts() {
   const { data, isLoading, isFetching, refetch } = useActionQuery<MyOwnedAccountsData>("get-my-owned-accounts", {});
   const personasQuery = useActionQuery<{ personas: IcpPersona[] }>("list-icp-personas", {});
@@ -204,6 +365,7 @@ export default function MyAccounts() {
   const [search, setSearch] = useState("");
   const [ownerFilter, setOwnerFilter] = useState<"all" | MatchedVia>("all");
   const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const companies = data?.companies ?? [];
   const filtered = useMemo(() => {
@@ -227,6 +389,7 @@ export default function MyAccounts() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / ACCOUNTS_PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageRows = filtered.slice((safePage - 1) * ACCOUNTS_PAGE_SIZE, safePage * ACCOUNTS_PAGE_SIZE);
+  const selected = companies.find((c) => c.id === selectedId) ?? null;
 
   return (
     <div className="flex h-full flex-col">
@@ -365,7 +528,11 @@ export default function MyAccounts() {
             </thead>
             <tbody>
               {pageRows.map((c) => (
-                <tr key={c.id} className="group border-b border-border last:border-0 transition-colors hover:bg-muted/40">
+                <tr
+                  key={c.id}
+                  onClick={() => setSelectedId(c.id)}
+                  className="group cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-muted/40"
+                >
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
                       <CompanyLogo name={c.name} domain={c.domain} />
@@ -383,7 +550,7 @@ export default function MyAccounts() {
                   <td className="px-3 py-3">
                     <span className="text-xs text-muted-foreground tabular-nums">{formatEmployeeCount(c.employeeCount)}</span>
                   </td>
-                  <td className="py-3 pl-3 pr-4">
+                  <td className="py-3 pl-3 pr-4" onClick={(e) => e.stopPropagation()}>
                     <QuickSearchPopover companyName={c.name} personas={personas} />
                   </td>
                 </tr>
@@ -398,6 +565,8 @@ export default function MyAccounts() {
           <Pagination page={safePage} pageSize={ACCOUNTS_PAGE_SIZE} totalCount={filtered.length} onPageChange={setPage} />
         </div>
       )}
+
+      {selected && <CompanySheet company={selected} personas={personas} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }

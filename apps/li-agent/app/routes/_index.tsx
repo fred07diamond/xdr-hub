@@ -28,6 +28,12 @@ import {
 import { buildMasterCsv } from "@/lib/prospects-csv";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { CompanyLogo } from "@/components/company-logo";
+import {
+  formatDealAmount,
+  formatRelativeActivity,
+  useHubSpotCompany,
+  type HubSpotCompanyData,
+} from "@/lib/hubspot-company";
 
 // Prospects table columns a user can hide -- Person and Actions are load-
 // bearing (selection + row identity, primary actions) and stay put.
@@ -189,54 +195,6 @@ function randomTagColor(): string {
 }
 
 // Company logo/avatar + HubSpot hover card ─────────────────────────────────
-
-function formatDealAmount(amount: string | null): string | null {
-  if (!amount) return null;
-  const n = Number(amount);
-  if (Number.isNaN(n)) return null;
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-
-interface HubSpotCompanyData {
-  connected: boolean;
-  matched: boolean;
-  recordUrl?: string | null;
-  company?: {
-    name: string | null;
-    domain: string | null;
-    industry: string | null;
-    employeeCount: string | null;
-    country: string | null;
-    companyOwnerName: string | null;
-    xdrOwnerName: string | null;
-  } | null;
-  openDeals?: Array<{ name: string; amount: string | null; closeDate: string | null }>;
-  closedLostDeals?: Array<{ name: string; amount: string | null; closeDate: string | null }>;
-  topProspects?: Array<{ name: string; title: string | null; email: string | null; lastActivityAt: string | null }>;
-}
-
-function formatRelativeActivity(iso: string | null): string | null {
-  if (!iso) return null;
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (Number.isNaN(days) || days < 0) return null;
-  if (days === 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
-}
-
-// Shared by the hover card (top few items) and ProspectSheet's Company
-// section (full lists) -- same action/params means react-query dedupes if
-// the row was already hovered before being clicked.
-function useHubSpotCompany(companyDomain: string | null, companyName: string | null, enabled: boolean) {
-  return useActionQuery<HubSpotCompanyData>(
-    "get-hubspot-company",
-    { companyDomain, companyName },
-    { enabled: enabled && !!(companyDomain || companyName) },
-  );
-}
 
 function CompanyHoverCardBody({ data, isLoading }: { data: HubSpotCompanyData | undefined; isLoading: boolean }) {
   if (isLoading) {
