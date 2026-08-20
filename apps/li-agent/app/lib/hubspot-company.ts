@@ -20,7 +20,23 @@ export interface HubSpotCompanyData {
   } | null;
   openDeals?: Array<{ name: string; amount: string | null; closeDate: string | null }>;
   closedLostDeals?: Array<{ name: string; amount: string | null; closeDate: string | null }>;
-  topProspects?: Array<{ name: string; title: string | null; email: string | null; lastActivityAt: string | null }>;
+  topProspects?: Array<{
+    name: string;
+    title: string | null;
+    email: string | null;
+    lastActivityAt: string | null;
+    linkedinUrl?: string | null;
+    hubspotUrl?: string | null;
+  }>;
+}
+
+// LinkedIn has no public "look up person by name at company" URL, so when
+// HubSpot has no LinkedIn field for a contact this falls back to a people
+// search -- same approach as linkedInHref() on the Prospects page.
+export function contactLinkedInHref(name: string, companyName: string | null, linkedinUrl?: string | null): string {
+  if (linkedinUrl) return linkedinUrl;
+  const parts = [name, companyName].filter(Boolean).join(" ");
+  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(parts)}`;
 }
 
 export function formatDealAmount(amount: string | null): string | null {

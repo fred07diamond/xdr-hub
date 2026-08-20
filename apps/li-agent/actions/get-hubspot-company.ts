@@ -125,7 +125,14 @@ export default defineAction({
     // this company's contacts by HubSpot's own last-activity signal
     // (notes_last_updated), most recent first, so the busiest relationship
     // surfaces first instead of an arbitrary association order.
-    let topProspects: Array<{ name: string; title: string | null; email: string | null; lastActivityAt: string | null }> = [];
+    let topProspects: Array<{
+      name: string;
+      title: string | null;
+      email: string | null;
+      lastActivityAt: string | null;
+      linkedinUrl: string | null;
+      hubspotUrl: string | null;
+    }> = [];
     try {
       const assoc = (await hubspotFetch(
         `/crm/v4/objects/companies/${match.id}/associations/contacts`,
@@ -136,15 +143,24 @@ export default defineAction({
           method: "POST",
           body: JSON.stringify({
             inputs: ids.map((id) => ({ id })),
-            properties: ["firstname", "lastname", "jobtitle", "email", "notes_last_updated"],
+            // hs_linkedin_url is HubSpot's own LinkedIn field (same one
+            // prospecting-hub's sync-hubspot.ts reads); linkedin_url is the
+            // common custom-property name, kept as a fallback. An unknown
+            // property is silently omitted by HubSpot rather than erroring,
+            // so requesting both is safe on any portal.
+            properties: ["firstname", "lastname", "jobtitle", "email", "notes_last_updated", "hs_linkedin_url", "linkedin_url"],
           }),
-        })) as { results?: Array<{ properties: Record<string, string> }> };
+        })) as { results?: Array<{ id?: string; properties: Record<string, string> }> };
         topProspects = (batch.results ?? [])
           .map((c) => ({
             name: [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || "(no name)",
             title: c.properties.jobtitle ?? null,
             email: c.properties.email ?? null,
             lastActivityAt: c.properties.notes_last_updated ?? null,
+            linkedinUrl: c.properties.hs_linkedin_url || c.properties.linkedin_url || null,
+            // 0-1 is HubSpot's built-in object-type id for Contact, same
+            // convention as the 0-2 (Company) record link above.
+            hubspotUrl: portalId && c.id ? `https://app.hubspot.com/contacts/${portalId}/record/0-1/${c.id}` : null,
           }))
           .sort((a, b) => {
             if (!a.lastActivityAt && !b.lastActivityAt) return 0;

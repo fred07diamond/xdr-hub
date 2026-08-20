@@ -1,15 +1,16 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
-import { IconBriefcase, IconChevronDown, IconCoin, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconTag, IconUsers, IconX } from "@tabler/icons-react";
+import { IconBrandLinkedin, IconBriefcase, IconChevronDown, IconCoin, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconTag, IconUsers, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { CompanyLogo } from "@/components/company-logo";
 import { Pagination } from "@/components/Pagination";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { APP_TITLE } from "@/lib/app-config";
-import { formatDealAmount, formatRelativeActivity, useHubSpotCompany } from "@/lib/hubspot-company";
+import { contactLinkedInHref, formatDealAmount, formatRelativeActivity, useHubSpotCompany } from "@/lib/hubspot-company";
 import { cn } from "@/lib/utils";
 
 const ACCOUNTS_PAGE_SIZE = 25;
@@ -86,6 +87,45 @@ function TagChip({ tag }: { tag: CompanyTag }) {
     >
       {tag.value}
     </span>
+  );
+}
+
+// The table column is narrow, so it shows only the two highest-signal
+// tags. Hovering reveals the FULL set -- including the lower-signal
+// context tags (territory, region, ABX program) that are otherwise
+// detail-panel-only -- so the truncation never hides data with no way to
+// see it.
+function TagsCell({ tags }: { tags: CompanyTag[] }) {
+  const emphasized = tags.filter((t) => t.emphasis);
+  if (tags.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+
+  const visible = emphasized.slice(0, 2);
+  const hiddenCount = tags.length - visible.length;
+
+  return (
+    <HoverCard openDelay={150}>
+      <HoverCardTrigger asChild>
+        <div className="flex w-fit flex-wrap items-center gap-1">
+          {visible.map((t) => (
+            <TagChip key={t.key} tag={t} />
+          ))}
+          {hiddenCount > 0 && <span className="text-[10px] text-muted-foreground/70">+{hiddenCount}</span>}
+        </div>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="w-auto max-w-xs p-2">
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((t) => (
+            <span
+              key={t.key}
+              className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", TAG_TONE_CLASS[t.tone])}
+            >
+              <span className="opacity-70">{t.label}:</span>
+              <span className="ml-1">{t.value.startsWith(`${t.label}: `) ? t.value.slice(t.label.length + 2) : t.value}</span>
+            </span>
+          ))}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -394,11 +434,33 @@ function CompanySheet({ company, personas, onClose }: { company: OwnedCompany; p
                   <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
                     {topProspects.map((c, i) => (
                       <div key={i} className="px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center justify-between gap-2">
                           <span className="truncate text-xs font-medium text-foreground">{c.name}</span>
-                          <span className="shrink-0 text-right text-[11px] text-muted-foreground">
-                            {formatRelativeActivity(c.lastActivityAt) ?? "no activity"}
-                          </span>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <span className="text-[11px] text-muted-foreground">
+                              {formatRelativeActivity(c.lastActivityAt) ?? "no activity"}
+                            </span>
+                            <a
+                              href={contactLinkedInHref(c.name, company.name, c.linkedinUrl)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={c.linkedinUrl ? "Open LinkedIn profile" : "Search LinkedIn for this person"}
+                              className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted hover:text-[#0077B5]"
+                            >
+                              <IconBrandLinkedin size={13} />
+                            </a>
+                            {c.hubspotUrl && (
+                              <a
+                                href={c.hubspotUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Open HubSpot contact record"
+                                className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted hover:text-[#ff7a59]"
+                              >
+                                <IconExternalLink size={12} />
+                              </a>
+                            )}
+                          </div>
                         </div>
                         {(c.title || c.email) && (
                           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
@@ -460,7 +522,7 @@ export default function MyAccounts() {
       if (ownerFilter === "xdrOwner") return c.matchedVia === "xdrOwner" || c.matchedVia === "both";
       return c.matchedVia === ownerFilter;
     });
-  }, [companies, search, ownerFilter]);
+  }, [companies, search, ownerFilter, tagFilter]);
 
   const hasActiveFilter = search.trim() !== "" || ownerFilter !== "all" || tagFilter !== null;
   function clearFilters() {
@@ -645,21 +707,10 @@ export default function MyAccounts() {
                       <span className="font-medium text-foreground truncate max-w-[220px]">{c.name}</span>
                     </div>
                   </td>
+                  {/* No stopPropagation -- the hover card is hover-only, so a
+                      click here should still open the row's detail sheet. */}
                   <td className="px-3 py-3">
-                    {(() => {
-                      const shown = c.tags.filter((t) => t.emphasis);
-                      if (shown.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
-                      return (
-                        <div className="flex flex-wrap items-center gap-1">
-                          {shown.slice(0, 2).map((t) => (
-                            <TagChip key={t.key} tag={t} />
-                          ))}
-                          {shown.length > 2 && (
-                            <span className="text-[10px] text-muted-foreground/70">+{shown.length - 2}</span>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    <TagsCell tags={c.tags} />
                   </td>
                   <td className="px-3 py-3">
                     <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
