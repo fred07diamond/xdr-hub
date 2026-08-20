@@ -152,15 +152,22 @@ function resolveEnumValues<T extends string | number>(
 }
 
 export default defineAction({
-  description: "Generate a Sales Navigator search URL with real filter chips (Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one.",
+  description: "Generate a Sales Navigator search URL with real filter chips (Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one. Pass companyName to scope the search to one account (e.g. from My Accounts) -- folded into the keywords text since there's no real company filter available.",
   schema: z.object({
     prompt: z.string().min(1),
+    companyName: z
+      .string()
+      .nullish()
+      .describe(
+        "Optional company to scope the search to (e.g. from the My Accounts page). There's no real Sales Nav company filter " +
+          "available (see comment below), so this is folded into the keywords text deterministically, never left to the model.",
+      ),
     apiToken: z.string().nullish().describe("Personal API token from Settings"),
   }),
   requiresAuth: false,
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
   http: { method: "POST" },
-  run: async ({ prompt, apiToken }, ctx) => {
+  run: async ({ prompt, companyName, apiToken }, ctx) => {
     const ownerEmail = await resolveOwnerStrict(apiToken, ctx);
     if (!ownerEmail) return { error: "Sign in with a personal API token to use this." };
 
@@ -266,14 +273,24 @@ export default defineAction({
       if (titleKeywords) {
         appliedFilters.push(`Title keywords: ${titleKeywords}`);
       }
+      const trimmedCompanyName = companyName?.trim() || "";
+      if (trimmedCompanyName) {
+        appliedFilters.push(`Company: ${trimmedCompanyName}`);
+      }
 
-      if (!filterEntries.length && !titleKeywords) {
+      if (!filterEntries.length && !titleKeywords && !trimmedCompanyName) {
         return { error: "Could not generate a search from that -- try rephrasing with more specific criteria." };
       }
 
+      // Company name folds into the same keywords text as titleKeywords,
+      // deterministically here (never left to the model above) -- quoted
+      // for an exact-phrase match, same Boolean syntax the model already
+      // uses for titleKeywords.
+      const combinedKeywords = [titleKeywords, trimmedCompanyName ? `"${trimmedCompanyName}"` : ""].filter(Boolean).join(" ");
+
       const queryParts: string[] = [];
       if (filterEntries.length) queryParts.push(`filters:List(${filterEntries.join(",")})`);
-      if (titleKeywords) queryParts.push(`keywords:${encodeLeaf(titleKeywords)}`);
+      if (combinedKeywords) queryParts.push(`keywords:${encodeLeaf(combinedKeywords)}`);
       const rawQuery = `(${queryParts.join(",")})`;
       const searchUrl = `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent(rawQuery)}`;
 
