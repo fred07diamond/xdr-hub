@@ -5,6 +5,7 @@ import {
   useAgentChatGenerating,
 } from "@agent-native/core/client";
 import { useOrgRole } from "@agent-native/core/client/org";
+import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 import {
   Background,
@@ -21,6 +22,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useViewport,
 } from "@xyflow/react";
 import type { Connection, Edge, EdgeProps, Node, NodeProps } from "@xyflow/react";
 import {
@@ -32,6 +34,7 @@ import {
   IconCoin,
   IconFileText,
   IconFileUpload,
+  IconLayoutGrid,
   IconLock,
   IconMicrophone2,
   IconNote,
@@ -48,9 +51,9 @@ import {
   IconUsers,
   IconX,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -321,7 +324,35 @@ function SourceAddHandle({ nodeId, onAddConnected }: {
 
 // ── Unified canvas node component ──────────────────────────────────────────────
 
+// Cuts at the last word boundary at or before the limit instead of slicing
+// mid-word -- a plain character slice (the previous behavior here) can land
+// inside a word, e.g. "reliability" -> "reliabil…".
+function truncateAtWordBoundary(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > limit * 0.6 ? cut.slice(0, lastSpace) : cut) + "…";
+}
+
+// Semantic zoom -- below this zoom level, node cards drop their field
+// previews and show just the icon + title, so a zoomed-out view of a large
+// canvas isn't a wall of crammed, barely-legible text. Read once via
+// useViewport() in a small wrapper around <ReactFlow> (ZoomLevelProvider,
+// below) rather than in MessagingCanvas itself, so the constant viewport
+// updates during a pan/zoom don't force the whole toolbar/palette/panel
+// tree to re-render too.
+const COMPACT_ZOOM_THRESHOLD = 0.5;
+const ZoomLevelContext = createContext(1);
+function useIsCompactZoom(): boolean {
+  return useContext(ZoomLevelContext) < COMPACT_ZOOM_THRESHOLD;
+}
+function ZoomLevelProvider({ children }: { children: ReactNode }) {
+  const { zoom } = useViewport();
+  return <ZoomLevelContext.Provider value={zoom}>{children}</ZoomLevelContext.Provider>;
+}
+
 function CanvasNode({ data }: NodeProps) {
+  const compact = useIsCompactZoom();
   const d = data as NodeData;
   const cfg = NODE_CONFIG[d.dbNode.type as NodeKind] ?? NODE_CONFIG.tone;
   const isPersona = d.dbNode.type === "persona";
@@ -370,26 +401,29 @@ function CanvasNode({ data }: NodeProps) {
           {(isGlobal || isPersona) && !d.isAdmin && <IconLock size={10} className="opacity-80" />}
         </div>
 
-        {/* Field preview */}
-        <div className="px-3 py-2 text-[10px] space-y-0.5">
-          {filled.length === 0 ? (
-            <p className="italic text-zinc-400">
-              {isPersona ? "No baseline messaging yet — click to add" : "Empty — click to edit"}
-            </p>
-          ) : (
-            filled.map(({ key, label, val }) => {
-              const text = String(val ?? "");
-              return (
-                <div key={String(key)} className="flex gap-1 leading-snug">
-                  <span className="shrink-0 font-semibold text-zinc-400">{label}:</span>
-                  <span className="text-zinc-600 dark:text-zinc-300 break-words line-clamp-2">
-                    {text.length > 60 ? text.slice(0, 57) + "…" : text}
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
+        {/* Field preview -- dropped entirely at low zoom (semantic zoom),
+            since illegibly-small crammed text isn't worth rendering. */}
+        {!compact && (
+          <div className="px-3 py-2 text-[10px] space-y-0.5">
+            {filled.length === 0 ? (
+              <p className="italic text-zinc-400">
+                {isPersona ? "No baseline messaging yet — click to add" : "Empty — click to edit"}
+              </p>
+            ) : (
+              filled.map(({ key, label, val }) => {
+                const text = String(val ?? "");
+                return (
+                  <div key={String(key)} className="flex gap-1 leading-snug">
+                    <span className="shrink-0 font-semibold text-zinc-400">{label}:</span>
+                    <span className="text-zinc-600 dark:text-zinc-300 break-words line-clamp-2">
+                      {truncateAtWordBoundary(text, 57)}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
 
         {/* Persona ancestry badge */}
         {accentColor && d.ancestorPersona && (
@@ -408,6 +442,7 @@ function CanvasNode({ data }: NodeProps) {
 }
 
 function CompanyNode({ data }: NodeProps) {
+  const compact = useIsCompactZoom();
   const d = data as NodeData;
   const hasName = d.dbNode.title && d.dbNode.title !== "Company";
   const hasNotes = !!d.dbNode.notes;
@@ -433,15 +468,17 @@ function CompanyNode({ data }: NodeProps) {
             {hasName ? d.dbNode.title : "Company"}
           </p>
         </div>
-        <div className="px-3 py-2">
-          {hasNotes ? (
-            <p className="text-[10px] text-zinc-500 line-clamp-3">{d.dbNode.notes}</p>
-          ) : (
-            <p className="text-[10px] text-zinc-400 italic">
-              {hasName ? "Click to add research →" : "Click to set company name →"}
-            </p>
-          )}
-        </div>
+        {!compact && (
+          <div className="px-3 py-2">
+            {hasNotes ? (
+              <p className="text-[10px] text-zinc-500 line-clamp-3">{d.dbNode.notes}</p>
+            ) : (
+              <p className="text-[10px] text-zinc-400 italic">
+                {hasName ? "Click to add research →" : "Click to set company name →"}
+              </p>
+            )}
+          </div>
+        )}
       </div>
       <SourceAddHandle nodeId={d.dbNode.id} onAddConnected={d.onAddConnected} />
     </div>
@@ -449,6 +486,7 @@ function CompanyNode({ data }: NodeProps) {
 }
 
 function PersonaRefNode({ data }: NodeProps) {
+  const compact = useIsCompactZoom();
   const d = data as NodeData & {
     allPersonas: Persona[];
     onPersonaSelect: (nodeId: string, personaId: string) => void;
@@ -487,7 +525,7 @@ function PersonaRefNode({ data }: NodeProps) {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          {d.dbNode.notes && (
+          {!compact && d.dbNode.notes && (
             <p className="text-[10px] text-zinc-500 line-clamp-2">{d.dbNode.notes}</p>
           )}
         </div>
@@ -507,6 +545,7 @@ function extractHubspotContactId(input: string): string | null {
 }
 
 function HubspotReferenceNode({ data }: NodeProps) {
+  const compact = useIsCompactZoom();
   const d = data as NodeData;
   const hasContact = d.dbNode.title && d.dbNode.title !== "HubSpot Reference";
 
@@ -532,20 +571,22 @@ function HubspotReferenceNode({ data }: NodeProps) {
             {hasContact ? d.dbNode.title : "HubSpot Reference"}
           </p>
         </div>
-        <div className="px-3 py-2">
-          {hasContact ? (
-            <>
-              <p className="text-[10px] text-zinc-500 truncate">
-                {[d.dbNode.notes, d.dbNode.valueProps].filter(Boolean).join(" at ") || "No role/company set"}
-              </p>
-              {d.dbNode.exampleNotes && (
-                <p className="text-[10px] text-zinc-500 line-clamp-2 mt-0.5">{d.dbNode.exampleNotes}</p>
-              )}
-            </>
-          ) : (
-            <p className="text-[10px] text-zinc-400 italic">Click to paste a HubSpot link →</p>
-          )}
-        </div>
+        {!compact && (
+          <div className="px-3 py-2">
+            {hasContact ? (
+              <>
+                <p className="text-[10px] text-zinc-500 truncate">
+                  {[d.dbNode.notes, d.dbNode.valueProps].filter(Boolean).join(" at ") || "No role/company set"}
+                </p>
+                {d.dbNode.exampleNotes && (
+                  <p className="text-[10px] text-zinc-500 line-clamp-2 mt-0.5">{d.dbNode.exampleNotes}</p>
+                )}
+              </>
+            ) : (
+              <p className="text-[10px] text-zinc-400 italic">Click to paste a HubSpot link →</p>
+            )}
+          </div>
+        )}
       </div>
       <SourceAddHandle nodeId={d.dbNode.id} onAddConnected={d.onAddConnected} />
     </div>
@@ -1105,29 +1146,11 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted, onSend }: {
   const [prompt, setPrompt] = useState("");
 
   function handleBuild() {
-    // Pre-calculate exact positions for each persona band and its child slots.
-    // Each band reserves 4 child slots at 210px apart; bands are separated by 160px.
-    const PERSONA_X = 80;
-    const CHILD_X = 500;
-    const SLOT_H = 210;
-    const BAND_GAP = 160;
-    const MAX_CHILDREN = 4;
-    const BAND_H = MAX_CHILDREN * SLOT_H;
-
-    const layout: string[] = [];
-    let yCursor = 0;
-    for (const p of graph.personas) {
-      const anchor = graph.nodes.find((n) => n.type === "persona" && n.personaId === p.id);
-      if (!anchor) continue;
-      const anchorY = yCursor + Math.round(BAND_H / 2);
-      layout.push(`${p.name}`);
-      layout.push(`  anchor id=${anchor.id} → positionX=${PERSONA_X}, positionY=${anchorY}`);
-      for (let j = 0; j < MAX_CHILDREN; j++) {
-        layout.push(`  child slot ${j} → positionX=${CHILD_X}, positionY=${yCursor + j * SLOT_H + Math.round(SLOT_H / 2)}`);
-      }
-      yCursor += BAND_H + BAND_GAP;
-    }
-
+    // Positioning is no longer the agent's job -- it can create nodes with
+    // no positionX/positionY at all (create-messaging-node defaults them),
+    // and the real dagre auto-layout pass (handleAutoArrange, run
+    // automatically once this background task finishes) arranges the whole
+    // graph for real afterward, regardless of how many children got made.
     const personaList = graph.personas
       .map((p) => {
         const anchor = graph.nodes.find((n) => n.type === "persona" && n.personaId === p.id);
@@ -1142,15 +1165,13 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted, onSend }: {
         `This is the canvas the user currently has open — do not call list-canvases or pick a different one.\n\n` +
         `## Request\n${prompt.trim()}\n\n` +
         `## Personas\n${personaList}\n\n` +
-        `## Pre-Calculated Layout — use these exact positions, no math required\n` +
-        layout.join("\n") +
-        `\n\n## Instructions — execute in order\n` +
+        `## Instructions — execute in order\n` +
         `1. Call get-messaging-graph to read ICP documents for each persona.\n` +
-        `2. For each persona anchor, call update-messaging-node with the anchor id and exact positionX/positionY from the layout above. Also fill tone and notes from the ICP doc.\n` +
+        `2. For each persona anchor, call update-messaging-node with the anchor id, filling tone and notes from the ICP doc. Do not pass positionX/positionY -- the canvas auto-arranges everything once you're done.\n` +
         `3. For each persona, create 2–4 child nodes. Node types: tone (tone + valueProps fields), phrase_rule (phrasesToUse + phrasesToAvoid), example (exampleNotes), role (notes + tone + phrases for a specific title).\n` +
-        `   For each child, call create-messaging-node with nodeType, a descriptive title, positionX/positionY from the slot, AND all content fields filled from the ICP doc in the same call. Do NOT leave content empty and update later.\n` +
+        `   For each child, call create-messaging-node with nodeType, a descriptive title, AND all content fields filled from the ICP doc in the same call. Do NOT pass positionX/positionY. Do NOT leave content empty and update later.\n` +
         `4. For each created child, call create-messaging-edge with sourceId=<persona anchor id>, targetId=<new child id>.\n\n` +
-        `Key rules: fill content at creation time (step 3) — do not do a separate update round. Use exact x/y from the layout. Content comes from the ICP doc only.`,
+        `Key rules: fill content at creation time (step 3) — do not do a separate update round. Content comes from the ICP doc only.`,
     );
     onSubmitted();
     onClose();
@@ -1211,6 +1232,35 @@ function BuildWithAIDialog({ graph, onClose, onSubmitted, onSend }: {
       </div>
     </div>
   );
+}
+
+// Real auto-layout via dagre -- replaces the old "Build with AI" approach of
+// baking fixed band-math positions (a hardcoded 2-column grid capped at 4
+// children per persona) into the LLM prompt. Runs over the WHOLE graph, so
+// it works regardless of how many children a persona actually ended up
+// with, and can also be triggered on demand via the toolbar's "Auto-arrange"
+// button. Left-to-right, personas in one column, children flowing right --
+// mirrors the previous layout's general shape without its hard cap.
+const AUTO_LAYOUT_NODE_WIDTH = 220;
+const AUTO_LAYOUT_NODE_HEIGHT = 140;
+
+function computeAutoLayout(nodes: MessagingNode[], edges: MessagingEdge[]): Map<string, { x: number; y: number }> {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: "LR", nodesep: 40, ranksep: 120 });
+  g.setDefaultEdgeLabel(() => ({}));
+  for (const n of nodes) {
+    g.setNode(n.id, { width: AUTO_LAYOUT_NODE_WIDTH, height: AUTO_LAYOUT_NODE_HEIGHT });
+  }
+  for (const e of edges) {
+    if (g.hasNode(e.sourceId) && g.hasNode(e.targetId)) g.setEdge(e.sourceId, e.targetId);
+  }
+  dagre.layout(g);
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const n of nodes) {
+    const pos = g.node(n.id);
+    if (pos) positions.set(n.id, { x: Math.round(pos.x), y: Math.round(pos.y) });
+  }
+  return positions;
 }
 
 // ── Canvas ─────────────────────────────────────────────────────────────────────
@@ -1365,7 +1415,12 @@ function MessagingCanvas() {
       }
       if (pendingBuildRef.current) {
         pendingBuildRef.current = false;
-        refetch();
+        // The agent creates nodes with no meaningful position (create-
+        // messaging-node's default), so auto-arrange the freshly-created
+        // graph once it's back instead of leaving everything stacked.
+        refetch().then((result) => {
+          if (result.data) handleAutoArrange(result.data.nodes, result.data.edges);
+        });
       }
     }
     wasGeneratingRef.current = isGenerating;
@@ -1384,6 +1439,34 @@ function MessagingCanvas() {
     [sendAgentTask],
   );
   const { screenToFlowPosition } = useReactFlow();
+
+  // Runs dagre over the given nodes/edges (defaulting to whatever's
+  // currently loaded) and persists any changed positions. Used both by the
+  // toolbar's on-demand "Auto-arrange" button and automatically right after
+  // a Build with AI run finishes (see the isGenerating effect above) --
+  // agent-created nodes land at create-messaging-node's default position
+  // (300, 300) with no math baked into the prompt, and this pass is what
+  // actually spreads them out for real, regardless of how many were made.
+  const [isAutoArranging, setIsAutoArranging] = useState(false);
+  const handleAutoArrange = useCallback(async (arrangeNodes?: MessagingNode[], arrangeEdges?: MessagingEdge[]) => {
+    const targetNodes = arrangeNodes ?? graph?.nodes ?? [];
+    const targetEdges = arrangeEdges ?? graph?.edges ?? [];
+    if (targetNodes.length === 0) return;
+    setIsAutoArranging(true);
+    try {
+      const positions = computeAutoLayout(targetNodes, targetEdges);
+      await Promise.all(
+        targetNodes.map((n) => {
+          const pos = positions.get(n.id);
+          if (!pos || (pos.x === n.positionX && pos.y === n.positionY)) return Promise.resolve();
+          return updateNode.mutateAsync({ id: n.id, positionX: pos.x, positionY: pos.y });
+        }),
+      );
+      await refetch();
+    } finally {
+      setIsAutoArranging(false);
+    }
+  }, [graph, updateNode, refetch]);
 
   const openEditor = useCallback((n: MessagingNode) => setEditingNode(n), []);
 
@@ -1733,6 +1816,16 @@ function MessagingCanvas() {
           <IconSparkles size={14} />
           Build with AI
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isAutoArranging || !graph || graph.nodes.length === 0}
+          onClick={() => handleAutoArrange()}
+          className="gap-1.5"
+        >
+          {isAutoArranging ? <IconRefresh size={14} className="animate-spin" /> : <IconLayoutGrid size={14} />}
+          Auto-arrange
+        </Button>
         <Button size="sm" variant="outline" onClick={() => refetch()}>
           <IconRefresh size={14} />
         </Button>
@@ -1781,35 +1874,37 @@ function MessagingCanvas() {
         <NodePaletteRail onSelect={handleAddNode} />
 
         <div className="flex-1 relative">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={handleConnect}
-            onEdgesDelete={handleEdgesDelete}
-            onNodesDelete={handleNodesDelete}
-            onBeforeDelete={handleBeforeDelete}
-            onNodeDragStop={handleNodeDragStop}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-            deleteKeyCode={["Delete", "Backspace"]}
-            selectionOnDrag
-            className="bg-zinc-50 dark:bg-zinc-950"
-          >
-            <Background color="#e4e4e7" gap={20} />
-            <Controls />
-            <MiniMap
-              nodeColor={(n) => {
-                if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
-                return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
-              }}
-              maskColor="rgba(0,0,0,0.15)"
-              style={{ background: "hsl(var(--background))" }}
-            />
-          </ReactFlow>
+          <ZoomLevelProvider>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={handleConnect}
+              onEdgesDelete={handleEdgesDelete}
+              onNodesDelete={handleNodesDelete}
+              onBeforeDelete={handleBeforeDelete}
+              onNodeDragStop={handleNodeDragStop}
+              fitView
+              fitViewOptions={{ padding: 0.2 }}
+              deleteKeyCode={["Delete", "Backspace"]}
+              selectionOnDrag
+              className="bg-zinc-50 dark:bg-zinc-950"
+            >
+              <Background color="#e4e4e7" gap={20} />
+              <Controls />
+              <MiniMap
+                nodeColor={(n) => {
+                  if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
+                  return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
+                }}
+                maskColor="rgba(0,0,0,0.15)"
+                style={{ background: "hsl(var(--background))" }}
+              />
+            </ReactFlow>
+          </ZoomLevelProvider>
           <PreviewPanel
             open={previewOpen}
             onClose={() => setPreviewOpen(false)}
