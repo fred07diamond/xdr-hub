@@ -12,13 +12,25 @@ export function meta() {
   return [{ title: `${APP_TITLE} — My Accounts` }];
 }
 
+type MatchedVia = "companyOwner" | "xdrOwner" | "both";
+
 interface OwnedCompany {
   id: string;
   name: string;
   domain: string | null;
   industry: string | null;
   employeeCount: string | null;
+  matchedVia: MatchedVia;
 }
+
+// AEs are attributed via the native Company owner property, xDRs via the
+// custom xDR Owner property -- shown per row so either audience can see
+// which relationship earned this account a spot on their list.
+const MATCHED_VIA_LABEL: Record<MatchedVia, string> = {
+  companyOwner: "Company owner",
+  xdrOwner: "xDR owner",
+  both: "Company + xDR owner",
+};
 
 interface MyOwnedAccountsData {
   connected: boolean;
@@ -163,7 +175,7 @@ export default function MyAccounts() {
             <p className="text-xs text-muted-foreground">
               {isLoading
                 ? "Loading…"
-                : `${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"} where you're the xDR Owner in HubSpot`}
+                : `${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"} where you're the Company Owner or xDR Owner in HubSpot`}
               {data?.truncated ? ` (of ${data.total.toLocaleString()} total)` : ""}
             </p>
           </div>
@@ -234,7 +246,7 @@ export default function MyAccounts() {
             <IconBriefcase size={32} className="text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">
               {companies.length === 0
-                ? "No companies are currently assigned to you as xDR Owner in HubSpot."
+                ? "No companies are currently assigned to you as Company Owner or xDR Owner in HubSpot."
                 : "No accounts match this search"}
             </p>
             {search && (
@@ -248,6 +260,7 @@ export default function MyAccounts() {
             <thead>
               <tr className="border-b border-border">
                 <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Company</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Owned via</th>
                 <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Industry</th>
                 <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Employees</th>
                 <th scope="col" className="sticky top-0 z-10 bg-muted py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
@@ -261,6 +274,11 @@ export default function MyAccounts() {
                       <CompanyLogo name={c.name} domain={c.domain} />
                       <span className="font-medium text-foreground truncate max-w-[220px]">{c.name}</span>
                     </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {MATCHED_VIA_LABEL[c.matchedVia]}
+                    </span>
                   </td>
                   <td className="px-3 py-3">
                     <span className="text-xs text-muted-foreground">{formatIndustry(c.industry)}</span>

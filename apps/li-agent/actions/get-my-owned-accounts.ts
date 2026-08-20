@@ -20,19 +20,25 @@ interface HubSpotCompanyResult {
     domain?: string;
     industry?: string;
     numberofemployees?: string;
+    hubspot_owner_id?: string;
+    xdr_owner?: string;
   };
 }
 
-// Powers the "My Accounts" page -- the xDR's own book of business, i.e.
-// every HubSpot company where the custom xdr_owner property (an
-// OWNER-referencing property, see search-hubspot-companies-by-owner.ts)
-// points at them. There was previously no way to answer "which accounts
-// are mine" without leaving the app and searching HubSpot by hand, which
-// meant there was also no fast way to jump from "my accounts" into a
-// LinkedIn Sales Navigator search for people at each one.
+type MatchedVia = "companyOwner" | "xdrOwner" | "both";
+
+// Powers the "My Accounts" page -- a user's own book of business. xDRs and
+// AEs are attributed differently in HubSpot: an xDR shows up via the
+// custom xdr_owner property, an AE via the native Company owner
+// (hubspot_owner_id) -- same OR-across-both-properties semantics already
+// established in prospecting-hub's search-hubspot-companies-by-owner.ts.
+// There was previously no way to answer "which accounts are mine" without
+// leaving the app and searching HubSpot by hand, which meant there was
+// also no fast way to jump from "my accounts" into a LinkedIn Sales
+// Navigator search for people at each one.
 export default defineAction({
   description:
-    "List HubSpot companies where the custom xDR Owner property (xdr_owner) matches the current user, resolved by matching their app email to a HubSpot owner record. Read-only.",
+    "List HubSpot companies where the current user is either the Company owner (hubspot_owner_id, the AE-facing property) or the custom xDR Owner (xdr_owner) -- an OR across both, resolved by matching their app email to a HubSpot owner record. Read-only.",
   schema: z.object({}),
   requiresAuth: true,
   readOnly: true,
@@ -71,8 +77,15 @@ export default defineAction({
       searchResult = (await hubspotFetch("/crm/v3/objects/companies/search", {
         method: "POST",
         body: JSON.stringify({
-          filterGroups: [{ filters: [{ propertyName: "xdr_owner", operator: "EQ", value: ownerId }] }],
-          properties: ["name", "domain", "industry", "numberofemployees"],
+          // filterGroups entries are OR'd together, filters within one
+          // group are ANDed -- two single-filter groups here gives a pure
+          // OR across the two owner properties, same semantics
+          // search-hubspot-companies-by-owner.ts already relies on.
+          filterGroups: [
+            { filters: [{ propertyName: "hubspot_owner_id", operator: "EQ", value: ownerId }] },
+            { filters: [{ propertyName: "xdr_owner", operator: "EQ", value: ownerId }] },
+          ],
+          properties: ["name", "domain", "industry", "numberofemployees", "hubspot_owner_id", "xdr_owner"],
           sorts: [{ propertyName: "name", direction: "ASCENDING" }],
           limit: MAX_RESULTS,
         }),
@@ -82,13 +95,19 @@ export default defineAction({
       throw Object.assign(new Error(`HubSpot company search failed: ${message}`), { statusCode: 502 });
     }
 
-    const companies = (searchResult.results ?? []).map((r) => ({
-      id: r.id,
-      name: r.properties?.name ?? "(unnamed company)",
-      domain: r.properties?.domain ?? null,
-      industry: r.properties?.industry ?? null,
-      employeeCount: r.properties?.numberofemployees ?? null,
-    }));
+    const companies = (searchResult.results ?? []).map((r) => {
+      const isCompanyOwner = r.properties?.hubspot_owner_id === ownerId;
+      const isXdrOwner = r.properties?.xdr_owner === ownerId;
+      const matchedVia: MatchedVia = isCompanyOwner && isXdrOwner ? "both" : isXdrOwner ? "xdrOwner" : "companyOwner";
+      return {
+        id: r.id,
+        name: r.properties?.name ?? "(unnamed company)",
+        domain: r.properties?.domain ?? null,
+        industry: r.properties?.industry ?? null,
+        employeeCount: r.properties?.numberofemployees ?? null,
+        matchedVia,
+      };
+    });
 
     // Same truncation signal search-hubspot-companies-by-owner.ts uses --
     // HubSpot's own `total` vs. the page actually returned.
