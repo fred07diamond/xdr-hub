@@ -6,6 +6,7 @@ import {
   IconClipboard,
   IconDownload,
   IconExternalLink,
+  IconLayoutColumns,
   IconListCheck,
   IconLoader2,
   IconPencil,
@@ -23,6 +24,19 @@ import {
 import { buildMasterCsv } from "@/lib/prospects-csv";
 import { applyShiftClickSelection } from "@/lib/selection";
 
+// Prospects table columns a user can hide -- Person and Actions are load-
+// bearing (selection + row identity, primary actions) and stay put.
+const PROSPECT_HIDEABLE_COLUMNS: { key: string; label: string }[] = [
+  { key: "persona", label: "Persona" },
+  { key: "jobTitle", label: "Job Title" },
+  { key: "fit", label: "Fit" },
+  { key: "tags", label: "Tags" },
+  { key: "draftNote", label: "Draft note" },
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Phone" },
+];
+const PROSPECT_HIDDEN_COLUMNS_STORAGE_KEY = "li-agent-prospects-hidden-columns";
+
 function HubSpotIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -32,6 +46,7 @@ function HubSpotIcon() {
   );
 }
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import {
   Sheet,
@@ -156,12 +171,16 @@ function EnrichedField({
   kind,
   phoneRevealStatus,
   phoneRevealRequestedAt,
+  isEnriching,
+  onEnrich,
 }: {
   value: string | null;
   status: Prospect["enrichmentStatus"];
   kind: "email" | "phone";
   phoneRevealStatus?: Prospect["phoneRevealStatus"];
   phoneRevealRequestedAt?: Prospect["phoneRevealRequestedAt"];
+  isEnriching?: boolean;
+  onEnrich?: () => void;
 }) {
   if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
   // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
@@ -171,16 +190,32 @@ function EnrichedField({
   if (kind === "phone" && phoneRevealStatus === "requested" && !isPhoneRevealStale(phoneRevealRequestedAt ?? null)) {
     return <span className="text-xs italic text-muted-foreground/70">Revealing…</span>;
   }
-  if (status === "not_found") {
-    return <span className="text-xs italic text-muted-foreground/70">No contact info found</span>;
+  if (isEnriching || status === "enriching") {
+    return <span className="text-xs italic text-muted-foreground/70">Enriching…</span>;
   }
-  if (status === "failed") {
-    return <span className="text-xs italic text-destructive/70">Enrichment failed</span>;
-  }
-  if (status === "done") {
-    return <span className="text-xs italic text-muted-foreground/70">No {kind} found</span>;
-  }
-  return <span className="text-xs text-muted-foreground/50">—</span>;
+  // Every empty state below is also its own "run enrichment" affordance, not
+  // just a dead end -- clicking it calls the same enrich action as the
+  // Actions-column button, so the empty cell doubles as the click target.
+  const emptyLabel =
+    status === "not_found" ? "No contact info found"
+    : status === "failed" ? "Enrichment failed"
+    : status === "done" ? `No ${kind} found`
+    : "—";
+  const emptyClass =
+    status === "failed" ? "text-xs italic text-destructive/70"
+    : status === "idle" || !status ? "text-xs text-muted-foreground/50"
+    : "text-xs italic text-muted-foreground/70";
+  if (!onEnrich) return <span className={emptyClass}>{emptyLabel}</span>;
+  return (
+    <button
+      type="button"
+      onClick={onEnrich}
+      title="Click to enrich"
+      className={`${emptyClass} underline decoration-dotted underline-offset-2 hover:text-foreground`}
+    >
+      {emptyLabel}
+    </button>
+  );
 }
 
 function EnrichButton({
@@ -729,13 +764,74 @@ export default function ProspectsRoute() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
 
-  // Filters
-  const [search, setSearch] = useState("");
-  const [verdictFilter, setVerdictFilter] = useState<NonNullable<Verdict> | "all">("all");
-  const [tagFilterIds, setTagFilterIds] = useState<Set<string>>(new Set());
-  const [tagFilterMode, setTagFilterMode] = useState<"any" | "all">("any");
-  const [personaFilter, setPersonaFilter] = useState<string>("all");
-  const [recencyFilter, setRecencyFilter] = useState<"all" | "today" | "week">("all");
+  // Filters -- encoded into the URL (q/fit/tags/tagMode/persona/recency) so a
+  // filtered view can be shared in Slack or bookmarked, not just held in
+  // component state. Lazy-initialized from whatever's already in the URL on
+  // first render (e.g. a shared link), then kept in sync by the effect below.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [verdictFilter, setVerdictFilter] = useState<NonNullable<Verdict> | "all">(
+    () => (searchParams.get("fit") as NonNullable<Verdict> | "all") ?? "all",
+  );
+  const [tagFilterIds, setTagFilterIds] = useState<Set<string>>(
+    () => new Set(searchParams.get("tags")?.split(",").filter(Boolean) ?? []),
+  );
+  const [tagFilterMode, setTagFilterMode] = useState<"any" | "all">(
+    () => (searchParams.get("tagMode") === "all" ? "all" : "any"),
+  );
+  const [personaFilter, setPersonaFilter] = useState<string>(() => searchParams.get("persona") ?? "all");
+  const [recencyFilter, setRecencyFilter] = useState<"all" | "today" | "week">(
+    () => (searchParams.get("recency") as "all" | "today" | "week") ?? "all",
+  );
+
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        const setOrDelete = (key: string, value: string, defaultValue: string) =>
+          value && value !== defaultValue ? next.set(key, value) : next.delete(key);
+        setOrDelete("q", search, "");
+        setOrDelete("fit", verdictFilter, "all");
+        if (tagFilterIds.size > 0) next.set("tags", [...tagFilterIds].join(","));
+        else next.delete("tags");
+        setOrDelete("tagMode", tagFilterMode, "any");
+        setOrDelete("persona", personaFilter, "all");
+        setOrDelete("recency", recencyFilter, "all");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, verdictFilter, tagFilterIds, tagFilterMode, personaFilter, recencyFilter]);
+
+  // Column visibility -- a per-browser display preference, not shareable
+  // state, so localStorage rather than the URL (matches the sidebar-collapse
+  // pattern in components/layout/Layout.tsx). Starts with everything visible
+  // and hydrates from storage after mount to avoid an SSR/client mismatch.
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(PROSPECT_HIDDEN_COLUMNS_STORAGE_KEY);
+      if (stored) setHiddenColumns(new Set(JSON.parse(stored)));
+    } catch {
+      // Ignore storage access errors; all columns stay visible.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PROSPECT_HIDDEN_COLUMNS_STORAGE_KEY, JSON.stringify([...hiddenColumns]));
+    } catch {
+      // Ignore storage access errors.
+    }
+  }, [hiddenColumns]);
+  function toggleColumn(key: string) {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
@@ -1183,7 +1279,7 @@ export default function ProspectsRoute() {
                   ? "Loading…"
                   : hasActiveFilter
                     ? `${filtered.length} of ${allProspects.length} match`
-                    : `${prospectsTotalCount.toLocaleString()} prospect${prospectsTotalCount === 1 ? "" : "s"}, combined and deduped`}
+                    : `${prospectsTotalCount.toLocaleString()} prospect${prospectsTotalCount === 1 ? "" : "s"} — captured profiles + Lead Lists leads, combined and deduped by profile URL, live on every load`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1203,6 +1299,7 @@ export default function ProspectsRoute() {
                 onRenameTag={handleRenameTag}
                 onDeleteTag={handleDeleteTag}
               />
+              <ColumnVisibilityPopover hidden={hiddenColumns} onToggle={toggleColumn} />
               <button
                 type="button"
                 onClick={() => refetch()}
@@ -1353,13 +1450,27 @@ export default function ProspectsRoute() {
                   />
                 </th>
                 <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-2 pr-3 text-left text-xs font-medium text-muted-foreground">Person</th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
-                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
+                {!hiddenColumns.has("persona") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
+                )}
+                {!hiddenColumns.has("jobTitle") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
+                )}
+                {!hiddenColumns.has("fit") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
+                )}
+                {!hiddenColumns.has("tags") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
+                )}
+                {!hiddenColumns.has("draftNote") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
+                )}
+                {!hiddenColumns.has("email") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
+                )}
+                {!hiddenColumns.has("phone") && (
+                  <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
+                )}
                 <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
@@ -1404,71 +1515,99 @@ export default function ProspectsRoute() {
                     {/* Persona -- own column (not just a chip buried in the
                         Person cell) so scanning/filtering by persona is
                         easier at a glance. */}
-                    <td className="px-3 py-3">
-                      {p.personaName && p.personaColor ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          <span style={{ background: p.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full shrink-0" />
-                          {p.personaName}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
+                    {!hiddenColumns.has("persona") && (
+                      <td className="px-3 py-3">
+                        {p.personaName && p.personaColor ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            <span style={{ background: p.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full shrink-0" />
+                            {p.personaName}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    )}
 
                     {/* Job Title -- prefers Apollo's enrichedTitle (kept
                         current by Enrich/Re-enrich) over the LinkedIn-scraped
                         role/headline, which can go stale or was never set for
                         a lead-list row that hasn't been visited. */}
-                    <td className="px-3 py-3">
-                      <span className="text-xs text-muted-foreground truncate max-w-[180px] block">
-                        {p.enrichedTitle || p.role || p.headline || "—"}
-                      </span>
-                    </td>
+                    {!hiddenColumns.has("jobTitle") && (
+                      <td className="px-3 py-3">
+                        <span className="text-xs text-muted-foreground truncate max-w-[180px] block">
+                          {p.enrichedTitle || p.role || p.headline || "—"}
+                        </span>
+                      </td>
+                    )}
 
                     {/* Fit */}
-                    <td className="px-3 py-3 min-w-[150px]">
-                      <VerdictBadge verdict={p.fitVerdict} />
-                      {p.fitReason && (
-                        <p className="mt-1 max-w-[200px] text-xs text-muted-foreground line-clamp-2">{p.fitReason}</p>
-                      )}
-                    </td>
+                    {!hiddenColumns.has("fit") && (
+                      <td className="px-3 py-3 min-w-[150px]">
+                        <VerdictBadge verdict={p.fitVerdict} />
+                        {p.fitReason && (
+                          <p className="mt-1 max-w-[200px] text-xs text-muted-foreground line-clamp-2">{p.fitReason}</p>
+                        )}
+                      </td>
+                    )}
 
                     {/* Tags */}
-                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      {p.source === "prospect" ? (
-                        <TagPickerCell
-                          prospect={p}
-                          allTags={allTags}
-                          onToggleTag={(tagId) => handleToggleProspectTag(p, tagId)}
-                          onCreateTag={handleCreateTag}
-                          onRenameTag={handleRenameTag}
-                          onDeleteTag={handleDeleteTag}
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
+                    {!hiddenColumns.has("tags") && (
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        {p.source === "prospect" ? (
+                          <TagPickerCell
+                            prospect={p}
+                            allTags={allTags}
+                            onToggleTag={(tagId) => handleToggleProspectTag(p, tagId)}
+                            onCreateTag={handleCreateTag}
+                            onRenameTag={handleRenameTag}
+                            onDeleteTag={handleDeleteTag}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    )}
 
                     {/* Draft note */}
-                    <td className="px-3 py-3 max-w-xs">
-                      {note ? (
-                        <p className="text-xs text-muted-foreground line-clamp-2">{note}</p>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50 italic">
-                          {p.status === "captured" ? "Drafting…" : "No note"}
-                        </span>
-                      )}
-                    </td>
+                    {!hiddenColumns.has("draftNote") && (
+                      <td className="px-3 py-3 max-w-xs">
+                        {note ? (
+                          <p className="text-xs text-muted-foreground line-clamp-2">{note}</p>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50 italic">
+                            {p.status === "captured" ? "Drafting…" : "No note"}
+                          </span>
+                        )}
+                      </td>
+                    )}
 
                     {/* Email */}
-                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <EnrichedField value={p.enrichedEmail} status={p.enrichmentStatus} kind="email" />
-                    </td>
+                    {!hiddenColumns.has("email") && (
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <EnrichedField
+                          value={p.enrichedEmail}
+                          status={p.enrichmentStatus}
+                          kind="email"
+                          isEnriching={enrichingIds.has(p.id)}
+                          onEnrich={() => handleEnrich(p)}
+                        />
+                      </td>
+                    )}
 
                     {/* Phone */}
-                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <EnrichedField value={p.enrichedPhone} status={p.enrichmentStatus} kind="phone" phoneRevealStatus={p.phoneRevealStatus} phoneRevealRequestedAt={p.phoneRevealRequestedAt} />
-                    </td>
+                    {!hiddenColumns.has("phone") && (
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <EnrichedField
+                          value={p.enrichedPhone}
+                          status={p.enrichmentStatus}
+                          kind="phone"
+                          phoneRevealStatus={p.phoneRevealStatus}
+                          phoneRevealRequestedAt={p.phoneRevealRequestedAt}
+                          isEnriching={enrichingIds.has(p.id)}
+                          onEnrich={() => handleEnrich(p)}
+                        />
+                      </td>
+                    )}
 
                     {/* Actions */}
                     <td className="py-3 pl-3 pr-4" onClick={(e) => e.stopPropagation()}>
@@ -1641,6 +1780,48 @@ function AddToListPopover({ prospectIds, onDone }: { prospectIds: string[]; onDo
         >
           {addToList.isPending ? "Adding…" : `Add ${prospectIds.length} prospect${prospectIds.length === 1 ? "" : "s"}`}
         </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function ColumnVisibilityPopover({
+  hidden,
+  onToggle,
+}: {
+  hidden: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  const hiddenCount = PROSPECT_HIDEABLE_COLUMNS.filter((c) => hidden.has(c.key)).length;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+        >
+          <IconLayoutColumns size={12} />
+          Columns{hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ""}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-56 p-2">
+        <p className="px-1.5 pb-1.5 text-xs font-medium text-muted-foreground">Show columns</p>
+        <div className="space-y-0.5">
+          {PROSPECT_HIDEABLE_COLUMNS.map((col) => (
+            <label
+              key={col.key}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-muted"
+            >
+              <input
+                type="checkbox"
+                checked={!hidden.has(col.key)}
+                onChange={() => onToggle(col.key)}
+                className="rounded border-border"
+              />
+              {col.label}
+            </label>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
   );

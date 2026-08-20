@@ -2,6 +2,7 @@ import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconCheck, IconExternalLink, IconListCheck, IconLoader2, IconPencil, IconSparkles, IconTrash, IconUsers, IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { APP_TITLE } from "@/lib/app-config";
 import { applyShiftClickSelection } from "@/lib/selection";
@@ -82,12 +83,16 @@ function EnrichedField({
   kind,
   phoneRevealStatus,
   phoneRevealRequestedAt,
+  isEnriching,
+  onEnrich,
 }: {
   value: string | null;
   status: LeadListItem["enrichmentStatus"];
   kind: "email" | "phone";
   phoneRevealStatus?: LeadListItem["phoneRevealStatus"];
   phoneRevealRequestedAt?: LeadListItem["phoneRevealRequestedAt"];
+  isEnriching?: boolean;
+  onEnrich?: () => void;
 }) {
   if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
   // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
@@ -97,16 +102,31 @@ function EnrichedField({
   if (kind === "phone" && phoneRevealStatus === "requested" && !isPhoneRevealStale(phoneRevealRequestedAt ?? null)) {
     return <span className="text-xs italic text-muted-foreground/70">Revealing…</span>;
   }
-  if (status === "not_found") {
-    return <span className="text-xs italic text-muted-foreground/70">No contact info found</span>;
+  if (isEnriching || status === "enriching") {
+    return <span className="text-xs italic text-muted-foreground/70">Enriching…</span>;
   }
-  if (status === "failed") {
-    return <span className="text-xs italic text-destructive/70">Enrichment failed</span>;
-  }
-  if (status === "done") {
-    return <span className="text-xs italic text-muted-foreground/70">No {kind} found</span>;
-  }
-  return <span className="text-xs text-muted-foreground/50">—</span>;
+  // Every empty state below also doubles as its own "run enrichment" click
+  // target, same action the row's Enrich button already calls.
+  const emptyLabel =
+    status === "not_found" ? "No contact info found"
+    : status === "failed" ? "Enrichment failed"
+    : status === "done" ? `No ${kind} found`
+    : "—";
+  const emptyClass =
+    status === "failed" ? "text-xs italic text-destructive/70"
+    : status === "idle" || !status ? "text-xs text-muted-foreground/50"
+    : "text-xs italic text-muted-foreground/70";
+  if (!onEnrich) return <span className={emptyClass}>{emptyLabel}</span>;
+  return (
+    <button
+      type="button"
+      onClick={onEnrich}
+      title="Click to enrich"
+      className={`${emptyClass} underline decoration-dotted underline-offset-2 hover:text-foreground`}
+    >
+      {emptyLabel}
+    </button>
+  );
 }
 
 function EnrichButton({
@@ -199,10 +219,24 @@ function LeadListItemRow({
       <td className="px-4 py-3 text-xs text-muted-foreground">{item.headline ?? "—"}</td>
       <td className="px-4 py-3 text-xs text-muted-foreground">{item.company ?? "—"}</td>
       <td className="px-4 py-3">
-        <EnrichedField value={item.enrichedEmail} status={item.enrichmentStatus} kind="email" />
+        <EnrichedField
+          value={item.enrichedEmail}
+          status={item.enrichmentStatus}
+          kind="email"
+          isEnriching={isEnriching}
+          onEnrich={() => onEnrich(item)}
+        />
       </td>
       <td className="px-4 py-3">
-        <EnrichedField value={item.enrichedPhone} status={item.enrichmentStatus} kind="phone" phoneRevealStatus={item.phoneRevealStatus} phoneRevealRequestedAt={item.phoneRevealRequestedAt} />
+        <EnrichedField
+          value={item.enrichedPhone}
+          status={item.enrichmentStatus}
+          kind="phone"
+          phoneRevealStatus={item.phoneRevealStatus}
+          phoneRevealRequestedAt={item.phoneRevealRequestedAt}
+          isEnriching={isEnriching}
+          onEnrich={() => onEnrich(item)}
+        />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
@@ -228,7 +262,25 @@ export function meta() {
 export default function LeadListsPage() {
   useSetPageTitle("Lead Lists");
 
-  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  // Selected list lives in the URL (?listId=), not just component state --
+  // a plain useState here means the selection can't be shared in Slack,
+  // bookmarked, or survive a refresh. `replace: true` swaps the current
+  // history entry instead of pushing a new one per click, so clicking
+  // through several lists doesn't turn Back into a long list-selection
+  // replay.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedListId = searchParams.get("listId");
+  function setSelectedListId(listId: string | null) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (listId) next.set("listId", listId);
+        else next.delete("listId");
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());

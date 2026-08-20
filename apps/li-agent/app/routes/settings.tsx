@@ -144,13 +144,22 @@ function ApiTokenCard() {
 function DailyLimitCard() {
   const { data } = useActionQuery("get-daily-stats", {});
   const stats = data as { capturedToday?: number; limit?: number | null } | undefined;
+  const { data: membersData } = useOrgMembers();
+  const memberCount = membersData?.members?.length ?? null;
   const setLimit = useActionMutation("set-daily-limit");
   const [input, setInput] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  async function handleSave() {
+  function handleSaveClick() {
     const val = parseInt(input, 10);
     if (!val || val < 1 || val > 500) return;
+    setConfirming(true);
+  }
+
+  async function handleConfirm() {
+    const val = parseInt(input, 10);
+    setConfirming(false);
     await setLimit.mutateAsync({ limit: val });
     setInput("");
     setSaved(true);
@@ -165,7 +174,9 @@ function DailyLimitCard() {
           Daily Outreach Limit
         </CardTitle>
         <CardDescription>
-          Set a workspace-wide soft cap on daily connection requests. Users see a warning meter in the extension. Admin only.
+          Set a workspace-wide soft cap on daily connection requests. Applies to{" "}
+          {memberCount != null ? `all ${memberCount} users` : "everyone"} in this workspace — each sees a warning
+          meter in the extension, but it does not hard-block sending.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -177,26 +188,53 @@ function DailyLimitCard() {
             )}
           </p>
         )}
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={1}
-            max={500}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={stats?.limit != null ? `Current: ${stats.limit}` : "e.g. 20"}
-            className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={setLimit.isPending || !input}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {setLimit.isPending ? <IconLoader2 size={13} className="animate-spin" /> : saved ? <IconCheck size={13} /> : null}
-            {saved ? "Saved!" : "Save"}
-          </button>
-        </div>
+        {confirming ? (
+          <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="text-sm text-foreground">
+              Set the daily limit to <span className="font-semibold">{input}</span> for{" "}
+              {memberCount != null ? `all ${memberCount} users` : "everyone"} in this workspace?
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={setLimit.isPending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {setLimit.isPending ? <IconLoader2 size={13} className="animate-spin" /> : null}
+                Set limit to {input}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={stats?.limit != null ? `Current: ${stats.limit}` : "e.g. 20"}
+              className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              disabled={setLimit.isPending || !input}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saved ? <IconCheck size={13} /> : null}
+              {saved ? "Saved!" : "Save"}
+            </button>
+          </div>
+        )}
         {setLimit.isError && (
           <p className="text-xs text-destructive">{(setLimit.error as Error)?.message ?? "Failed to save"}</p>
         )}
@@ -398,7 +436,7 @@ function OrgMembersSection() {
 
 function HubSpotCard() {
   const { data: connData, isLoading: connLoading } = useActionQuery("get-hubspot-connection", {});
-  const conn = connData as { connected?: boolean; error?: string } | undefined;
+  const conn = connData as { connected?: boolean; error?: string; portalId?: string | null } | undefined;
 
   return (
     <Card id="hubspot" className="scroll-mt-16">
@@ -422,10 +460,27 @@ function HubSpotCard() {
             </span>
           )}
         </CardTitle>
+        <CardDescription>
+          Workspace-wide integration used to look up prospect owners. Shared with every app in this workspace.
+        </CardDescription>
         {conn?.error && (
           <p className="text-xs text-destructive">{conn.error}</p>
         )}
       </CardHeader>
+      {conn?.connected && (
+        <CardContent className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Portal {conn.portalId ? <span className="font-medium text-foreground">{conn.portalId}</span> : "ID unavailable"}
+          </span>
+          <a
+            href="/dispatch/vault"
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
+            Manage in Dispatch
+            <IconExternalLink size={12} />
+          </a>
+        </CardContent>
+      )}
     </Card>
   );
 }
@@ -503,33 +558,44 @@ export default function SettingsRoute() {
       extraTabs={enhancedTabs}
       generalSearchEntries={generalSearchEntries}
       general={
-        <div className="mx-auto w-full max-w-2xl space-y-6">
+        <div className="mx-auto w-full max-w-2xl space-y-8">
           <p className="text-sm leading-6 text-muted-foreground">
             {t("settings.description")}
           </p>
 
-          <ApiTokenCard />
+          {/* Personal — only ever affects the signed-in user, never anyone else. */}
+          <div className="space-y-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Personal</h2>
+            <div className="space-y-6">
+              <ApiTokenCard />
+              <Card id="language" className="scroll-mt-16">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {t("settings.languageTitle")}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("settings.languageDescription")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="max-w-xs space-y-1.5">
+                  <Label>{t("settings.languageLabel")}</Label>
+                  <LanguagePicker label={t("settings.languageLabel")} />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
 
-          <DailyLimitCard />
-
-          <HubSpotCard />
-
-          {canManageOrg && <AgentWorkspaceCard />}
-
-          <Card id="language" className="scroll-mt-16">
-            <CardHeader>
-              <CardTitle className="text-base">
-                {t("settings.languageTitle")}
-              </CardTitle>
-              <CardDescription>
-                {t("settings.languageDescription")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="max-w-xs space-y-1.5">
-              <Label>{t("settings.languageLabel")}</Label>
-              <LanguagePicker label={t("settings.languageLabel")} />
-            </CardContent>
-          </Card>
+          {/* Workspace — changes behavior or data shared with every user here,
+              structurally separated from Personal above rather than just
+              labeled inline. */}
+          <div className="space-y-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workspace</h2>
+            <div className="space-y-6">
+              <HubSpotCard />
+              {canManageOrg && <DailyLimitCard />}
+              {canManageOrg && <AgentWorkspaceCard />}
+            </div>
+          </div>
         </div>
       }
       team={
