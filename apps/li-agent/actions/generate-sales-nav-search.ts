@@ -181,8 +181,14 @@ export default defineAction({
       .from(icpPersonas)
       .where(isNotNull(icpPersonas.icpText));
 
+    // icpText, not summary -- summary is only the persona document's FIRST
+    // PARAGRAPH (see extractSummary() in create-icp-persona.ts, capped at
+    // 220 chars), so it never includes a "Common titles" section further
+    // down the doc. Using summary here was silently hiding every persona's
+    // real title list from the model, which is why generated searches
+    // collapsed to a generic Function bucket instead of the actual titles.
     const personaList = personas.length
-      ? personas.map((p, i) => `${i + 1}. ${p.name}: ${(p.summary ?? p.icpText ?? "").slice(0, 400)}`).join("\n\n")
+      ? personas.map((p, i) => `${i + 1}. ${p.name}: ${(p.icpText ?? p.summary ?? "").slice(0, 1200)}`).join("\n\n")
       : "(no saved personas)";
 
     const systemPrompt =
@@ -204,8 +210,12 @@ export default defineAction({
       `- "companyType" values MUST come only from this exact list: ${Object.keys(COMPANY_TYPE_IDS).join(", ")}\n` +
       "- \"excludeCrmLeads\" is true only if the request explicitly wants to exclude people already tracked in the CRM (e.g. \"not in the CRM\", \"exclude existing CRM contacts\"). Otherwise false.\n" +
       "- Only include a field's array with values if the request actually implies that criterion -- leave it an empty array otherwise. Don't force a seniority or headcount guess that wasn't implied.\n" +
-      "- \"titleKeywords\" is optional and only for job-title language that isn't already covered by function/seniority (e.g. a specific title phrase like \"Head of Design\", or a domain term like \"AI\"). Leave it an empty string if function/seniority already cover it. " +
-      "Sales Navigator Boolean rules apply if used: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping, e.g. (Director OR VP OR \"Head of\") AND (Design OR \"User Experience\" OR UX OR UI).\n" +
+      "- If the matched persona's text lists specific job titles (e.g. a \"Common titles\" section, or any explicit list of title phrases), " +
+      "ALWAYS put every one of those exact titles into \"titleKeywords\" as a quoted Boolean OR, e.g. " +
+      "(\"Sr Design Manager\" OR \"Director of Design\" OR \"Director of Design Systems\" OR \"Director of Design Technology\" OR \"Head of Design Operations\"). " +
+      "Do NOT drop or paraphrase them just because a \"function\" bucket also loosely applies -- function/seniority are broad, low-precision supplements to the real titles, never a replacement for them. " +
+      "Only fall back to \"function\"/\"seniorityLevel\" alone, with titleKeywords empty, when the persona (or request) gives no specific title language at all.\n" +
+      "- Sales Navigator Boolean rules apply to titleKeywords: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping.\n" +
       "- \"unsupportedNotes\" is a short plain-English note (or empty string) about any part of the request you could NOT express in these filters (e.g. a specific company, a specific city/country, an industry). Be honest about gaps rather than silently dropping or mis-mapping them. Keep it to one sentence.\n" +
       "- There is NO company-targeting field available at all -- Company/Past Company require an internal LinkedIn ID lookup this tool doesn't have. If the request names specific companies (e.g. \"folks at Acme and Globex\"), do NOT refuse and do NOT reply with plain-text explanation instead of JSON -- list the company names in \"unsupportedNotes\" and still fill in every other field you CAN determine from the rest of the request (function, seniority, region, headcount, companyType, excludeCrmLeads, titleKeywords).\n" +
       "- You must ALWAYS reply with the exact JSON shape above, even when most of the request can't be expressed in these filters. Never reply with plain prose, an apology, or an explanation instead of the JSON object -- put anything unsupported in \"unsupportedNotes\" and still return whatever filters you can. Keep \"summary\" and \"unsupportedNotes\" each to one short sentence so the reply stays compact.";
