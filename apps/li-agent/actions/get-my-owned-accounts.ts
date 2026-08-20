@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { z } from "zod";
 import { getHubSpotToken, hubspotFetch } from "@xdr-hub/shared/server";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
+import { buildCompanyTags, resolveCompanyTagProperties } from "../server/helpers/hubspot-company-tags.js";
 
 // HubSpot's companies search caps a single page at 100, so a book of
 // business larger than that needs real cursor pagination -- unlike
@@ -20,14 +21,9 @@ interface HubSpotOwner {
 
 interface HubSpotCompanyResult {
   id: string;
-  properties?: {
-    name?: string;
-    domain?: string;
-    industry?: string;
-    numberofemployees?: string;
-    hubspot_owner_id?: string;
-    xdr_owner?: string;
-  };
+  // Open-ended: the tag properties are resolved at runtime per portal (see
+  // hubspot-company-tags.ts), so this bag holds whatever was requested.
+  properties?: Record<string, string | undefined>;
 }
 
 type MatchedVia = "companyOwner" | "xdrOwner" | "both";
@@ -77,6 +73,12 @@ export default defineAction({
       return { connected: true, matched: false, companies: [], total: 0, noOwnerRecord: true };
     }
 
+    // Resolved once per call, then reused for every page -- these are
+    // portal-level property definitions, not per-company data.
+    const tagProperties = await resolveCompanyTagProperties();
+    const BASE_PROPERTIES = ["name", "domain", "industry", "numberofemployees", "hubspot_owner_id", "xdr_owner"];
+    const requestedProperties = [...BASE_PROPERTIES, ...tagProperties.map((t) => t.propertyName)];
+
     const rawResults: HubSpotCompanyResult[] = [];
     let reportedTotal: number | null = null;
     let after: string | undefined;
@@ -92,7 +94,7 @@ export default defineAction({
             { filters: [{ propertyName: "hubspot_owner_id", operator: "EQ", value: ownerId }] },
             { filters: [{ propertyName: "xdr_owner", operator: "EQ", value: ownerId }] },
           ],
-          properties: ["name", "domain", "industry", "numberofemployees", "hubspot_owner_id", "xdr_owner"],
+          properties: requestedProperties,
           sorts: [{ propertyName: "name", direction: "ASCENDING" }],
           limit: PAGE_LIMIT,
         };
@@ -124,6 +126,7 @@ export default defineAction({
         industry: r.properties?.industry ?? null,
         employeeCount: r.properties?.numberofemployees ?? null,
         matchedVia,
+        tags: buildCompanyTags(r.properties ?? {}, tagProperties),
       };
     });
 

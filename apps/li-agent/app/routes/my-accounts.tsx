@@ -1,5 +1,5 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
-import { IconBriefcase, IconChevronDown, IconCoin, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconUsers, IconX } from "@tabler/icons-react";
+import { IconBriefcase, IconChevronDown, IconCoin, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconTag, IconUsers, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -36,6 +36,16 @@ export function meta() {
 
 type MatchedVia = "companyOwner" | "xdrOwner" | "both";
 
+type TagTone = "tier" | "positive" | "neutral" | "warm";
+
+interface CompanyTag {
+  key: string;
+  label: string;
+  value: string;
+  tone: TagTone;
+  emphasis: boolean;
+}
+
 interface OwnedCompany {
   id: string;
   name: string;
@@ -43,6 +53,40 @@ interface OwnedCompany {
   industry: string | null;
   employeeCount: string | null;
   matchedVia: MatchedVia;
+  tags: CompanyTag[];
+}
+
+// Tier gets the strongest treatment since it's the primary value signal;
+// warm (partner-referred) and positive (target account, qualified contacts)
+// read as opportunity; neutral is context, not priority.
+const TAG_TONE_CLASS: Record<TagTone, string> = {
+  tier: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  positive: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  warm: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
+  neutral: "bg-muted text-muted-foreground",
+};
+
+// Dot-only variant for filter pills, whose own background already carries
+// the active/inactive state -- a full tone background would fight it.
+const TAG_TONE_DOT: Record<TagTone, string> = {
+  tier: "bg-amber-500",
+  positive: "bg-emerald-500",
+  warm: "bg-violet-500",
+  neutral: "bg-muted-foreground/50",
+};
+
+function TagChip({ tag }: { tag: CompanyTag }) {
+  return (
+    <span
+      title={`${tag.label}: ${tag.value}`}
+      className={cn(
+        "inline-flex max-w-[130px] items-center truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+        TAG_TONE_CLASS[tag.tone],
+      )}
+    >
+      {tag.value}
+    </span>
+  );
 }
 
 // AEs are attributed via the native Company owner property, xDRs via the
@@ -299,6 +343,22 @@ function CompanySheet({ company, personas, onClose }: { company: OwnedCompany; p
             </div>
           </SheetSection>
 
+          {company.tags.length > 0 && (
+            <SheetSection icon={<IconTag size={12} className="text-muted-foreground" />} label="Account attributes">
+              <div className="flex flex-wrap gap-1.5">
+                {company.tags.map((t) => (
+                  <span
+                    key={t.key}
+                    className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", TAG_TONE_CLASS[t.tone])}
+                  >
+                    <span className="opacity-70">{t.label}:</span>
+                    <span className="ml-1">{t.value.startsWith(`${t.label}: `) ? t.value.slice(t.label.length + 2) : t.value}</span>
+                  </span>
+                ))}
+              </div>
+            </SheetSection>
+          )}
+
           {query.isLoading ? (
             <p className="flex items-center gap-1.5 pt-4 text-xs text-muted-foreground border-t border-border">
               <IconLoader2 size={12} className="animate-spin" /> Loading HubSpot data…
@@ -366,12 +426,32 @@ export default function MyAccounts() {
   const [ownerFilter, setOwnerFilter] = useState<"all" | MatchedVia>("all");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   const companies = data?.companies ?? [];
+
+  // Filter pills are built from the tag values actually present in this
+  // user's book of accounts, ordered by how many accounts carry each --
+  // no hardcoded value lists, since these come from portal-specific
+  // HubSpot properties.
+  const tagFilterOptions = useMemo(() => {
+    const counts = new Map<string, { value: string; tone: TagTone; count: number }>();
+    for (const c of companies) {
+      for (const t of c.tags) {
+        if (!t.emphasis) continue;
+        const existing = counts.get(t.value);
+        if (existing) existing.count++;
+        else counts.set(t.value, { value: t.value, tone: t.tone, count: 1 });
+      }
+    }
+    return [...counts.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value)).slice(0, 8);
+  }, [companies]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return companies.filter((c) => {
       if (q && !c.name.toLowerCase().includes(q) && !(c.industry ?? "").toLowerCase().includes(q)) return false;
+      if (tagFilter && !c.tags.some((t) => t.value === tagFilter)) return false;
       if (ownerFilter === "all") return true;
       // "both" counts as a match for either single-owner filter -- an
       // account you own in both roles is genuinely one of your Company-owner
@@ -382,7 +462,13 @@ export default function MyAccounts() {
     });
   }, [companies, search, ownerFilter]);
 
-  const hasActiveFilter = search.trim() !== "" || ownerFilter !== "all";
+  const hasActiveFilter = search.trim() !== "" || ownerFilter !== "all" || tagFilter !== null;
+  function clearFilters() {
+    setSearch("");
+    setOwnerFilter("all");
+    setTagFilter(null);
+    setPage(1);
+  }
 
   // Reset to page 1 whenever filters change, so a filtered set can't leave
   // you stranded on a page that no longer exists.
@@ -456,10 +542,29 @@ export default function MyAccounts() {
             </FilterPill>
           </div>
 
+          {tagFilterOptions.length > 0 && (
+            <>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex flex-wrap items-center gap-1">
+                {tagFilterOptions.map((opt) => (
+                  <FilterPill
+                    key={opt.value}
+                    active={tagFilter === opt.value}
+                    onClick={() => { setTagFilter(tagFilter === opt.value ? null : opt.value); setPage(1); }}
+                  >
+                    <span className={cn("inline-block size-1.5 rounded-full", TAG_TONE_DOT[opt.tone])} />
+                    {opt.value}
+                    <span className="opacity-60">{opt.count}</span>
+                  </FilterPill>
+                ))}
+              </div>
+            </>
+          )}
+
           {hasActiveFilter && (
             <button
               type="button"
-              onClick={() => { setSearch(""); setOwnerFilter("all"); setPage(1); }}
+              onClick={clearFilters}
               className="ml-auto text-xs text-muted-foreground hover:text-foreground"
             >
               Clear filters
@@ -508,7 +613,7 @@ export default function MyAccounts() {
             {hasActiveFilter && (
               <button
                 type="button"
-                onClick={() => { setSearch(""); setOwnerFilter("all"); setPage(1); }}
+                onClick={clearFilters}
                 className="text-xs text-primary hover:underline"
               >
                 Clear filters
@@ -520,6 +625,7 @@ export default function MyAccounts() {
             <thead>
               <tr className="border-b border-border">
                 <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Company</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
                 <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Owned via</th>
                 <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Industry</th>
                 <th scope="col" className="sticky top-0 z-10 bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground">Employees</th>
@@ -538,6 +644,22 @@ export default function MyAccounts() {
                       <CompanyLogo name={c.name} domain={c.domain} />
                       <span className="font-medium text-foreground truncate max-w-[220px]">{c.name}</span>
                     </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    {(() => {
+                      const shown = c.tags.filter((t) => t.emphasis);
+                      if (shown.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+                      return (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {shown.slice(0, 2).map((t) => (
+                            <TagChip key={t.key} tag={t} />
+                          ))}
+                          {shown.length > 2 && (
+                            <span className="text-[10px] text-muted-foreground/70">+{shown.length - 2}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-3">
                     <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
