@@ -622,6 +622,42 @@ export default runMigrations(
       name: "lead-list-items-company-domain",
       sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS company_domain TEXT`,
     },
+    // Lifetime leads-added counter, decoupled from leadListItems'/leadLists'
+    // row counts so Analytics' "Leads" metric survives later deletion.
+    {
+      version: 100,
+      name: "lead-counters-table",
+      sql: `CREATE TABLE IF NOT EXISTS lead_counters (
+        id TEXT PRIMARY KEY,
+        owner_email TEXT,
+        total_leads_added INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 101,
+      name: "index-lead-counters-owner-email",
+      sql: `CREATE INDEX IF NOT EXISTS idx_lead_counters_owner_email ON lead_counters (owner_email)`,
+    },
+    // Backfill: seed each owner's lifetime counter from their current
+    // leadListItems count so existing leads aren't invisible to the new
+    // metric -- this one-time COUNT is intentionally the only place this
+    // migration reads a live, deletable count.
+    {
+      version: 102,
+      name: "lead-counters-backfill",
+      sql: `INSERT INTO lead_counters (id, owner_email, total_leads_added, created_at, updated_at)
+        SELECT
+          'backfill-' || COALESCE(ll.owner_email, 'anonymous'),
+          ll.owner_email,
+          COUNT(li.id),
+          (datetime('now')),
+          (datetime('now'))
+        FROM lead_lists ll
+        JOIN lead_list_items li ON li.list_id = ll.id
+        GROUP BY ll.owner_email`,
+    },
   ],
   { table: "outreach_migrations" },
 );

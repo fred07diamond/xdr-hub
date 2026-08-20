@@ -354,3 +354,19 @@ export const rateLimitCounters = table("rate_limit_counters", {
   count: integer("count").notNull().default(0),
   windowStart: text("window_start").notNull(),
 });
+
+// Lifetime, append-only counter of leads ever added per owner. Analytics'
+// "Leads" metric must show all-time leads added by the XDR -- it can't be
+// backed by a live leadListItems count() or leadLists.totalCount, both of
+// which shrink whenever leads are later cleaned up or deleted (delete-lead-
+// list, bulk-delete-lead-list-items, the leadListItems cleanup inside
+// bulk-delete-prospects/delete-prospect). One row per ownerEmail (including
+// one row for null/anonymous), incremented via incrementLeadCounter() at
+// every leadListItems insertion site, never decremented.
+export const leadCounters = table("lead_counters", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email"),
+  totalLeadsAdded: integer("total_leads_added").notNull().default(0),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});

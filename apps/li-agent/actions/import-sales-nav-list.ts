@@ -7,6 +7,7 @@ import { leadLists, leadListItems } from "../server/db/schema.js";
 import { resolveOwner, resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 import { selectPersonasBatch } from "../server/helpers/select-persona.js";
+import { incrementLeadCounter } from "../server/helpers/lead-counters.js";
 
 // Sales Nav lists can run into the thousands -- cap like import-hubspot-
 // queue.ts's IMPORT_LIMIT so one import can't produce an unbounded insert.
@@ -194,6 +195,8 @@ export default defineAction({
         };
       }),
     );
+
+    await incrementLeadCounter(ownerEmail, deduped.length);
 
     return { listId, totalCount: newTotalCount, truncated, duplicatesSkipped };
   },

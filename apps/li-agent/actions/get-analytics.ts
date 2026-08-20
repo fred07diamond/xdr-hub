@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { count, countDistinct, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { prospects, sendHistory, postEngagements, leadLists, leadListItems } from "../server/db/schema.js";
+import { prospects, sendHistory, postEngagements, leadLists, leadListItems, leadCounters } from "../server/db/schema.js";
 import { requireAdmin } from "../server/helpers/require-admin.js";
 
 export default defineAction({
@@ -42,12 +42,13 @@ export default defineAction({
       engagerByUserRows,
       // Lead Lists
       [listTotals],
-      [leadItemTotals],
+      [leadCounterTotals],
       [leadItemsThisWeekRow],
       [leadItemsLastWeekRow],
       enrichmentStatusRows,
       phoneRevealStatusRows,
       listsByUserRows,
+      leadCounterByUserRows,
       // Daily trend
       prospectsTrendRows,
       engagersTrendRows,
@@ -96,7 +97,11 @@ export default defineAction({
         .from(postEngagements)
         .groupBy(postEngagements.ownerEmail),
       db.select({ total: count() }).from(leadLists),
-      db.select({ total: count() }).from(leadListItems),
+      // Lifetime, never-decremented total -- see leadCounters' schema.ts
+      // comment. Deliberately not count(leadListItems): that shrinks
+      // whenever leads are deleted/cleaned up, which is exactly what made
+      // this number look wrong after a mass delete.
+      db.select({ total: sql<number>`coalesce(sum(${leadCounters.totalLeadsAdded}), 0)` }).from(leadCounters),
       db.select({ n: count() }).from(leadListItems).where(sql`created_at >= ${weekAgo}`),
       db.select({ n: count() }).from(leadListItems).where(sql`created_at >= ${twoWeeksAgo} AND created_at < ${weekAgo}`),
       db.select({ status: leadListItems.enrichmentStatus, n: count() }).from(leadListItems).groupBy(leadListItems.enrichmentStatus),
@@ -105,10 +110,13 @@ export default defineAction({
         .select({
           ownerEmail: leadLists.ownerEmail,
           lists: count(),
-          leads: sql<number>`sum(${leadLists.totalCount})`,
         })
         .from(leadLists)
         .groupBy(leadLists.ownerEmail),
+      // Per-owner lifetime leads-added, same never-decremented source as
+      // leadCounterTotals above -- backs the Team Leaderboard/per-user
+      // breakdown instead of sum(leadLists.totalCount).
+      db.select({ ownerEmail: leadCounters.ownerEmail, leads: leadCounters.totalLeadsAdded }).from(leadCounters),
       // Daily trend -- one grouped-by-day count per pipeline, last 14 days.
       db
         .select({ day: sql<string>`date_trunc('day', created_at::timestamptz)`, n: count() })
@@ -211,11 +219,17 @@ export default defineAction({
       }
     }
 
+    // Merge live per-owner list counts with the lifetime leads-added
+    // counter -- two separate queries/tables, joined by ownerEmail here
+    // since an owner can have lists with zero current leads (all deleted)
+    // but a nonzero all-time total, or vice versa for a brand-new owner.
+    const leadsByOwner = new Map<string | null, number>();
+    for (const r of leadCounterByUserRows) leadsByOwner.set(r.ownerEmail, Number(r.leads));
     const listsByUser = listsByUserRows
       .map((r) => ({
         ownerEmail: r.ownerEmail,
         lists: Number(r.lists),
-        leads: Number(r.leads),
+        leads: leadsByOwner.get(r.ownerEmail) ?? 0,
       }))
       .sort((a, b) => b.leads - a.leads);
 
@@ -291,7 +305,7 @@ export default defineAction({
       },
       leadLists: {
         totalLists: (listTotals?.total ?? 0) as number,
-        totalLeads: (leadItemTotals?.total ?? 0) as number,
+        totalLeads: Number(leadCounterTotals?.total ?? 0),
         thisWeek: (leadItemsThisWeekRow?.n ?? 0) as number,
         lastWeek: (leadItemsLastWeekRow?.n ?? 0) as number,
         enrichmentStatusCounts,

@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects, leadLists, leadListItems } from "../server/db/schema.js";
+import { incrementLeadCounter } from "../server/helpers/lead-counters.js";
 
 // Lets the Prospects table build a Lead List too, not just Sales Nav
 // captures via the extension. Converts selected prospects into
@@ -121,6 +122,7 @@ export default defineAction({
 
     const newTotalCount = positionOffset + toAdd.length;
     await db.update(leadLists).set({ totalCount: newTotalCount, updatedAt: now }).where(eq(leadLists.id, listId));
+    await incrementLeadCounter(ownerEmail, toAdd.length);
 
     return { listId, addedCount: toAdd.length, duplicatesSkipped };
   },
