@@ -119,6 +119,7 @@ export async function scoreLeadListItem(db: Db, item: LeadListItem, ownerEmail: 
       enrichedLinkedinUrl: item.enrichedLinkedinUrl,
       enrichedCompanyIndustry: item.enrichedCompanyIndustry,
       enrichedCompanySize: item.enrichedCompanySize,
+      companyDomain: item.companyDomain,
       enrichedAt: item.enrichedAt,
       enrichmentError: item.enrichmentError,
       enrichmentSource: item.enrichmentSource,

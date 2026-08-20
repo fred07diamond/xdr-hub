@@ -1,9 +1,12 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client";
 import {
   IconBrandLinkedin,
+  IconBriefcase,
+  IconBuilding,
   IconCheck,
   IconChevronDown,
   IconClipboard,
+  IconCoin,
   IconDownload,
   IconExternalLink,
   IconLayoutColumns,
@@ -18,6 +21,7 @@ import {
   IconThumbDown,
   IconThumbUp,
   IconTrash,
+  IconUsers,
   IconX,
 } from "@tabler/icons-react";
 
@@ -56,6 +60,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Pagination } from "@/components/Pagination";
 import { APP_TITLE } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
@@ -114,6 +119,7 @@ interface Prospect {
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
+  companyDomain: string | null;
   enrichedAt: string | null;
   enrichmentError: string | null;
   // Provenance -- which write path produced the current enrichment values
@@ -179,6 +185,168 @@ const VERDICT_STYLES: Record<NonNullable<Verdict>, string> = {
 const TAG_COLORS = ["#6366f1", "#f97316", "#22c55e", "#ec4899", "#0ea5e9", "#eab308", "#a855f7", "#ef4444"];
 function randomTagColor(): string {
   return TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+}
+
+// Company logo/avatar + HubSpot hover card ─────────────────────────────────
+
+// Same lettered-avatar hash used in booking/meetings.tsx and settings.tsx,
+// keyed by company name instead of a person's email.
+const COMPANY_AVATAR_COLORS = ["bg-indigo-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-sky-500", "bg-violet-500"];
+function companyAvatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return COMPANY_AVATAR_COLORS[Math.abs(hash) % COMPANY_AVATAR_COLORS.length];
+}
+
+// Clearbit's free public logo API keyed by domain -- HubSpot has no logo
+// field at all, this is the standard non-HubSpot trick for "give me a logo
+// for this domain." Falls back to a lettered avatar when there's no domain
+// or the image 404s.
+function CompanyLogo({ name, domain }: { name: string | null; domain: string | null }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  if (domain && !imgFailed) {
+    return (
+      <img
+        src={`https://logo.clearbit.com/${domain}`}
+        onError={() => setImgFailed(true)}
+        alt=""
+        className="h-5 w-5 shrink-0 rounded-sm bg-white object-contain ring-1 ring-black/5"
+      />
+    );
+  }
+  const label = (name ?? "?").trim();
+  return (
+    <div className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[10px] font-semibold text-white", companyAvatarColor(label))}>
+      {(label[0] ?? "?").toUpperCase()}
+    </div>
+  );
+}
+
+function formatDealAmount(amount: string | null): string | null {
+  if (!amount) return null;
+  const n = Number(amount);
+  if (Number.isNaN(n)) return null;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+interface HubSpotCompanyData {
+  connected: boolean;
+  matched: boolean;
+  recordUrl?: string | null;
+  company?: {
+    name: string | null;
+    domain: string | null;
+    industry: string | null;
+    employeeCount: string | null;
+    country: string | null;
+    ownerName: string | null;
+  } | null;
+  deals?: Array<{ name: string; stage: string; amount: string | null; closeDate: string | null }>;
+  contacts?: Array<{ name: string; title: string | null; email: string | null }>;
+}
+
+// Shared by the hover card (top few items) and ProspectSheet's Company
+// section (full lists) -- same action/params means react-query dedupes if
+// the row was already hovered before being clicked.
+function useHubSpotCompany(companyDomain: string | null, companyName: string | null, enabled: boolean) {
+  return useActionQuery<HubSpotCompanyData>(
+    "get-hubspot-company",
+    { companyDomain, companyName },
+    { enabled: enabled && !!(companyDomain || companyName) },
+  );
+}
+
+function CompanyHoverCardBody({ data, isLoading }: { data: HubSpotCompanyData | undefined; isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <IconLoader2 size={12} className="animate-spin" /> Loading HubSpot data…
+      </p>
+    );
+  }
+  if (!data?.connected) return <p className="text-xs text-muted-foreground">HubSpot not connected.</p>;
+  if (!data.matched || !data.company) return <p className="text-xs text-muted-foreground">Not found in HubSpot.</p>;
+
+  const { company, deals = [], contacts = [] } = data;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <CompanyLogo name={company.name} domain={company.domain} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">{company.name}</p>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {[company.industry, company.employeeCount ? `${company.employeeCount} employees` : null].filter(Boolean).join(" · ") || "—"}
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <IconCoin size={11} /> Deals
+        </p>
+        {deals.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground/70">No deals on record.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {deals.slice(0, 3).map((d, i) => (
+              <li key={i} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate text-foreground">{d.name || "Untitled deal"}</span>
+                <span className="shrink-0 text-muted-foreground">{d.stage}</span>
+              </li>
+            ))}
+            {deals.length > 3 && <li className="text-[11px] text-muted-foreground/70">+{deals.length - 3} more</li>}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <IconUsers size={11} /> Contacts
+        </p>
+        {contacts.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground/70">No other contacts on record.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {contacts.slice(0, 3).map((c, i) => (
+              <li key={i} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate text-foreground">{c.name}</span>
+                <span className="shrink-0 truncate max-w-[100px] text-muted-foreground">{c.title ?? ""}</span>
+              </li>
+            ))}
+            {contacts.length > 3 && <li className="text-[11px] text-muted-foreground/70">+{contacts.length - 3} more</li>}
+          </ul>
+        )}
+      </div>
+
+      {data.recordUrl && (
+        <a href={data.recordUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+          View in HubSpot <IconExternalLink size={10} />
+        </a>
+      )}
+    </div>
+  );
+}
+
+function CompanyCell({ company, companyDomain }: { company: string | null; companyDomain: string | null }) {
+  const [open, setOpen] = useState(false);
+  const query = useHubSpotCompany(companyDomain, company, open);
+
+  if (!company) return <span className="text-xs text-muted-foreground">—</span>;
+
+  return (
+    <HoverCard open={open} onOpenChange={setOpen} openDelay={300}>
+      <HoverCardTrigger asChild>
+        <button type="button" className="flex max-w-[180px] items-center gap-1.5 text-left">
+          <CompanyLogo name={company} domain={companyDomain} />
+          <span className="truncate text-xs text-muted-foreground">{company}</span>
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="w-72" onClick={(e) => e.stopPropagation()}>
+        <CompanyHoverCardBody data={query.data as HubSpotCompanyData | undefined} isLoading={query.isLoading} />
+      </HoverCardContent>
+    </HoverCard>
+  );
 }
 
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
@@ -448,6 +616,13 @@ function ProspectSheet({
         deals?: Array<{ name: string; stage: string }>;
       }
     | undefined;
+
+  // Company-level HubSpot data (deals + other contacts at this company) --
+  // same action the Prospects table's Company hover card uses, so react-
+  // query's cache is shared if this row was already hovered before being
+  // clicked into.
+  const companyQuery = useHubSpotCompany(prospect.companyDomain, prospect.company, true);
+  const companyData = companyQuery.data as HubSpotCompanyData | undefined;
 
   const [note, setNote] = useState(prospect.draftNote ?? "");
   const [followUp, setFollowUp] = useState(prospect.draftFollowUp ?? "");
@@ -766,6 +941,87 @@ function ProspectSheet({
               </p>
             )}
           </div>
+
+          {(prospect.companyDomain || prospect.company) && (
+            <div className="pt-4 border-t border-border">
+              <div className="mb-2 flex items-center gap-1.5">
+                <IconBuilding size={12} className="text-muted-foreground" />
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Company</p>
+              </div>
+              {companyQuery.isLoading ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <IconLoader2 size={12} className="animate-spin" /> Loading HubSpot data…
+                </p>
+              ) : !companyData?.connected ? (
+                <p className="text-xs text-muted-foreground">HubSpot not connected.</p>
+              ) : !companyData.matched || !companyData.company ? (
+                <p className="text-xs italic text-muted-foreground">Not found in HubSpot.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
+                    {[
+                      { label: "Industry", value: companyData.company.industry },
+                      { label: "Employees", value: companyData.company.employeeCount },
+                      { label: "Country", value: companyData.company.country },
+                      { label: "Owner", value: companyData.company.ownerName },
+                    ].map((row) => (
+                      <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2">
+                        <span className="shrink-0 text-[11px] text-muted-foreground">{row.label}</span>
+                        <span className={cn("truncate text-xs text-right", row.value ? "text-foreground" : "text-muted-foreground/60")}>
+                          {row.value ?? "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div>
+                    <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <IconCoin size={11} /> Deals
+                    </p>
+                    {(companyData.deals ?? []).length === 0 ? (
+                      <p className="text-xs italic text-muted-foreground/70">No deals on record.</p>
+                    ) : (
+                      <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
+                        {(companyData.deals ?? []).map((d, i) => (
+                          <div key={i} className="flex items-center justify-between gap-3 px-3 py-2">
+                            <span className="truncate text-xs text-foreground">{d.name || "Untitled deal"}</span>
+                            <span className="shrink-0 text-right text-xs text-muted-foreground">
+                              {d.stage}{formatDealAmount(d.amount) ? ` · ${formatDealAmount(d.amount)}` : ""}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <IconUsers size={11} /> Contacts at this company
+                    </p>
+                    {(companyData.contacts ?? []).length === 0 ? (
+                      <p className="text-xs italic text-muted-foreground/70">No other contacts on record.</p>
+                    ) : (
+                      <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
+                        {(companyData.contacts ?? []).map((c, i) => (
+                          <div key={i} className="flex items-center justify-between gap-3 px-3 py-2">
+                            <span className="truncate text-xs text-foreground">{c.name}</span>
+                            <span className="shrink-0 truncate max-w-[140px] text-right text-xs text-muted-foreground">{c.title ?? ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {companyData.recordUrl && (
+                    <a href={companyData.recordUrl} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                      View in HubSpot <IconExternalLink size={10} />
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {isProspect && (
@@ -1554,7 +1810,7 @@ export default function ProspectsRoute() {
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => {}}
-                        onClick={(e) => { e.preventDefault(); toggleSelect(p.id, rowIndex, e.shiftKey); }}
+                        onClick={(e) => toggleSelect(p.id, rowIndex, e.shiftKey)}
                         className="rounded border-border"
                       />
                     </td>
@@ -1574,10 +1830,11 @@ export default function ProspectsRoute() {
 
                     {/* Company -- own column (was a truncated sub-line
                         buried under Person) so it's scannable on its own,
-                        matching Persona/Job Title's treatment. */}
+                        matching Persona/Job Title's treatment. Logo/avatar +
+                        hover card with HubSpot deals/contacts. */}
                     {!hiddenColumns.has("company") && (
                       <td className="px-3 py-3">
-                        <span className="text-xs text-muted-foreground truncate max-w-[180px] block">{p.company || "—"}</span>
+                        <CompanyCell company={p.company} companyDomain={p.companyDomain} />
                       </td>
                     )}
 

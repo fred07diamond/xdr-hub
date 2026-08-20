@@ -55,6 +55,11 @@ export const prospects = table("prospects", {
   enrichedLinkedinUrl: text("enriched_linkedin_url"),
   enrichedCompanyIndustry: text("enriched_company_industry"),
   enrichedCompanySize: integer("enriched_company_size"),
+  // Apollo's person.organization.primary_domain -- was already being read at
+  // enrich time (as a lookup key for enrichApolloOrganization) but never
+  // persisted. Used to key company search (HubSpot, Clearbit logo) more
+  // reliably than free-text company name.
+  companyDomain: text("company_domain"),
   enrichedAt: text("enriched_at"),
   enrichmentError: text("enrichment_error"),
   // Provenance -- which write path produced the current enrichment values,
@@ -259,6 +264,8 @@ export const leadListItems = table("lead_list_items", {
   enrichedLinkedinUrl: text("enriched_linkedin_url"),
   enrichedCompanyIndustry: text("enriched_company_industry"),
   enrichedCompanySize: integer("enriched_company_size"),
+  // Same as prospects.companyDomain -- Apollo's person.organization.primary_domain.
+  companyDomain: text("company_domain"),
   enrichedAt: text("enriched_at"),
   // Per-endpoint Apollo warnings (e.g. a key scoped for org search but not
   // person match) — set whenever the person and/or organization lookup

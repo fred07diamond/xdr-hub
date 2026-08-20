@@ -14,6 +14,7 @@ export interface EnrichLeadListItemResult {
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
+  companyDomain: string | null;
   enrichmentError: string | null;
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
 }
@@ -90,6 +91,7 @@ export async function enrichLeadListItem(db: Db, item: LeadListItem): Promise<En
       enrichedLinkedinUrl: person?.linkedin_url ?? null,
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
+      companyDomain: person?.organization?.primary_domain ?? item.companyDomain,
       enrichedAt,
       enrichmentError,
       enrichmentSource: person || organization ? "apollo" : item.enrichmentSource,
@@ -107,6 +109,7 @@ export async function enrichLeadListItem(db: Db, item: LeadListItem): Promise<En
     enrichedLinkedinUrl: person?.linkedin_url ?? null,
     enrichedCompanyIndustry: organization?.industry ?? null,
     enrichedCompanySize: organization?.estimated_num_employees ?? null,
+    companyDomain: person?.organization?.primary_domain ?? item.companyDomain,
     enrichmentError,
     phoneRevealStatus: ("phoneRevealStatus" in phoneRevealUpdate ? phoneRevealUpdate.phoneRevealStatus : item.phoneRevealStatus) ?? null,
   };

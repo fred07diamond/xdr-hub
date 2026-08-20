@@ -106,6 +106,7 @@ export default defineAction({
         enrichedLinkedinUrl: person?.linkedin_url ?? null,
         enrichedCompanyIndustry: organization?.industry ?? null,
         enrichedCompanySize: organization?.estimated_num_employees ?? null,
+        companyDomain: person?.organization?.primary_domain ?? prospect.companyDomain,
         enrichedAt,
         enrichmentError,
         enrichmentSource: person || organization ? "apollo" : prospect.enrichmentSource,
@@ -124,6 +125,7 @@ export default defineAction({
       enrichedLinkedinUrl: person?.linkedin_url ?? null,
       enrichedCompanyIndustry: organization?.industry ?? null,
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
+      companyDomain: person?.organization?.primary_domain ?? prospect.companyDomain,
       enrichmentError,
       phoneRevealStatus: "phoneRevealStatus" in phoneRevealUpdate ? phoneRevealUpdate.phoneRevealStatus : (prospect.phoneRevealStatus ?? null),
     };

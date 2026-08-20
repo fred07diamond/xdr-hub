@@ -608,6 +608,20 @@ export default runMigrations(
       name: "lead-list-items-enriched-email-status",
       sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_email_status TEXT`,
     },
+    // Company domain -- Apollo's person.organization.primary_domain, already
+    // fetched at enrich time but previously discarded. Used to key HubSpot
+    // company search and the Clearbit logo lookup more reliably than a raw
+    // free-text company name.
+    {
+      version: 98,
+      name: "prospects-company-domain",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS company_domain TEXT`,
+    },
+    {
+      version: 99,
+      name: "lead-list-items-company-domain",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS company_domain TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

@@ -106,6 +106,7 @@ export default defineAction({
         enrichedLinkedinUrl: p.enrichedLinkedinUrl,
         enrichedCompanyIndustry: p.enrichedCompanyIndustry,
         enrichedCompanySize: p.enrichedCompanySize,
+        companyDomain: p.companyDomain,
         enrichedAt: p.enrichedAt,
         enrichmentError: p.enrichmentError,
         enrichmentSource: p.enrichmentSource,
