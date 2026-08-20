@@ -55,7 +55,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { APP_TITLE } from "@/lib/app-config";
 import { CanvasTabBar } from "../components/canvas/CanvasTabBar.js";
 import { TemplatePicker, type TemplateSlug } from "../components/canvas/TemplatePicker.js";
@@ -682,6 +681,41 @@ function NodePalette({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
   );
 }
 
+// Permanent left rail replacing the toolbar's old "Add Node" popover -- part
+// of the three-panel layout (palette rail · canvas · properties). The
+// per-node "+" source-handle popover (SourceAddHandle, below) still uses the
+// plain NodePalette above as a floating contextual menu, unchanged -- that
+// one has to appear at an arbitrary canvas position next to a specific
+// handle, which is inherently ephemeral, not a global affordance to dock.
+function NodePaletteRail({ onSelect }: { onSelect: (type: PaletteKind) => void }) {
+  return (
+    <div className="w-56 shrink-0 overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <p className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Add node</p>
+      {PALETTE_TYPES.map((kind) => {
+        const cfg = NODE_CONFIG[kind];
+        return (
+          <button
+            key={kind}
+            className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
+            onClick={() => onSelect(kind)}
+          >
+            <div
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded"
+              style={{ background: cfg.color }}
+            >
+              <cfg.Icon size={12} className="text-white" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-100">{cfg.label}</p>
+              <p className="text-[10px] text-zinc-500 leading-snug">{cfg.description}</p>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Node editor sheet ──────────────────────────────────────────────────────────
 
 interface EditorProps {
@@ -692,7 +726,13 @@ interface EditorProps {
   onDeleted: (id: string) => void;
 }
 
-function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorProps) {
+// Docked right-hand properties panel -- permanently mounted (not a dismissible
+// overlay) so editing a node and seeing the canvas stay visible at the same
+// time, part of the three-panel layout (palette rail · canvas · properties).
+// Renamed from NodeEditorSheet; internal editing logic is unchanged, only the
+// outer wrapper (Sheet -> plain docked div) and the null-node empty state are
+// new.
+function NodePropertiesPanel({ node, isAdmin, onClose, onSaved, onDeleted }: EditorProps) {
   const updateNode = useActionMutation("update-messaging-node");
   const deleteNode = useActionMutation("delete-messaging-node");
   const researchCompany = useActionMutation("research-company");
@@ -812,23 +852,33 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
   const showAvoid = isGlobal || node?.type === "phrase_rule" || node?.type === "role";
   const showExample = isGlobal || node?.type === "example";
 
-  return (
-    <Sheet open={!!node} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-[420px] overflow-y-auto">
-        <SheetHeader>
-          <div className="flex items-center gap-2">
-            {node && (
-              <div className="flex h-7 w-7 items-center justify-center rounded" style={{ background: cfg.color }}>
-                <cfg.Icon size={14} className="text-white" />
-              </div>
-            )}
-            <SheetTitle>
-            {isPersona ? (node?.title ?? cfg.label) : cfg.label}
-          </SheetTitle>
-          </div>
-        </SheetHeader>
+  if (!node) {
+    return (
+      <div className="w-96 shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-background flex items-center justify-center">
+        <p className="max-w-[220px] text-center text-sm text-zinc-400">Select a node to edit its details here.</p>
+      </div>
+    );
+  }
 
-        <div className="mt-4 flex flex-col gap-4">
+  return (
+    <div className="w-96 shrink-0 overflow-y-auto border-l border-zinc-200 bg-background dark:border-zinc-800">
+      <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded" style={{ background: cfg.color }}>
+            <cfg.Icon size={14} className="text-white" />
+          </div>
+          <h2 className="text-sm font-semibold">{isPersona ? (node?.title ?? cfg.label) : cfg.label}</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+        >
+          <IconX size={15} />
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-4 p-5">
           <EditorField label="Title" readOnly={readOnly}>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={readOnly} placeholder="Node title" />
           </EditorField>
@@ -1031,8 +1081,7 @@ function NodeEditorSheet({ node, isAdmin, onClose, onSaved, onDeleted }: EditorP
           {isPersona && !readOnly && <p className="text-xs text-zinc-500 italic">Persona anchor. Add tone/voice here as a baseline, then branch off Phrase Rule, Example, and Role nodes for the details.</p>}
           {isPersona && readOnly && <p className="text-xs text-zinc-500 italic">Persona nodes are admin-managed.</p>}
         </div>
-      </SheetContent>
-    </Sheet>
+    </div>
   );
 }
 
@@ -1258,7 +1307,6 @@ function MessagingCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [editingNode, setEditingNode] = useState<MessagingNode | null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -1511,7 +1559,6 @@ function MessagingCanvas() {
 
   async function handleAddNode(nodeType: PaletteKind) {
     if (!activeCanvasId || !graph) return;
-    setPaletteOpen(false);
     const pos = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const result = await createNode.mutateAsync({
       canvasId: graph!.activeCanvasId,
@@ -1686,21 +1733,6 @@ function MessagingCanvas() {
           <IconSparkles size={14} />
           Build with AI
         </Button>
-        {/* Add node button with palette */}
-        <div className="relative">
-          <Button size="sm" onClick={() => setPaletteOpen((o) => !o)} className="gap-1">
-            <IconPlus size={14} />
-            Add Node
-          </Button>
-          {paletteOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setPaletteOpen(false)} />
-              <div className="z-50 relative">
-                <NodePalette onSelect={handleAddNode} />
-              </div>
-            </>
-          )}
-        </div>
         <Button size="sm" variant="outline" onClick={() => refetch()}>
           <IconRefresh size={14} />
         </Button>
@@ -1742,43 +1774,57 @@ function MessagingCanvas() {
         })}
       </div>
 
-      {/* Canvas */}
-      <div className="flex-1 relative">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={handleConnect}
-          onEdgesDelete={handleEdgesDelete}
-          onNodesDelete={handleNodesDelete}
-          onBeforeDelete={handleBeforeDelete}
-          onNodeDragStop={handleNodeDragStop}
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
-          deleteKeyCode={["Delete", "Backspace"]}
-          selectionOnDrag
-          className="bg-zinc-50 dark:bg-zinc-950"
-        >
-          <Background color="#e4e4e7" gap={20} />
-          <Controls />
-          <MiniMap
-            nodeColor={(n) => {
-              if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
-              return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
-            }}
-            maskColor="rgba(0,0,0,0.15)"
-            style={{ background: "hsl(var(--background))" }}
+      {/* Three-panel body: palette rail · canvas · properties panel --
+          all permanently docked, none a dismissible overlay, so a node can
+          be edited while the canvas and the palette both stay visible. */}
+      <div className="flex flex-1 min-h-0">
+        <NodePaletteRail onSelect={handleAddNode} />
+
+        <div className="flex-1 relative">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={handleConnect}
+            onEdgesDelete={handleEdgesDelete}
+            onNodesDelete={handleNodesDelete}
+            onBeforeDelete={handleBeforeDelete}
+            onNodeDragStop={handleNodeDragStop}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            deleteKeyCode={["Delete", "Backspace"]}
+            selectionOnDrag
+            className="bg-zinc-50 dark:bg-zinc-950"
+          >
+            <Background color="#e4e4e7" gap={20} />
+            <Controls />
+            <MiniMap
+              nodeColor={(n) => {
+                if (n.type === "persona") return (n.data as NodeData).persona?.color ?? "#0a66c2";
+                return NODE_CONFIG[n.type as NodeKind]?.color ?? "#94a3b8";
+              }}
+              maskColor="rgba(0,0,0,0.15)"
+              style={{ background: "hsl(var(--background))" }}
+            />
+          </ReactFlow>
+          <PreviewPanel
+            open={previewOpen}
+            onClose={() => setPreviewOpen(false)}
+            onGenerate={handleGeneratePreview}
+            preview={previewText}
+            generating={previewing}
           />
-        </ReactFlow>
-        <PreviewPanel
-          open={previewOpen}
-          onClose={() => setPreviewOpen(false)}
-          onGenerate={handleGeneratePreview}
-          preview={previewText}
-          generating={previewing}
+        </div>
+
+        <NodePropertiesPanel
+          node={editingNode}
+          isAdmin={isAdmin}
+          onClose={() => setEditingNode(null)}
+          onSaved={handleNodeSaved}
+          onDeleted={handleNodeDeleted}
         />
       </div>
 
@@ -1809,14 +1855,6 @@ function MessagingCanvas() {
           </div>
         </div>
       )}
-
-      <NodeEditorSheet
-        node={editingNode}
-        isAdmin={isAdmin}
-        onClose={() => setEditingNode(null)}
-        onSaved={handleNodeSaved}
-        onDeleted={handleNodeDeleted}
-      />
 
       {contextMenu && (
         <NodeContextMenu
