@@ -520,7 +520,7 @@ function EnrichButton({
       type="button"
       onClick={(e) => { e.stopPropagation(); onEnrich(prospect); }}
       title={prospect.enrichmentError ?? undefined}
-      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
     >
       <IconSparkles size={11} />
       {prospect.enrichmentStatus === "done"
@@ -557,7 +557,7 @@ function ScoreDraftButton({
       type="button"
       onClick={(e) => { e.stopPropagation(); onScore(prospect); }}
       title={error ?? "Generate a fit score and draft note for this lead"}
-      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] hover:bg-muted ${
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] hover:bg-muted ${
         error ? "border-destructive/40 text-destructive" : "border-border"
       }`}
     >
@@ -1945,7 +1945,7 @@ export default function ProspectsRoute() {
                     {!hiddenColumns.has("persona") && (
                       <td className="px-3 py-3">
                         {p.personaName && p.personaColor ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                             <span style={{ background: p.personaColor }} className="inline-block h-1.5 w-1.5 rounded-full shrink-0" />
                             {p.personaName}
                           </span>
