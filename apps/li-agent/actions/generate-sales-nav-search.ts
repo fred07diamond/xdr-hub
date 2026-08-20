@@ -17,21 +17,30 @@ import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
 // clicks it and pages through themselves, same as any other search.
 //
 // v2 mechanism: real Sales Nav filter chips (Function, Seniority level,
-// Geography, Company headcount, Company type, Current job title), not just
-// a keyword string. These ID tables were reverse-engineered from real Sales
-// Nav search URLs the user captured from their own account (not guessed) --
-// Function and Seniority use small fixed integer IDs, Geography/Headcount/
-// Type use fixed letter/region codes. CURRENT_TITLE entries omit id
-// entirely (confirmed from a real capture: a title LinkedIn's typeahead
-// resolves gets a real numeric id, but a free-typed unmatched title just
-// omits id and still works) -- we have no title-taxonomy id table, so every
-// title this file generates uses that same id-less shape. Company and Past
-// Company filters use LinkedIn entity URNs (e.g. urn:li:organization:1033)
-// that require a name-to-ID typeahead lookup we don't have -- those stay
-// out of scope; company scoping instead folds into the keywords text (see
-// companyName param). Any remaining title-adjacent nuance that doesn't
-// reduce to a clean title list still goes through the documented Boolean
-// keyword syntax, combined with the structured filters.
+// Geography, Company headcount, Company type, Current job title, Current
+// company), not just a keyword string. These ID tables were reverse-
+// engineered from real Sales Nav search URLs the user captured from their
+// own account (not guessed) -- Function and Seniority use small fixed
+// integer IDs, Geography/Headcount/Type use fixed letter/region codes.
+//
+// CURRENT_TITLE and CURRENT_COMPANY entries omit id entirely. A real
+// capture showed LinkedIn's own UI attaches an id when its typeahead
+// resolves the value (a numeric id for titles, a urn:li:organization URN
+// for companies), but a value with no taxonomy match just omits id -- and
+// live-verified with the user: a text-only CURRENT_COMPANY entry renders a
+// real "Current company" chip and filters correctly. That matters because
+// resolving a company name to its LinkedIn org URN would otherwise need an
+// authenticated-session typeahead lookup this backend has no access to.
+//
+// Using the real CURRENT_COMPANY filter (rather than folding the company
+// name into `keywords`) also fixes a precision bug: LinkedIn keyword
+// search matches text ANYWHERE on a profile, including past roles, so a
+// keyword-scoped company search surfaced people who merely used to work
+// there. CURRENT_COMPANY is a true current-employer filter.
+//
+// Past Company still stays out of scope. Any remaining title-adjacent
+// nuance that doesn't reduce to a clean title list still goes through the
+// documented Boolean keyword syntax, combined with the structured filters.
 const FUNCTION_IDS: Record<string, number> = {
   "Accounting": 1,
   "Administrative": 2,
@@ -173,15 +182,15 @@ function resolveEnumValues<T extends string | number>(
 }
 
 export default defineAction({
-  description: "Generate a Sales Navigator search URL with real filter chips (Current job title, Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one -- a persona's exact \"Common titles\" list becomes a real multi-value Current job title filter, not just a keyword search. Pass companyName to scope the search to one account (e.g. from My Accounts) -- folded into the keywords text since there's no real company filter available.",
+  description: "Generate a Sales Navigator search URL with real filter chips (Current job title, Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one -- a persona's exact \"Common titles\" list becomes a real multi-value Current job title filter, not just a keyword search. Pass companyName to scope the search to one account (e.g. from My Accounts) -- becomes a real \"Current company\" filter chip, so it returns only people who work there now, not former employees.",
   schema: z.object({
     prompt: z.string().min(1),
     companyName: z
       .string()
       .nullish()
       .describe(
-        "Optional company to scope the search to (e.g. from the My Accounts page). There's no real Sales Nav company filter " +
-          "available (see comment below), so this is folded into the keywords text deterministically, never left to the model.",
+        "Optional company to scope the search to (e.g. from the My Accounts page). Becomes a real Sales Nav " +
+          "\"Current company\" filter chip -- applied deterministically, never left to the model.",
       ),
     apiToken: z.string().nullish().describe("Personal API token from Settings"),
   }),
@@ -218,7 +227,7 @@ export default defineAction({
       "(titles, seniority language, function) rather than guessing from the request's wording alone. " +
       "Reply with ONLY a JSON object on one line, no markdown, no code fences, in this exact shape: " +
       '{"function": ["..."], "seniorityLevel": ["..."], "region": ["..."], "companyHeadcount": ["..."], "companyType": ["..."], ' +
-      '"titles": ["..."], "excludeCrmLeads": false, "titleKeywords": "...", "unsupportedNotes": "...", ' +
+      '"titles": ["..."], "companies": ["..."], "excludeCrmLeads": false, "titleKeywords": "...", "unsupportedNotes": "...", ' +
       '"summary": "one plain-English sentence describing who this search targets", "matchedPersonaName": "exact persona name or null"}\n\n' +
       "Rules:\n" +
       `- "function" values MUST come only from this exact list (use the exact text): ${Object.keys(FUNCTION_IDS).join(", ")}\n` +
@@ -240,7 +249,7 @@ export default defineAction({
       "Only fall back to \"function\"/\"seniorityLevel\" alone, with \"titles\" empty, when the persona (or request) gives no specific title language at all.\n" +
       "- \"titleKeywords\" is a separate, optional field ONLY for title-adjacent language that doesn't reduce to a clean list of titles (e.g. a domain term like \"AI\", or \"recently promoted\"). Leave it empty whenever \"titles\" already covers the request -- don't duplicate the same titles into both fields. Sales Navigator Boolean rules apply if used: AND/OR/NOT uppercase, quotes for exact phrases, parens for grouping.\n" +
       "- \"unsupportedNotes\" is a short plain-English note (or empty string) about any part of the request you could NOT express in these filters (e.g. a specific company, a specific city/country, an industry). Be honest about gaps rather than silently dropping or mis-mapping them. Keep it to one sentence.\n" +
-      "- There is NO company-targeting field available at all -- Company/Past Company require an internal LinkedIn ID lookup this tool doesn't have. If the request names specific companies (e.g. \"folks at Acme and Globex\"), do NOT refuse and do NOT reply with plain-text explanation instead of JSON -- list the company names in \"unsupportedNotes\" and still fill in every other field you CAN determine from the rest of the request (function, seniority, region, headcount, companyType, titles, excludeCrmLeads, titleKeywords).\n" +
+      "- \"companies\" is for CURRENT employer targeting: if the request names specific companies (e.g. \"folks at Acme and Globex\"), put each exact company name as its own array entry. This becomes a real \"Current company\" filter (matching ANY of them), so it only returns people who work there NOW, not former employees. Leave it an empty array if no company was named. Past/former-employer targeting is still NOT supported -- if the request explicitly asks for people who USED to work somewhere, note that in \"unsupportedNotes\" instead.\n" +
       "- You must ALWAYS reply with the exact JSON shape above, even when most of the request can't be expressed in these filters. Never reply with plain prose, an apology, or an explanation instead of the JSON object -- put anything unsupported in \"unsupportedNotes\" and still return whatever filters you can. Keep \"summary\" and \"unsupportedNotes\" each to one short sentence so the reply stays compact.";
 
     try {
@@ -262,6 +271,7 @@ export default defineAction({
         companyHeadcount?: string[];
         companyType?: string[];
         titles?: string[];
+        companies?: string[];
         excludeCrmLeads?: boolean;
         titleKeywords?: string;
         unsupportedNotes?: string;
@@ -278,6 +288,7 @@ export default defineAction({
       // Cap like every other array field's real-world size -- a hard stop
       // against a runaway/hallucinated list, not an expected normal case.
       const MAX_TITLES = 25;
+      const MAX_COMPANIES = 25;
       const titles = Array.from(new Set((parsed.titles ?? []).map((t) => t.trim()).filter(Boolean))).slice(0, MAX_TITLES);
 
       const filterEntries: string[] = [];
@@ -317,24 +328,28 @@ export default defineAction({
       if (titleKeywords) {
         appliedFilters.push(`Title keywords: ${titleKeywords}`);
       }
+      // Real CURRENT_COMPANY filter chips, id-less (live-verified -- see the
+      // header comment). Deliberately NOT folded into `keywords`: keyword
+      // text matches past roles too, which is exactly the false-positive
+      // this replaces. The explicit companyName param (My Accounts' per-
+      // account search) is authoritative and goes first; anything the model
+      // pulled out of the prompt itself is merged in after, deduped.
       const trimmedCompanyName = companyName?.trim() || "";
-      if (trimmedCompanyName) {
-        appliedFilters.push(`Company: ${trimmedCompanyName}`);
+      const companyNames = Array.from(
+        new Set([trimmedCompanyName, ...(parsed.companies ?? []).map((c) => c.trim())].filter(Boolean)),
+      ).slice(0, MAX_COMPANIES);
+      if (companyNames.length) {
+        filterEntries.push(buildFilterEntry("CURRENT_COMPANY", companyNames.map((c) => ({ text: c }))));
+        appliedFilters.push(`Current company: ${companyNames.join(", ")}`);
       }
 
-      if (!filterEntries.length && !titleKeywords && !trimmedCompanyName) {
+      if (!filterEntries.length && !titleKeywords) {
         return { error: "Could not generate a search from that -- try rephrasing with more specific criteria." };
       }
 
-      // Company name folds into the same keywords text as titleKeywords,
-      // deterministically here (never left to the model above) -- quoted
-      // for an exact-phrase match, same Boolean syntax the model already
-      // uses for titleKeywords.
-      const combinedKeywords = [titleKeywords, trimmedCompanyName ? `"${trimmedCompanyName}"` : ""].filter(Boolean).join(" ");
-
       const queryParts: string[] = [];
       if (filterEntries.length) queryParts.push(`filters:List(${filterEntries.join(",")})`);
-      if (combinedKeywords) queryParts.push(`keywords:${encodeLeaf(combinedKeywords)}`);
+      if (titleKeywords) queryParts.push(`keywords:${encodeLeaf(titleKeywords)}`);
       const rawQuery = `(${queryParts.join(",")})`;
       const searchUrl = `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent(rawQuery)}`;
 
