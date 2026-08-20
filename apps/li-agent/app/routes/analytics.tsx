@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery, useSession } from "@agent-native/core/client";
 import { useOrgRole } from "@agent-native/core/client/org";
 import {
   IconCheck,
@@ -62,6 +62,20 @@ export function meta() {
 function pct(n: number, total: number) {
   if (total === 0) return "0%";
   return `${Math.round((n / total) * 100)}%`;
+}
+
+// No display-name column exists anywhere in this schema -- leaderboards only
+// ever have an email to show. Formats the local-part into a readable name
+// ("victoria@builder.io" -> "Victoria", "chris.smith@..." -> "Chris Smith")
+// rather than showing the raw address, without adding a new lookup/dependency.
+function emailToDisplayName(email: string): string {
+  if (email === "Unassigned") return email;
+  const local = email.split("@")[0] ?? email;
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
 type TrendPoint = { date: string; label: string; prospects: number; engagers: number; leads: number };
@@ -203,21 +217,52 @@ function OverviewTab({
   };
 }) {
   const weekDiff = d.thisWeek - d.lastWeek;
+  const { session } = useSession();
+  const viewerEmail = session?.email ?? null;
+  const [showAllLeaderboard, setShowAllLeaderboard] = useState(false);
 
   const combinedByUser = new Map<string, number>();
   for (const u of d.byUser) combinedByUser.set(u.ownerEmail ?? "Unassigned", (combinedByUser.get(u.ownerEmail ?? "Unassigned") ?? 0) + u.total);
   for (const u of d.postEngagement.byUser) combinedByUser.set(u.ownerEmail ?? "Unassigned", (combinedByUser.get(u.ownerEmail ?? "Unassigned") ?? 0) + u.total);
   for (const u of d.leadLists.byUser) combinedByUser.set(u.ownerEmail ?? "Unassigned", (combinedByUser.get(u.ownerEmail ?? "Unassigned") ?? 0) + u.leads);
-  const leaderboard = [...combinedByUser.entries()]
-    .map(([name, total]) => ({ name, total }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 8);
+  const leaderboardAll = [...combinedByUser.entries()]
+    .map(([email, total]) => ({ email, total }))
+    .sort((a, b) => b.total - a.total);
+
+  // "Top 5 + you" instead of a hard top-8 cutoff with no way to find your own
+  // row -- research on leaderboards (cited in the design doc this follows)
+  // specifically warns against showing a full ranking with no way for a
+  // lower-ranked viewer to see themselves without being made to feel last.
+  const viewerIndex = leaderboardAll.findIndex((r) => r.email === viewerEmail);
+  const top5 = leaderboardAll.slice(0, 5);
+  const viewerInTop5 = viewerIndex !== -1 && viewerIndex < 5;
+  const leaderboard = showAllLeaderboard
+    ? leaderboardAll
+    : viewerInTop5 || viewerIndex === -1
+      ? top5
+      : [...top5, leaderboardAll[viewerIndex]];
+  const leaderboardTruncated = !showAllLeaderboard && leaderboardAll.length > leaderboard.length;
 
   return (
     <div className="grid items-start grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
-      <KpiCard label="Prospects" value={d.totalProspects} color={PIPELINE.prospects.color} />
-      <KpiCard label="Engagers" value={d.postEngagement.totalEngagers} color={PIPELINE.engagers.color} />
-      <KpiCard label="Leads" value={d.leadLists.totalLeads} color={PIPELINE.leads.color} />
+      <KpiCard
+        label="Prospects"
+        value={d.totalProspects}
+        color={PIPELINE.prospects.color}
+        sub={d.totalProspects === 0 ? "No profiles captured yet" : undefined}
+      />
+      <KpiCard
+        label="Engagers"
+        value={d.postEngagement.totalEngagers}
+        color={PIPELINE.engagers.color}
+        sub={d.postEngagement.totalEngagers === 0 ? "No post engagers captured yet" : undefined}
+      />
+      <KpiCard
+        label="Leads"
+        value={d.leadLists.totalLeads}
+        color={PIPELINE.leads.color}
+        sub={d.leadLists.totalLeads === 0 ? "No lead lists imported yet" : undefined}
+      />
       <KpiCard
         label="This Week"
         value={d.thisWeek}
@@ -237,11 +282,38 @@ function OverviewTab({
         />
       </BentoTile>
 
-      <BentoTile className="col-span-2" title="Team Leaderboard" sub="Prospects + engagers + leads, combined.">
+      <BentoTile
+        className="col-span-2"
+        title="Team Leaderboard"
+        sub="Prospects + engagers + leads, combined -- a rough activity signal, not a like-for-like comparison."
+      >
         {leaderboard.length === 0 ? (
           <EmptyState icon={IconUsers} text="No activity yet." />
         ) : (
-          <Leaderboard rows={leaderboard.map((r) => ({ label: r.name, value: r.total }))} color="#6b7280" />
+          <>
+            <Leaderboard
+              rows={leaderboard.map((r) => ({ label: emailToDisplayName(r.email), value: r.total, email: r.email }))}
+              color="#6b7280"
+              viewerEmail={viewerEmail}
+            />
+            {leaderboardTruncated ? (
+              <button
+                type="button"
+                onClick={() => setShowAllLeaderboard(true)}
+                className="mt-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Show all {leaderboardAll.length}
+              </button>
+            ) : showAllLeaderboard && leaderboardAll.length > 5 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllLeaderboard(false)}
+                className="mt-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Show top 5
+              </button>
+            ) : null}
+          </>
         )}
       </BentoTile>
 
@@ -319,7 +391,7 @@ function ProspectsTab({
 
       <TeamSection
         title="By Teammate"
-        rows={d.byUser.map((u) => ({ label: u.ownerEmail ?? "Unassigned", value: u.total }))}
+        rows={d.byUser.map((u) => ({ label: emailToDisplayName(u.ownerEmail ?? "Unassigned"), value: u.total, email: u.ownerEmail ?? "Unassigned" }))}
         color={PIPELINE.prospects.color}
         table={
           <table className="w-full text-sm">
@@ -409,7 +481,7 @@ function EngagementTab({ data, trend }: { data: PostEngagementData; trend: Trend
 
       <TeamSection
         title="By Teammate"
-        rows={data.byUser.map((u) => ({ label: u.ownerEmail ?? "Unassigned", value: u.total }))}
+        rows={data.byUser.map((u) => ({ label: emailToDisplayName(u.ownerEmail ?? "Unassigned"), value: u.total, email: u.ownerEmail ?? "Unassigned" }))}
         color={PIPELINE.engagers.color}
         table={
           <table className="w-full text-sm">
@@ -502,7 +574,7 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
 
       <TeamSection
         title="By Teammate"
-        rows={data.byUser.map((u) => ({ label: u.ownerEmail ?? "Unassigned", value: u.leads }))}
+        rows={data.byUser.map((u) => ({ label: emailToDisplayName(u.ownerEmail ?? "Unassigned"), value: u.leads, email: u.ownerEmail ?? "Unassigned" }))}
         color={PIPELINE.leads.color}
         table={
           <table className="w-full text-sm">
@@ -542,6 +614,11 @@ function TrendChart({
   height?: number;
   showLegend?: boolean;
 }) {
+  const total = data.reduce((sum, point) => sum + series.reduce((s, ser) => s + (point[ser.key] ?? 0), 0), 0);
+  if (total === 0) {
+    return <EmptyState icon={IconChartBar} text="No activity in the last 14 days yet." compact />;
+  }
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -16 }}>
@@ -617,11 +694,28 @@ function DonutBreakdown({ segments }: { segments: { label: string; value: number
   );
 }
 
-function Leaderboard({ rows, color }: { rows: { label: string; value: number; color?: string }[]; color: string }) {
+function Leaderboard({
+  rows,
+  color,
+  viewerEmail,
+}: {
+  rows: { label: string; value: number; color?: string; email?: string }[];
+  color: string;
+  viewerEmail?: string | null;
+}) {
   const height = Math.max(60, rows.length * 34);
+  // Append "(You)" and give the viewer's own row a distinct bar color --
+  // bolding just one Y-axis tick label would need a custom Recharts tick
+  // renderer, whereas this is a guaranteed-visible signal with no extra
+  // machinery.
+  const displayRows = rows.map((r) => ({
+    ...r,
+    label: r.email && viewerEmail && r.email === viewerEmail ? `${r.label} (You)` : r.label,
+    color: r.email && viewerEmail && r.email === viewerEmail ? "#0a66c2" : r.color,
+  }));
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
+      <BarChart data={displayRows} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
         <XAxis type="number" hide allowDecimals={false} />
         <YAxis
           type="category"
@@ -633,7 +727,7 @@ function Leaderboard({ rows, color }: { rows: { label: string; value: number; co
         />
         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid rgba(128,128,128,0.2)" }} cursor={{ fill: "rgba(128,128,128,0.08)" }} />
         <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={18} label={{ position: "right", fontSize: 11, fill: "currentColor" }}>
-          {rows.map((r, i) => (
+          {displayRows.map((r, i) => (
             <Cell key={`${r.label}-${i}`} fill={r.color ?? color} />
           ))}
         </Bar>
@@ -661,11 +755,12 @@ function TeamSection({
   table,
 }: {
   title: string;
-  rows: { label: string; value: number }[];
+  rows: { label: string; value: number; email?: string }[];
   color: string;
   table: React.ReactNode;
 }) {
   const [showTable, setShowTable] = useState(false);
+  const { session } = useSession();
   if (rows.length === 0) {
     return <EmptyState icon={IconUsers} text="No activity yet." />;
   }
@@ -681,7 +776,13 @@ function TeamSection({
         </button>
       </CardHeader>
       <CardContent className={showTable ? "overflow-x-auto p-0" : undefined}>
-        {showTable ? table : <Leaderboard rows={[...rows].sort((a, b) => b.value - a.value)} color={color} />}
+        {showTable ? table : (
+          <Leaderboard
+            rows={[...rows].sort((a, b) => b.value - a.value)}
+            color={color}
+            viewerEmail={session?.email ?? null}
+          />
+        )}
       </CardContent>
     </Card>
   );

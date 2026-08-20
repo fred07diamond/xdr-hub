@@ -1342,8 +1342,8 @@ export default function ProspectsRoute() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border bg-muted/30">
-                <th className="py-2 pl-3 pr-1 w-8">
+              <tr className="border-b border-border">
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-3 pr-1 w-8">
                   <input
                     type="checkbox"
                     checked={allFilteredSelected}
@@ -1352,15 +1352,15 @@ export default function ProspectsRoute() {
                     title="Select all"
                   />
                 </th>
-                <th className="py-2 pl-2 pr-3 text-left text-xs font-medium text-muted-foreground">Person</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
-                <th className="py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-2 pr-3 text-left text-xs font-medium text-muted-foreground">Person</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Persona</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Job Title</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Fit</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Tags</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Draft note</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Email</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground">Phone</th>
+                <th scope="col" className="sticky top-0 z-10 bg-muted/30 py-2 pl-3 pr-4 text-left text-xs font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>

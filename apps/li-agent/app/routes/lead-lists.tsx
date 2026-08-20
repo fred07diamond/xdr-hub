@@ -55,6 +55,16 @@ type LeadList = {
   createdAt: string | null;
 };
 
+// Two lists with the same/similar name are otherwise indistinguishable in
+// the master rail except for the lead count, which is easy to misread or
+// overlook -- created date disambiguates them without needing a click.
+function formatListCreatedAt(createdAt: string | null): string | null {
+  if (!createdAt) return null;
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 // Prefer the resolved public profile URL; it's null until the xDR actually
 // opens the lead's profile and the existing capture flow fills it in. Until
 // then, fall back to the Sales Nav lead URL captured at import time, which
@@ -443,7 +453,10 @@ export default function LeadListsPage() {
                       {l.description ? (
                         <p className="text-[11px] text-muted-foreground mt-1 truncate">{l.description}</p>
                       ) : null}
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{l.totalCount} leads</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {l.totalCount} leads
+                        {formatListCreatedAt(l.createdAt) && ` · Created ${formatListCreatedAt(l.createdAt)}`}
+                      </p>
                     </div>
                   ) : (
                     <button
@@ -461,7 +474,10 @@ export default function LeadListsPage() {
                           {l.description ? (
                             <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{l.description}</p>
                           ) : null}
-                          <p className="text-[11px] text-muted-foreground mt-0.5">{l.totalCount} leads</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {l.totalCount} leads
+                            {formatListCreatedAt(l.createdAt) && ` · Created ${formatListCreatedAt(l.createdAt)}`}
+                          </p>
                         </div>
                         <div className="flex items-center gap-0.5 shrink-0">
                           <button
@@ -565,7 +581,7 @@ export default function LeadListsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
-                      <th className="py-2.5 pl-4 pr-1 w-8">
+                      <th scope="col" className="py-2.5 pl-4 pr-1 w-8">
                         <input
                           type="checkbox"
                           checked={items.length > 0 && items.every((i) => selectedItemIds.has(i.id))}
@@ -574,12 +590,12 @@ export default function LeadListsPage() {
                           title="Select all"
                         />
                       </th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Name</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Job Title</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Company</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Email</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Phone</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Actions</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Name</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Job Title</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Company</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Email</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Phone</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>

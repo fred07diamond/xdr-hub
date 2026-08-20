@@ -18,7 +18,7 @@ import {
   useRemoveMember,
 } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconBrain, IconPlugConnected, IconCheck, IconCircleCheck, IconCircleX, IconClipboard, IconExternalLink, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
+import { IconBrain, IconPlugConnected, IconCheck, IconCircleCheck, IconCircleX, IconClipboard, IconExternalLink, IconEye, IconEyeOff, IconGauge, IconKey, IconLoader2, IconMail, IconBrandSlack } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -37,10 +37,17 @@ import changelog from "../../CHANGELOG.md?raw";
 const CHROME_EXTENSION_URL =
   "https://chromewebstore.google.com/detail/builderli/pnfejojajcalkmlaclnpklgijajjeoak";
 
+function maskToken(token: string): string {
+  const visible = token.slice(-4);
+  return `${"•".repeat(Math.max(token.length - 4, 8))}${visible}`;
+}
+
 function ApiTokenCard() {
   const { data, isLoading } = useActionQuery("get-api-token", {});
   const token = (data as any)?.token as string | undefined;
+  const createdAt = (data as any)?.createdAt as string | undefined;
   const [copied, setCopied] = useState(false);
+  const [revealed, setRevealed] = useState(false);
 
   function handleCopy() {
     if (!token) return;
@@ -59,6 +66,7 @@ function ApiTokenCard() {
         </CardTitle>
         <CardDescription>
           Paste this token into the LinkedIn Agent Chrome extension so your captures are linked to your account.
+          Kept masked by default — anyone screen-sharing or recording this page won't see it.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -68,19 +76,35 @@ function ApiTokenCard() {
             Loading…
           </div>
         ) : token ? (
-          <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
-              {token}
-            </code>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs hover:bg-muted"
-            >
-              {copied ? <IconCheck size={13} /> : <IconClipboard size={13} />}
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
+          <>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
+                {revealed ? token : maskToken(token)}
+              </code>
+              <button
+                type="button"
+                onClick={() => setRevealed((r) => !r)}
+                title={revealed ? "Hide token" : "Reveal token"}
+                aria-label={revealed ? "Hide token" : "Reveal token"}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs hover:bg-muted"
+              >
+                {revealed ? <IconEyeOff size={13} /> : <IconEye size={13} />}
+              </button>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs hover:bg-muted"
+              >
+                {copied ? <IconCheck size={13} /> : <IconClipboard size={13} />}
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            {createdAt && (
+              <p className="text-xs text-muted-foreground">
+                Created {new Date(createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+              </p>
+            )}
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">Failed to load token.</p>
         )}

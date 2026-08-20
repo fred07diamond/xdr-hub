@@ -23,14 +23,14 @@ export function meta() {
 }
 
 const PERSONA_COLORS = [
-  "#6366f1", // indigo
-  "#f97316", // orange
-  "#22c55e", // green
-  "#ec4899", // pink
-  "#0ea5e9", // sky
-  "#eab308", // yellow
-  "#a855f7", // purple
-  "#ef4444", // red
+  { hex: "#6366f1", name: "Indigo" },
+  { hex: "#f97316", name: "Orange" },
+  { hex: "#22c55e", name: "Green" },
+  { hex: "#ec4899", name: "Pink" },
+  { hex: "#0ea5e9", name: "Sky" },
+  { hex: "#eab308", name: "Yellow" },
+  { hex: "#a855f7", name: "Purple" },
+  { hex: "#ef4444", name: "Red" },
 ];
 
 const ACCEPTED_EXT = [".txt", ".md", ".markdown"];
@@ -74,14 +74,16 @@ function ColorPicker({
     <div className="flex gap-1.5">
       {PERSONA_COLORS.map((c) => (
         <button
-          key={c}
+          key={c.hex}
           type="button"
-          onClick={() => onChange(c)}
-          style={{ background: c }}
+          onClick={() => onChange(c.hex)}
+          style={{ background: c.hex }}
           className="h-5 w-5 rounded-full transition-transform hover:scale-110"
-          aria-label={c}
+          aria-label={c.name}
+          aria-pressed={value === c.hex}
+          title={c.name}
         >
-          {value === c && (
+          {value === c.hex && (
             <IconCheck size={11} className="mx-auto text-white" strokeWidth={3} />
           )}
         </button>
@@ -285,7 +287,7 @@ function PersonaCard({
                   style={setActive.isPending ? {} : { borderColor: persona.color, color: persona.color }}
                   className="rounded-full border px-3 py-1 text-xs font-semibold transition-colors hover:opacity-80 disabled:opacity-40"
                 >
-                  {setActive.isPending ? "Setting…" : "Set active"}
+                  {setActive.isPending ? "Setting…" : "Set as default"}
                 </button>
               )}
               {persona.wordCount > 0 && (
@@ -375,7 +377,7 @@ function NewPersonaPanel({
   const createPersona = useActionMutation("create-icp-persona");
 
   const [name, setName] = useState("");
-  const [color, setColor] = useState(PERSONA_COLORS[0]);
+  const [color, setColor] = useState(PERSONA_COLORS[0].hex);
   const [pendingFile, setPendingFile] = useState<{ name: string; text: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);

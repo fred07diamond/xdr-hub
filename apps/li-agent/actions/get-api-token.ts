@@ -14,20 +14,22 @@ export default defineAction({
     const db = getDb();
 
     const existing = await db
-      .select({ token: apiTokens.token })
+      .select({ token: apiTokens.token, createdAt: apiTokens.createdAt })
       .from(apiTokens)
       .where(eq(apiTokens.userEmail, ctx.userEmail))
       .limit(1);
 
-    if (existing[0]) return { token: existing[0].token };
+    if (existing[0]) return { token: existing[0].token, createdAt: existing[0].createdAt };
 
     const token = nanoid(32);
+    const createdAt = new Date().toISOString();
     await db.insert(apiTokens).values({
       id: nanoid(),
       userEmail: ctx.userEmail,
       token,
+      createdAt,
     });
 
-    return { token };
+    return { token, createdAt };
   },
 });
