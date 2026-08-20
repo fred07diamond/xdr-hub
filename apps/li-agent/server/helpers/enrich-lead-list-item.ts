@@ -92,6 +92,8 @@ export async function enrichLeadListItem(db: Db, item: LeadListItem): Promise<En
       enrichedCompanySize: organization?.estimated_num_employees ?? null,
       enrichedAt,
       enrichmentError,
+      enrichmentSource: person || organization ? "apollo" : item.enrichmentSource,
+      enrichedEmailStatus: person?.email_status ?? null,
       updatedAt: enrichedAt,
       ...phoneRevealUpdate,
     })

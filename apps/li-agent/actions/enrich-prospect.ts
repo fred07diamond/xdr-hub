@@ -108,6 +108,8 @@ export default defineAction({
         enrichedCompanySize: organization?.estimated_num_employees ?? null,
         enrichedAt,
         enrichmentError,
+        enrichmentSource: person || organization ? "apollo" : prospect.enrichmentSource,
+        enrichedEmailStatus: person?.email_status ?? null,
         updatedAt: enrichedAt,
         ...phoneRevealUpdate,
       })

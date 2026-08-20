@@ -28,7 +28,10 @@ type LeadListItem = {
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
+  enrichedAt: string | null;
   enrichmentError: string | null;
+  enrichmentSource: string | null;
+  enrichedEmailStatus: string | null;
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
   phoneRevealRequestedAt: string | null;
   promotedProspectId: string | null;
@@ -45,6 +48,23 @@ const PHONE_REVEAL_STALE_AFTER_MS = 5 * 60 * 1000;
 function isPhoneRevealStale(requestedAt: string | null): boolean {
   if (!requestedAt) return true;
   return Date.now() - new Date(requestedAt).getTime() > PHONE_REVEAL_STALE_AFTER_MS;
+}
+
+// Provenance tooltip for an enriched field -- which Apollo call produced it,
+// when, and (email only) Apollo's own confidence in the match.
+function describeEnrichmentProvenance(
+  kind: "email" | "phone",
+  source: string | null,
+  emailStatus: string | null,
+  enrichedAt: string | null,
+): string | null {
+  if (!source) return null;
+  const via = source === "apollo_phone_reveal" ? "Apollo phone reveal" : "Apollo";
+  const status = kind === "email" && emailStatus ? ` · ${emailStatus}` : "";
+  const when = enrichedAt && !Number.isNaN(new Date(enrichedAt).getTime())
+    ? ` · enriched ${new Date(enrichedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+    : "";
+  return `${via}${status}${when}`;
 }
 
 type LeadList = {
@@ -83,6 +103,9 @@ function EnrichedField({
   kind,
   phoneRevealStatus,
   phoneRevealRequestedAt,
+  enrichmentSource,
+  enrichedEmailStatus,
+  enrichedAt,
   isEnriching,
   onEnrich,
 }: {
@@ -91,10 +114,20 @@ function EnrichedField({
   kind: "email" | "phone";
   phoneRevealStatus?: LeadListItem["phoneRevealStatus"];
   phoneRevealRequestedAt?: LeadListItem["phoneRevealRequestedAt"];
+  enrichmentSource?: string | null;
+  enrichedEmailStatus?: string | null;
+  enrichedAt?: string | null;
   isEnriching?: boolean;
   onEnrich?: () => void;
 }) {
-  if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
+  if (value) {
+    const provenance = describeEnrichmentProvenance(kind, enrichmentSource ?? null, enrichedEmailStatus ?? null, enrichedAt ?? null);
+    return (
+      <span className="text-xs truncate max-w-[170px] block" title={provenance ?? undefined}>
+        {value}
+      </span>
+    );
+  }
   // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
   // enrichment itself is done, but the personal number hasn't arrived yet.
   // Past PHONE_REVEAL_STALE_AFTER_MS, stop waiting and fall through to the
@@ -223,6 +256,9 @@ function LeadListItemRow({
           value={item.enrichedEmail}
           status={item.enrichmentStatus}
           kind="email"
+          enrichmentSource={item.enrichmentSource}
+          enrichedEmailStatus={item.enrichedEmailStatus}
+          enrichedAt={item.enrichedAt}
           isEnriching={isEnriching}
           onEnrich={() => onEnrich(item)}
         />
@@ -234,6 +270,8 @@ function LeadListItemRow({
           kind="phone"
           phoneRevealStatus={item.phoneRevealStatus}
           phoneRevealRequestedAt={item.phoneRevealRequestedAt}
+          enrichmentSource={item.enrichmentSource}
+          enrichedAt={item.enrichedAt}
           isEnriching={isEnriching}
           onEnrich={() => onEnrich(item)}
         />

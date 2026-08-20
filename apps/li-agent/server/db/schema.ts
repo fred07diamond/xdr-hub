@@ -57,6 +57,11 @@ export const prospects = table("prospects", {
   enrichedCompanySize: integer("enriched_company_size"),
   enrichedAt: text("enriched_at"),
   enrichmentError: text("enrichment_error"),
+  // Provenance -- which write path produced the current enrichment values,
+  // and Apollo's own confidence in the email it matched. email_status comes
+  // back on every /people/match response but was previously discarded.
+  enrichmentSource: text("enrichment_source", { enum: ["apollo", "apollo_phone_reveal"] }),
+  enrichedEmailStatus: text("enriched_email_status"),
   // Apollo's reveal_phone_number flow -- async, delivered via webhook, not
   // part of the synchronous /people/match response. phoneRevealRequestId is
   // Apollo's request_id, captured from the initial reveal request and used
@@ -260,6 +265,9 @@ export const leadListItems = table("lead_list_items", {
   // threw, even if the other one succeeded, so a partial "done" result is
   // still explainable instead of looking like silent data loss.
   enrichmentError: text("enrichment_error"),
+  // Provenance -- same shape as prospects' enrichmentSource/enrichedEmailStatus.
+  enrichmentSource: text("enrichment_source", { enum: ["apollo", "apollo_phone_reveal"] }),
+  enrichedEmailStatus: text("enriched_email_status"),
   // Apollo's reveal_phone_number flow -- async, delivered via webhook, not
   // part of the synchronous /people/match response. phoneRevealRequestId is
   // Apollo's request_id, captured from the initial reveal request and used

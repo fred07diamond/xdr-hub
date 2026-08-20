@@ -77,7 +77,7 @@ export default defineAction({
         if (phone) {
           await db
             .update(leadListItems)
-            .set({ enrichedPhone: phone, phoneRevealStatus: "done", updatedAt: now })
+            .set({ enrichedPhone: phone, phoneRevealStatus: "done", enrichmentSource: "apollo_phone_reveal", updatedAt: now })
             .where(eq(leadListItems.id, listItem.id));
         } else {
           await db
@@ -97,7 +97,7 @@ export default defineAction({
         if (phone) {
           await db
             .update(prospects)
-            .set({ enrichedPhone: phone, phoneRevealStatus: "done", updatedAt: now })
+            .set({ enrichedPhone: phone, phoneRevealStatus: "done", enrichmentSource: "apollo_phone_reveal", updatedAt: now })
             .where(eq(prospects.id, prospectRow.id));
         } else {
           await db

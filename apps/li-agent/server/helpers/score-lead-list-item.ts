@@ -121,6 +121,8 @@ export async function scoreLeadListItem(db: Db, item: LeadListItem, ownerEmail: 
       enrichedCompanySize: item.enrichedCompanySize,
       enrichedAt: item.enrichedAt,
       enrichmentError: item.enrichmentError,
+      enrichmentSource: item.enrichmentSource,
+      enrichedEmailStatus: item.enrichedEmailStatus,
       phoneRevealStatus: item.phoneRevealStatus,
       phoneRevealRequestId: item.phoneRevealRequestId,
       phoneRevealRequestedAt: item.phoneRevealRequestedAt,

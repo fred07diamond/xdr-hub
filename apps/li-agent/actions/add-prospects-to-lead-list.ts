@@ -108,6 +108,8 @@ export default defineAction({
         enrichedCompanySize: p.enrichedCompanySize,
         enrichedAt: p.enrichedAt,
         enrichmentError: p.enrichmentError,
+        enrichmentSource: p.enrichmentSource,
+        enrichedEmailStatus: p.enrichedEmailStatus,
         phoneRevealStatus: p.phoneRevealStatus,
         phoneRevealRequestId: p.phoneRevealRequestId,
         phoneRevealRequestedAt: p.phoneRevealRequestedAt,

@@ -113,7 +113,14 @@ interface Prospect {
   enrichedLinkedinUrl: string | null;
   enrichedCompanyIndustry: string | null;
   enrichedCompanySize: number | null;
+  enrichedAt: string | null;
   enrichmentError: string | null;
+  // Provenance -- which write path produced the current enrichment values
+  // ("apollo" | "apollo_phone_reveal"), and Apollo's own confidence in the
+  // matched email ("verified" | "guessed" | "unavailable", straight from
+  // Apollo's person.email_status).
+  enrichmentSource: string | null;
+  enrichedEmailStatus: string | null;
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
   phoneRevealRequestedAt: string | null;
   createdAt: string | null;
@@ -139,6 +146,23 @@ const PHONE_REVEAL_STALE_AFTER_MS = 5 * 60 * 1000;
 function isPhoneRevealStale(requestedAt: string | null): boolean {
   if (!requestedAt) return true;
   return Date.now() - new Date(requestedAt).getTime() > PHONE_REVEAL_STALE_AFTER_MS;
+}
+
+// Provenance tooltip for an enriched field -- which Apollo call produced it,
+// when, and (email only) Apollo's own confidence in the match.
+function describeEnrichmentProvenance(
+  kind: "email" | "phone",
+  source: string | null,
+  emailStatus: string | null,
+  enrichedAt: string | null,
+): string | null {
+  if (!source) return null;
+  const via = source === "apollo_phone_reveal" ? "Apollo phone reveal" : "Apollo";
+  const status = kind === "email" && emailStatus ? ` · ${emailStatus}` : "";
+  const when = enrichedAt && !Number.isNaN(new Date(enrichedAt).getTime())
+    ? ` · enriched ${new Date(enrichedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+    : "";
+  return `${via}${status}${when}`;
 }
 
 const VERDICT_STYLES: Record<NonNullable<Verdict>, string> = {
@@ -171,6 +195,9 @@ function EnrichedField({
   kind,
   phoneRevealStatus,
   phoneRevealRequestedAt,
+  enrichmentSource,
+  enrichedEmailStatus,
+  enrichedAt,
   isEnriching,
   onEnrich,
 }: {
@@ -179,10 +206,20 @@ function EnrichedField({
   kind: "email" | "phone";
   phoneRevealStatus?: Prospect["phoneRevealStatus"];
   phoneRevealRequestedAt?: Prospect["phoneRevealRequestedAt"];
+  enrichmentSource?: string | null;
+  enrichedEmailStatus?: string | null;
+  enrichedAt?: string | null;
   isEnriching?: boolean;
   onEnrich?: () => void;
 }) {
-  if (value) return <span className="text-xs truncate max-w-[170px] block">{value}</span>;
+  if (value) {
+    const provenance = describeEnrichmentProvenance(kind, enrichmentSource ?? null, enrichedEmailStatus ?? null, enrichedAt ?? null);
+    return (
+      <span className="text-xs truncate max-w-[170px] block" title={provenance ?? undefined}>
+        {value}
+      </span>
+    );
+  }
   // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
   // enrichment itself is done, but the personal number hasn't arrived yet.
   // Past PHONE_REVEAL_STALE_AFTER_MS, stop waiting and fall through to the
@@ -687,8 +724,22 @@ function ProspectSheet({
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2">
                     <span className="shrink-0 text-[11px] text-muted-foreground">{row.label}</span>
-                    <span className={cn("truncate text-xs text-right", row.value ? "text-foreground" : "text-muted-foreground/60")}>
-                      {row.value ?? "—"}
+                    <span className="flex min-w-0 items-center justify-end gap-1.5">
+                      {row.label === "Email" && row.value && prospect.enrichedEmailStatus && (
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                            prospect.enrichedEmailStatus === "verified"
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                              : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+                          )}
+                        >
+                          {prospect.enrichedEmailStatus}
+                        </span>
+                      )}
+                      <span className={cn("truncate text-xs text-right", row.value ? "text-foreground" : "text-muted-foreground/60")}>
+                        {row.value ?? "—"}
+                      </span>
                     </span>
                   </div>
                 ))}
@@ -704,6 +755,14 @@ function ProspectSheet({
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">Not enriched yet.</p>
+            )}
+            {prospect.enrichmentStatus === "done" && prospect.enrichmentSource && (
+              <p className="mt-1.5 text-[11px] text-muted-foreground/70">
+                {prospect.enrichmentSource === "apollo_phone_reveal" ? "Via Apollo phone reveal" : "Via Apollo"}
+                {prospect.enrichedAt && !Number.isNaN(new Date(prospect.enrichedAt).getTime())
+                  ? ` · enriched ${new Date(prospect.enrichedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                  : ""}
+              </p>
             )}
           </div>
         </div>
@@ -1540,13 +1599,12 @@ export default function ProspectsRoute() {
                       </td>
                     )}
 
-                    {/* Fit */}
+                    {/* Fit -- full rationale lives in ProspectSheet (opened
+                        by the existing row click), so the cell only needs
+                        the badge, not a truncated repeat of the same text. */}
                     {!hiddenColumns.has("fit") && (
                       <td className="px-3 py-3 min-w-[150px]">
                         <VerdictBadge verdict={p.fitVerdict} />
-                        {p.fitReason && (
-                          <p className="mt-1 max-w-[200px] text-xs text-muted-foreground line-clamp-2">{p.fitReason}</p>
-                        )}
                       </td>
                     )}
 
@@ -1568,15 +1626,23 @@ export default function ProspectsRoute() {
                       </td>
                     )}
 
-                    {/* Draft note */}
+                    {/* Draft note -- full text lives in ProspectSheet (opened
+                        by the existing row click) and is editable there, so
+                        the cell only needs a status pill, not a truncated
+                        repeat. Preserves the same three states the old
+                        line-clamp fallback used. */}
                     {!hiddenColumns.has("draftNote") && (
-                      <td className="px-3 py-3 max-w-xs">
+                      <td className="px-3 py-3">
                         {note ? (
-                          <p className="text-xs text-muted-foreground line-clamp-2">{note}</p>
-                        ) : (
-                          <span className="text-xs text-muted-foreground/50 italic">
-                            {p.status === "captured" ? "Drafting…" : "No note"}
+                          <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            Drafted
                           </span>
+                        ) : p.status === "captured" ? (
+                          <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium italic text-muted-foreground/70">
+                            Drafting…
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50 italic">No note</span>
                         )}
                       </td>
                     )}
@@ -1588,6 +1654,9 @@ export default function ProspectsRoute() {
                           value={p.enrichedEmail}
                           status={p.enrichmentStatus}
                           kind="email"
+                          enrichmentSource={p.enrichmentSource}
+                          enrichedEmailStatus={p.enrichedEmailStatus}
+                          enrichedAt={p.enrichedAt}
                           isEnriching={enrichingIds.has(p.id)}
                           onEnrich={() => handleEnrich(p)}
                         />
@@ -1603,6 +1672,8 @@ export default function ProspectsRoute() {
                           kind="phone"
                           phoneRevealStatus={p.phoneRevealStatus}
                           phoneRevealRequestedAt={p.phoneRevealRequestedAt}
+                          enrichmentSource={p.enrichmentSource}
+                          enrichedAt={p.enrichedAt}
                           isEnriching={enrichingIds.has(p.id)}
                           onEnrich={() => handleEnrich(p)}
                         />

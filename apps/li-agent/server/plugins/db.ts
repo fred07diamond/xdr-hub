@@ -585,6 +585,29 @@ export default runMigrations(
       name: "lead-list-items-promoted-prospect-id",
       sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS promoted_prospect_id TEXT`,
     },
+    // Enrichment provenance -- which write path produced the current Apollo
+    // fields (enrichment_source) and Apollo's own confidence in the matched
+    // email (enriched_email_status, from person.email_status).
+    {
+      version: 94,
+      name: "prospects-enrichment-source",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enrichment_source TEXT`,
+    },
+    {
+      version: 95,
+      name: "prospects-enriched-email-status",
+      sql: `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS enriched_email_status TEXT`,
+    },
+    {
+      version: 96,
+      name: "lead-list-items-enrichment-source",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enrichment_source TEXT`,
+    },
+    {
+      version: 97,
+      name: "lead-list-items-enriched-email-status",
+      sql: `ALTER TABLE lead_list_items ADD COLUMN IF NOT EXISTS enriched_email_status TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );
