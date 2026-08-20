@@ -239,10 +239,24 @@ interface HubSpotCompanyData {
     industry: string | null;
     employeeCount: string | null;
     country: string | null;
-    ownerName: string | null;
+    companyOwnerName: string | null;
+    xdrOwnerName: string | null;
   } | null;
-  deals?: Array<{ name: string; stage: string; amount: string | null; closeDate: string | null }>;
-  contacts?: Array<{ name: string; title: string | null; email: string | null }>;
+  openDeals?: Array<{ name: string; amount: string | null; closeDate: string | null }>;
+  closedLostDeals?: Array<{ name: string; amount: string | null; closeDate: string | null }>;
+  topProspects?: Array<{ name: string; title: string | null; email: string | null; lastActivityAt: string | null }>;
+}
+
+function formatRelativeActivity(iso: string | null): string | null {
+  if (!iso) return null;
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (Number.isNaN(days) || days < 0) return null;
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
 }
 
 // Shared by the hover card (top few items) and ProspectSheet's Company
@@ -267,7 +281,7 @@ function CompanyHoverCardBody({ data, isLoading }: { data: HubSpotCompanyData | 
   if (!data?.connected) return <p className="text-xs text-muted-foreground">HubSpot not connected.</p>;
   if (!data.matched || !data.company) return <p className="text-xs text-muted-foreground">Not found in HubSpot.</p>;
 
-  const { company, deals = [], contacts = [] } = data;
+  const { company, openDeals = [], closedLostDeals = [], topProspects = [] } = data;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -280,40 +294,78 @@ function CompanyHoverCardBody({ data, isLoading }: { data: HubSpotCompanyData | 
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div>
+          <p className="flex items-center gap-1 text-muted-foreground">
+            <IconBriefcase size={10} /> Company owner
+          </p>
+          <p className={cn("truncate", company.companyOwnerName ? "text-foreground" : "text-muted-foreground/60")}>
+            {company.companyOwnerName ?? "—"}
+          </p>
+        </div>
+        <div>
+          <p className="flex items-center gap-1 text-muted-foreground">
+            <IconBriefcase size={10} /> xDR owner
+          </p>
+          <p className={cn("truncate", company.xdrOwnerName ? "text-foreground" : "text-muted-foreground/60")}>
+            {company.xdrOwnerName ?? "—"}
+          </p>
+        </div>
+      </div>
+
       <div>
         <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <IconCoin size={11} /> Deals
+          <IconCoin size={11} /> Open deals
         </p>
-        {deals.length === 0 ? (
-          <p className="text-xs italic text-muted-foreground/70">No deals on record.</p>
+        {openDeals.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground/70">No open deals.</p>
         ) : (
           <ul className="space-y-0.5">
-            {deals.slice(0, 3).map((d, i) => (
+            {openDeals.slice(0, 3).map((d, i) => (
               <li key={i} className="flex items-center justify-between gap-2 text-xs">
                 <span className="truncate text-foreground">{d.name || "Untitled deal"}</span>
-                <span className="shrink-0 text-muted-foreground">{d.stage}</span>
+                <span className="shrink-0 text-muted-foreground">{formatDealAmount(d.amount) ?? ""}</span>
               </li>
             ))}
-            {deals.length > 3 && <li className="text-[11px] text-muted-foreground/70">+{deals.length - 3} more</li>}
+            {openDeals.length > 3 && <li className="text-[11px] text-muted-foreground/70">+{openDeals.length - 3} more</li>}
           </ul>
         )}
       </div>
 
       <div>
         <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <IconUsers size={11} /> Contacts
+          <IconCoin size={11} /> Closed lost
         </p>
-        {contacts.length === 0 ? (
+        {closedLostDeals.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground/70">No closed-lost deals.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {closedLostDeals.slice(0, 3).map((d, i) => (
+              <li key={i} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate text-foreground">{d.name || "Untitled deal"}</span>
+                <span className="shrink-0 text-muted-foreground">{formatDealAmount(d.amount) ?? ""}</span>
+              </li>
+            ))}
+            {closedLostDeals.length > 3 && <li className="text-[11px] text-muted-foreground/70">+{closedLostDeals.length - 3} more</li>}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <IconUsers size={11} /> Top prospects by activity
+        </p>
+        {topProspects.length === 0 ? (
           <p className="text-xs italic text-muted-foreground/70">No other contacts on record.</p>
         ) : (
           <ul className="space-y-0.5">
-            {contacts.slice(0, 3).map((c, i) => (
+            {topProspects.slice(0, 3).map((c, i) => (
               <li key={i} className="flex items-center justify-between gap-2 text-xs">
                 <span className="truncate text-foreground">{c.name}</span>
-                <span className="shrink-0 truncate max-w-[100px] text-muted-foreground">{c.title ?? ""}</span>
+                <span className="shrink-0 text-muted-foreground">{formatRelativeActivity(c.lastActivityAt) ?? ""}</span>
               </li>
             ))}
-            {contacts.length > 3 && <li className="text-[11px] text-muted-foreground/70">+{contacts.length - 3} more</li>}
+            {topProspects.length > 3 && <li className="text-[11px] text-muted-foreground/70">+{topProspects.length - 3} more</li>}
           </ul>
         )}
       </div>
@@ -963,7 +1015,8 @@ function ProspectSheet({
                       { label: "Industry", value: companyData.company.industry },
                       { label: "Employees", value: companyData.company.employeeCount },
                       { label: "Country", value: companyData.company.country },
-                      { label: "Owner", value: companyData.company.ownerName },
+                      { label: "Company owner", value: companyData.company.companyOwnerName },
+                      { label: "xDR owner", value: companyData.company.xdrOwnerName },
                     ].map((row) => (
                       <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2">
                         <span className="shrink-0 text-[11px] text-muted-foreground">{row.label}</span>
@@ -976,18 +1029,16 @@ function ProspectSheet({
 
                   <div>
                     <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <IconCoin size={11} /> Deals
+                      <IconCoin size={11} /> Open deals
                     </p>
-                    {(companyData.deals ?? []).length === 0 ? (
-                      <p className="text-xs italic text-muted-foreground/70">No deals on record.</p>
+                    {(companyData.openDeals ?? []).length === 0 ? (
+                      <p className="text-xs italic text-muted-foreground/70">No open deals.</p>
                     ) : (
                       <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
-                        {(companyData.deals ?? []).map((d, i) => (
+                        {(companyData.openDeals ?? []).map((d, i) => (
                           <div key={i} className="flex items-center justify-between gap-3 px-3 py-2">
                             <span className="truncate text-xs text-foreground">{d.name || "Untitled deal"}</span>
-                            <span className="shrink-0 text-right text-xs text-muted-foreground">
-                              {d.stage}{formatDealAmount(d.amount) ? ` · ${formatDealAmount(d.amount)}` : ""}
-                            </span>
+                            <span className="shrink-0 text-right text-xs text-muted-foreground">{formatDealAmount(d.amount) ?? ""}</span>
                           </div>
                         ))}
                       </div>
@@ -996,16 +1047,36 @@ function ProspectSheet({
 
                   <div>
                     <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <IconUsers size={11} /> Contacts at this company
+                      <IconCoin size={11} /> Closed lost deals
                     </p>
-                    {(companyData.contacts ?? []).length === 0 ? (
+                    {(companyData.closedLostDeals ?? []).length === 0 ? (
+                      <p className="text-xs italic text-muted-foreground/70">No closed-lost deals.</p>
+                    ) : (
+                      <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
+                        {(companyData.closedLostDeals ?? []).map((d, i) => (
+                          <div key={i} className="flex items-center justify-between gap-3 px-3 py-2">
+                            <span className="truncate text-xs text-foreground">{d.name || "Untitled deal"}</span>
+                            <span className="shrink-0 text-right text-xs text-muted-foreground">{formatDealAmount(d.amount) ?? ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <IconUsers size={11} /> Top prospects by activity
+                    </p>
+                    {(companyData.topProspects ?? []).length === 0 ? (
                       <p className="text-xs italic text-muted-foreground/70">No other contacts on record.</p>
                     ) : (
                       <div className="overflow-hidden rounded-lg border border-border divide-y divide-border bg-muted/20">
-                        {(companyData.contacts ?? []).map((c, i) => (
+                        {(companyData.topProspects ?? []).map((c, i) => (
                           <div key={i} className="flex items-center justify-between gap-3 px-3 py-2">
                             <span className="truncate text-xs text-foreground">{c.name}</span>
-                            <span className="shrink-0 truncate max-w-[140px] text-right text-xs text-muted-foreground">{c.title ?? ""}</span>
+                            <span className="shrink-0 truncate max-w-[140px] text-right text-xs text-muted-foreground">
+                              {[c.title, formatRelativeActivity(c.lastActivityAt)].filter(Boolean).join(" · ")}
+                            </span>
                           </div>
                         ))}
                       </div>
