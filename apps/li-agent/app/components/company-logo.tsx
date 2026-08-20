@@ -39,17 +39,28 @@ function guessCompanyDomain(name: string): string | null {
 // away the same way, the next still resolves instead of the whole feature
 // quietly degrading again.
 //
-// Both providers below return a real 404 for a domain they don't know
-// (verified), rather than a generic globe placeholder -- that matters,
-// because a placeholder would render as though it were the company's real
-// logo. A 404 triggers onError, so we advance to the next source and
-// ultimately to the lettered avatar, which is honest about not knowing.
+// Google's favicon service goes FIRST: verified better coverage than
+// DuckDuckGo (e.g. agilisium.com 404s on DDG but resolves on Google), and
+// sz=64 returns a consistent 64px source, so downscaling to a small box
+// stays crisp instead of upscaling a blurry 16px .ico.
+//
+// Both 404 for a domain they don't know, which triggers onError so we
+// advance to the next source and ultimately to the lettered avatar. Note
+// DDG's 404 still carries a generic placeholder image as its body -- a
+// browser that renders 404 bodies would show that grey globe as though it
+// were the company's logo, which is another reason DDG is second, not
+// first.
 function logoSources(domain: string): string[] {
   return [
-    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
     `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`,
+    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
   ];
 }
+
+// One fixed box for both the image and the lettered fallback, so every row
+// in a table aligns on the same width regardless of which one renders or
+// what aspect ratio the fetched icon happens to have.
+const BOX = "size-6 shrink-0 rounded-md";
 
 // Shared by the Prospects table's Company column, its hover card, and the
 // My Accounts page/detail panel.
@@ -61,24 +72,36 @@ export function CompanyLogo({ name, domain }: { name: string | null; domain: str
 
   if (src) {
     return (
-      <img
-        // Keyed by src so swapping sources remounts the <img>: without this,
-        // React reuses the element and some browsers won't re-fire load/error
-        // for the new URL, stranding it on the failed source.
-        key={src}
-        src={src}
-        onError={() => setSourceIndex((i) => i + 1)}
-        alt=""
-        loading="lazy"
-        className="h-5 w-5 shrink-0 rounded-sm bg-white object-contain ring-1 ring-black/5"
-      />
+      // Centering the image inside a padded box (rather than sizing the
+      // <img> itself) keeps a wide wordmark and a square glyph optically
+      // consistent, and stops either from touching the border.
+      <span className={cn(BOX, "flex items-center justify-center overflow-hidden border border-border/60 bg-white p-0.5")}>
+        <img
+          // Keyed by src so swapping sources remounts the <img>: without
+          // this, React reuses the element and some browsers won't re-fire
+          // load/error for the new URL, stranding it on the failed source.
+          key={src}
+          src={src}
+          onError={() => setSourceIndex((i) => i + 1)}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="max-h-full max-w-full object-contain"
+        />
+      </span>
     );
   }
 
   const label = (name ?? "?").trim();
   return (
-    <div className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[10px] font-semibold text-white", companyAvatarColor(label))}>
+    <span
+      className={cn(
+        BOX,
+        "flex items-center justify-center text-[11px] font-semibold leading-none text-white",
+        companyAvatarColor(label),
+      )}
+    >
       {(label[0] ?? "?").toUpperCase()}
-    </div>
+    </span>
   );
 }

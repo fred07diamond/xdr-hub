@@ -336,7 +336,7 @@ function CompanySheet({ company, personas, onClose }: { company: OwnedCompany; p
       <SheetContent showClose={false} className="flex w-full flex-col gap-0 p-0 sm:max-w-lg overflow-hidden">
         <SheetHeader className="border-b border-border px-5 py-4">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
               <CompanyLogo name={company.name} domain={company.domain} />
               <div className="min-w-0">
                 <SheetTitle className="truncate text-sm font-semibold">{company.name}</SheetTitle>
@@ -703,9 +703,11 @@ export default function MyAccounts() {
                   className="group cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-muted/40"
                 >
                   <td className="px-3 py-3">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2.5">
+                      {/* max-w keeps the column width stable -- an
+                          auto-layout table won't truncate without a cap. */}
                       <CompanyLogo name={c.name} domain={c.domain} />
-                      <span className="font-medium text-foreground truncate max-w-[220px]">{c.name}</span>
+                      <span className="max-w-[240px] truncate font-medium text-foreground">{c.name}</span>
                     </div>
                   </td>
                   {/* No stopPropagation -- the hover card is hover-only, so a

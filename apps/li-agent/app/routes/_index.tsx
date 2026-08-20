@@ -210,7 +210,7 @@ function CompanyHoverCardBody({ data, isLoading }: { data: HubSpotCompanyData | 
   const { company, openDeals = [], closedLostDeals = [], topProspects = [] } = data;
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <CompanyLogo name={company.name} domain={company.domain} />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-foreground">{company.name}</p>
@@ -315,7 +315,7 @@ function CompanyCell({ company, companyDomain }: { company: string | null; compa
   return (
     <HoverCard open={open} onOpenChange={setOpen} openDelay={300}>
       <HoverCardTrigger asChild>
-        <button type="button" className="flex max-w-[180px] items-center gap-1.5 text-left">
+        <button type="button" className="flex max-w-[200px] items-center gap-2.5 text-left">
           <CompanyLogo name={company} domain={companyDomain} />
           <span className="truncate text-xs text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2">
             {company}
