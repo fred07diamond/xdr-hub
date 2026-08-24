@@ -2,7 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { icpPersonas } from "../server/db/schema.js";
+import { icpPersonaDocs, icpPersonas } from "../server/db/schema.js";
 import { requireAdmin } from "../server/helpers/require-admin.js";
 
 export default defineAction({
@@ -21,6 +21,10 @@ export default defineAction({
       return { ok: false, error: "Cannot delete the active persona. Set another persona active first." };
     }
 
+    // Cascade the persona's attached ICP documents -- nothing else
+    // references icpPersonaDocs.personaId, so leaving them behind would just
+    // orphan rows that no longer feed any persona's icpText.
+    await db.delete(icpPersonaDocs).where(eq(icpPersonaDocs.personaId, id));
     await db.delete(icpPersonas).where(eq(icpPersonas.id, id));
     return { ok: true };
   },

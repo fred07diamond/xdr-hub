@@ -1324,6 +1324,94 @@
       line-height: 1.5;
       margin-top: 8px;
     }
+
+    /* ── ICP personas (Settings) ─────────────────────────────────────────── */
+    .icp-mini-btn {
+      background: none;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      color: #595959;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      padding: 4px 7px;
+      width: auto;
+      margin: 0;
+    }
+    .icp-mini-btn:hover { background: #f3f4f6; color: #1a1a1a; }
+    .icp-mini-btn:disabled { opacity: 0.5; cursor: default; }
+    .icp-persona {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 9px 10px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+    .icp-persona-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 6px;
+    }
+    .icp-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .icp-persona-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a1a;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .icp-persona-meta { font-size: 11px; color: #8c8c8c; flex-shrink: 0; }
+    .icp-doc {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f9fafb;
+      border-radius: 6px;
+      padding: 5px 7px;
+      margin-bottom: 4px;
+    }
+    .icp-doc-name {
+      flex: 1;
+      font-size: 11px;
+      color: #1a1a1a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .icp-doc-words { font-size: 10px; color: #8c8c8c; flex-shrink: 0; }
+    .icp-doc-remove {
+      background: none;
+      border: none;
+      color: #b0b0b0;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0 2px;
+      width: auto;
+      margin: 0;
+      flex-shrink: 0;
+    }
+    .icp-doc-remove:hover { color: #c0392b; }
+    .icp-doc-remove:disabled { opacity: 0.4; cursor: default; }
+    .icp-empty { font-size: 11px; color: #8c8c8c; font-style: italic; margin-bottom: 5px; }
+    .icp-add-btn {
+      background: none;
+      border: 1px dashed #d1d5db;
+      border-radius: 6px;
+      color: #0a66c2;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 6px 8px;
+      width: 100%;
+      margin: 2px 0 0;
+    }
+    .icp-add-btn:hover { background: #f0f7ff; border-color: #0a66c2; }
+    .icp-add-btn:disabled { opacity: 0.5; cursor: default; }
+    .icp-error { font-size: 11px; color: #c0392b; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -1364,6 +1452,24 @@
         </span>
       </label>
       <p style="font-size: 12px; color:#595959; margin-top:4px; line-height:1.5;">When on, the extension automatically clicks Connect &amp; send after a draft appears.</p>
+    </div>
+
+    <!-- ICP personas — attach documents to a persona without leaving LinkedIn.
+         Lives in Settings rather than the tab switcher on purpose: the tab
+         switcher is hidden on non-LinkedIn pages, and ICP setup isn't tied to
+         whatever page the rep happens to be on. -->
+    <div id="icp-section" style="margin-top:16px; padding-top:14px; border-top:1px solid #e5e7eb;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+        <h3 class="settings-section-title" style="margin-bottom:0;">ICP Personas</h3>
+        <button id="icp-refresh-btn" class="icp-mini-btn" title="Reload personas">↻</button>
+      </div>
+      <p style="font-size:12px; color:#595959; margin:0 0 10px; line-height:1.5;">
+        Upload one or more documents per persona. Every document attached here is read
+        when scoring a profile and drafting its note.
+      </p>
+      <div id="icp-status" style="font-size:12px; color:#595959; margin-bottom:8px;"></div>
+      <div id="icp-personas"></div>
+      <input id="icp-file-input" type="file" accept=".txt,.md,.markdown" multiple style="display:none" />
     </div>
   </div>
 

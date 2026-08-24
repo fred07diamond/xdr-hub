@@ -12,6 +12,27 @@ export const icpPersonas = table("icp_personas", {
   updatedAt: text("updated_at").default(now()),
 });
 
+// One row per uploaded document attached to an ICP persona. A persona can
+// hold many of them: icpPersonas.icpText is the DERIVED concatenation of all
+// its docs (rebuilt by server/helpers/persona-docs.ts on every add/delete),
+// which is why every existing consumer -- selectPersona/selectPersonasBatch,
+// generate-sales-nav-search, get-messaging-graph, draft-profile, score-engager
+// -- still reads a single icpText field and needed no change when multi-doc
+// personas landed. Never write icpPersonas.icpText directly for a persona
+// that has docs; call rebuildPersonaIcpText() instead or the two drift.
+export const icpPersonaDocs = table("icp_persona_docs", {
+  id: text("id").primaryKey(),
+  personaId: text("persona_id").notNull(),
+  name: text("name").notNull(),
+  text: text("text").notNull(),
+  wordCount: integer("word_count").notNull().default(0),
+  // Explicit ordering so the concatenated icpText is stable and the UI list
+  // matches the order the agent actually reads the docs in. createdAt alone
+  // isn't enough -- a multi-file upload writes every doc in the same tick.
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: text("created_at").default(now()),
+});
+
 // Personal API tokens — one per user, used by the extension to identify callers.
 export const apiTokens = table("api_tokens", {
   id: text("id").primaryKey(),

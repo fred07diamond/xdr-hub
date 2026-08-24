@@ -550,6 +550,255 @@ clearTokenBtn.addEventListener("click", () => {
   });
 });
 
+// ── ICP personas (Settings) ─────────────────────────────────────────────────
+// Multi-document ICP upload from the side panel. Documents ACCUMULATE on a
+// persona -- this calls add-persona-documents, never update-icp-persona's
+// destructive icpText argument, so a second upload doesn't wipe the first.
+
+const icpPersonasEl = document.getElementById("icp-personas");
+const icpStatusEl = document.getElementById("icp-status");
+const icpRefreshBtn = document.getElementById("icp-refresh-btn");
+const icpFileInput = document.getElementById("icp-file-input");
+
+const ICP_ACCEPTED_EXT = [".txt", ".md", ".markdown"];
+// Mirrors MAX_DOCS_PER_PERSONA in server/helpers/persona-docs.ts; the server
+// enforces the real limit, this only avoids a doomed upload.
+const ICP_MAX_DOCS = 25;
+
+let icpPersonas = [];
+let icpLoaded = false;
+let icpPendingPersonaId = null;
+
+function icpSetStatus(text, isError) {
+  icpStatusEl.textContent = text || "";
+  icpStatusEl.style.color = isError ? "#c0392b" : "#595959";
+}
+
+function icpIsAccepted(file) {
+  const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
+  return ICP_ACCEPTED_EXT.includes(ext) || (file.type || "").startsWith("text/");
+}
+
+function icpReadFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    reader.readAsText(file);
+  });
+}
+
+// Reads a whole multi-file selection, keeping order, and reports everything it
+// skipped in one message instead of failing the entire batch on one bad file.
+async function icpReadFiles(files) {
+  const documents = [];
+  const rejected = [];
+  for (const file of Array.from(files)) {
+    if (!icpIsAccepted(file)) { rejected.push(`${file.name} (unsupported)`); continue; }
+    try {
+      const text = await icpReadFile(file);
+      if (!text || !text.trim()) { rejected.push(`${file.name} (empty)`); continue; }
+      documents.push({ name: file.name, text });
+    } catch {
+      rejected.push(`${file.name} (unreadable)`);
+    }
+  }
+  return { documents, rejected };
+}
+
+function icpRenderPersonas() {
+  icpPersonasEl.textContent = "";
+
+  if (icpPersonas.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "icp-empty";
+    empty.textContent = "No personas yet — create one in LinkedIn Agent → ICP.";
+    icpPersonasEl.appendChild(empty);
+    return;
+  }
+
+  for (const persona of icpPersonas) {
+    const card = document.createElement("div");
+    card.className = "icp-persona";
+
+    const head = document.createElement("div");
+    head.className = "icp-persona-head";
+
+    const dot = document.createElement("span");
+    dot.className = "icp-dot";
+    dot.style.background = persona.color || "#6366f1";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "icp-persona-name";
+    nameEl.textContent = persona.name;
+    nameEl.title = persona.name;
+
+    const metaEl = document.createElement("span");
+    metaEl.className = "icp-persona-meta";
+    const docs = persona.documents || [];
+    metaEl.textContent = docs.length
+      ? `${docs.length} doc${docs.length === 1 ? "" : "s"} · ${(persona.wordCount || 0).toLocaleString()} words`
+      : "no documents";
+
+    head.append(dot, nameEl, metaEl);
+    card.appendChild(head);
+
+    if (docs.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "icp-empty";
+      empty.textContent = "Nothing attached — this persona can't score profiles yet.";
+      card.appendChild(empty);
+    }
+
+    for (const doc of docs) {
+      const row = document.createElement("div");
+      row.className = "icp-doc";
+
+      const icon = document.createElement("span");
+      icon.textContent = "📄";
+      icon.style.fontSize = "11px";
+      icon.style.flexShrink = "0";
+
+      const docName = document.createElement("span");
+      docName.className = "icp-doc-name";
+      docName.textContent = doc.name;
+      docName.title = doc.name;
+
+      const words = document.createElement("span");
+      words.className = "icp-doc-words";
+      words.textContent = `${(doc.wordCount || 0).toLocaleString()}w`;
+
+      const remove = document.createElement("button");
+      remove.className = "icp-doc-remove";
+      remove.textContent = "×";
+      remove.title = `Remove ${doc.name}`;
+      remove.setAttribute("aria-label", `Remove ${doc.name}`);
+      remove.addEventListener("click", () => icpRemoveDocument(doc.id, remove));
+
+      row.append(icon, docName, words, remove);
+      card.appendChild(row);
+    }
+
+    const addBtn = document.createElement("button");
+    addBtn.className = "icp-add-btn";
+    const remaining = ICP_MAX_DOCS - docs.length;
+    if (remaining <= 0) {
+      addBtn.textContent = `Document limit reached (${ICP_MAX_DOCS})`;
+      addBtn.disabled = true;
+    } else {
+      addBtn.textContent = docs.length ? "+ Add more documents" : "+ Upload documents";
+      addBtn.addEventListener("click", () => {
+        icpPendingPersonaId = persona.id;
+        icpFileInput.click();
+      });
+    }
+    card.appendChild(addBtn);
+
+    icpPersonasEl.appendChild(card);
+  }
+}
+
+async function icpLoadPersonas({ force } = {}) {
+  if (icpLoaded && !force) return;
+  const { apiToken } = await chrome.storage.local.get(["apiToken"]);
+  if (!apiToken) {
+    icpPersonas = [];
+    icpPersonasEl.textContent = "";
+    icpSetStatus("Save your API token above to manage ICP documents.");
+    return;
+  }
+
+  icpSetStatus("Loading personas…");
+  icpRefreshBtn.disabled = true;
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "LIST_ICP_PERSONAS" });
+    if (!res?.ok) {
+      icpSetStatus(res?.error || "Could not load personas.", true);
+      return;
+    }
+    icpPersonas = res.personas || [];
+    icpLoaded = true;
+    icpSetStatus("");
+    icpRenderPersonas();
+  } catch (err) {
+    icpSetStatus(err.message || "Could not load personas.", true);
+  } finally {
+    icpRefreshBtn.disabled = false;
+  }
+}
+
+icpFileInput.addEventListener("change", async () => {
+  const files = icpFileInput.files;
+  const personaId = icpPendingPersonaId;
+  icpPendingPersonaId = null;
+  // Reset early so picking the same file twice in a row still fires `change`.
+  const picked = files ? Array.from(files) : [];
+  icpFileInput.value = "";
+  if (!personaId || picked.length === 0) return;
+
+  icpSetStatus(`Reading ${picked.length} file${picked.length === 1 ? "" : "s"}…`);
+  const { documents, rejected } = await icpReadFiles(picked);
+
+  if (documents.length === 0) {
+    icpSetStatus(
+      rejected.length
+        ? `Skipped ${rejected.join(", ")}. Only .txt and .md are supported.`
+        : "Nothing to upload.",
+      true,
+    );
+    return;
+  }
+
+  icpSetStatus(`Uploading ${documents.length} document${documents.length === 1 ? "" : "s"}…`);
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: "ADD_PERSONA_DOCUMENTS",
+      personaId,
+      documents,
+    });
+    if (!res?.ok) {
+      icpSetStatus(res?.error || "Upload failed.", true);
+      return;
+    }
+    const skipped = rejected.length ? ` (skipped ${rejected.join(", ")})` : "";
+    icpSetStatus(`Added ${documents.length} document${documents.length === 1 ? "" : "s"}.${skipped}`);
+    await icpLoadPersonas({ force: true });
+    setTimeout(() => icpSetStatus(""), 3000);
+  } catch (err) {
+    icpSetStatus(err.message || "Upload failed.", true);
+  }
+});
+
+async function icpRemoveDocument(docId, btn) {
+  btn.disabled = true;
+  icpSetStatus("Removing…");
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "DELETE_PERSONA_DOCUMENT", id: docId });
+    if (!res?.ok) {
+      icpSetStatus(res?.error || "Could not remove that document.", true);
+      btn.disabled = false;
+      return;
+    }
+    icpSetStatus("Removed.");
+    await icpLoadPersonas({ force: true });
+    setTimeout(() => icpSetStatus(""), 2000);
+  } catch (err) {
+    icpSetStatus(err.message || "Could not remove that document.", true);
+    btn.disabled = false;
+  }
+}
+
+icpRefreshBtn.addEventListener("click", () => icpLoadPersonas({ force: true }));
+
+// Personas are fetched the first time Settings is opened, not on panel boot --
+// most panel sessions never open Settings at all, and this is one more network
+// call on a page load otherwise.
+const _origShowSettings = showSettings;
+showSettings = function () {
+  _origShowSettings();
+  icpLoadPersonas();
+};
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 chrome.storage.local.get(["apiToken", "autoMode"], (result) => {

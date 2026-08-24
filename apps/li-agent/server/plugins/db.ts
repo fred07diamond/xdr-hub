@@ -687,6 +687,34 @@ export default runMigrations(
            AND EXISTS (SELECT 1 FROM icp_personas WHERE icp_personas.id = post_engagements.persona_id)`,
       ].join(";\n"),
     },
+    // Multi-document ICP personas. icp_personas.icp_text became a DERIVED
+    // column: server/helpers/persona-docs.ts rebuilds it by concatenating
+    // every icp_persona_docs row for that persona. Without this migration,
+    // list-icp-personas' join and add-persona-documents' insert both fail
+    // outright in production ("relation does not exist") and take the ICP
+    // tab down with them -- the same way prospect_tags did at version 86.
+    //
+    // No backfill of existing personas' icp_text into this table is needed:
+    // adoptLegacyIcpTextAsDoc() adopts it lazily on the first read or add,
+    // which also keeps a persona whose docs are already migrated untouched.
+    {
+      version: 104,
+      name: "icp-persona-docs-table",
+      sql: `CREATE TABLE IF NOT EXISTS icp_persona_docs (
+        id TEXT PRIMARY KEY,
+        persona_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        text TEXT NOT NULL,
+        word_count INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 105,
+      name: "index-icp-persona-docs-persona-id",
+      sql: `CREATE INDEX IF NOT EXISTS idx_icp_persona_docs_persona_id ON icp_persona_docs (persona_id)`,
+    },
   ],
   { table: "outreach_migrations" },
 );

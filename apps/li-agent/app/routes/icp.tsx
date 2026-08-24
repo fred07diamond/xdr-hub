@@ -36,6 +36,11 @@ const PERSONA_COLORS = [
 const ACCEPTED_EXT = [".txt", ".md", ".markdown"];
 const ACCEPTED_INPUT = ACCEPTED_EXT.join(",");
 
+// Mirrors MAX_DOCS_PER_PERSONA in server/helpers/persona-docs.ts -- kept here
+// only so the UI can stop a doomed upload before sending it; the server
+// enforces the real limit.
+const MAX_DOCS_PER_PERSONA = 25;
+
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -50,12 +55,67 @@ function isAccepted(file: File) {
   return ACCEPTED_EXT.includes(ext) || file.type.startsWith("text/");
 }
 
+function wordCount(text: string) {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+interface LoadedDoc {
+  name: string;
+  text: string;
+}
+
+/**
+ * Reads a whole FileList, keeping the user's selection order. Returns the
+ * readable documents plus a single message describing everything that was
+ * rejected, so selecting eight files and getting two skipped reports both
+ * rather than failing the entire batch or silently dropping them.
+ */
+async function readDocuments(
+  files: FileList | File[],
+): Promise<{ documents: LoadedDoc[]; error: string | null }> {
+  const picked = Array.from(files);
+  const rejected: string[] = [];
+  const documents: LoadedDoc[] = [];
+
+  for (const file of picked) {
+    if (!isAccepted(file)) {
+      rejected.push(`${file.name} (unsupported type)`);
+      continue;
+    }
+    try {
+      const text = await readFileAsText(file);
+      if (!text.trim()) {
+        rejected.push(`${file.name} (empty)`);
+        continue;
+      }
+      documents.push({ name: file.name, text });
+    } catch {
+      rejected.push(`${file.name} (could not be read)`);
+    }
+  }
+
+  return {
+    documents,
+    error: rejected.length
+      ? `Skipped ${rejected.length} file${rejected.length === 1 ? "" : "s"}: ${rejected.join(", ")}. Only .txt and .md are supported.`
+      : null,
+  };
+}
+
+interface PersonaDoc {
+  id: string;
+  name: string;
+  wordCount: number;
+}
+
 interface Persona {
   id: string;
   name: string;
   color: string;
   summary: string | null;
   wordCount: number;
+  documents: PersonaDoc[];
+  docCount: number;
   isActive: number;
   createdAt: string | null;
   updatedAt: string | null;
@@ -107,14 +167,20 @@ function PersonaCard({
   const updatePersona = useActionMutation("update-icp-persona");
   const deletePersona = useActionMutation("delete-icp-persona");
   const setActive = useActionMutation("set-active-persona");
+  const addDocuments = useActionMutation("add-persona-documents");
+  const deleteDocument = useActionMutation("delete-persona-document");
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(persona.name);
   const [dragOver, setDragOver] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [removingDocId, setRemovingDocId] = useState<string | null>(null);
 
   const isActive = persona.isActive === 1;
+  const documents = persona.documents ?? [];
+  const remainingSlots = MAX_DOCS_PER_PERSONA - documents.length;
 
   async function handleNameBlur() {
     setEditingName(false);
@@ -137,31 +203,67 @@ function PersonaCard({
     onRefetch();
   }
 
-  async function loadFile(file: File) {
-    if (!isAccepted(file)) return;
+  // ADDS to the persona's documents -- never replaces them. update-icp-persona's
+  // icpText argument is the destructive replace path and is deliberately not
+  // used here; a second upload used to silently wipe out the first document.
+  async function loadFiles(files: FileList | File[]) {
+    setDocError(null);
     setUploading(true);
     try {
-      const text = await readFileAsText(file);
-      if (text.trim()) {
-        await updatePersona.mutateAsync({ id: persona.id, icpText: text });
-        onRefetch();
+      const { documents: loaded, error } = await readDocuments(files);
+      if (error) setDocError(error);
+      if (loaded.length === 0) return;
+
+      if (loaded.length > remainingSlots) {
+        setDocError(
+          `This persona can hold ${MAX_DOCS_PER_PERSONA} documents (${documents.length} attached, ${loaded.length} selected).`,
+        );
+        return;
       }
+
+      const result = (await addDocuments.mutateAsync({
+        personaId: persona.id,
+        documents: loaded,
+      })) as { ok?: boolean; error?: string };
+      if (result?.ok === false) {
+        setDocError(result.error ?? "Could not add those documents.");
+        return;
+      }
+      onRefetch();
     } finally {
       setUploading(false);
     }
   }
 
   async function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) await loadFile(file);
+    const files = e.target.files;
+    if (files?.length) await loadFiles(files);
     e.target.value = "";
   }
 
   async function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) await loadFile(file);
+    const files = e.dataTransfer.files;
+    if (files?.length) await loadFiles(files);
+  }
+
+  async function handleRemoveDocument(docId: string) {
+    setDocError(null);
+    setRemovingDocId(docId);
+    try {
+      const result = (await deleteDocument.mutateAsync({ id: docId })) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (result?.ok === false) {
+        setDocError(result.error ?? "Could not remove that document.");
+        return;
+      }
+      onRefetch();
+    } finally {
+      setRemovingDocId(null);
+    }
   }
 
   async function handleDelete() {
@@ -183,6 +285,7 @@ function PersonaCard({
         ref={fileInputRef}
         type="file"
         accept={ACCEPTED_INPUT}
+        multiple
         className="hidden"
         onChange={handleFileInput}
       />
@@ -227,38 +330,80 @@ function PersonaCard({
           )}
         </div>
 
-        {/* Summary */}
+        {/* Summary — first paragraph of the first document, which is also what
+            the persona-matching model sees (see select-persona.ts) */}
         <div className="min-h-[48px]">
           {persona.summary ? (
             <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
               {persona.summary}
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground/50 italic">No document uploaded yet</p>
+            <p className="text-xs text-muted-foreground/50 italic">No documents uploaded yet</p>
           )}
         </div>
 
-        {/* Word count */}
-        {persona.wordCount > 0 && (
-          <p className="text-xs text-muted-foreground/60">
-            {persona.wordCount.toLocaleString()} words
-          </p>
+        {/* Attached documents — every one of these feeds the agent's scoring
+            and drafting for this persona, in the order shown */}
+        {documents.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+              {documents.length} document{documents.length === 1 ? "" : "s"} ·{" "}
+              {persona.wordCount.toLocaleString()} words
+            </p>
+            <ul className="flex flex-col gap-1">
+              {documents.map((doc) => (
+                <li
+                  key={doc.id}
+                  className="group flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5"
+                >
+                  <IconFileText size={13} className="shrink-0 text-muted-foreground/70" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-medium text-foreground" title={doc.name}>
+                      {doc.name}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/60">
+                      {doc.wordCount.toLocaleString()} words
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDocument(doc.id)}
+                      disabled={removingDocId === doc.id}
+                      className="shrink-0 rounded p-0.5 text-muted-foreground/40 transition-colors hover:bg-muted hover:text-destructive disabled:opacity-40"
+                      aria-label={`Remove ${doc.name}`}
+                      title={`Remove ${doc.name}`}
+                    >
+                      {removingDocId === doc.id ? (
+                        <IconLoader2 size={12} className="animate-spin" />
+                      ) : (
+                        <IconX size={12} />
+                      )}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* Color picker — admin only */}
         {isAdmin && <ColorPicker value={persona.color} onChange={handleColorChange} />}
 
-        {/* Drop zone hint when no doc */}
-        {!persona.summary && isAdmin && (
+        {/* Add-documents drop zone — always available to an admin, not just
+            when the persona is empty, since documents now accumulate */}
+        {isAdmin && (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed py-3 text-xs transition-colors ${
-              dragOver
-                ? "border-primary bg-primary/5 text-primary"
-                : "border-border/60 text-muted-foreground/60 hover:border-border hover:text-muted-foreground"
+            onClick={() => remainingSlots > 0 && fileInputRef.current?.click()}
+            className={`flex items-center justify-center gap-2 rounded-lg border border-dashed py-3 text-xs transition-colors ${
+              remainingSlots <= 0
+                ? "cursor-not-allowed border-border/40 text-muted-foreground/40"
+                : dragOver
+                  ? "cursor-pointer border-primary bg-primary/5 text-primary"
+                  : "cursor-pointer border-border/60 text-muted-foreground/60 hover:border-border hover:text-muted-foreground"
             }`}
           >
             {uploading ? (
@@ -266,11 +411,18 @@ function PersonaCard({
             ) : (
               <IconUpload size={13} />
             )}
-            {uploading ? "Uploading…" : "Drop or click to upload doc"}
+            {uploading
+              ? "Uploading…"
+              : remainingSlots <= 0
+                ? `Document limit reached (${MAX_DOCS_PER_PERSONA})`
+                : documents.length > 0
+                  ? "Drop or click to add more documents"
+                  : "Drop or click to upload documents"}
           </div>
         )}
-        {!persona.summary && !isAdmin && (
-          <p className="text-xs text-muted-foreground/50 italic">No document uploaded yet</p>
+        {docError && <p className="text-[11px] text-destructive">{docError}</p>}
+        {documents.length === 0 && !isAdmin && (
+          <p className="text-xs text-muted-foreground/50 italic">No documents uploaded yet</p>
         )}
       </div>
 
@@ -290,13 +442,13 @@ function PersonaCard({
                   {setActive.isPending ? "Setting…" : "Set as default"}
                 </button>
               )}
-              {persona.wordCount > 0 && (
+              {remainingSlots > 0 && (
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  Replace doc
+                  Add documents
                 </button>
               )}
             </div>
@@ -342,7 +494,7 @@ function PersonaCard({
       </div>
 
       {/* Drag overlay when doc exists — admin only */}
-      {isAdmin && persona.wordCount > 0 && (
+      {isAdmin && documents.length > 0 && remainingSlots > 0 && (
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
@@ -354,7 +506,7 @@ function PersonaCard({
           {dragOver && (
             <div className="flex h-full items-center justify-center">
               <p className="rounded-lg bg-background/90 px-4 py-2 text-sm font-medium text-primary shadow">
-                Drop to replace document
+                Drop to add documents
               </p>
             </div>
           )}
@@ -378,25 +530,47 @@ function NewPersonaPanel({
 
   const [name, setName] = useState("");
   const [color, setColor] = useState(PERSONA_COLORS[0].hex);
-  const [pendingFile, setPendingFile] = useState<{ name: string; text: string } | null>(null);
+  const [pendingDocs, setPendingDocs] = useState<LoadedDoc[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadFile(file: File) {
+  async function loadFiles(files: FileList | File[]) {
     setError(null);
-    if (!isAccepted(file)) { setError("Only .txt and .md files supported."); return; }
-    const text = await readFileAsText(file);
-    if (!text.trim()) { setError("File appears to be empty."); return; }
-    setPendingFile({ name: file.name, text });
-    if (!name) setName(file.name.replace(/\.[^.]+$/, ""));
+    const { documents: loaded, error: readError } = await readDocuments(files);
+    if (readError) setError(readError);
+    if (loaded.length === 0) return;
+
+    // Appends, so the picker can be opened more than once to build the set up
+    // (and re-picking the same file replaces that entry rather than duplicating
+    // it, which is what re-dragging a corrected file is meant to do).
+    setPendingDocs((prev) => {
+      const merged = [...prev];
+      for (const doc of loaded) {
+        const at = merged.findIndex((d) => d.name === doc.name);
+        if (at >= 0) merged[at] = doc;
+        else merged.push(doc);
+      }
+      return merged.slice(0, MAX_DOCS_PER_PERSONA);
+    });
+    if (!name) setName(loaded[0].name.replace(/\.[^.]+$/, ""));
   }
 
   async function handleCreate() {
-    if (!name.trim() || !pendingFile) return;
-    await createPersona.mutateAsync({ name: name.trim(), color, icpText: pendingFile.text });
+    if (!name.trim() || pendingDocs.length === 0) return;
+    const result = (await createPersona.mutateAsync({
+      name: name.trim(),
+      color,
+      documents: pendingDocs,
+    })) as { ok?: boolean; error?: string };
+    if (result?.ok === false) {
+      setError(result.error ?? "Could not create that persona.");
+      return;
+    }
     onCreated();
     onClose();
   }
+
+  const totalWords = pendingDocs.reduce((sum, d) => sum + wordCount(d.text), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -427,40 +601,79 @@ function NewPersonaPanel({
             <ColorPicker value={color} onChange={setColor} />
           </div>
 
-          {/* File */}
+          {/* Files — a persona can be built from several documents at once */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">ICP Document</label>
-            <input ref={fileInputRef} type="file" accept={ACCEPTED_INPUT} className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) await loadFile(f); e.target.value = ""; }} />
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              ICP Documents
+              {pendingDocs.length > 0 && (
+                <span className="ml-1.5 font-normal text-muted-foreground/60">
+                  {pendingDocs.length} selected · {totalWords.toLocaleString()} words
+                </span>
+              )}
+            </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_INPUT}
+              multiple
+              className="hidden"
+              onChange={async (e) => {
+                const files = e.target.files;
+                if (files?.length) await loadFiles(files);
+                e.target.value = "";
+              }}
+            />
 
-            {pendingFile ? (
-              <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-                <IconFileText size={18} className="shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-foreground">{pendingFile.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {pendingFile.text.split(/\s+/).filter(Boolean).length.toLocaleString()} words
-                  </p>
-                </div>
-                <button type="button" onClick={() => setPendingFile(null)} className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground">
-                  <IconX size={13} />
-                </button>
-              </div>
-            ) : (
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={async (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) await loadFile(f); }}
-                onClick={() => fileInputRef.current?.click()}
-                className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed py-6 text-center transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-border/60"}`}
-              >
-                <IconUpload size={20} className="text-muted-foreground/50" />
-                <p className="text-xs text-muted-foreground">
-                  Drop a file or{" "}
-                  <span className="text-primary underline underline-offset-2">browse</span>
-                </p>
-                <p className="text-[11px] text-muted-foreground/50">.txt · .md</p>
-              </div>
+            {pendingDocs.length > 0 && (
+              <ul className="mb-2 flex max-h-40 flex-col gap-1 overflow-auto">
+                {pendingDocs.map((doc) => (
+                  <li
+                    key={doc.name}
+                    className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2"
+                  >
+                    <IconFileText size={16} className="shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-foreground" title={doc.name}>
+                        {doc.name}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {wordCount(doc.text).toLocaleString()} words
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPendingDocs((prev) => prev.filter((d) => d.name !== doc.name))}
+                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      aria-label={`Remove ${doc.name}`}
+                    >
+                      <IconX size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
+
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={async (e) => {
+                e.preventDefault();
+                setDragOver(false);
+                const files = e.dataTransfer.files;
+                if (files?.length) await loadFiles(files);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed text-center transition-colors ${pendingDocs.length > 0 ? "py-3" : "py-6"} ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-border/60"}`}
+            >
+              <IconUpload size={pendingDocs.length > 0 ? 16 : 20} className="text-muted-foreground/50" />
+              <p className="text-xs text-muted-foreground">
+                Drop {pendingDocs.length > 0 ? "more files" : "files"} or{" "}
+                <span className="text-primary underline underline-offset-2">browse</span>
+              </p>
+              {pendingDocs.length === 0 && (
+                <p className="text-[11px] text-muted-foreground/50">.txt · .md · select several at once</p>
+              )}
+            </div>
             {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
           </div>
         </div>
@@ -472,7 +685,7 @@ function NewPersonaPanel({
           <button
             type="button"
             onClick={handleCreate}
-            disabled={!name.trim() || !pendingFile || createPersona.isPending}
+            disabled={!name.trim() || pendingDocs.length === 0 || createPersona.isPending}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
           >
             {createPersona.isPending && <IconLoader2 size={12} className="animate-spin" />}

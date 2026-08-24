@@ -357,6 +357,51 @@ async function summarizeLeadList(listId) {
   return await res.json(); // { summary: string | null }
 }
 
+// ── ICP personas ────────────────────────────────────────────────────────────
+// Lets the rep attach ICP documents to a persona without leaving LinkedIn.
+// All three actions are admin-gated server-side (requireAdminFromSessionOrToken)
+// -- the token only identifies who is calling, it doesn't grant the right to
+// edit the team's ICP. A non-admin gets an error back and the panel says so.
+
+async function listIcpPersonas() {
+  const { appUrl, apiToken } = await getSettings();
+  const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
+  const res = await fetch(`${appUrl}/_agent-native/actions/list-icp-personas?x=1${tokenParam}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`list-icp-personas failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { personas: [{ id, name, color, documents, docCount, wordCount, isActive }] }
+}
+
+async function addPersonaDocuments(personaId, documents) {
+  const { appUrl, apiToken } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/add-persona-documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ personaId, documents, ...(apiToken ? { apiToken } : {}) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`add-persona-documents failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { ok, docCount, wordCount } or { ok: false, error }
+}
+
+async function deletePersonaDocument(id) {
+  const { appUrl, apiToken } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/delete-persona-document`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...(apiToken ? { apiToken } : {}) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`delete-persona-document failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { ok, docCount, wordCount } or { ok: false, error }
+}
+
 async function generateSalesNavSearch(prompt) {
   const { appUrl, apiToken } = await getSettings();
   const res = await fetch(`${appUrl}/_agent-native/actions/generate-sales-nav-search`, {
@@ -573,6 +618,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === "GENERATE_SALES_NAV_SEARCH") {
     generateSalesNavSearch(msg.prompt)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "LIST_ICP_PERSONAS") {
+    listIcpPersonas()
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message, personas: [] }));
+    return true;
+  }
+
+  if (msg.type === "ADD_PERSONA_DOCUMENTS") {
+    addPersonaDocuments(msg.personaId, msg.documents)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "DELETE_PERSONA_DOCUMENT") {
+    deletePersonaDocument(msg.id)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

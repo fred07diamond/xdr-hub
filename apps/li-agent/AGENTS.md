@@ -26,20 +26,54 @@ and docs/DECISIONS.md.
    Premium/Sales Navigator, about 200 on free accounts.
 
 ## When the user shares an ICP document
-If the user pastes text or attaches one or more files (.txt, .md,
-or PDF) containing their ICP criteria:
-1. Extract all the text content. If multiple files are attached,
-   concatenate them in order with a blank line between each.
-2. Call save-icp-document with the combined full text.
-3. Confirm what was saved: echo a short summary of the key
-   criteria you found (target role, company size, signals, etc.)
-   so the user can verify it was read correctly.
+
+A persona holds MANY ICP documents, not one. `icpPersonas.icpText` is a
+DERIVED column: `server/helpers/persona-docs.ts` rebuilds it by
+concatenating every row in `icpPersonaDocs` for that persona (each one
+prefixed with its filename as a `## ` heading, separated by `---`), which
+is why `selectPersona`, `selectPersonasBatch`, `draft-profile`,
+`score-engager`, `generate-sales-nav-search`, and `get-messaging-graph`
+all still read a single `icpText` field. **Never write
+`icpPersonas.icpText` directly** — call `rebuildPersonaIcpText()` or the
+column and the docs table drift apart.
+
+If the user pastes text or attaches one or more files (.txt, .md, or PDF)
+containing ICP criteria:
+1. Extract all the text content. Keep each file SEPARATE — one document
+   per file, named after the file. Do not concatenate them yourself; the
+   rebuild does that, and merging them by hand loses which criteria came
+   from which document.
+2. Ask which persona they belong to if it isn't obvious (call
+   `list-icp-personas` to see the personas and what is already attached).
+   - Adding to an existing persona: `add-persona-documents` with
+     `{ personaId, documents: [{ name, text }, ...] }`. This ADDS
+     alongside whatever is already attached.
+   - Creating a new persona from the documents: `create-icp-persona` with
+     `{ name, color, documents: [...] }`.
+   - Removing one: `delete-persona-document` with `{ id }`.
+3. Confirm what was saved: echo a short summary of the key criteria you
+   found (target role, company size, signals, etc.) so the user can
+   verify it was read correctly.
+
+`update-icp-persona`'s `icpText` argument is DESTRUCTIVE — it replaces
+every document on the persona with a single one. Use it only when the
+user explicitly asks to replace their ICP, never to add to it.
+
+`save-icp-document` writes the legacy `icpSources` singleton, which is
+only a fallback for a workspace with no personas at all
+(`select-persona.ts`). Prefer the persona actions above.
+
+Both surfaces expose this: the ICP tab (`app/routes/icp.tsx`) takes
+multi-file drops per persona card, and the Chrome extension's side panel
+does too, under Settings → ICP Personas. The UI file pickers accept
+.txt/.md only (no client-side PDF parsing); a PDF has to come through
+agent chat, where you read it natively and pass the extracted text.
 
 ## When the user shares a document for canvas import
 
 If the user attaches a file (PDF, Word doc, text file) and asks to extract nodes, import it to the canvas, or build their messaging canvas from it — use the `canvas-import` skill.
 
-Do NOT use this path for ICP documents (criteria files go to `save-icp-document`). Use context clues: if the doc describes an account, company, prospect, or research, it's a canvas import. If it describes target customer criteria, messaging rules, or "who we sell to", it's an ICP doc.
+Do NOT use this path for ICP documents (criteria files go to `add-persona-documents` / `create-icp-persona`). Use context clues: if the doc describes an account, company, prospect, or research, it's a canvas import. If it describes target customer criteria, messaging rules, or "who we sell to", it's an ICP doc.
 
 ## When asked about the Engagement tab
 
@@ -208,4 +242,8 @@ count) — only its dedicated UI column and filter were removed.
 ## Key files
 - docs/BUILD-GUIDE.md: build steps
 - docs/DECISIONS.md: settled decisions and why-nots
-- server/db/schema.ts: prospects, send_history, icpSources (icpText column)
+- server/db/schema.ts: prospects, send_history, icpPersonas +
+  icpPersonaDocs (many docs per persona; icpText is derived), icpSources
+  (legacy singleton fallback)
+- server/helpers/persona-docs.ts: rebuilds a persona's icpText from its
+  documents; the only thing that should write that column
