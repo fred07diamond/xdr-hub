@@ -15,6 +15,7 @@ const { buildPersonaBriefing, hashIcpText } = await import("../server/helpers/pe
 const FULL = {
   positioning: "Senior engineering leaders at mid-market SaaS companies.",
   titles: ["VP Engineering", "Head of Platform"],
+  fallbackTitles: ["Director of Platform"],
   avoidTitles: ["Engineering Manager"],
   orgPriorities: ["Delivery velocity", "Platform reliability"],
   whyTheyBuy: ["Shipping is blocked on manual review"],
@@ -43,6 +44,7 @@ describe("buildPersonaBriefing", () => {
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
 
     expect(b.titles).toEqual(["VP Engineering", "Head of Platform"]);
+    expect(b.fallbackTitles).toEqual(["Director of Platform"]);
     expect(b.avoidTitles).toEqual(["Engineering Manager"]);
     expect(b.orgPriorities).toEqual(["Delivery velocity", "Platform reliability"]);
     expect(b.whyTheyBuy).toEqual(["Shipping is blocked on manual review"]);
@@ -106,15 +108,47 @@ describe("buildPersonaBriefing", () => {
     expect(b.coverageGaps).toEqual([]);
   });
 
-  it("clamps list length and item length", async () => {
+  it("keeps title lists long and prose lists short", async () => {
+    // A boolean include block of (5 seniority) AND (13 function) terms expands
+    // well past the 8 items prose sections are capped at; clamping titles that
+    // hard silently dropped targets the team prospects by.
     reply({
       ...FULL,
-      titles: Array.from({ length: 30 }, (_, i) => `Title ${i}`),
-      painPoints: ["x".repeat(500)],
+      titles: Array.from({ length: 40 }, (_, i) => `Title ${i}`),
+      avoidTitles: Array.from({ length: 40 }, (_, i) => `Avoid ${i}`),
+      painPoints: Array.from({ length: 40 }, (_, i) => `Pain ${i}`),
     });
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
-    expect(b.titles).toHaveLength(8);
+    expect(b.titles).toHaveLength(30);
+    expect(b.avoidTitles).toHaveLength(30);
+    expect(b.painPoints).toHaveLength(8);
+  });
+
+  it("truncates an over-long item", async () => {
+    reply({ ...FULL, painPoints: ["x".repeat(500)] });
+    const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
     expect(b.painPoints[0].length).toBe(240);
+  });
+
+  it("dedupes titles case-insensitively", async () => {
+    // Expanding a boolean cross product reliably repeats a title, and a repeat
+    // is also a duplicate React key in the briefing sheet.
+    reply({ ...FULL, titles: ["VP of Design", "VP of Design", "vp of design", "Head of Design"] });
+    const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
+    expect(b.titles).toEqual(["VP of Design", "Head of Design"]);
+  });
+
+  it("instructs the model to mine an explicit title list and expand booleans", async () => {
+    // The regression this guards: the ICP carries an authoritative
+    // "Job Title (Include)" boolean block and the briefing paraphrased a
+    // handful of titles from the prose intro instead of reading it.
+    reply(FULL);
+    await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
+    const { systemPrompt } = completeText.mock.calls[0][0];
+    expect(systemPrompt).toContain("Job Title (Include)");
+    expect(systemPrompt).toContain("AUTHORITATIVE");
+    expect(systemPrompt).toContain("Expand a boolean cross product");
+    expect(systemPrompt).toContain("fallbackTitles");
   });
 
   it("throws rather than persisting an unparseable response", async () => {
@@ -128,16 +162,34 @@ describe("buildPersonaBriefing", () => {
     // Guards the caller's contract: generate-persona-briefing leaves the
     // previous briefing in place on failure, so an all-empty response must
     // fail loudly instead of overwriting a good briefing with nothing.
-    reply({ titles: [], whyTheyBuy: [], orgPriorities: [], coverageGaps: ["Documents are too thin"] });
+    reply({
+      titles: [],
+      fallbackTitles: [],
+      whyTheyBuy: [],
+      orgPriorities: [],
+      coverageGaps: ["Documents are too thin"],
+    });
     await expect(
       buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }),
     ).rejects.toThrow(/empty briefing/);
   });
 
-  it("caps how much ICP text is sent to the model", async () => {
+  it("sends a real multi-document ICP whole, rather than cutting off its filter blocks", async () => {
+    // The original 12k window truncated a three-document persona before its
+    // Job Title Include/Exclude blocks, which sit near the end -- so the
+    // briefing could not have used them even with a perfect prompt.
+    const icpText = "y".repeat(40_000) + "\n\nJob Title (Include): VP OR Head";
     reply(FULL);
-    await buildPersonaBriefing({ personaName: "VP Eng", icpText: "y".repeat(50_000) });
-    expect(completeText.mock.calls[0][0].input.length).toBeLessThan(13_000);
+    await buildPersonaBriefing({ personaName: "VP Eng", icpText });
+    expect(completeText.mock.calls[0][0].input).toContain("Job Title (Include)");
+  });
+
+  it("tells the model when an ICP really is too long to fit", async () => {
+    reply(FULL);
+    await buildPersonaBriefing({ personaName: "VP Eng", icpText: "y".repeat(80_000) });
+    const { input } = completeText.mock.calls[0][0];
+    expect(input).toContain("truncated");
+    expect(input).toContain("coverageGaps");
   });
 });
 

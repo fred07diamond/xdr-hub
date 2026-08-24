@@ -18,8 +18,17 @@ import { NO_EM_DASH_RULE, stripEmDashes } from "./style-rules.js";
 export interface PersonaBriefing {
   /** Two or three sentences: who this persona is and where they sit. */
   positioning: string;
-  /** Titles worth reaching out to. */
+  /** Titles worth reaching out to first, verbatim from the ICP where possible. */
   titles: string[];
+  /**
+   * The next tier down, used when an account has none of the primary titles.
+   * Separate from `titles` because ICP filter blocks routinely rank seniority
+   * ("VP and Head first, Director as the fallback") and flattening that into
+   * one list loses the instruction -- the previous version smuggled it into
+   * the title text as a "(fallback)" suffix, which is not something a rep can
+   * filter or search on.
+   */
+  fallbackTitles: string[];
   /** Titles that look adjacent but are the wrong buyer. */
   avoidTitles: string[];
   /** What this persona is measured on / cares about org-wide. */
@@ -41,13 +50,36 @@ export interface PersonaBriefing {
   coverageGaps: string[];
 }
 
-// Chars of persona icpText fed to the briefing prompt. Higher than
-// draft-profile's 3000 because a briefing is generated once, on demand,
-// and wants the whole ICP rather than enough to judge one profile.
-const MAX_ICP_CHARS = 12_000;
+// Chars of persona icpText fed to the briefing prompt. Deliberately large:
+// a briefing is generated once, on demand, and wants the WHOLE ICP. At the
+// previous 12k a real persona (three documents, with the boolean Job Title
+// Include/Exclude filter blocks near the end) had its entire title list
+// truncated away before the model ever saw it, so the briefing paraphrased
+// titles from the prose intro instead of extracting the ones the ICP
+// actually specifies.
+const MAX_ICP_CHARS = 60_000;
 
+// Prose sections stay tight; title lists do not. A boolean include block of
+// (5 seniority terms) AND (13 function terms) expands well past 8 real
+// titles, and truncating it silently drops targets a rep is supposed to be
+// prospecting into.
 const MAX_ITEMS = 8;
+const MAX_TITLE_ITEMS = 30;
 const MAX_ITEM_CHARS = 240;
+
+/**
+ * Bump when a change to the prompt or the briefing shape means previously
+ * generated briefings are worse than what regenerating would produce. It is
+ * mixed into the fingerprint below, so every stored briefing immediately reads
+ * as out of date and the UI offers a refresh, instead of the improvement only
+ * reaching personas whose documents happen to change later.
+ *
+ * v2: title extraction reads the ICP's explicit Job Title Include/Exclude
+ * filter blocks and expands boolean cross products; primary and fallback
+ * seniority tiers separated; ICP window raised past the point where those
+ * filter blocks were being truncated away entirely.
+ */
+const BRIEFING_PROMPT_VERSION = "v2";
 
 /**
  * Fingerprint of the ICP text a briefing was generated from, stored alongside
@@ -55,22 +87,40 @@ const MAX_ITEM_CHARS = 240;
  * Truncated to 16 hex chars: this is change detection, not security.
  */
 export function hashIcpText(icpText: string): string {
-  return createHash("sha256").update(icpText).digest("hex").slice(0, 16);
+  return createHash("sha256")
+    .update(`${BRIEFING_PROMPT_VERSION}\n${icpText}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 function cleanLine(value: unknown): string {
   return stripEmDashes(String(value ?? "").trim()).slice(0, MAX_ITEM_CHARS);
 }
 
-function cleanList(value: unknown): string[] {
+function cleanList(value: unknown, max = MAX_ITEMS): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map(cleanLine).filter(Boolean).slice(0, MAX_ITEMS);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    const line = cleanLine(raw);
+    if (!line) continue;
+    // Expanding a boolean cross product reliably produces repeats ("Head of
+    // Design" from two branches). Duplicates also collide as React keys in
+    // the briefing sheet, so dedupe here rather than at render.
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 const BRIEFING_SHAPE = `{
   "positioning": "<2-3 sentences: who this persona is, seniority, where they sit in the org>",
-  "titles": ["<exact job titles worth reaching out to>"],
-  "avoidTitles": ["<titles that look adjacent but are the wrong buyer, if the documents indicate any>"],
+  "titles": ["<every primary job title to target, verbatim from the documents>"],
+  "fallbackTitles": ["<titles to use only when an account has none of the primary titles>"],
+  "avoidTitles": ["<titles and role types the documents exclude>"],
   "orgPriorities": ["<what this persona is measured on and cares about at an organizational level>"],
   "whyTheyBuy": ["<what makes them buy, and the trigger that starts it>"],
   "painPoints": ["<problems they feel day to day>"],
@@ -114,13 +164,49 @@ export async function buildPersonaBriefing({
     "A plausible-sounding guess is not.\n" +
     "- Be specific and concrete. Prefer the document's own words for titles and criteria over paraphrase.\n" +
     "- Keep every list item to one short line.\n\n" +
+    // The single biggest quality problem in practice: these documents carry an
+    // explicit, authoritative title list (often as a Sales Navigator boolean
+    // filter block), and the model would summarize the prose intro instead of
+    // reading it -- returning a handful of plausible titles while ignoring the
+    // list the team actually prospects by.
+    "TITLES -- read this carefully:\n" +
+    "- The documents may contain an explicit title list: a section like \"Job Title (Include)\", " +
+    '"Job Title (Exclude)", "Titles", "Personas", or a boolean search string. That list is ' +
+    "AUTHORITATIVE. Extract from it. Do not substitute titles you infer from the prose.\n" +
+    "- Expand a boolean cross product into real titles. Given " +
+    '("VP" OR "Head") AND ("Product Design" OR "Design Systems"), return "VP of Product Design", ' +
+    '"VP of Design Systems", "Head of Product Design", "Head of Design Systems" -- not a summary ' +
+    "of the pattern. Cover every seniority term against every function term. Be exhaustive: " +
+    "a long, complete title list is correct and expected here.\n" +
+    "- Use the document's own seniority and function wording. Do not invent a title whose terms " +
+    "do not appear in the documents.\n" +
+    '- If the documents rank seniority (for example "VP and Head first, Director is the fallback", ' +
+    'or a "Prioritize within results" note), put the top tier in "titles" and the lower tier in ' +
+    '"fallbackTitles". Never encode that ranking as text inside a title.\n' +
+    '- Put excluded titles in "avoidTitles". An exclude block mixing role types with industry ' +
+    "terms (hardware, silicon, brand, gaming) should come back as the role types a rep would " +
+    "actually mistake for a match, grouped where the raw terms are not titles on their own.\n" +
+    "- If the documents contain no explicit title list, derive titles from the prose and say so " +
+    'in "coverageGaps".\n\n' +
     `Reply with valid JSON only, in exactly this shape:\n${BRIEFING_SHAPE}`;
+
+  // If the ICP genuinely exceeds the window, say so in the input rather than
+  // truncating silently -- a briefing built from a cut-off document should
+  // admit the gap instead of looking complete.
+  const truncated = icpText.length > MAX_ICP_CHARS;
+  const documentBlock = truncated
+    ? `${icpText.slice(0, MAX_ICP_CHARS)}\n\n[The documents were truncated here because of length. ` +
+      `Note this under coverageGaps so the rep knows the briefing may not cover everything.]`
+    : icpText;
 
   const call = () =>
     completeText({
       systemPrompt,
-      input: `Persona name: ${personaName}\n\nICP documents:\n${icpText.slice(0, MAX_ICP_CHARS)}`,
-      maxOutputTokens: 1600,
+      input: `Persona name: ${personaName}\n\nICP documents:\n${documentBlock}`,
+      // Raised alongside the title caps: an exhaustive title list plus every
+      // prose section does not fit in 1600 output tokens, and running out
+      // mid-array produces the unparseable JSON this used to throw on.
+      maxOutputTokens: 4000,
     });
 
   const result = ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
@@ -140,8 +226,9 @@ export async function buildPersonaBriefing({
   const voice = (parsed.voice ?? {}) as Record<string, unknown>;
   const briefing: PersonaBriefing = {
     positioning: cleanLine(parsed.positioning).slice(0, 600),
-    titles: cleanList(parsed.titles),
-    avoidTitles: cleanList(parsed.avoidTitles),
+    titles: cleanList(parsed.titles, MAX_TITLE_ITEMS),
+    fallbackTitles: cleanList(parsed.fallbackTitles, MAX_TITLE_ITEMS),
+    avoidTitles: cleanList(parsed.avoidTitles, MAX_TITLE_ITEMS),
     orgPriorities: cleanList(parsed.orgPriorities),
     whyTheyBuy: cleanList(parsed.whyTheyBuy),
     painPoints: cleanList(parsed.painPoints),
@@ -159,6 +246,7 @@ export async function buildPersonaBriefing({
   const hasContent =
     briefing.positioning.length > 0 ||
     briefing.titles.length > 0 ||
+    briefing.fallbackTitles.length > 0 ||
     briefing.whyTheyBuy.length > 0 ||
     briefing.orgPriorities.length > 0;
   if (!hasContent) {

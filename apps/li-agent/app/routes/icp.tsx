@@ -119,6 +119,7 @@ interface PersonaDoc {
 interface PersonaBriefing {
   positioning: string;
   titles: string[];
+  fallbackTitles: string[];
   avoidTitles: string[];
   orgPriorities: string[];
   whyTheyBuy: string[];
@@ -189,16 +190,22 @@ function ColorPicker({
 // reading aid -- scoring and drafting still read the documents themselves, so
 // a stale briefing can never change how a profile is scored.
 
+const CHIP_TONES = {
+  primary: "bg-primary/10 text-primary",
+  secondary: "border border-primary/25 bg-transparent text-primary/80",
+  excluded: "bg-muted/50 text-muted-foreground line-through decoration-muted-foreground/40",
+} as const;
+
 function BriefingChips({
   label,
   items,
   icon,
-  muted,
+  tone = "primary",
 }: {
   label: string;
   items: string[];
   icon: React.ReactNode;
-  muted?: boolean;
+  tone?: keyof typeof CHIP_TONES;
 }) {
   if (items.length === 0) return null;
   return (
@@ -206,17 +213,14 @@ function BriefingChips({
       <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
         {icon}
         {label}
+        {/* Title lists are now exhaustive rather than a sample, so the count
+            is worth showing -- it is the fastest way to see a list came back
+            short of what the ICP specifies. */}
+        <span className="font-normal text-muted-foreground/60">{items.length}</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {items.map((item) => (
-          <span
-            key={item}
-            className={`rounded-full px-2.5 py-1 text-xs ${
-              muted
-                ? "bg-muted/50 text-muted-foreground line-through decoration-muted-foreground/40"
-                : "bg-primary/10 text-primary"
-            }`}
-          >
+          <span key={item} className={`rounded-full px-2.5 py-1 text-xs ${CHIP_TONES[tone]}`}>
             {item}
           </span>
         ))}
@@ -338,11 +342,19 @@ function BriefingSheet({
               items={briefing.titles}
               icon={<IconId size={13} className="text-muted-foreground" />}
             />
+            {/* Second-tier titles. Kept visually distinct from the primary
+                list so the ranking in the ICP survives into the UI. */}
+            <BriefingChips
+              label="Fallback, when the account has none of the above"
+              items={briefing.fallbackTitles ?? []}
+              icon={<IconId size={13} className="text-muted-foreground" />}
+              tone="secondary"
+            />
             <BriefingChips
               label="Wrong buyer, despite looking close"
               items={briefing.avoidTitles}
               icon={<IconX size={13} className="text-muted-foreground" />}
-              muted
+              tone="excluded"
             />
             <BriefingList
               label="Why they buy"
