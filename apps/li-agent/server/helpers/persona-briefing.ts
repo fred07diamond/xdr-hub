@@ -31,6 +31,20 @@ export interface PersonaBriefing {
   fallbackTitles: string[];
   /** Titles that look adjacent but are the wrong buyer. */
   avoidTitles: string[];
+  /**
+   * The same wrong-buyer roles as `avoidTitles`, but as a flat list of
+   * literal, individual job titles -- no grouping ("A / B / C"), no
+   * parenthetical examples or industry-term lists, one real title a
+   * LinkedIn profile could actually show per entry. `avoidTitles` is
+   * grouped and readable on purpose for the briefing sheet (a rep reading
+   * "Hardware / Physical Design roles (ASIC, Silicon, Chip, ...)" gets the
+   * shape of the exclusion at a glance); this field exists because that
+   * same grouped string is not a valid search filter value -- it was
+   * getting pasted verbatim into a LinkedIn "Current job title" exclude
+   * filter as one literal (and useless) entry. This is the only form
+   * generate-sales-nav-search.ts should read for exclusion.
+   */
+  avoidTitlesSearch: string[];
   /** What this persona is measured on / cares about org-wide. */
   orgPriorities: string[];
   /** What makes them actually buy, and the triggers that start it. */
@@ -78,8 +92,13 @@ const MAX_ITEM_CHARS = 240;
  * filter blocks and expands boolean cross products; primary and fallback
  * seniority tiers separated; ICP window raised past the point where those
  * filter blocks were being truncated away entirely.
+ *
+ * v3: added avoidTitlesSearch, a flat/literal companion to avoidTitles for
+ * feeding a real LinkedIn exclude filter -- avoidTitles' grouped strings
+ * (slashes, "or", parenthetical examples) were being used as literal filter
+ * values by generate-sales-nav-search.ts and produced nonsense chips.
  */
-const BRIEFING_PROMPT_VERSION = "v2";
+const BRIEFING_PROMPT_VERSION = "v3";
 
 /**
  * Fingerprint of the ICP text a briefing was generated from, stored alongside
@@ -121,6 +140,7 @@ const BRIEFING_SHAPE = `{
   "titles": ["<every primary job title to target, verbatim from the documents>"],
   "fallbackTitles": ["<titles to use only when an account has none of the primary titles>"],
   "avoidTitles": ["<titles and role types the documents exclude>"],
+  "avoidTitlesSearch": ["<the same excluded roles, flattened into individual literal job titles -- no grouping, no parentheses>"],
   "orgPriorities": ["<what this persona is measured on and cares about at an organizational level>"],
   "whyTheyBuy": ["<what makes them buy, and the trigger that starts it>"],
   "painPoints": ["<problems they feel day to day>"],
@@ -186,6 +206,18 @@ export async function buildPersonaBriefing({
     '- Put excluded titles in "avoidTitles". An exclude block mixing role types with industry ' +
     "terms (hardware, silicon, brand, gaming) should come back as the role types a rep would " +
     "actually mistake for a match, grouped where the raw terms are not titles on their own.\n" +
+    '- Also fill "avoidTitlesSearch" with the SAME excluded roles, but as a FLAT list of literal, ' +
+    "individual job titles -- one real title per entry, no grouping. This feeds a real LinkedIn " +
+    'search filter, so a grouped string like "Creative Director / Brand Designer / Art Director" is ' +
+    'useless there and MUST become three separate entries: "Creative Director", "Brand Designer", ' +
+    '"Art Director". Expand a parenthetical example list the same way a person\'s title would read: ' +
+    '"Design IC (e.g. Staff Product Designer, Senior Product Designer)" becomes "Staff Product ' +
+    'Designer" and "Senior Product Designer" -- drop the category label itself ("Design IC") since ' +
+    "that is not a title anyone actually holds. When the source is bare industry/domain terms rather " +
+    'than titles, e.g. "Hardware / Physical Design roles (ASIC, Silicon, Chip, Semiconductor, ...)", ' +
+    "turn each into a real title a LinkedIn profile could show (\"ASIC Designer\", \"Hardware Design " +
+    'Engineer\", "Chip Design Engineer"), not the bare term alone. Never put a comma/slash-joined or ' +
+    "parenthetical string into this array as a single entry.\n" +
     "- If the documents contain no explicit title list, derive titles from the prose and say so " +
     'in "coverageGaps".\n\n' +
     `Reply with valid JSON only, in exactly this shape:\n${BRIEFING_SHAPE}`;
@@ -229,6 +261,7 @@ export async function buildPersonaBriefing({
     titles: cleanList(parsed.titles, MAX_TITLE_ITEMS),
     fallbackTitles: cleanList(parsed.fallbackTitles, MAX_TITLE_ITEMS),
     avoidTitles: cleanList(parsed.avoidTitles, MAX_TITLE_ITEMS),
+    avoidTitlesSearch: cleanList(parsed.avoidTitlesSearch, MAX_TITLE_ITEMS),
     orgPriorities: cleanList(parsed.orgPriorities),
     whyTheyBuy: cleanList(parsed.whyTheyBuy),
     painPoints: cleanList(parsed.painPoints),

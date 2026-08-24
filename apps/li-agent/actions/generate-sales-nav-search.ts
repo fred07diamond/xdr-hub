@@ -241,7 +241,14 @@ export default defineAction({
       const briefing: PersonaBriefing | null = persona?.briefing ? JSON.parse(persona.briefing) : null;
       const primaryTitles = briefing?.titles ?? [];
       const fallbackTitles = briefing?.fallbackTitles ?? [];
-      const avoidTitles = briefing?.avoidTitles ?? [];
+      // avoidTitlesSearch, NOT avoidTitles -- avoidTitles is deliberately
+      // grouped/readable prose for the briefing sheet (e.g. "Creative
+      // Director / Brand Designer / Art Director", or a parenthetical
+      // example list), which is not a valid literal filter value. Pasting
+      // it straight into a Current-job-title exclude entry produced
+      // nonsense chips. avoidTitlesSearch is the flat, one-real-title-per-
+      // entry form generated specifically for this.
+      const avoidTitles = briefing?.avoidTitlesSearch ?? [];
 
       if (persona && (primaryTitles.length || fallbackTitles.length)) {
         const MAX_TITLES = 25;

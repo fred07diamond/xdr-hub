@@ -121,6 +121,7 @@ interface PersonaBriefing {
   titles: string[];
   fallbackTitles: string[];
   avoidTitles: string[];
+  avoidTitlesSearch: string[];
   orgPriorities: string[];
   whyTheyBuy: string[];
   painPoints: string[];
