@@ -705,7 +705,7 @@ function ProspectSheet({
               <SheetTitle className="flex items-center gap-1.5 text-sm font-semibold">
                 <a href={linkedInHref(prospect)} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 hover:text-primary hover:underline">
-                  <IconBrandLinkedin size={15} className="shrink-0 text-[#0077B5]" />
+                  <IconBrandLinkedin size={15} className="shrink-0 text-[#0a66c2]" />
                   {prospect.name ?? prospect.profileUrl ?? "Open LinkedIn"}
                 </a>
               </SheetTitle>
@@ -1826,7 +1826,7 @@ export default function ProspectsRoute() {
                     {/* Person */}
                     <td className="py-3 pl-2 pr-3">
                       <div className="flex items-center gap-1.5">
-                        <IconBrandLinkedin size={13} className="shrink-0 text-[#0077B5]" />
+                        <IconBrandLinkedin size={13} className="shrink-0 text-[#0a66c2]" />
                         <span className="font-medium text-foreground group-hover:text-primary truncate max-w-[180px]">{displayName}</span>
                         {p.source === "lead_list" && (
                           <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0 truncate max-w-[100px]">

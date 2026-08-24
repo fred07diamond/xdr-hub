@@ -451,7 +451,7 @@ function CompanySheet({ company, personas, onClose }: { company: OwnedCompany; p
                               target="_blank"
                               rel="noopener noreferrer"
                               title={c.linkedinUrl ? "Open LinkedIn profile" : "Search LinkedIn for this person"}
-                              className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted hover:text-[#0077B5]"
+                              className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted hover:text-[#0a66c2]"
                             >
                               <IconBrandLinkedin size={13} />
                             </a>

@@ -7,8 +7,6 @@ import {
   IconArrowsSort,
   IconBrandLinkedin,
   IconChevronDown,
-  IconChevronLeft,
-  IconChevronRight,
   IconChevronUp,
   IconExternalLink,
   IconLoader2,
@@ -17,12 +15,16 @@ import {
   IconUsers,
   IconWand,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { CompanyLogo } from "@/components/CompanyLogo";
 import { ContactDrawer } from "@/components/ContactDrawer";
+import { FilterPill } from "@/components/FilterPill";
+import { Pagination } from "@/components/Pagination";
 import { buildOverallScoreBreakdown, SCORE_INFO, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { applyShiftClickSelection } from "@/lib/selection";
 
 // The shared, filterable/sortable/multi-selectable contact table used by
 // both the Contacts page (app/routes/contacts.tsx, org-wide pool) and the
@@ -206,6 +208,8 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
   const [draftError, setDraftError] = useState<string | null>(null);
   const [draftProgress, setDraftProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  // Anchor row (by id) for shift-click range select.
+  const lastCheckedRowIdRef = useRef<string | null>(null);
 
   const { data: personasData } = useActionQuery("list-personas", {}, { enabled: showPersonaFilter });
   const personaOptions: PersonaOption[] = (personasData as { personas?: PersonaOption[] })?.personas ?? [];
@@ -234,7 +238,6 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
 
   const contacts: ContactRow[] = (data as { contacts?: ContactRow[] })?.contacts ?? [];
   const total = (data as { total?: number })?.total ?? 0;
-  const hasMore = (data as { hasMore?: boolean })?.hasMore ?? false;
 
   useEffect(() => {
     onStatsChange?.({ total, isLoading });
@@ -268,13 +271,9 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
     }
   }
 
-  function toggleSelected(contactId: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(contactId)) next.delete(contactId);
-      else next.add(contactId);
-      return next;
-    });
+  function toggleSelected(contactId: string, index: number, shiftKey: boolean) {
+    setSelected((prev) => applyShiftClickSelection(contacts, index, shiftKey, lastCheckedRowIdRef.current, prev));
+    lastCheckedRowIdRef.current = contactId;
   }
 
   function toggleSelectAllOnPage() {
@@ -402,8 +401,6 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
   }
 
   const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
-  const rangeStart = total === 0 ? 0 : offset + 1;
-  const rangeEnd = Math.min(offset + contacts.length, total);
   const activeScopeLabel = segmentId ? "all active contacts in this list" : "all active contacts";
 
   return (
@@ -448,10 +445,10 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
       </div>
 
       {rescoreError && (
-        <p className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{rescoreError}</p>
+        <p role="alert" className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{rescoreError}</p>
       )}
       {draftError && (
-        <p className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{draftError}</p>
+        <p role="alert" className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{draftError}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
@@ -466,30 +463,22 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
         </div>
         {showPersonaFilter && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => { setPersonaId(""); resetToFirstPage(); }}
-              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                personaId === ""
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground hover:bg-muted/70"
-              }`}
-            >
+            <FilterPill active={personaId === ""} onClick={() => { setPersonaId(""); resetToFirstPage(); }}>
               All
-            </button>
+            </FilterPill>
             {personaOptions.map((p) => {
               const active = personaId === p.id;
               const color = p.color ?? DEFAULT_PERSONA_COLOR;
               return (
-                <button
+                <FilterPill
                   key={p.id}
-                  type="button"
+                  active={active}
+                  color={color}
                   onClick={() => { setPersonaId(active ? "" : p.id); resetToFirstPage(); }}
-                  className="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
-                  style={active ? { background: color, color: "white" } : { background: `${color}14`, color }}
                 >
+                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
                   {p.name}
-                </button>
+                </FilterPill>
               );
             })}
           </div>
@@ -592,7 +581,8 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
                     <input
                       type="checkbox"
                       checked={selected.has(c.id)}
-                      onChange={() => toggleSelected(c.id)}
+                      onChange={() => {}}
+                      onClick={(e) => toggleSelected(c.id, contacts.indexOf(c), e.shiftKey)}
                       aria-label={`Select ${c.name}`}
                       className="size-3.5 rounded border-border"
                     />
@@ -601,11 +591,23 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
                     <p className="font-medium text-foreground">{c.name}</p>
                     {c.title && <p className="text-muted-foreground/70">{c.title}</p>}
                   </td>
-                  <td className="px-4 py-2.5 text-foreground">{c.company ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-foreground">
+                    {c.company ? (
+                      <span className="flex items-center gap-2.5">
+                        <CompanyLogo name={c.company} domain={null} />
+                        {c.company}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-2.5">
                     {c.personaName ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="size-2 shrink-0 rounded-full" style={{ background: c.personaColor ?? "#94a3b8" }} />
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <span
+                          className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: c.personaColor ?? DEFAULT_PERSONA_COLOR }}
+                        />
                         {c.personaName}
                       </span>
                     ) : (
@@ -677,26 +679,13 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
       </div>
 
       {total > 0 && (
-        <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
-          <span>{rangeStart}-{rangeEnd} of {total.toLocaleString()}</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-              disabled={offset === 0}
-              className="rounded p-1 hover:bg-muted disabled:opacity-30"
-            >
-              <IconChevronLeft size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setOffset((o) => o + PAGE_SIZE)}
-              disabled={!hasMore}
-              className="rounded p-1 hover:bg-muted disabled:opacity-30"
-            >
-              <IconChevronRight size={14} />
-            </button>
-          </div>
+        <div className="flex items-center justify-end border-t border-border px-4 py-2">
+          <Pagination
+            page={offset / PAGE_SIZE + 1}
+            pageSize={PAGE_SIZE}
+            totalCount={total}
+            onPageChange={(p) => setOffset((p - 1) * PAGE_SIZE)}
+          />
         </div>
       )}
 
