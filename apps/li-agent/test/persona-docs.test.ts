@@ -16,6 +16,9 @@ import {
 // goes through getDb() is runnable locally.
 async function makeDb() {
   const client = createClient({ url: ":memory:" });
+  // Mirrors icpPersonas in server/db/schema.ts. Drizzle emits EVERY schema
+  // column on insert, so a column added to the schema but not to this fixture
+  // fails these tests outright -- keep the two in step.
   await client.execute(`
     CREATE TABLE icp_personas (
       id TEXT PRIMARY KEY,
@@ -24,6 +27,9 @@ async function makeDb() {
       icp_text TEXT,
       summary TEXT,
       is_active INTEGER NOT NULL DEFAULT 0,
+      briefing TEXT,
+      briefing_generated_at TEXT,
+      briefing_source_hash TEXT,
       created_at TEXT,
       updated_at TEXT
     )

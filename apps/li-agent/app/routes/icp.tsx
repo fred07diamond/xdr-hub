@@ -4,11 +4,18 @@ import {
 } from "@agent-native/core/client";
 import { useOrgRole } from "@agent-native/core/client/org";
 import {
+  IconAlertTriangle,
+  IconBriefcase,
+  IconBulb,
   IconCheck,
   IconFileText,
+  IconId,
   IconLoader2,
   IconLock,
+  IconMessageCircle,
   IconPlus,
+  IconRefresh,
+  IconSparkles,
   IconTarget,
   IconTrash,
   IconUpload,
@@ -108,6 +115,19 @@ interface PersonaDoc {
   wordCount: number;
 }
 
+/** Mirrors PersonaBriefing in server/helpers/persona-briefing.ts. */
+interface PersonaBriefing {
+  positioning: string;
+  titles: string[];
+  avoidTitles: string[];
+  orgPriorities: string[];
+  whyTheyBuy: string[];
+  painPoints: string[];
+  voice: { tone: string; dos: string[]; donts: string[] };
+  openingAngles: string[];
+  coverageGaps: string[];
+}
+
 interface Persona {
   id: string;
   name: string;
@@ -116,9 +136,20 @@ interface Persona {
   wordCount: number;
   documents: PersonaDoc[];
   docCount: number;
+  briefing: PersonaBriefing | null;
+  briefingGeneratedAt: string | null;
+  /** Documents changed since the briefing was generated. */
+  briefingStale: boolean;
   isActive: number;
   createdAt: string | null;
   updatedAt: string | null;
+}
+
+function formatGeneratedAt(iso: string | null) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 // ── Color swatch picker ──────────────────────────────────────────────────────
@@ -152,6 +183,290 @@ function ColorPicker({
   );
 }
 
+// ── Persona briefing ────────────────────────────────────────────────────────
+// A generated read of the persona's ICP documents: who to target, how to speak
+// to them, why they buy, what they care about organizationally. Purely a
+// reading aid -- scoring and drafting still read the documents themselves, so
+// a stale briefing can never change how a profile is scored.
+
+function BriefingChips({
+  label,
+  items,
+  icon,
+  muted,
+}: {
+  label: string;
+  items: string[];
+  icon: React.ReactNode;
+  muted?: boolean;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
+        {icon}
+        {label}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item) => (
+          <span
+            key={item}
+            className={`rounded-full px-2.5 py-1 text-xs ${
+              muted
+                ? "bg-muted/50 text-muted-foreground line-through decoration-muted-foreground/40"
+                : "bg-primary/10 text-primary"
+            }`}
+          >
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BriefingList({
+  label,
+  items,
+  icon,
+}: {
+  label: string;
+  items: string[];
+  icon: React.ReactNode;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
+        {icon}
+        {label}
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted-foreground">
+            <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/40" />
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function BriefingSheet({
+  persona,
+  isAdmin,
+  onClose,
+  onRegenerate,
+  regenerating,
+}: {
+  persona: Persona;
+  isAdmin: boolean;
+  onClose: () => void;
+  onRegenerate: () => void;
+  regenerating: boolean;
+}) {
+  const briefing = persona.briefing;
+  if (!briefing) return null;
+  const generatedAt = formatGeneratedAt(persona.briefingGeneratedAt);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-border bg-card shadow-2xl">
+        {/* Header */}
+        <div
+          className="flex shrink-0 items-start justify-between gap-3 rounded-t-2xl border-b border-border px-5 py-4"
+          style={{ borderTop: `4px solid ${persona.color}` }}
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ background: persona.color }}
+              />
+              <h2 className="truncate text-sm font-semibold text-foreground">{persona.name}</h2>
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Briefing from {persona.docCount} document{persona.docCount === 1 ? "" : "s"}
+              {generatedAt ? ` · generated ${generatedAt}` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted"
+            aria-label="Close briefing"
+          >
+            <IconX size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+          {persona.briefingStale && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
+              <IconAlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-500">
+                  Documents changed since this was generated
+                </p>
+                <p className="mt-0.5 text-xs text-amber-700/80 dark:text-amber-500/80">
+                  Scoring and drafting already use the current documents. Only this briefing is out
+                  of date.
+                </p>
+              </div>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={onRegenerate}
+                  disabled={regenerating}
+                  className="shrink-0 rounded-md border border-amber-500/50 px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/10 disabled:opacity-40 dark:text-amber-500"
+                >
+                  {regenerating ? "Refreshing…" : "Refresh"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {briefing.positioning && (
+            <p className="mb-5 text-xs leading-relaxed text-foreground">{briefing.positioning}</p>
+          )}
+
+          <div className="flex flex-col gap-5">
+            <BriefingChips
+              label="Titles to reach out to"
+              items={briefing.titles}
+              icon={<IconId size={13} className="text-muted-foreground" />}
+            />
+            <BriefingChips
+              label="Wrong buyer, despite looking close"
+              items={briefing.avoidTitles}
+              icon={<IconX size={13} className="text-muted-foreground" />}
+              muted
+            />
+            <BriefingList
+              label="Why they buy"
+              items={briefing.whyTheyBuy}
+              icon={<IconSparkles size={13} className="text-muted-foreground" />}
+            />
+            <BriefingList
+              label="What they care about organizationally"
+              items={briefing.orgPriorities}
+              icon={<IconBriefcase size={13} className="text-muted-foreground" />}
+            />
+            <BriefingList
+              label="Pain points"
+              items={briefing.painPoints}
+              icon={<IconTarget size={13} className="text-muted-foreground" />}
+            />
+
+            {/* How we speak to them */}
+            {(briefing.voice.tone || briefing.voice.dos.length > 0 || briefing.voice.donts.length > 0) && (
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                  <IconMessageCircle size={13} className="text-muted-foreground" />
+                  How we speak to them
+                </div>
+                {briefing.voice.tone && (
+                  <p className="mb-2 text-xs leading-relaxed text-muted-foreground">
+                    {briefing.voice.tone}
+                  </p>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {briefing.voice.dos.length > 0 && (
+                    <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-500">
+                        Do
+                      </p>
+                      <ul className="flex flex-col gap-1">
+                        {briefing.voice.dos.map((item) => (
+                          <li key={item} className="text-xs leading-relaxed text-muted-foreground">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {briefing.voice.donts.length > 0 && (
+                    <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-destructive">
+                        Don't
+                      </p>
+                      <ul className="flex flex-col gap-1">
+                        {briefing.voice.donts.map((item) => (
+                          <li key={item} className="text-xs leading-relaxed text-muted-foreground">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <BriefingList
+              label="Opening angles"
+              items={briefing.openingAngles}
+              icon={<IconBulb size={13} className="text-muted-foreground" />}
+            />
+
+            {/* What the documents don't cover. Deliberately shown rather than
+                hidden: an empty section above is only trustworthy if the gap
+                behind it is visible, and it tells the user what to upload next. */}
+            {briefing.coverageGaps.length > 0 && (
+              <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3">
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Not covered by your documents
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {briefing.coverageGaps.map((item) => (
+                    <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted-foreground">
+                      <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/40" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-5 py-3">
+          <p className="text-[11px] text-muted-foreground/60">
+            Generated from this persona's ICP documents.
+          </p>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                disabled={regenerating}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+              >
+                {regenerating ? (
+                  <IconLoader2 size={12} className="animate-spin" />
+                ) : (
+                  <IconRefresh size={12} />
+                )}
+                Regenerate
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Persona card ─────────────────────────────────────────────────────────────
 
 function PersonaCard({
@@ -169,6 +484,7 @@ function PersonaCard({
   const setActive = useActionMutation("set-active-persona");
   const addDocuments = useActionMutation("add-persona-documents");
   const deleteDocument = useActionMutation("delete-persona-document");
+  const generateBriefing = useActionMutation("generate-persona-briefing");
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(persona.name);
@@ -177,6 +493,8 @@ function PersonaCard({
   const [uploading, setUploading] = useState(false);
   const [docError, setDocError] = useState<string | null>(null);
   const [removingDocId, setRemovingDocId] = useState<string | null>(null);
+  const [briefingOpen, setBriefingOpen] = useState(false);
+  const [briefingError, setBriefingError] = useState<string | null>(null);
 
   const isActive = persona.isActive === 1;
   const documents = persona.documents ?? [];
@@ -264,6 +582,20 @@ function PersonaCard({
     } finally {
       setRemovingDocId(null);
     }
+  }
+
+  async function handleGenerateBriefing({ open }: { open?: boolean } = {}) {
+    setBriefingError(null);
+    const result = (await generateBriefing.mutateAsync({ personaId: persona.id })) as {
+      ok?: boolean;
+      error?: string;
+    };
+    if (result?.ok === false) {
+      setBriefingError(result.error ?? "Could not generate the briefing.");
+      return;
+    }
+    onRefetch();
+    if (open) setBriefingOpen(true);
   }
 
   async function handleDelete() {
@@ -387,6 +719,75 @@ function PersonaCard({
           </div>
         )}
 
+        {/* Briefing — the persona breakdown (titles, voice, why they buy,
+            org priorities). Shown as a compact teaser on the card; the full
+            read opens in a sheet, since a card in a 3-up grid can't hold it. */}
+        {persona.briefing ? (
+          <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <IconSparkles size={12} className="text-muted-foreground" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Briefing
+                </span>
+              </div>
+              {persona.briefingStale && (
+                <span
+                  className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-500"
+                  title="Documents changed since this briefing was generated"
+                >
+                  Out of date
+                </span>
+              )}
+            </div>
+
+            {persona.briefing.titles.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {persona.briefing.titles.slice(0, 3).map((title) => (
+                  <span
+                    key={title}
+                    className="max-w-full truncate rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary"
+                    title={title}
+                  >
+                    {title}
+                  </span>
+                ))}
+                {persona.briefing.titles.length > 3 && (
+                  <span className="px-1 py-0.5 text-[10px] text-muted-foreground/60">
+                    +{persona.briefing.titles.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setBriefingOpen(true)}
+              className="self-start text-[11px] font-medium text-primary underline underline-offset-2 hover:opacity-80"
+            >
+              View full briefing
+            </button>
+          </div>
+        ) : (
+          isAdmin &&
+          documents.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handleGenerateBriefing({ open: true })}
+              disabled={generateBriefing.isPending}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-50"
+            >
+              {generateBriefing.isPending ? (
+                <IconLoader2 size={13} className="animate-spin" />
+              ) : (
+                <IconSparkles size={13} />
+              )}
+              {generateBriefing.isPending ? "Building briefing…" : "Generate briefing"}
+            </button>
+          )
+        )}
+        {briefingError && <p className="text-[11px] text-destructive">{briefingError}</p>}
+
         {/* Color picker — admin only */}
         {isAdmin && <ColorPicker value={persona.color} onChange={handleColorChange} />}
 
@@ -492,6 +893,16 @@ function PersonaCard({
           </div>
         )}
       </div>
+
+      {briefingOpen && persona.briefing && (
+        <BriefingSheet
+          persona={persona}
+          isAdmin={isAdmin}
+          onClose={() => setBriefingOpen(false)}
+          onRegenerate={() => handleGenerateBriefing()}
+          regenerating={generateBriefing.isPending}
+        />
+      )}
 
       {/* Drag overlay when doc exists — admin only */}
       {isAdmin && documents.length > 0 && remainingSlots > 0 && (

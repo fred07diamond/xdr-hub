@@ -715,6 +715,25 @@ export default runMigrations(
       name: "index-icp-persona-docs-persona-id",
       sql: `CREATE INDEX IF NOT EXISTS idx_icp_persona_docs_persona_id ON icp_persona_docs (persona_id)`,
     },
+    // Generated persona briefings (server/helpers/persona-briefing.ts). Plain
+    // ADD COLUMN, no IF NOT EXISTS: SQLite rejects that syntax, and the
+    // framework already treats a duplicate-column error as a no-op
+    // (isDuplicateColumnError in core's migration runner).
+    {
+      version: 106,
+      name: "icp-personas-briefing",
+      sql: `ALTER TABLE icp_personas ADD COLUMN briefing TEXT`,
+    },
+    {
+      version: 107,
+      name: "icp-personas-briefing-generated-at",
+      sql: `ALTER TABLE icp_personas ADD COLUMN briefing_generated_at TEXT`,
+    },
+    {
+      version: 108,
+      name: "icp-personas-briefing-source-hash",
+      sql: `ALTER TABLE icp_personas ADD COLUMN briefing_source_hash TEXT`,
+    },
   ],
   { table: "outreach_migrations" },
 );

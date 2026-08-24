@@ -3,12 +3,13 @@ import { asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { icpPersonaDocs, icpPersonas } from "../server/db/schema.js";
+import { hashIcpText, type PersonaBriefing } from "../server/helpers/persona-briefing.js";
 import { adoptLegacyIcpTextAsDoc } from "../server/helpers/persona-docs.js";
 import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 
 export default defineAction({
   description:
-    "List all ICP personas ordered by creation date, each with the ICP documents attached to it (names and word counts, not the document text).",
+    "List all ICP personas ordered by creation date, each with the ICP documents attached to it (names and word counts, not the document text) and its generated briefing, if one exists.",
   schema: z.object({
     apiToken: z.string().nullish().describe("Personal API token — extension callers only"),
   }),
@@ -32,6 +33,9 @@ export default defineAction({
         color: icpPersonas.color,
         icpText: icpPersonas.icpText,
         summary: icpPersonas.summary,
+        briefing: icpPersonas.briefing,
+        briefingGeneratedAt: icpPersonas.briefingGeneratedAt,
+        briefingSourceHash: icpPersonas.briefingSourceHash,
         isActive: icpPersonas.isActive,
         createdAt: icpPersonas.createdAt,
         updatedAt: icpPersonas.updatedAt,
@@ -92,11 +96,32 @@ export default defineAction({
     return {
       personas: rows.map((r) => {
         const documents = docsByPersona.get(r.id) ?? [];
+
+        // A briefing is a read of icpText at a point in time. Comparing the
+        // stored fingerprint against the CURRENT text is what lets the UI say
+        // "documents changed since this was generated" instead of presenting a
+        // stale briefing as though it still described the uploaded criteria.
+        let briefing: PersonaBriefing | null = null;
+        if (r.briefing) {
+          try {
+            briefing = JSON.parse(r.briefing) as PersonaBriefing;
+          } catch {
+            briefing = null; // unreadable row: treat as "not generated yet"
+          }
+        }
+        const briefingStale =
+          briefing !== null &&
+          r.icpText !== null &&
+          r.briefingSourceHash !== hashIcpText(r.icpText);
+
         return {
           id: r.id,
           name: r.name,
           color: r.color,
           summary: r.summary,
+          briefing,
+          briefingGeneratedAt: r.briefingGeneratedAt,
+          briefingStale,
           isActive: r.isActive,
           createdAt: r.createdAt,
           updatedAt: r.updatedAt,

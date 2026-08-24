@@ -8,6 +8,15 @@ export const icpPersonas = table("icp_personas", {
   icpText: text("icp_text"),
   summary: text("summary"),
   isActive: integer("is_active").notNull().default(0),
+  // Generated persona briefing (titles to target, voice, why they buy, org
+  // priorities) as a JSON PersonaBriefing -- see server/helpers/persona-
+  // briefing.ts. A derived READ of icpText for the rep to look at; nothing
+  // scores or drafts from it. briefingSourceHash is the fingerprint of the
+  // icpText it came from, so adding or removing a document marks the briefing
+  // stale instead of silently serving one that no longer matches the criteria.
+  briefing: text("briefing"),
+  briefingGeneratedAt: text("briefing_generated_at"),
+  briefingSourceHash: text("briefing_source_hash"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });
