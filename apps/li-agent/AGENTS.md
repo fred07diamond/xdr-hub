@@ -27,15 +27,23 @@ and docs/DECISIONS.md.
 
 ## When the user shares an ICP document
 
-A persona holds MANY ICP documents, not one. `icpPersonas.icpText` is a
-DERIVED column: `server/helpers/persona-docs.ts` rebuilds it by
-concatenating every row in `icpPersonaDocs` for that persona (each one
-prefixed with its filename as a `## ` heading, separated by `---`), which
-is why `selectPersona`, `selectPersonasBatch`, `draft-profile`,
-`score-engager`, `generate-sales-nav-search`, and `get-messaging-graph`
-all still read a single `icpText` field. **Never write
-`icpPersonas.icpText` directly** — call `rebuildPersonaIcpText()` or the
-column and the docs table drift apart.
+Personas are a shared resource across the whole workspace now: they live in
+`packages/shared`'s `sharedPersonas` / `sharedPersonaDocs` tables
+(`@xdr-hub/shared/server`), not a li-agent-local table — prospecting-hub
+reads and writes the same rows. A persona holds MANY ICP documents, not one.
+There is no cached `icpText` column on `sharedPersonas`; criteria text is
+always computed fresh from a persona's documents via `getPersonaCriteriaText`
+(pure read) or persisted-summary via `rebuildPersonaCriteriaText` (call this
+one only from doc-mutation actions — add/delete a document — never from a
+read/scoring path). `selectPersona`, `selectPersonasBatch`,
+`generate-sales-nav-search`, and `get-messaging-graph` all compute criteria
+text this way per persona rather than reading a single field.
+
+The old local `icpPersonas` / `icpPersonaDocs` tables still exist in
+`server/db/schema.ts` but are legacy/frozen — kept only so historical
+`prospects.personaId` / `leadListItems.personaId` / `postEngagements.personaId`
+references still resolve until a later cleanup repoints them. Nothing should
+read or write those tables going forward.
 
 If the user pastes text or attaches one or more files (.txt, .md, or PDF)
 containing ICP criteria:
@@ -242,8 +250,8 @@ count) — only its dedicated UI column and filter were removed.
 ## Key files
 - docs/BUILD-GUIDE.md: build steps
 - docs/DECISIONS.md: settled decisions and why-nots
-- server/db/schema.ts: prospects, send_history, icpPersonas +
-  icpPersonaDocs (many docs per persona; icpText is derived), icpSources
-  (legacy singleton fallback)
-- server/helpers/persona-docs.ts: rebuilds a persona's icpText from its
-  documents; the only thing that should write that column
+- server/db/schema.ts: prospects, send_history, icpSources (legacy singleton
+  fallback); icpPersonas/icpPersonaDocs are legacy/frozen (see above)
+- packages/shared/src/server/persona-docs.ts: getPersonaCriteriaText /
+  rebuildPersonaCriteriaText — computes a shared persona's criteria text
+  from its documents; the only thing that should write sharedPersonas.summary

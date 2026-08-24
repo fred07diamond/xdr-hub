@@ -1,11 +1,12 @@
 import { defineAction } from "@agent-native/core";
-import { and, eq, isNull, sql } from "@agent-native/core/db/schema";
+import { and, eq, isNull } from "@agent-native/core/db/schema";
+import { getSharedDb } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas } from "../server/db/schema.js";
+import { contacts } from "../server/db/schema.js";
 import { mapWithConcurrency } from "../server/helpers/concurrency.js";
 import { requireRole } from "../server/helpers/require-role.js";
-import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
+import { loadScorablePersonas, scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 
 // Same order-of-magnitude cap as the sync actions' page sizes.
 const MAX_CONTACTS_PER_RUN = 50;
@@ -27,10 +28,7 @@ export default defineAction({
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
 
-    const personaRows = await db
-      .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
-      .from(personas)
-      .where(sql`${personas.criteria} IS NOT NULL`);
+    const personaRows = await loadScorablePersonas(getSharedDb());
 
     if (personaRows.length === 0) {
       return { scored: 0, error: "No personas with synced criteria yet — upload a persona doc on the Personas tab first." };

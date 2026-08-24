@@ -1,15 +1,16 @@
 import { defineAction } from "@agent-native/core";
 import { and, eq, or, sql } from "@agent-native/core/db/schema";
+import { getSharedDb } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas, segmentContacts, syncRecords } from "../server/db/schema.js";
+import { contacts, segmentContacts, syncRecords } from "../server/db/schema.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
 import { escapeLikePattern, normalizeLinkedinUrl } from "../server/helpers/normalize-linkedin-url.js";
 import { searchProspectorContacts } from "../server/helpers/prospector-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
-import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
+import { loadScorablePersonas, scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 import { assertSegmentWritable } from "../server/helpers/segment-access.js";
 
 export default defineAction({
@@ -45,10 +46,7 @@ export default defineAction({
     // Same pool of scorable personas score-contact.ts's action queries —
     // scoreContactAgainstPersonas itself picks the single best-fitting one
     // per contact.
-    const personaRows = await db
-      .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
-      .from(personas)
-      .where(sql`${personas.criteria} IS NOT NULL`);
+    const personaRows = await loadScorablePersonas(getSharedDb());
 
     const now = new Date().toISOString();
     let imported = 0;

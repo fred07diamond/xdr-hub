@@ -1,10 +1,11 @@
 import { and, eq, inArray, isNull, or, sql } from "@agent-native/core/db/schema";
+import { getSharedDb } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import type { getDb } from "../db/index.js";
-import { contacts, personas, segmentContacts, sourcingRuleRunTargets } from "../db/schema.js";
+import { contacts, segmentContacts, sourcingRuleRunTargets } from "../db/schema.js";
 import { warmLeadScoreIdCache } from "./commonroom-engagement.js";
 import { SCORING_TIME_BUDGET_MS, withinTimeBudget } from "./invocation-budget.js";
-import { scoreContactAgainstPersonas } from "./score-contact.js";
+import { loadScorablePersonas, scoreContactAgainstPersonas } from "./score-contact.js";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -147,10 +148,7 @@ export async function runScoringBatch(params: {
       );
   }
 
-  const personaRowsForScoring = await db
-    .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
-    .from(personas)
-    .where(sql`${personas.criteria} IS NOT NULL`);
+  const personaRowsForScoring = await loadScorablePersonas(getSharedDb());
 
   // Scoring and everything that depends on it is wrapped so a single
   // contact's bad AI response or a CommonRoom lookup failure can't abort any

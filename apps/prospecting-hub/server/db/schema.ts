@@ -117,7 +117,14 @@ export const segmentContacts = table("segment_contacts", {
   addedAt: text("added_at").default(now()),
 });
 
-// Core persona — manager-owned, tunes the AI sorter.
+// VESTIGIAL as of the shared-personas migration: core personas now live in
+// packages/shared's sharedPersonas/sharedPersonaDocs tables
+// (@xdr-hub/shared/server), read/written via getSharedDb() everywhere
+// (create/update/list/delete-persona.ts, scoring, sourcing/marketing rules,
+// etc.). This table is kept only so its migration isn't dropped out from
+// under any historical data — nothing reads or writes it anymore except the
+// one-time migrate-personas-to-shared.ts admin action and the
+// `liAgentPersonaId` column below.
 export const personas = table("personas", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -125,14 +132,14 @@ export const personas = table("personas", {
   color: text("color"), // UI accent color, hex string
   criteria: text("criteria"), // JSON: titles/attributes/rules parsed from source_doc_url
   sourceDocUrl: text("source_doc_url"), // Notion or Google Docs source of truth
-  // Explicit link to the matching persona in li-agent's OWN icpPersonas
-  // table -- a completely separate table/ID space in a separate app, no
-  // shared identity between them otherwise. Set manually by an XDR/admin
-  // (update-persona.ts) so a prospect pull plan's LinkedIn leg
-  // (reconcile-prospect-pull-plan.ts) knows which li-agent persona's
-  // captured-lead pool and Sales Nav search to draw from for this persona.
-  // Null until explicitly configured; that persona's LinkedIn leg is simply
-  // skipped (no pool pull, no refill nudge) until it's set.
+  // Phase 5 bridge field, NOT part of the shared-personas migration --
+  // update-persona.ts still reads/writes this column on THIS local table,
+  // keyed by this table's own (now largely orphaned) `id`, not the shared
+  // persona id. reconcile-prospect-pull-plan.ts no longer reads it: since
+  // personaId is now a shared cross-app id valid directly in both apps, it
+  // calls li-agent's list-unused-persona-leads/generate-persona-search-link
+  // with that shared id straight through instead of resolving through this
+  // column. Being phased out separately; left as-is here.
   liAgentPersonaId: text("li_agent_persona_id"),
   ownerEmail: text("owner_email").notNull(),
   createdAt: text("created_at").default(now()),
@@ -173,14 +180,14 @@ export const contactSubPersonas = table("contact_sub_personas", {
   subPersonaId: text("sub_persona_id").notNull(),
 });
 
-// One row per file uploaded to a persona's knowledge base. Tracked
-// individually for display/management (a list the user can add to and
-// remove from), but the persona's own `criteria` column stays the single
-// source of truth every scoring/grounding code path reads — it's a derived
-// concatenation of all of a persona's documents, recomputed via
-// recombinePersonaCriteria() (server/helpers/persona-documents.ts) whenever
-// this table changes. No FK enforcement, matching this app's convention
-// (see contacts.personaId).
+// VESTIGIAL as of the shared-personas migration: core personas and their
+// documents now live in packages/shared's sharedPersonas/sharedPersonaDocs
+// tables (@xdr-hub/shared/server), read/written via getSharedDb(). This
+// table (and its sibling `personas` above) is kept only so the table/
+// migration isn't dropped out from under any historical data — nothing in
+// this app reads or writes it anymore except the one-time
+// migrate-personas-to-shared.ts admin action and `personas.liAgentPersonaId`
+// (a separate Phase 5 bridge field, unrelated to this migration).
 export const personaDocuments = table("persona_documents", {
   id: text("id").primaryKey(),
   personaId: text("persona_id").notNull(),
@@ -211,6 +218,13 @@ export const sourcingRules = table("sourcing_rules", {
   icpId: text("icp_id"), // optional company-level qualification criteria; no FK enforcement, matches this app's convention
   companyAllowList: text("company_allow_list"), // JSON-encoded string array
   companyDenyList: text("company_deny_list"), // JSON-encoded string array
+  // Nullable HubSpot owner id. When set, the pipeline resolves that owner's
+  // CURRENT book of business live at run time (via packages/shared's
+  // fetchCompaniesByOwner) and unions it with the static snapshot lists
+  // above — not cached, not merged into companyAllowList/companyDenyList,
+  // so an owner's book changing between runs is picked up automatically.
+  companyAllowListOwnerId: text("company_allow_list_owner_id"),
+  companyDenyListOwnerId: text("company_deny_list_owner_id"),
   // Manual overrides for the LLM-auto-derived title/seniority search
   // parameters (JSON-encoded string arrays) — replace the corresponding
   // auto-derived value when non-empty, matching today's behavior when null.
@@ -245,6 +259,10 @@ export const marketingRules = table("marketing_rules", {
   lifecycleStages: text("lifecycle_stages"), // JSON-encoded string array, e.g. ["RAW","MEL","QL"]
   companyAllowList: text("company_allow_list"), // JSON-encoded string array
   companyDenyList: text("company_deny_list"), // JSON-encoded string array
+  // See sourcingRules.companyAllowListOwnerId/companyDenyListOwnerId above —
+  // same live-resolved-at-run-time semantics.
+  companyAllowListOwnerId: text("company_allow_list_owner_id"),
+  companyDenyListOwnerId: text("company_deny_list_owner_id"),
   intervalHours: integer("interval_hours"), // recurring cadence in hours (1/2/3/4/6/8/12/24)
   segmentId: text("segment_id").notNull(),
   jobResourcePath: text("job_resource_path"),
@@ -252,13 +270,11 @@ export const marketingRules = table("marketing_rules", {
   createdAt: text("created_at").default(now()),
 });
 
-// Sales Library — reference material (call scripts, ICP notes, positioning
-// docs, etc.) any XDR/AE can contribute. `content` stores the raw text
-// directly (not JSON-wrapped like persona/ICP criteria). `category`/`tags`
-// are AI-derived on create via deriveLibraryTags(), and can be overridden
-// later through update-library-doc. `linkedPersonaId`/`linkedIcpId` are
-// plain nullable text columns with no FK enforcement, matching this app's
-// existing convention (see contacts.personaId).
+// LEGACY / frozen. Sales Library docs now live in packages/shared's
+// sharedLibraryDocs (getSharedDb, @xdr-hub/shared/server) so li-agent can
+// read the same reference material -- every action reads/writes there.
+// This table is kept only as the source rows for migrate-library-docs-to-
+// shared.ts's one-time copy; nothing else should read or write it.
 export const libraryDocs = table("library_docs", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

@@ -1,14 +1,15 @@
 import { defineAction } from "@agent-native/core";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { icpPersonaDocs, icpPersonas } from "../server/db/schema.js";
 import {
   MAX_DOCS_PER_PERSONA,
   MAX_DOC_CHARS,
   countWords,
-  rebuildPersonaIcpText,
-} from "../server/helpers/persona-docs.js";
+  getSharedDb,
+  rebuildPersonaCriteriaText,
+  sharedPersonaDocs,
+  sharedPersonas,
+} from "@xdr-hub/shared/server";
 import { requireAdminFromSessionOrToken } from "../server/helpers/require-admin.js";
 
 export default defineAction({
@@ -39,13 +40,13 @@ export default defineAction({
   maxBodyBytes: 4_000_000,
   run: async ({ name, color, icpText, documents, apiToken }, ctx) => {
     await requireAdminFromSessionOrToken(apiToken, ctx);
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
-    // Normalize both input shapes onto the document list -- icpPersonas.icpText
-    // is derived from icpPersonaDocs, so even the single-text form is stored
-    // as one document rather than written straight to the column. Keeping one
-    // storage path means a persona created either way behaves identically
-    // when documents are added to it later.
+    // Normalize both input shapes onto the document list -- a shared
+    // persona's criteria is always derived from sharedPersonaDocs, so even
+    // the single-text form is stored as one document rather than written to
+    // any column directly. Keeping one storage path means a persona created
+    // either way behaves identically when documents are added to it later.
     const docs = documents ?? (icpText ? [{ name: `${name} ICP`, text: icpText }] : []);
     if (docs.length === 0) {
       return { ok: false as const, error: "Provide at least one document (or icpText)." };
@@ -62,30 +63,29 @@ export default defineAction({
     const id = nanoid();
     const now = new Date().toISOString();
 
-    await db.insert(icpPersonas).values({
+    await sharedDb.insert(sharedPersonas).values({
       id,
       name,
       color,
-      icpText: null, // set by rebuildPersonaIcpText below
       summary: null,
       isActive: 0,
       createdAt: now,
       updatedAt: now,
     });
 
-    await db.insert(icpPersonaDocs).values(
+    await sharedDb.insert(sharedPersonaDocs).values(
       docs.map((doc, i) => ({
         id: nanoid(),
         personaId: id,
-        name: doc.name,
-        text: doc.text,
+        fileName: doc.name,
+        content: doc.text,
         wordCount: countWords(doc.text),
         sortOrder: i,
         createdAt: now,
       })),
     );
 
-    const rebuilt = await rebuildPersonaIcpText(db, id);
+    const rebuilt = await rebuildPersonaCriteriaText(sharedDb, id);
 
     return {
       ok: true as const,

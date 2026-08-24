@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
-import { and, desc, eq, or, sql } from "@agent-native/core/db/schema";
+import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedLibraryDocs, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { icps, libraryDocs, personas } from "../server/db/schema.js";
+import { icps } from "../server/db/schema.js";
 import { LIBRARY_CATEGORIES } from "../server/helpers/library-tagging.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -21,40 +22,54 @@ export default defineAction({
   http: { method: "GET" },
   run: async ({ category, search, linkedPersonaId, linkedIcpId }, ctx) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
     const conditions = [
-      category ? eq(libraryDocs.category, category) : undefined,
-      linkedPersonaId ? eq(libraryDocs.linkedPersonaId, linkedPersonaId) : undefined,
-      linkedIcpId ? eq(libraryDocs.linkedIcpId, linkedIcpId) : undefined,
+      category ? eq(sharedLibraryDocs.category, category) : undefined,
+      linkedPersonaId ? eq(sharedLibraryDocs.linkedPersonaId, linkedPersonaId) : undefined,
+      linkedIcpId ? eq(sharedLibraryDocs.linkedIcpId, linkedIcpId) : undefined,
       search
         ? or(
-            sql`lower(${libraryDocs.name}) LIKE ${`%${search.toLowerCase()}%`}`,
-            sql`lower(${libraryDocs.content}) LIKE ${`%${search.toLowerCase()}%`}`,
+            sql`lower(${sharedLibraryDocs.name}) LIKE ${`%${search.toLowerCase()}%`}`,
+            sql`lower(${sharedLibraryDocs.content}) LIKE ${`%${search.toLowerCase()}%`}`,
           )
         : undefined,
     ].filter((c): c is NonNullable<typeof c> => c !== undefined);
     const whereClause = conditions.length ? and(...conditions) : undefined;
 
-    const rows = await db
+    const rows = await sharedDb
       .select({
-        id: libraryDocs.id,
-        name: libraryDocs.name,
-        category: libraryDocs.category,
-        tags: libraryDocs.tags,
-        content: libraryDocs.content,
-        linkedPersonaId: libraryDocs.linkedPersonaId,
-        linkedPersonaName: personas.name,
-        linkedIcpId: libraryDocs.linkedIcpId,
-        linkedIcpName: icps.name,
-        ownerEmail: libraryDocs.ownerEmail,
-        createdAt: libraryDocs.createdAt,
+        id: sharedLibraryDocs.id,
+        name: sharedLibraryDocs.name,
+        category: sharedLibraryDocs.category,
+        tags: sharedLibraryDocs.tags,
+        content: sharedLibraryDocs.content,
+        linkedPersonaId: sharedLibraryDocs.linkedPersonaId,
+        linkedIcpId: sharedLibraryDocs.linkedIcpId,
+        ownerEmail: sharedLibraryDocs.ownerEmail,
+        createdAt: sharedLibraryDocs.createdAt,
       })
-      .from(libraryDocs)
-      .leftJoin(personas, eq(libraryDocs.linkedPersonaId, personas.id))
-      .leftJoin(icps, eq(libraryDocs.linkedIcpId, icps.id))
+      .from(sharedLibraryDocs)
       .where(whereClause)
-      .orderBy(desc(libraryDocs.createdAt));
+      .orderBy(desc(sharedLibraryDocs.createdAt));
+
+    // Personas and ICPs live in different DBs from sharedLibraryDocs now
+    // (personas in the shared cross-app DB, icps in this app's own local
+    // DB) -- neither can be joined in the same query, so fetch the distinct
+    // referenced ids and merge names in application code instead (same
+    // "separate query + Map merge" idiom list-personas.ts uses for its own
+    // sub-persona/library-doc counts).
+    const personaIds = [...new Set(rows.map((r) => r.linkedPersonaId).filter((id): id is string => !!id))];
+    const personaRows = personaIds.length
+      ? await sharedDb.select({ id: sharedPersonas.id, name: sharedPersonas.name }).from(sharedPersonas).where(inArray(sharedPersonas.id, personaIds))
+      : [];
+    const personaNameById = new Map(personaRows.map((p) => [p.id, p.name]));
+
+    const icpIds = [...new Set(rows.map((r) => r.linkedIcpId).filter((id): id is string => !!id))];
+    const icpRows = icpIds.length
+      ? await getDb().select({ id: icps.id, name: icps.name }).from(icps).where(inArray(icps.id, icpIds))
+      : [];
+    const icpNameById = new Map(icpRows.map((p) => [p.id, p.name]));
 
     return {
       docs: rows.map((r) => ({
@@ -64,9 +79,9 @@ export default defineAction({
         tags: r.tags ? (JSON.parse(r.tags) as string[]) : [],
         contentSnippet: r.content.length > SNIPPET_LENGTH ? `${r.content.slice(0, SNIPPET_LENGTH)}…` : r.content,
         linkedPersonaId: r.linkedPersonaId,
-        linkedPersonaName: r.linkedPersonaName,
+        linkedPersonaName: r.linkedPersonaId ? (personaNameById.get(r.linkedPersonaId) ?? null) : null,
         linkedIcpId: r.linkedIcpId,
-        linkedIcpName: r.linkedIcpName,
+        linkedIcpName: r.linkedIcpId ? (icpNameById.get(r.linkedIcpId) ?? null) : null,
         ownerEmail: r.ownerEmail,
         createdAt: r.createdAt,
       })),

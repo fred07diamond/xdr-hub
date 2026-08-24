@@ -1,8 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonaDocs } from "@xdr-hub/shared/server";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { personaDocuments } from "../server/db/schema.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -13,16 +12,17 @@ export default defineAction({
   http: { method: "GET" },
   run: async ({ personaId }, ctx) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
-    const db = getDb();
-    const rows = await db
+    const sharedDb = getSharedDb();
+    const rows = await sharedDb
       .select({
-        id: personaDocuments.id,
-        fileName: personaDocuments.fileName,
-        createdAt: personaDocuments.createdAt,
+        id: sharedPersonaDocs.id,
+        fileName: sharedPersonaDocs.fileName,
+        createdAt: sharedPersonaDocs.createdAt,
+        wordCount: sharedPersonaDocs.wordCount,
       })
-      .from(personaDocuments)
-      .where(eq(personaDocuments.personaId, personaId))
-      .orderBy(personaDocuments.createdAt);
+      .from(sharedPersonaDocs)
+      .where(eq(sharedPersonaDocs.personaId, personaId))
+      .orderBy(sharedPersonaDocs.sortOrder, sharedPersonaDocs.createdAt);
 
     return { documents: rows };
   },

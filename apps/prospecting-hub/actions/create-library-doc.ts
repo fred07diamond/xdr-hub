@@ -1,9 +1,8 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedLibraryDocs, sharedPersonas } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { libraryDocs, personas } from "../server/db/schema.js";
 import { deriveLibraryTags } from "../server/helpers/library-tagging.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -20,10 +19,14 @@ export default defineAction({
   http: { method: "POST" },
   run: async ({ name, text, linkedPersonaId, linkedIcpId }, ctx) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
     if (linkedPersonaId) {
-      const existing = await db.select({ id: personas.id }).from(personas).where(eq(personas.id, linkedPersonaId)).limit(1);
+      const existing = await sharedDb
+        .select({ id: sharedPersonas.id })
+        .from(sharedPersonas)
+        .where(eq(sharedPersonas.id, linkedPersonaId))
+        .limit(1);
       if (!existing[0]) {
         throw Object.assign(new Error(`Persona ${linkedPersonaId} not found.`), { statusCode: 404 });
       }
@@ -35,7 +38,7 @@ export default defineAction({
     const { category, tags } = await deriveLibraryTags(text);
 
     const id = nanoid();
-    await db.insert(libraryDocs).values({
+    await sharedDb.insert(sharedLibraryDocs).values({
       id,
       name,
       category,

@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { inArray } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas } from "../server/db/schema.js";
+import { contacts } from "../server/db/schema.js";
 import { generateAndPersistDraft } from "../server/helpers/draft-outreach.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -27,7 +28,7 @@ export default defineAction({
       .where(inArray(contacts.id, contactIds))
       .limit(MAX_CONTACTS_PER_RUN);
 
-    const personaRows = await db.select({ id: personas.id, name: personas.name }).from(personas);
+    const personaRows = await getSharedDb().select({ id: sharedPersonas.id, name: sharedPersonas.name }).from(sharedPersonas);
     const personaNameById = new Map(personaRows.map((p) => [p.id, p.name]));
 
     let generated = 0;

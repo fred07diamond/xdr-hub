@@ -1,6 +1,7 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { getOutreachVoiceGuidelines } from "@xdr-hub/shared/server";
 import { getOwnerCtx } from "./get-owner-ctx.js";
+import { getPersonaGrounding, unauthorizedCustomerMentioned } from "./sales-library.js";
 import { NO_EM_DASH_RULE, stripEmDashes } from "./style-rules.js";
 
 export interface DraftResult {
@@ -8,6 +9,7 @@ export interface DraftResult {
   fitReason: string;
   draftNote: string;
   draftFollowUp: string | null;
+  unauthorizedCustomerMention: string | null;
 }
 
 export async function draftProfile({
@@ -15,16 +17,21 @@ export async function draftProfile({
   profileSummary,
   messagingContext,
   profileUrl,
+  personaId,
+  personaName,
 }: {
   icpText: string | null;
   profileSummary: string;
   messagingContext?: string | null;
   profileUrl: string;
+  personaId?: string | null;
+  personaName?: string | null;
 }): Promise<DraftResult> {
   let fitVerdict: DraftResult["fitVerdict"] = "inconclusive";
   let fitReason = "No ICP document uploaded — add ICP criteria on the ICP tab to enable fit scoring.";
   let draftNote = "";
   let draftFollowUp: string | null = null;
+  let unauthorizedCustomerMention: string | null = null;
 
   try {
     const ownerCtx = await getOwnerCtx();
@@ -36,12 +43,22 @@ export async function draftProfile({
     const voiceGuidelines = await getOutreachVoiceGuidelines(ownerCtx?.userEmail ?? "", ownerCtx?.orgId ?? null);
     const voiceBlock = `Voice and tone guidelines:\n${voiceGuidelines}\n\n`;
 
+    // Persona-linked Sales Library docs -- a new grounding input alongside
+    // the ICP document and messaging context, same lookup prospecting-hub's
+    // own drafting already uses (see sales-library.ts's own comment).
+    const { groundingBlock, customerEvidenceBlock, otherCustomerNames } = await getPersonaGrounding(
+      personaId ?? null,
+      personaName ?? null,
+    );
+    const salesLibraryBlock = `Persona-specific messaging reference:\n${groundingBlock}\n\n${customerEvidenceBlock ? `${customerEvidenceBlock}\n\n` : ""}`;
+
     const systemPrompt = icpText
       ? "You are a LinkedIn outreach assistant. Score fit and draft a personalized connection note.\n\n" +
         `${NO_EM_DASH_RULE}\n\n` +
         `ICP document:\n${icpText.slice(0, 3000)}\n\n` +
         messagingBlock +
         voiceBlock +
+        salesLibraryBlock +
         "Scoring rubric — be decisive, don't hedge:\n" +
         "- strong: title + seniority match the ICP, OR clear behavioral signals (sharing/praising tools, vendors, or themes in the space — even a single specific post counts). If evidence points to strong, score it strong.\n" +
         "- possible: genuine uncertainty only — title is adjacent OR seniority is one level off, AND no behavioral signals exist.\n" +
@@ -89,9 +106,11 @@ export async function draftProfile({
     if (parsed.fitReason) fitReason = stripEmDashes(String(parsed.fitReason));
     if (parsed.draftNote) draftNote = stripEmDashes(String(parsed.draftNote).slice(0, 300));
     if (parsed.draftFollowUp) draftFollowUp = stripEmDashes(String(parsed.draftFollowUp).slice(0, 150));
+
+    unauthorizedCustomerMention = unauthorizedCustomerMentioned(`${draftNote} ${draftFollowUp ?? ""}`, otherCustomerNames);
   } catch (err) {
     fitReason = `Draft failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 
-  return { fitVerdict, fitReason, draftNote, draftFollowUp };
+  return { fitVerdict, fitReason, draftNote, draftFollowUp, unauthorizedCustomerMention };
 }

@@ -141,6 +141,8 @@ export default defineAction({
       profileSummary,
       messagingContext,
       profileUrl: args.profileUrl,
+      personaId,
+      personaName,
     });
 
     const draftedAt = new Date().toISOString();

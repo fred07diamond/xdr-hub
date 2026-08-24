@@ -1,9 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { personas } from "../server/db/schema.js";
-import { encodePersonaCriteria } from "../server/helpers/persona-sync.js";
+import { addPersonaDoc, getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -18,17 +16,20 @@ export default defineAction({
   http: { method: "POST" },
   run: async ({ name, color, description, text }, ctx) => {
     await requireRole(ctx?.userEmail, ["admin"]);
-    const db = getDb();
+    const sharedDb = getSharedDb();
     const id = nanoid();
-    await db.insert(personas).values({
+    await sharedDb.insert(sharedPersonas).values({
       id,
       name,
       color,
       description: description ?? null,
-      criteria: encodePersonaCriteria(text),
       ownerEmail: ctx!.userEmail!,
       createdAt: new Date().toISOString(),
     });
+    // Criteria is always derived from sharedPersonaDocs now (no single
+    // criteria column on sharedPersonas) -- the first upload becomes this
+    // persona's first document.
+    await addPersonaDoc(sharedDb, { personaId: id, fileName: "Original upload", content: text });
     return { id };
   },
 });

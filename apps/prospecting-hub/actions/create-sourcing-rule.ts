@@ -15,6 +15,14 @@ export default defineAction({
     icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
+    companyAllowListOwnerId: z
+      .string()
+      .nullish()
+      .describe("HubSpot owner id — when set, that owner's current book of business is resolved live at every run and unioned with companyAllowList"),
+    companyDenyListOwnerId: z
+      .string()
+      .nullish()
+      .describe("HubSpot owner id — when set, that owner's current book of business is resolved live at every run and unioned with companyDenyList"),
     manualTitleKeywords: z.array(z.string()).nullish(),
     manualSeniorities: z.array(z.string()).nullish(),
     minLinkedinFollowers: z.number().int().min(0).nullish(),
@@ -35,6 +43,8 @@ export default defineAction({
       icpId,
       companyAllowList,
       companyDenyList,
+      companyAllowListOwnerId,
+      companyDenyListOwnerId,
       manualTitleKeywords,
       manualSeniorities,
       minLinkedinFollowers,
@@ -56,6 +66,8 @@ export default defineAction({
       icpId,
       companyAllowList,
       companyDenyList,
+      companyAllowListOwnerId,
+      companyDenyListOwnerId,
       manualTitleKeywords,
       manualSeniorities,
       minLinkedinFollowers,

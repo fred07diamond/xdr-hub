@@ -20,6 +20,8 @@ export default defineAction({
     lifecycleStages: z.array(z.string()).min(1).nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
+    companyAllowListOwnerId: z.string().nullish(),
+    companyDenyListOwnerId: z.string().nullish(),
     intervalHours: z
       .number()
       .int()
@@ -32,7 +34,10 @@ export default defineAction({
   }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ id, name, lifecycleStages, companyAllowList, companyDenyList, intervalHours, status }, ctx) => {
+  run: async (
+    { id, name, lifecycleStages, companyAllowList, companyDenyList, companyAllowListOwnerId, companyDenyListOwnerId, intervalHours, status },
+    ctx,
+  ) => {
     const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
 
@@ -71,6 +76,8 @@ export default defineAction({
         ...(lifecycleStages && lifecycleStages.length > 0 ? { lifecycleStages: JSON.stringify(lifecycleStages) } : {}),
         ...(companyAllowList !== undefined ? { companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null } : {}),
         ...(companyDenyList !== undefined ? { companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null } : {}),
+        ...(companyAllowListOwnerId !== undefined ? { companyAllowListOwnerId } : {}),
+        ...(companyDenyListOwnerId !== undefined ? { companyDenyListOwnerId } : {}),
         ...(intervalHours != null ? { intervalHours } : {}),
         ...(status != null ? { status } : {}),
       })

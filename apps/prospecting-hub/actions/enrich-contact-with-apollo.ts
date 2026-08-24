@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
-import { eq, sql } from "@agent-native/core/db/schema";
+import { eq } from "@agent-native/core/db/schema";
+import { getSharedDb } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas } from "../server/db/schema.js";
+import { contacts } from "../server/db/schema.js";
 import {
   enrichApolloOrganization,
   extractApolloIntentScore,
@@ -10,7 +11,7 @@ import {
 } from "../server/helpers/apollo-client.js";
 import { computeDeterministicCompanyFit } from "../server/helpers/company-fit.js";
 import { requireRole } from "../server/helpers/require-role.js";
-import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
+import { loadScorablePersonas, scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 import type { ApolloOrganization, ApolloPersonMatch } from "../server/helpers/apollo-client.js";
 
 export default defineAction({
@@ -118,10 +119,7 @@ export default defineAction({
     // Rescore immediately so Overall Score reflects the new Apollo signals
     // right away — same pattern as score-contact.ts, reading the columns
     // just written above back in as pass-through inputs.
-    const personaRows = await db
-      .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
-      .from(personas)
-      .where(sql`${personas.criteria} IS NOT NULL`);
+    const personaRows = await loadScorablePersonas(getSharedDb());
 
     const score = await scoreContactAgainstPersonas({
       contact: {

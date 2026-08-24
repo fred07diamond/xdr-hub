@@ -1,17 +1,18 @@
 import { defineAction } from "@agent-native/core";
 import { and, desc, eq, sql } from "@agent-native/core/db/schema";
 import { resourceGetByPath, resourcePut } from "@agent-native/core/resources";
-import { hubspotFetchWithTimeout } from "@xdr-hub/shared/server";
+import { getSharedDb, hubspotFetchWithTimeout, sharedPersonas } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, marketingRules, personas, segments, sourcingRuleRunTargets, syncRecords } from "../server/db/schema.js";
+import { contacts, marketingRules, segments, sourcingRuleRunTargets, syncRecords } from "../server/db/schema.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { DEFAULT_LIFECYCLE_STAGES, type HubSpotContactRecord } from "../server/helpers/hubspot-contact-properties.js";
 import { searchHubSpotContacts } from "../server/helpers/hubspot-contact-search.js";
 import { SEARCH_TIME_BUDGET_MS, withinTimeBudget } from "../server/helpers/invocation-budget.js";
 import { findCrossSourceMatch } from "../server/helpers/resolve-contact-dedup.js";
 import { requireRole } from "../server/helpers/require-role.js";
+import { unionWithOwnerScopedCompanies } from "../server/helpers/resolve-owner-scoped-companies.js";
 import { runScoringBatch } from "../server/helpers/scoring-chunk.js";
 import { assertSegmentWritable } from "../server/helpers/segment-access.js";
 import {
@@ -185,7 +186,7 @@ export default defineAction({
 
         isFreshStart = true;
 
-        const personaRow = await db.select({ id: personas.id }).from(personas).where(eq(personas.id, rule.personaId)).limit(1);
+        const personaRow = await getSharedDb().select({ id: sharedPersonas.id }).from(sharedPersonas).where(eq(sharedPersonas.id, rule.personaId)).limit(1);
         if (!personaRow[0]) {
           throw Object.assign(new Error(`Persona ${rule.personaId} not found.`), { statusCode: 404 });
         }
@@ -287,8 +288,16 @@ export default defineAction({
       const parsedLifecycleStages: string[] | null = rule.lifecycleStages ? JSON.parse(rule.lifecycleStages) : null;
       const lifecycleStages: string[] =
         parsedLifecycleStages && parsedLifecycleStages.length > 0 ? parsedLifecycleStages : DEFAULT_LIFECYCLE_STAGES;
-      const companyAllowList: string[] | undefined = rule.companyAllowList ? JSON.parse(rule.companyAllowList) : undefined;
-      const companyDenyList: string[] | undefined = rule.companyDenyList ? JSON.parse(rule.companyDenyList) : undefined;
+      const staticAllowList: string[] | null = rule.companyAllowList ? JSON.parse(rule.companyAllowList) : null;
+      const staticDenyList: string[] | null = rule.companyDenyList ? JSON.parse(rule.companyDenyList) : null;
+      // Live-resolved once per fresh run start, then cached into
+      // syncRecords.metadata via runSearchRound below so a resumed/chunked
+      // continuation of THIS run doesn't re-resolve mid-run -- the next
+      // scheduled run picks up any book changes.
+      const [companyAllowList, companyDenyList] = await Promise.all([
+        unionWithOwnerScopedCompanies(staticAllowList, rule.companyAllowListOwnerId),
+        unionWithOwnerScopedCompanies(staticDenyList, rule.companyDenyListOwnerId),
+      ]);
 
       return await runSearchRound({
         cursor: undefined,

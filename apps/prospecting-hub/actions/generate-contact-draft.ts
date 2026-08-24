@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas } from "../server/db/schema.js";
+import { contacts } from "../server/db/schema.js";
 import { generateAndPersistDraft } from "../server/helpers/draft-outreach.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -27,10 +28,10 @@ export default defineAction({
     // scored/matched is a legitimate state in this app, not a hard failure.
     let personaName: string | null = null;
     if (contact.personaId) {
-      const personaRows = await db
-        .select({ name: personas.name })
-        .from(personas)
-        .where(eq(personas.id, contact.personaId))
+      const personaRows = await getSharedDb()
+        .select({ name: sharedPersonas.name })
+        .from(sharedPersonas)
+        .where(eq(sharedPersonas.id, contact.personaId))
         .limit(1);
       personaName = personaRows[0]?.name ?? null;
     }

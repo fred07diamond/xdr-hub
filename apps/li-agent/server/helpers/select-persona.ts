@@ -1,10 +1,41 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { getPersonaCriteriaText, getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { getDb } from "../db/index.js";
-import { icpPersonas, icpSources } from "../db/schema.js";
+import { icpSources } from "../db/schema.js";
 import { getOwnerCtx } from "./get-owner-ctx.js";
 
 type Db = ReturnType<typeof getDb>;
+type SharedDb = ReturnType<typeof getSharedDb>;
+
+interface PersonaWithCriteria {
+  id: string;
+  name: string;
+  color: string;
+  summary: string | null;
+  icpText: string;
+}
+
+// Personas now live in the shared table (packages/shared) so create/update/
+// delete-icp-persona no longer touch local icpPersonas at all -- reading
+// icpPersonas.icpText here would silently freeze on stale data forever.
+// Criteria text has no cached column on the shared table (see
+// getPersonaCriteriaText's own doc comment), so it's computed fresh per
+// persona. "Has docs" replaces the old `isNotNull(icpText)` filter.
+async function loadPersonasWithCriteria(sharedDb: SharedDb): Promise<PersonaWithCriteria[]> {
+  const allPersonas = await sharedDb
+    .select({ id: sharedPersonas.id, name: sharedPersonas.name, color: sharedPersonas.color, summary: sharedPersonas.summary })
+    .from(sharedPersonas);
+
+  const withCriteria = await Promise.all(
+    allPersonas.map(async (p) => {
+      const { text, docCount } = await getPersonaCriteriaText(sharedDb, p.id);
+      return docCount > 0 && text ? { ...p, icpText: text } : null;
+    }),
+  );
+
+  return withCriteria.filter((p): p is PersonaWithCriteria => p !== null);
+}
 
 export interface ProfileData {
   name?: string | null;
@@ -47,10 +78,7 @@ export function buildProfileSummary(p: ProfileData): string {
 }
 
 export async function selectPersona(db: Db, profile: ProfileData): Promise<PersonaMatch> {
-  const personasWithDocs = await db
-    .select({ id: icpPersonas.id, name: icpPersonas.name, color: icpPersonas.color, icpText: icpPersonas.icpText, summary: icpPersonas.summary })
-    .from(icpPersonas)
-    .where(isNotNull(icpPersonas.icpText));
+  const personasWithDocs = await loadPersonasWithCriteria(getSharedDb());
 
   if (personasWithDocs.length === 1) {
     const p = personasWithDocs[0];
@@ -105,10 +133,7 @@ export interface BatchProfileInput {
 // an LLM call at all when there's a genuine choice between >1 persona;
 // 0 or 1 personas resolve instantly with no LLM cost, same as selectPersona.
 export async function selectPersonasBatch(db: Db, profiles: BatchProfileInput[]): Promise<PersonaMatch[]> {
-  const personasWithDocs = await db
-    .select({ id: icpPersonas.id, name: icpPersonas.name, color: icpPersonas.color, icpText: icpPersonas.icpText, summary: icpPersonas.summary })
-    .from(icpPersonas)
-    .where(isNotNull(icpPersonas.icpText));
+  const personasWithDocs = await loadPersonasWithCriteria(getSharedDb());
 
   if (personasWithDocs.length === 0) {
     const icpRow = await db

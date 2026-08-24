@@ -1,8 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "@agent-native/core/db/schema";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { libraryDocs } from "../server/db/schema.js";
+import { getSharedDb, sharedLibraryDocs } from "@xdr-hub/shared/server";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -12,9 +11,9 @@ export default defineAction({
   http: { method: "POST" },
   run: async ({ id }, ctx) => {
     const role = await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
-    const existing = await db.select().from(libraryDocs).where(eq(libraryDocs.id, id)).limit(1);
+    const existing = await sharedDb.select().from(sharedLibraryDocs).where(eq(sharedLibraryDocs.id, id)).limit(1);
     if (!existing[0]) {
       return { ok: false, error: `Library doc ${id} not found.` };
     }
@@ -22,7 +21,7 @@ export default defineAction({
       return { ok: false, error: "Only the document's owner or a manager can delete this." };
     }
 
-    await db.delete(libraryDocs).where(eq(libraryDocs.id, id));
+    await sharedDb.delete(sharedLibraryDocs).where(eq(sharedLibraryDocs.id, id));
 
     return { ok: true };
   },

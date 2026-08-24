@@ -1,6 +1,10 @@
 import { table, text, integer, now } from "@agent-native/core/db/schema";
 
-// One row per ICP persona. One can be marked active (is_active=1) at a time.
+// LEGACY / frozen. Persona data now lives in packages/shared's sharedPersonas
+// (getSharedDb, @xdr-hub/shared/server) -- every action reads/writes there.
+// This table is kept only so historical rows (prospects.personaId,
+// leadListItems.personaId, postEngagements.personaId) still resolve; those
+// FK repoints are a deferred follow-up. Do not add new writers here.
 export const icpPersonas = table("icp_personas", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -21,14 +25,10 @@ export const icpPersonas = table("icp_personas", {
   updatedAt: text("updated_at").default(now()),
 });
 
-// One row per uploaded document attached to an ICP persona. A persona can
-// hold many of them: icpPersonas.icpText is the DERIVED concatenation of all
-// its docs (rebuilt by server/helpers/persona-docs.ts on every add/delete),
-// which is why every existing consumer -- selectPersona/selectPersonasBatch,
-// generate-sales-nav-search, get-messaging-graph, draft-profile, score-engager
-// -- still reads a single icpText field and needed no change when multi-doc
-// personas landed. Never write icpPersonas.icpText directly for a persona
-// that has docs; call rebuildPersonaIcpText() instead or the two drift.
+// LEGACY / frozen, same as icpPersonas above. Persona documents now live in
+// packages/shared's sharedPersonaDocs; criteria text is computed fresh via
+// getPersonaCriteriaText, never cached on a column. Kept only for historical
+// reference -- do not add new writers here.
 export const icpPersonaDocs = table("icp_persona_docs", {
   id: text("id").primaryKey(),
   personaId: text("persona_id").notNull(),

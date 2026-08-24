@@ -2,16 +2,16 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { icpPersonaDocs, icpPersonas } from "../server/db/schema.js";
 import {
   MAX_DOCS_PER_PERSONA,
   MAX_DOC_CHARS,
-  adoptLegacyIcpTextAsDoc,
   countWords,
+  getSharedDb,
   nextSortOrder,
-  rebuildPersonaIcpText,
-} from "../server/helpers/persona-docs.js";
+  rebuildPersonaCriteriaText,
+  sharedPersonaDocs,
+  sharedPersonas,
+} from "@xdr-hub/shared/server";
 import { requireAdminFromSessionOrToken } from "../server/helpers/require-admin.js";
 
 // Adds documents to a persona WITHOUT replacing what's already attached --
@@ -43,24 +43,19 @@ export default defineAction({
   maxBodyBytes: 4_000_000,
   run: async ({ personaId, documents, apiToken }, ctx) => {
     await requireAdminFromSessionOrToken(apiToken, ctx);
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
-    const persona = await db
-      .select({ id: icpPersonas.id, name: icpPersonas.name, icpText: icpPersonas.icpText })
-      .from(icpPersonas)
-      .where(eq(icpPersonas.id, personaId))
+    const persona = await sharedDb
+      .select({ id: sharedPersonas.id, name: sharedPersonas.name })
+      .from(sharedPersonas)
+      .where(eq(sharedPersonas.id, personaId))
       .limit(1);
     if (!persona[0]) return { ok: false as const, error: "Persona not found." };
 
-    // A persona created before multi-document support has icpText but no doc
-    // rows; adopt that text as document #1 FIRST, or the rebuild below would
-    // wipe it out. See adoptLegacyIcpTextAsDoc.
-    await adoptLegacyIcpTextAsDoc(db, persona[0]);
-
-    const existing = await db
-      .select({ id: icpPersonaDocs.id })
-      .from(icpPersonaDocs)
-      .where(eq(icpPersonaDocs.personaId, personaId));
+    const existing = await sharedDb
+      .select({ id: sharedPersonaDocs.id })
+      .from(sharedPersonaDocs)
+      .where(eq(sharedPersonaDocs.personaId, personaId));
     if (existing.length + documents.length > MAX_DOCS_PER_PERSONA) {
       return {
         ok: false as const,
@@ -76,26 +71,26 @@ export default defineAction({
       };
     }
 
-    const startOrder = await nextSortOrder(db, personaId);
+    const startOrder = await nextSortOrder(sharedDb, personaId);
     const now = new Date().toISOString();
     const added = documents.map((doc, i) => ({
       id: nanoid(),
       personaId,
-      name: doc.name,
-      text: doc.text,
+      fileName: doc.name,
+      content: doc.text,
       wordCount: countWords(doc.text),
       sortOrder: startOrder + i,
       createdAt: now,
     }));
 
-    await db.insert(icpPersonaDocs).values(added);
-    const rebuilt = await rebuildPersonaIcpText(db, personaId);
+    await sharedDb.insert(sharedPersonaDocs).values(added);
+    const rebuilt = await rebuildPersonaCriteriaText(sharedDb, personaId);
 
     return {
       ok: true as const,
       personaId,
       personaName: persona[0].name,
-      added: added.map((d) => ({ id: d.id, name: d.name, wordCount: d.wordCount })),
+      added: added.map((d) => ({ id: d.id, name: d.fileName, wordCount: d.wordCount })),
       docCount: rebuilt.docCount,
       wordCount: rebuilt.wordCount,
     };

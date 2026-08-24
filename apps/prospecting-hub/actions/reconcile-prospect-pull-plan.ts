@@ -4,7 +4,7 @@ import { and, eq, sql } from "@agent-native/core/db/schema";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas, prospectPullPlanRuns, prospectPullPlans } from "../server/db/schema.js";
+import { contacts, prospectPullPlanRuns, prospectPullPlans } from "../server/db/schema.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 interface PersonaMixEntry {
@@ -80,12 +80,6 @@ export default defineAction({
     for (const { personaId, targetPercent } of personaMix) {
       const target = Math.max(1, Math.round((plan.totalVolume * targetPercent) / 100));
 
-      const [personaRow] = await db
-        .select({ liAgentPersonaId: personas.liAgentPersonaId })
-        .from(personas)
-        .where(eq(personas.id, personaId))
-        .limit(1);
-
       const countsBySource = await db
         .select({ source: contacts.source, n: sql<number>`count(*)` })
         .from(contacts)
@@ -103,12 +97,14 @@ export default defineAction({
       let fromLinkedinPool = 0;
       let refillNudgeUrl: string | null = null;
 
-      // No li-agent persona linked yet -- skip the LinkedIn leg entirely for
-      // this persona (no pool pull, no refill nudge) rather than guessing.
-      if (remaining > 0 && personaRow?.liAgentPersonaId) {
+      // personaId is now a SHARED id valid directly on both sides -- no
+      // separate li-agent-persona-id lookup/gate needed anymore, just try
+      // the call and degrade gracefully (existing try/catch-and-null in
+      // callLiAgent) if li-agent doesn't recognize it or is unreachable.
+      if (remaining > 0) {
         const leadsResult = await callLiAgent<{ leads: LiAgentLead[] }>(
           "list-unused-persona-leads",
-          { personaId: personaRow.liAgentPersonaId, limit: remaining },
+          { personaId, limit: remaining },
           userEmail,
         );
 
@@ -144,10 +140,10 @@ export default defineAction({
         remaining -= fromLinkedinPool;
       }
 
-      if (remaining > 0 && personaRow?.liAgentPersonaId) {
+      if (remaining > 0) {
         const linkResult = await callLiAgent<{ searchUrl?: string; error?: string }>(
           "generate-persona-search-link",
-          { personaId: personaRow.liAgentPersonaId },
+          { personaId },
           userEmail,
         );
         refillNudgeUrl = linkResult?.searchUrl ?? null;

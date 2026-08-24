@@ -17,7 +17,7 @@ const options = {
   // explicitly here (rather than externalAgents.authenticatedReads: "auto")
   // so only actions we've deliberately reviewed for cross-app exposure are
   // reachable this way, not every readOnly+requiresAuth action in the app.
-  connectorCatalog: ["list-unused-persona-leads", "generate-persona-search-link"],
+  connectorCatalog: ["list-unused-persona-leads", "generate-persona-search-link", "list-icp-personas-for-migration"],
 } satisfies AgentChatPluginOptions;
 
 export default typeof createWorkspaceAgentChatPlugin === "function"

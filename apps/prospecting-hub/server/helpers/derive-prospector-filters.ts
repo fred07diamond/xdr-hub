@@ -1,7 +1,8 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { and, eq } from "@agent-native/core/db/schema";
+import { getPersonaCriteriaText, getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { getDb } from "../db/index.js";
-import { personas, subPersonas } from "../db/schema.js";
+import { subPersonas } from "../db/schema.js";
 import { LLM_CALL_TIMEOUT_MS } from "./invocation-budget.js";
 import { decodePersonaCriteria } from "./persona-sync.js";
 
@@ -47,18 +48,20 @@ export async function deriveProspectorFilters(options: {
   extraContext?: string;
 }): Promise<DerivedProspectorFilters> {
   const db = getDb();
+  const sharedDb = getSharedDb();
 
-  const personaRows = await db
-    .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
-    .from(personas)
-    .where(eq(personas.id, options.personaId))
+  const personaRows = await sharedDb
+    .select({ id: sharedPersonas.id, name: sharedPersonas.name })
+    .from(sharedPersonas)
+    .where(eq(sharedPersonas.id, options.personaId))
     .limit(1);
   const persona = personaRows[0];
   if (!persona) {
     throw Object.assign(new Error(`Persona ${options.personaId} not found.`), { statusCode: 404 });
   }
 
-  let criteriaText = decodePersonaCriteria(persona.criteria) ?? "";
+  const { text: personaText } = await getPersonaCriteriaText(sharedDb, options.personaId);
+  let criteriaText = personaText ?? "";
 
   if (options.subPersonaId) {
     const subRows = await db

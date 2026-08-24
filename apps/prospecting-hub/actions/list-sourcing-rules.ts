@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { desc, eq, inArray, sql } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { icps, personas, segmentContacts, sourcingRules, subPersonas } from "../server/db/schema.js";
+import { icps, segmentContacts, sourcingRules, subPersonas } from "../server/db/schema.js";
 import { getUserRole, requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -29,6 +30,8 @@ export default defineAction({
         icpId: sourcingRules.icpId,
         companyAllowList: sourcingRules.companyAllowList,
         companyDenyList: sourcingRules.companyDenyList,
+        companyAllowListOwnerId: sourcingRules.companyAllowListOwnerId,
+        companyDenyListOwnerId: sourcingRules.companyDenyListOwnerId,
         manualTitleKeywords: sourcingRules.manualTitleKeywords,
         manualSeniorities: sourcingRules.manualSeniorities,
         minLinkedinFollowers: sourcingRules.minLinkedinFollowers,
@@ -41,12 +44,10 @@ export default defineAction({
         jobResourcePath: sourcingRules.jobResourcePath,
         status: sourcingRules.status,
         createdAt: sourcingRules.createdAt,
-        personaName: personas.name,
         subPersonaName: subPersonas.name,
         icpName: icps.name,
       })
       .from(sourcingRules)
-      .leftJoin(personas, eq(sourcingRules.personaId, personas.id))
       .leftJoin(subPersonas, eq(sourcingRules.subPersonaId, subPersonas.id))
       .leftJoin(icps, eq(sourcingRules.icpId, icps.id))
       .where(whereClause)
@@ -61,8 +62,21 @@ export default defineAction({
       .groupBy(segmentContacts.segmentId);
     const countMap = new Map(counts.map((c) => [c.segmentId, Number(c.count)]));
 
+    // Personas live in the shared cross-app DB now -- separate query + Map
+    // merge, same idiom as list-personas.ts's own sub-persona/library-doc
+    // counts.
+    const personaIds = [...new Set(rows.map((r) => r.personaId).filter((id): id is string => !!id))];
+    const personaRows = personaIds.length
+      ? await getSharedDb().select({ id: sharedPersonas.id, name: sharedPersonas.name }).from(sharedPersonas).where(inArray(sharedPersonas.id, personaIds))
+      : [];
+    const personaNameById = new Map(personaRows.map((p) => [p.id, p.name]));
+
     return {
-      rules: rows.map((r) => ({ ...r, contactCount: countMap.get(r.segmentId) ?? 0 })),
+      rules: rows.map((r) => ({
+        ...r,
+        personaName: r.personaId ? (personaNameById.get(r.personaId) ?? null) : null,
+        contactCount: countMap.get(r.segmentId) ?? 0,
+      })),
     };
   },
 });

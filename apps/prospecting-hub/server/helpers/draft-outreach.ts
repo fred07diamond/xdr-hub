@@ -1,31 +1,34 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
-import { desc, eq } from "@agent-native/core/db/schema";
-import { getOutreachVoiceGuidelines } from "@xdr-hub/shared/server";
+import { eq } from "@agent-native/core/db/schema";
+import {
+  buildGroundingBlock,
+  findMention,
+  getCustomerEvidence as getSharedCustomerEvidence,
+  getOutreachVoiceGuidelines,
+  getPersonaLinkedGroundingDocs as getSharedPersonaLinkedGroundingDocs,
+  getSharedDb,
+  selectCustomerEvidenceProof as sharedSelectCustomerEvidenceProof,
+  type CustomerEvidenceProof,
+  type GroundingDoc,
+} from "@xdr-hub/shared/server";
 import { getDb } from "../db/index.js";
-import { contacts, libraryDocs } from "../db/schema.js";
+import { contacts } from "../db/schema.js";
 
 // Grounds a per-contact outreach draft in the same Sales Library content
 // already uploaded, per Fred's explicit "use the documents as much as
 // possible" direction — never inventing a fact about the contact or their
 // company beyond what's already present in the input (see systemPrompt
 // below, mirroring score-contact.ts's own grounding-instruction convention).
+//
+// The actual doc lookup/parsing (getPersonaLinkedGroundingDocs,
+// getCustomerEvidence, selectCustomerEvidenceProof) now lives in
+// @xdr-hub/shared/server's sales-library.ts, shared with li-agent's own
+// drafting -- this file keeps its own generation logic (prompt wording,
+// the post-generation compliance guard, output persistence), matching the
+// "share the input, not the generation" precedent outreach-voice.ts already
+// established.
 
-const NAME = "Customer Evidence Quick Reference";
-const PREFERRED_GROUNDING_CATEGORIES = new Set(["persona_messaging"]);
-const MAX_GROUNDING_DOCS = 2;
-const GROUNDING_DOC_EXCERPT_LENGTH = 3000;
-
-export interface GroundingDoc {
-  id: string;
-  name: string;
-  category: string;
-  content: string;
-}
-
-export interface CustomerEvidenceProof {
-  customer: string;
-  evidence: string;
-}
+export type { CustomerEvidenceProof, GroundingDoc };
 
 export interface DraftOutreachResult {
   emailSubject: string;
@@ -40,130 +43,11 @@ export interface DraftOutreachContact {
   scoreReasoning: string | null;
 }
 
-/**
- * Parses the "Customer Evidence Quick Reference" doc's markdown table into
- * every row's {customer, evidence} — a simple line-by-line `|`-split parse,
- * no markdown table library needed, this doc's shape is fixed and small.
- * Shared by `selectCustomerEvidenceProof` (which picks the one authorized
- * row) and `getCustomerEvidence` (which also needs the full customer-name
- * list, to build the "unauthorized names" compliance guard in
- * `draftOutreach`).
- */
-function parseCustomerEvidenceRows(docContent: string): CustomerEvidenceProof[] {
-  const rows: CustomerEvidenceProof[] = [];
-  for (const line of docContent.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("|") || /^\|\s*-+/.test(trimmed)) continue;
-    const cells = trimmed.split("|").map((c) => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
-    if (cells.length < 3) continue;
-    const [customer, evidence, useFor] = cells;
-    if (customer === "Customer") continue; // header row
-    rows.push({ customer, evidence: `${evidence} (${useFor})` });
-  }
-  return rows;
-}
-
-/**
- * Returns the SINGLE proof point the doc itself authorizes as the primary
- * lead for `personaName` — per the doc's own explicit "one proof per
- * call... lead with X, Y, or Z by persona" sentence. Any persona not named
- * in that lead sentence (Exec, CMS Outreach, or any future persona) gets
- * `null` — a "Use For" mention elsewhere in the table (e.g. WebMD's
- * "Eng/Exec persona") is explicitly NOT a primary assignment, only the row
- * whose customer is named in the doc's own "lead with" sentence counts.
- */
-export function selectCustomerEvidenceProof(
-  docContent: string,
-  personaName: string | null,
-): CustomerEvidenceProof | null {
-  if (!personaName) return null;
-
-  const leadMatch = /lead with\s+(.+?)\s+by persona/i.exec(docContent);
-  if (!leadMatch) return null;
-  // "Intuit, BlueMarvel, or H&R Block" -> ["Intuit", "BlueMarvel", "H&R Block"]
-  const leadCustomers = leadMatch[1]
-    .split(/,|\bor\b/i)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (leadCustomers.length === 0) return null;
-
-  const rows = parseCustomerEvidenceRows(docContent);
-
-  for (const leadCustomer of leadCustomers) {
-    const row = rows.find((r) => r.customer.toLowerCase() === leadCustomer.toLowerCase());
-    if (!row) continue;
-    // The row's own "Use For" text names the persona it leads for as the
-    // first "<Persona> persona" mention (e.g. "Design persona, scale and
-    // design-org adoption..."). Only a match against THIS contact's persona
-    // authorizes using this row.
-    const personaMatch = /^([A-Za-z/()]+)\s+persona/i.exec(row.evidence.split("(")[1] ?? "");
-    if (personaMatch && personaMatch[1].toLowerCase() === personaName.toLowerCase()) {
-      return { customer: row.customer, evidence: row.evidence };
-    }
-  }
-  return null;
-}
-
-/**
- * Query + sort + slice heuristic for persona-linked grounding docs — mirrors
- * run-sourcing-rule-pipeline.ts's exact `linkedDocs`/`groundingDocs` shape,
- * simplified to the persona-only half (no ICP) since outreach drafting has
- * no ICP concept: docs whose `linkedPersonaId` matches the contact's
- * persona, preferring `category === "persona_messaging"` (the most relevant
- * category for outreach copy specifically), up to 2, excerpted to 3000
- * chars each.
- */
-async function getPersonaLinkedGroundingDocs(personaId: string | null): Promise<GroundingDoc[]> {
-  if (!personaId) return [];
-  const db = getDb();
-  const linkedDocs = await db
-    .select({ id: libraryDocs.id, name: libraryDocs.name, category: libraryDocs.category, content: libraryDocs.content })
-    .from(libraryDocs)
-    .where(eq(libraryDocs.linkedPersonaId, personaId))
-    .orderBy(desc(libraryDocs.createdAt));
-
-  return [...linkedDocs]
-    .sort((a, b) => {
-      const aPref = PREFERRED_GROUNDING_CATEGORIES.has(a.category) ? 0 : 1;
-      const bPref = PREFERRED_GROUNDING_CATEGORIES.has(b.category) ? 0 : 1;
-      return aPref - bPref;
-    })
-    .slice(0, MAX_GROUNDING_DOCS);
-}
-
-/**
- * Looked up by exact `name` match — it's a shared cross-persona reference
- * doc (`linkedPersonaId` is NULL), not linked to any one persona. Also
- * returns every customer name in the table (not just the authorized one) so
- * `draftOutreach`'s post-generation compliance guard can check the model's
- * output never names one of the OTHER, unauthorized customers.
- */
-async function getCustomerEvidence(
-  personaName: string | null,
-): Promise<{ proof: CustomerEvidenceProof | null; allCustomerNames: string[] }> {
-  const db = getDb();
-  const rows = await db
-    .select({ content: libraryDocs.content })
-    .from(libraryDocs)
-    .where(eq(libraryDocs.name, NAME))
-    .limit(1);
-  const doc = rows[0];
-  if (!doc) return { proof: null, allCustomerNames: [] };
-  const proof = selectCustomerEvidenceProof(doc.content, personaName);
-  const allCustomerNames = parseCustomerEvidenceRows(doc.content).map((r) => r.customer);
-  return { proof, allCustomerNames };
-}
-
-/**
- * Case-insensitive substring search for the first `names` entry that
- * appears anywhere in `text` — these are proper nouns (Intuit, BlueMarvel,
- * H&R Block, Frete, EagleEye, WebMD, Rakuten, Conservice), so a plain
- * substring match is sufficient; collision risk with ordinary prose is low.
- */
-function findMention(text: string, names: string[]): string | null {
-  const lower = text.toLowerCase();
-  return names.find((name) => lower.includes(name.toLowerCase())) ?? null;
-}
+// Doc lookup/parsing (parseCustomerEvidenceRows, selectCustomerEvidenceProof,
+// getPersonaLinkedGroundingDocs, getCustomerEvidence, findMention) now lives
+// in @xdr-hub/shared/server's sales-library.ts -- re-exported above for any
+// existing external importer of this file's public API.
+export { sharedSelectCustomerEvidenceProof as selectCustomerEvidenceProof };
 
 function parseDraftResponse(rawText: string): DraftOutreachResult {
   const raw = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
@@ -240,12 +124,7 @@ export async function draftOutreach(options: {
 }): Promise<DraftOutreachResult> {
   const { contact, personaName, groundingDocs, customerEvidence, otherCustomerNames, userEmail, orgId } = options;
 
-  const groundingBlock =
-    groundingDocs.length > 0
-      ? groundingDocs
-          .map((d) => `[${d.category}] ${d.name}\n${d.content.slice(0, GROUNDING_DOC_EXCERPT_LENGTH)}`)
-          .join("\n\n---\n\n")
-      : "No persona-specific messaging docs are linked yet.";
+  const groundingBlock = buildGroundingBlock(groundingDocs);
 
   const evidenceBlock = customerEvidence
     ? `Customer proof point — you MUST reference this specific customer and result by name somewhere in the email body (one sentence is enough), and you must NOT mention any other customer by name: ${customerEvidence.customer} — ${customerEvidence.evidence}`
@@ -363,10 +242,11 @@ export async function generateAndPersistDraft(options: {
 }): Promise<DraftOutreachResult & { draftGeneratedAt: string }> {
   const { contact, personaName, userEmail, orgId } = options;
   const db = getDb();
+  const sharedDb = getSharedDb();
 
   const [groundingDocs, { proof: customerEvidence, allCustomerNames }] = await Promise.all([
-    getPersonaLinkedGroundingDocs(contact.personaId),
-    getCustomerEvidence(personaName),
+    getSharedPersonaLinkedGroundingDocs(sharedDb, contact.personaId),
+    getSharedCustomerEvidence(sharedDb, personaName),
   ]);
 
   const otherCustomerNames = allCustomerNames.filter(

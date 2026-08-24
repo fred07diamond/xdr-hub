@@ -2,8 +2,9 @@ import { defineAction } from "@agent-native/core";
 import { asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { getDb } from "../server/db/index.js";
-import { icpPersonas, messagingEdges, messagingNodes } from "../server/db/schema.js";
+import { messagingEdges, messagingNodes } from "../server/db/schema.js";
 import { ensureUserCanvas } from "../server/helpers/seed-system-canvases.js";
 import { assertCanvasWritable } from "../server/helpers/canvas-access.js";
 
@@ -53,13 +54,14 @@ export default defineAction({
     if (canvasId) await assertCanvasWritable(canvasId, userEmail, db);
     const activeCanvasId = canvasId ?? (await ensureUserCanvas(userEmail, db));
 
+    const sharedDb = getSharedDb();
     const [existingNodes, personas] = await Promise.all([
       db.select().from(messagingNodes)
         .where(eq(messagingNodes.canvasId, activeCanvasId))
         .orderBy(asc(messagingNodes.createdAt)),
-      db.select({ id: icpPersonas.id, name: icpPersonas.name })
-        .from(icpPersonas)
-        .orderBy(asc(icpPersonas.createdAt)),
+      sharedDb.select({ id: sharedPersonas.id, name: sharedPersonas.name })
+        .from(sharedPersonas)
+        .orderBy(asc(sharedPersonas.createdAt)),
     ]);
 
     const PERSONA_AFFILIATED = new Set(["tone", "phrase_rule", "example", "role"]);

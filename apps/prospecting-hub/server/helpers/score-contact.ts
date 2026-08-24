@@ -1,13 +1,31 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
+import { getPersonaCriteriaText, getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { computeDeterministicCompanyFit } from "./company-fit.js";
 import { lookupCommonRoomSignals } from "./commonroom-engagement.js";
 import { LLM_CALL_TIMEOUT_MS } from "./invocation-budget.js";
-import { decodePersonaCriteria } from "./persona-sync.js";
 
 export interface PersonaForScoring {
   id: string;
   name: string;
-  criteria: string | null; // encoded, as stored on the personas row
+  text: string; // derived criteria text, already resolved via getPersonaCriteriaText
+}
+
+// Loads every shared persona that currently has scorable criteria text,
+// resolved fresh via the pure getPersonaCriteriaText read (never
+// rebuildPersonaCriteriaText -- this is a hot, read-many path and must not
+// write on every call). Callers fetch this ONCE per scoring batch, not once
+// per contact -- see each call site's own comment for why.
+export async function loadScorablePersonas(
+  sharedDb: ReturnType<typeof getSharedDb>,
+): Promise<PersonaForScoring[]> {
+  const rows = await sharedDb.select({ id: sharedPersonas.id, name: sharedPersonas.name }).from(sharedPersonas);
+  const resolved = await Promise.all(
+    rows.map(async (p) => {
+      const { text } = await getPersonaCriteriaText(sharedDb, p.id);
+      return text ? { id: p.id, name: p.name, text } : null;
+    }),
+  );
+  return resolved.filter((p): p is PersonaForScoring => p !== null);
 }
 
 export interface ContactForScoring {
@@ -117,9 +135,10 @@ export async function scoreContactAgainstPersonas(options: {
   userEmail: string;
   orgId?: string | null;
 }): Promise<ContactScoreResult> {
-  const withCriteria = options.personas
-    .map((p) => ({ id: p.id, name: p.name, text: decodePersonaCriteria(p.criteria) }))
-    .filter((p): p is { id: string; name: string; text: string } => !!p.text);
+  // Callers now pass already-resolved persona text (via loadScorablePersonas)
+  // rather than an encoded criteria column, so no decode/filter step is
+  // needed here -- every entry is guaranteed non-empty text already.
+  const withCriteria = options.personas;
 
   let personaId: string | null;
   let personaMatchScore: number;

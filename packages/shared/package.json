@@ -31,6 +31,9 @@
     "typecheck": "tsc --noEmit",
     "prepare": "tsc"
   },
+  "dependencies": {
+    "nanoid": "^6.0.0"
+  },
   "devDependencies": {
     "typescript-7": "catalog:"
   }

@@ -1,6 +1,6 @@
 import { defineAction } from "@agent-native/core";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
+import { getSharedDb } from "@xdr-hub/shared/server";
 import { buildPersonaSalesNavSearch } from "../server/helpers/persona-sales-nav-link.js";
 
 // Session/A2A-authenticated sibling of generate-sales-nav-search.ts, for
@@ -29,8 +29,8 @@ export default defineAction({
   publicAgent: { expose: true, readOnly: true, requiresAuth: true },
   http: { method: "GET" },
   run: async ({ personaId, companyName }) => {
-    const db = getDb();
-    const result = await buildPersonaSalesNavSearch(db, { personaId, companyName });
+    const sharedDb = getSharedDb();
+    const result = await buildPersonaSalesNavSearch(sharedDb, { personaId, companyName });
     if (!result) {
       return { error: "That persona doesn't have a generated briefing with titles yet." };
     }

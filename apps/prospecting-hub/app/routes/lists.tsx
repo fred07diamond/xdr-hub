@@ -159,7 +159,17 @@ function MatchedViaBadge({ matchedVia }: { matchedVia: MatchedVia }) {
 // tags in the SAME field a manually-typed company goes into. No separate
 // saved list, no separate page — this is genuinely just a faster way to
 // fill in the tag input.
-function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => void }) {
+function BrowseByOwnerPopover({
+  onAdd,
+  onPin,
+}: {
+  onAdd: (companyNames: string[]) => void;
+  // When provided, offers a second mode alongside the one-time company pick:
+  // pin the whole rule to this owner's book of business, which the pipeline
+  // then resolves LIVE at every run (see server/helpers/resolve-owner-
+  // scoped-companies.ts) instead of freezing today's company list.
+  onPin?: (owner: HubSpotOwnerOption) => void;
+}) {
   const [open, setOpen] = useState(false);
   const { data: ownersData, isLoading: ownersLoading } = useActionQuery(
     "search-hubspot-company-owners",
@@ -256,6 +266,13 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
     const chosen = companies.filter((c) => selectedCompanyIds.has(c.id)).map((c) => c.name);
     if (chosen.length === 0) return;
     onAdd(chosen);
+    setOpen(false);
+    reset();
+  }
+
+  function handlePin() {
+    if (!selectedOwner || !onPin) return;
+    onPin(selectedOwner);
     setOpen(false);
     reset();
   }
@@ -406,6 +423,22 @@ function BrowseByOwnerPopover({ onAdd }: { onAdd: (companyNames: string[]) => vo
           )}
         </div>
 
+        {selectedOwner && onPin && (
+          <div className="border-t border-border px-3 py-2">
+            <button
+              type="button"
+              onClick={handlePin}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+            >
+              <IconRadar size={12} />
+              Pin to {selectedOwner.name}'s book — stays live
+            </button>
+            <p className="mt-0.5 text-[10px] text-muted-foreground/60">
+              Instead of a one-time pick, resolves this owner's current companies fresh on every run.
+            </p>
+          </div>
+        )}
+
         {selectedOwner && filteredCompanies.length > 0 && (
           <div className="flex items-center justify-between border-t border-border px-3 py-2">
             <button
@@ -440,6 +473,8 @@ interface SourcingRule {
   icpId: string | null;
   companyAllowList: string | null;
   companyDenyList: string | null;
+  companyAllowListOwnerId: string | null;
+  companyDenyListOwnerId: string | null;
   manualTitleKeywords: string | null;
   manualSeniorities: string | null;
   minLinkedinFollowers: number | null;
@@ -472,6 +507,8 @@ interface MarketingRule {
   lifecycleStages: string | null; // JSON-encoded string array
   companyAllowList: string | null;
   companyDenyList: string | null;
+  companyAllowListOwnerId: string | null;
+  companyDenyListOwnerId: string | null;
   intervalHours: number | null;
   segmentId: string;
   jobResourcePath: string | null;
@@ -656,6 +693,8 @@ function CompanyTagInput({
   onChange,
   placeholder,
   allowOwnerBrowse,
+  pinnedOwner,
+  onPinnedOwnerChange,
 }: {
   values: string[];
   onChange: (next: string[]) => void;
@@ -665,6 +704,12 @@ function CompanyTagInput({
   // explicitly rather than this defaulting on everywhere CompanyTagInput
   // is used.
   allowOwnerBrowse?: boolean;
+  // The "pin to this owner's book (stays live)" mode -- coexists with the
+  // typed/picked company chips above rather than replacing them; the
+  // pipeline unions both at run time (see resolve-owner-scoped-companies.ts).
+  // Only meaningful when allowOwnerBrowse is also set.
+  pinnedOwner?: HubSpotOwnerOption | null;
+  onPinnedOwnerChange?: (owner: HubSpotOwnerOption | null) => void;
 }) {
   const [text, setText] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -754,8 +799,27 @@ function CompanyTagInput({
         )}
       </div>
       {allowOwnerBrowse && (
-        <div className="mt-1">
-          <BrowseByOwnerPopover onAdd={addFromOwnerBrowse} />
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <BrowseByOwnerPopover
+            onAdd={addFromOwnerBrowse}
+            onPin={onPinnedOwnerChange ? (owner) => onPinnedOwnerChange(owner) : undefined}
+          />
+          {pinnedOwner && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+              <IconRadar size={11} />
+              Pinned: {pinnedOwner.name}'s book
+              {onPinnedOwnerChange && (
+                <button
+                  type="button"
+                  onClick={() => onPinnedOwnerChange(null)}
+                  className="ml-0.5 rounded-full hover:bg-primary/20"
+                  aria-label={`Unpin ${pinnedOwner.name}'s book`}
+                >
+                  <IconX size={11} />
+                </button>
+              )}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -1575,6 +1639,7 @@ function NewActiveListPanel({
   const [icpId, setIcpId] = useState("");
   const [allowList, setAllowList] = useState<string[]>([]);
   const [denyList, setDenyList] = useState<string[]>([]);
+  const [allowListOwner, setAllowListOwner] = useState<HubSpotOwnerOption | null>(null);
   const [desiredVolume, setDesiredVolume] = useState(20);
   const [intervalHours, setIntervalHours] = useState<number | "">("");
   const [titleKeywords, setTitleKeywords] = useState<string[]>([]);
@@ -1618,6 +1683,7 @@ function NewActiveListPanel({
         icpId: icpId || undefined,
         companyAllowList: allowList.length ? allowList : undefined,
         companyDenyList: denyList.length ? denyList : undefined,
+        companyAllowListOwnerId: allowListOwner?.id || undefined,
         manualTitleKeywords: titleKeywords.length ? titleKeywords : undefined,
         manualSeniorities: selectedSeniorities.size > 0 ? Array.from(selectedSeniorities) : undefined,
         minLinkedinFollowers: parseFollowerCount(minFollowersText),
@@ -1777,10 +1843,12 @@ function NewActiveListPanel({
               onChange={setAllowList}
               placeholder="Search or type a company…"
               allowOwnerBrowse
+              pinnedOwner={allowListOwner}
+              onPinnedOwnerChange={setAllowListOwner}
             />
             <p className="mt-1 text-[11px] text-muted-foreground/60">
-              Search your HubSpot companies, type a new one and press Enter, or browse by owner (AE or xDR) to
-              add several at once.
+              Search your HubSpot companies, type a new one and press Enter, browse by owner (AE or xDR) to add
+              several at once, or pin to an owner's whole book so it stays live on every run.
             </p>
           </div>
 
@@ -1874,6 +1942,7 @@ function NewMarketingRulePanel({
   const [selectedStages, setSelectedStages] = useState<Set<string>>(new Set(DEFAULT_LIFECYCLE_STAGES));
   const [allowList, setAllowList] = useState<string[]>([]);
   const [denyList, setDenyList] = useState<string[]>([]);
+  const [allowListOwner, setAllowListOwner] = useState<HubSpotOwnerOption | null>(null);
   const [intervalHours, setIntervalHours] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
 
@@ -1898,6 +1967,7 @@ function NewMarketingRulePanel({
         lifecycleStages: Array.from(selectedStages),
         companyAllowList: allowList.length ? allowList : undefined,
         companyDenyList: denyList.length ? denyList : undefined,
+        companyAllowListOwnerId: allowListOwner?.id || undefined,
         intervalHours: intervalHours as number,
       })) as { id: string };
       // Fire-and-forget — same reasoning as NewActiveListPanel's own
@@ -1998,7 +2068,14 @@ function NewMarketingRulePanel({
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Companies (optional)</label>
-            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" allowOwnerBrowse />
+            <CompanyTagInput
+              values={allowList}
+              onChange={setAllowList}
+              placeholder="Search or type a company…"
+              allowOwnerBrowse
+              pinnedOwner={allowListOwner}
+              onPinnedOwnerChange={setAllowListOwner}
+            />
           </div>
 
           <div>
@@ -2099,11 +2176,33 @@ function EditRulePanel({
   const initialIcpId = rule.icpId ?? "";
   const initialTitleKeywords = safeParseList(rule.manualTitleKeywords);
   const initialSeniorities = safeParseList(rule.manualSeniorities);
+  const initialAllowListOwnerId = rule.companyAllowListOwnerId ?? null;
 
   const [name, setName] = useState(rule.name);
   const [icpId, setIcpId] = useState(initialIcpId);
   const [allowList, setAllowList] = useState<string[]>(initialAllowList);
   const [denyList, setDenyList] = useState<string[]>(initialDenyList);
+  // Seeded with the raw id as a placeholder name, then upgraded to the real
+  // HubSpot owner name once search-hubspot-company-owners resolves it below
+  // -- avoids blocking the edit modal's initial render on that fetch.
+  const [allowListOwner, setAllowListOwner] = useState<HubSpotOwnerOption | null>(
+    initialAllowListOwnerId ? { id: initialAllowListOwnerId, name: initialAllowListOwnerId } : null,
+  );
+  const { data: ownersDataForEdit } = useActionQuery(
+    "search-hubspot-company-owners",
+    {},
+    { enabled: !!initialAllowListOwnerId },
+  );
+  useEffect(() => {
+    if (!initialAllowListOwnerId) return;
+    const owners = (ownersDataForEdit as { owners?: HubSpotOwnerOption[] } | undefined)?.owners ?? [];
+    const match = owners.find((o) => o.id === initialAllowListOwnerId);
+    if (!match) return;
+    // Only upgrade the placeholder name for the rule's ORIGINAL pinned owner
+    // -- if the user has since picked a different owner via the popover
+    // (which already supplies a real name directly), don't stomp that choice.
+    setAllowListOwner((prev) => (prev?.id === initialAllowListOwnerId ? match : prev));
+  }, [ownersDataForEdit, initialAllowListOwnerId]);
   const [desiredVolume, setDesiredVolume] = useState(rule.desiredVolume);
   // Rules created before this feature shipped have no intervalHours yet —
   // default the dropdown to a sensible starting value (4h) rather than
@@ -2132,6 +2231,7 @@ function EditRulePanel({
   const nextSeniorities = Array.from(selectedSeniorities);
   const nextMinFollowers = parseFollowerCount(minFollowersText) ?? null;
   const nextPreviousCompanyName = previousCompanyName.trim() || null;
+  const nextAllowListOwnerId = allowListOwner?.id ?? null;
 
   const hasChanges =
     name.trim() !== rule.name ||
@@ -2143,7 +2243,8 @@ function EditRulePanel({
     nextMinFollowers !== (rule.minLinkedinFollowers ?? null) ||
     nextPreviousCompanyName !== (rule.previousCompanyName ?? null) ||
     desiredVolume !== rule.desiredVolume ||
-    intervalHours !== rule.intervalHours;
+    intervalHours !== rule.intervalHours ||
+    nextAllowListOwnerId !== initialAllowListOwnerId;
 
   const canSave = Boolean(name.trim() && intervalHours) && hasChanges;
 
@@ -2165,6 +2266,7 @@ function EditRulePanel({
         : {}),
       ...(desiredVolume !== rule.desiredVolume ? { desiredVolume } : {}),
       ...(intervalHours !== rule.intervalHours ? { intervalHours } : {}),
+      ...(nextAllowListOwnerId !== initialAllowListOwnerId ? { companyAllowListOwnerId: nextAllowListOwnerId } : {}),
     };
 
     try {
@@ -2251,10 +2353,12 @@ function EditRulePanel({
               onChange={setAllowList}
               placeholder="Search or type a company…"
               allowOwnerBrowse
+              pinnedOwner={allowListOwner}
+              onPinnedOwnerChange={setAllowListOwner}
             />
             <p className="mt-1 text-[11px] text-muted-foreground/60">
-              Search your HubSpot companies, type a new one and press Enter, or browse by owner (AE or xDR) to
-              add several at once.
+              Search your HubSpot companies, type a new one and press Enter, browse by owner (AE or xDR) to add
+              several at once, or pin to an owner's whole book so it stays live on every run.
             </p>
           </div>
 
@@ -2337,11 +2441,30 @@ function EditMarketingRulePanel({
   const initialAllowList = safeParseList(rule.companyAllowList);
   const initialDenyList = safeParseList(rule.companyDenyList);
   const initialStages = safeParseList(rule.lifecycleStages);
+  const initialAllowListOwnerId = rule.companyAllowListOwnerId ?? null;
 
   const [name, setName] = useState(rule.name);
   const [selectedStages, setSelectedStages] = useState<Set<string>>(new Set(initialStages));
   const [allowList, setAllowList] = useState<string[]>(initialAllowList);
   const [denyList, setDenyList] = useState<string[]>(initialDenyList);
+  // Seeded with the raw id as a placeholder name, then upgraded to the real
+  // HubSpot owner name once search-hubspot-company-owners resolves it below
+  // -- avoids blocking the edit modal's initial render on that fetch.
+  const [allowListOwner, setAllowListOwner] = useState<HubSpotOwnerOption | null>(
+    initialAllowListOwnerId ? { id: initialAllowListOwnerId, name: initialAllowListOwnerId } : null,
+  );
+  const { data: ownersDataForEdit } = useActionQuery(
+    "search-hubspot-company-owners",
+    {},
+    { enabled: !!initialAllowListOwnerId },
+  );
+  useEffect(() => {
+    if (!initialAllowListOwnerId) return;
+    const owners = (ownersDataForEdit as { owners?: HubSpotOwnerOption[] } | undefined)?.owners ?? [];
+    const match = owners.find((o) => o.id === initialAllowListOwnerId);
+    if (!match) return;
+    setAllowListOwner((prev) => (prev?.id === initialAllowListOwnerId ? match : prev));
+  }, [ownersDataForEdit, initialAllowListOwnerId]);
   const initialIntervalHours = rule.intervalHours ?? 4;
   const [intervalHours, setIntervalHours] = useState(initialIntervalHours);
   const [error, setError] = useState<string | null>(null);
@@ -2358,13 +2481,15 @@ function EditMarketingRulePanel({
   const nextStages = Array.from(selectedStages);
   const nextAllowList = allowList;
   const nextDenyList = denyList;
+  const nextAllowListOwnerId = allowListOwner?.id ?? null;
 
   const hasChanges =
     name.trim() !== rule.name ||
     !sameList(nextStages, initialStages) ||
     !sameList(nextAllowList, initialAllowList) ||
     !sameList(nextDenyList, initialDenyList) ||
-    intervalHours !== rule.intervalHours;
+    intervalHours !== rule.intervalHours ||
+    nextAllowListOwnerId !== initialAllowListOwnerId;
 
   const canSave = Boolean(name.trim() && intervalHours && selectedStages.size > 0) && hasChanges;
 
@@ -2379,6 +2504,7 @@ function EditMarketingRulePanel({
       ...(!sameList(nextAllowList, initialAllowList) ? { companyAllowList: nextAllowList } : {}),
       ...(!sameList(nextDenyList, initialDenyList) ? { companyDenyList: nextDenyList } : {}),
       ...(intervalHours !== rule.intervalHours ? { intervalHours } : {}),
+      ...(nextAllowListOwnerId !== initialAllowListOwnerId ? { companyAllowListOwnerId: nextAllowListOwnerId } : {}),
     };
 
     try {
@@ -2439,7 +2565,14 @@ function EditMarketingRulePanel({
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Companies (optional)</label>
-            <CompanyTagInput values={allowList} onChange={setAllowList} placeholder="Search or type a company…" allowOwnerBrowse />
+            <CompanyTagInput
+              values={allowList}
+              onChange={setAllowList}
+              placeholder="Search or type a company…"
+              allowOwnerBrowse
+              pinnedOwner={allowListOwner}
+              onPinnedOwnerChange={setAllowListOwner}
+            />
           </div>
 
           <div>
@@ -2547,6 +2680,20 @@ function ListDetailView({
   const personaColorById = new Map(
     ((personaData as { personas?: PersonaOption[] })?.personas ?? []).map((p) => [p.id, p.color]),
   );
+
+  // Only for resolving a pinned companyAllowListOwnerId to a display name --
+  // same action the "Pin to owner" popover/edit-form use.
+  const { data: ownersData } = useActionQuery(
+    "search-hubspot-company-owners",
+    {},
+    { enabled: !!(rule?.companyAllowListOwnerId || marketingRule?.companyAllowListOwnerId) },
+  );
+  const ownerNameById = new Map(
+    ((ownersData as { owners?: HubSpotOwnerOption[] } | undefined)?.owners ?? []).map((o) => [o.id, o.name]),
+  );
+  function ownerLabel(ownerId: string): string {
+    return ownerNameById.get(ownerId) ?? ownerId;
+  }
 
   const updateSegment = useActionMutation("update-segment");
   const assignSegment = useActionMutation("assign-segment");
@@ -2976,6 +3123,8 @@ function ListDetailView({
               </div>
               {(safeParseList(rule.companyAllowList).length > 0 ||
                 safeParseList(rule.companyDenyList).length > 0 ||
+                rule.companyAllowListOwnerId ||
+                rule.companyDenyListOwnerId ||
                 safeParseList(rule.manualTitleKeywords).length > 0 ||
                 safeParseList(rule.manualSeniorities).length > 0 ||
                 rule.minLinkedinFollowers != null ||
@@ -2984,8 +3133,18 @@ function ListDetailView({
                   {safeParseList(rule.companyAllowList).length > 0 && (
                     <p>Allow: {safeParseList(rule.companyAllowList).join(", ")}</p>
                   )}
+                  {rule.companyAllowListOwnerId && (
+                    <p className="inline-flex items-center gap-1">
+                      <IconRadar size={11} /> Allow (live): {ownerLabel(rule.companyAllowListOwnerId)}'s book
+                    </p>
+                  )}
                   {safeParseList(rule.companyDenyList).length > 0 && (
                     <p>Deny: {safeParseList(rule.companyDenyList).join(", ")}</p>
+                  )}
+                  {rule.companyDenyListOwnerId && (
+                    <p className="inline-flex items-center gap-1">
+                      <IconRadar size={11} /> Deny (live): {ownerLabel(rule.companyDenyListOwnerId)}'s book
+                    </p>
                   )}
                   {safeParseList(rule.manualTitleKeywords).length > 0 && (
                     <p>Titles: {safeParseList(rule.manualTitleKeywords).join(", ")}</p>
@@ -3057,8 +3216,18 @@ function ListDetailView({
                 {safeParseList(marketingRule.companyAllowList).length > 0 && (
                   <p>Allow: {safeParseList(marketingRule.companyAllowList).join(", ")}</p>
                 )}
+                {marketingRule.companyAllowListOwnerId && (
+                  <p className="inline-flex items-center gap-1">
+                    <IconRadar size={11} /> Allow (live): {ownerLabel(marketingRule.companyAllowListOwnerId)}'s book
+                  </p>
+                )}
                 {safeParseList(marketingRule.companyDenyList).length > 0 && (
                   <p>Deny: {safeParseList(marketingRule.companyDenyList).join(", ")}</p>
+                )}
+                {marketingRule.companyDenyListOwnerId && (
+                  <p className="inline-flex items-center gap-1">
+                    <IconRadar size={11} /> Deny (live): {ownerLabel(marketingRule.companyDenyListOwnerId)}'s book
+                  </p>
                 )}
               </div>
             </>

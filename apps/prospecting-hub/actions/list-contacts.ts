@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas, segmentContacts, segments } from "../server/db/schema.js";
+import { contacts, segmentContacts, segments } from "../server/db/schema.js";
 import { assertSegmentReadable } from "../server/helpers/segment-access.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -99,12 +100,9 @@ export default defineAction({
         overallScore: contacts.overallScore,
         scoreReasoning: contacts.scoreReasoning,
         personaId: contacts.personaId,
-        personaName: personas.name,
-        personaColor: personas.color,
         syncedAt: contacts.syncedAt,
       })
       .from(contacts)
-      .leftJoin(personas, eq(contacts.personaId, personas.id))
       .where(whereClause)
       .orderBy(
         ...(sortBy
@@ -117,6 +115,20 @@ export default defineAction({
     if (rows.length === 0) {
       return { contacts: [], total: Number(total), hasMore: false };
     }
+
+    // Personas live in the shared cross-app DB now -- can't join it in the
+    // same query as this app's own local `contacts` table, so fetch the
+    // distinct referenced persona ids and merge name/color in application
+    // code (same "separate query + Map merge" idiom list-personas.ts uses
+    // for its own sub-persona/library-doc counts).
+    const personaIds = [...new Set(rows.map((r) => r.personaId).filter((id): id is string => !!id))];
+    const personaRows = personaIds.length
+      ? await getSharedDb()
+          .select({ id: sharedPersonas.id, name: sharedPersonas.name, color: sharedPersonas.color })
+          .from(sharedPersonas)
+          .where(inArray(sharedPersonas.id, personaIds))
+      : [];
+    const personaById = new Map(personaRows.map((p) => [p.id, p]));
 
     const memberships = await db
       .select({ contactId: segmentContacts.contactId, segmentId: segmentContacts.segmentId, segmentName: segments.name })
@@ -132,7 +144,12 @@ export default defineAction({
     }
 
     return {
-      contacts: rows.map((r) => ({ ...r, segments: segmentsByContact.get(r.id) ?? [] })),
+      contacts: rows.map((r) => ({
+        ...r,
+        personaName: r.personaId ? (personaById.get(r.personaId)?.name ?? null) : null,
+        personaColor: r.personaId ? (personaById.get(r.personaId)?.color ?? null) : null,
+        segments: segmentsByContact.get(r.id) ?? [],
+      })),
       total: Number(total),
       hasMore: offset + rows.length < Number(total),
     };

@@ -61,6 +61,8 @@ export async function scoreLeadListItem(db: Db, item: LeadListItem, ownerEmail: 
     profileSummary,
     messagingContext,
     profileUrl,
+    personaId,
+    personaName,
   });
 
   const ownerFilter = ownerEmail ? eq(prospects.ownerEmail, ownerEmail) : isNull(prospects.ownerEmail);

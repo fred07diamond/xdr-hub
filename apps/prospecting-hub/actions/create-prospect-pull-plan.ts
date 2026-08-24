@@ -39,11 +39,30 @@ export default defineAction({
     lifecycleStages: z.array(z.string()).nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
+    companyAllowListOwnerId: z
+      .string()
+      .nullish()
+      .describe("HubSpot owner id — when set, that owner's current book of business is resolved live at every run and unioned with companyAllowList"),
+    companyDenyListOwnerId: z
+      .string()
+      .nullish()
+      .describe("HubSpot owner id — when set, that owner's current book of business is resolved live at every run and unioned with companyDenyList"),
   }),
   requiresAuth: true,
   http: { method: "POST" },
   run: async (
-    { name, totalVolume, intervalHours, personaMix, includeHubspot, lifecycleStages, companyAllowList, companyDenyList },
+    {
+      name,
+      totalVolume,
+      intervalHours,
+      personaMix,
+      includeHubspot,
+      lifecycleStages,
+      companyAllowList,
+      companyDenyList,
+      companyAllowListOwnerId,
+      companyDenyListOwnerId,
+    },
     ctx,
   ) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
@@ -99,6 +118,8 @@ export default defineAction({
           personaId,
           companyAllowList,
           companyDenyList,
+          companyAllowListOwnerId,
+          companyDenyListOwnerId,
           desiredVolume,
           intervalHours,
         });
@@ -113,6 +134,8 @@ export default defineAction({
             lifecycleStages,
             companyAllowList,
             companyDenyList,
+            companyAllowListOwnerId,
+            companyDenyListOwnerId,
             intervalHours,
           });
           marketingRuleIds.push({ personaId, marketingRuleId: marketingResult.id });

@@ -734,6 +734,60 @@ export default runMigrations(
       name: "icp-personas-briefing-source-hash",
       sql: `ALTER TABLE icp_personas ADD COLUMN briefing_source_hash TEXT`,
     },
+    // Shared cross-app tables (packages/shared/src/server/db/schema.ts) --
+    // read/written via getSharedDb() by both this app and prospecting-hub.
+    // Each app needs its own idempotent copy of this CREATE TABLE, same as
+    // workspace_user_roles/workspace_app_access above -- there is no single
+    // cross-app migration runner, and in local dev each app has its own
+    // separate SQLite file.
+    {
+      version: 109,
+      name: "shared-personas-table",
+      sql: `CREATE TABLE IF NOT EXISTS shared_personas (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT,
+        description TEXT,
+        source_doc_url TEXT,
+        is_active INTEGER NOT NULL DEFAULT 0,
+        summary TEXT,
+        briefing TEXT,
+        briefing_generated_at TEXT,
+        briefing_source_hash TEXT,
+        owner_email TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 110,
+      name: "shared-persona-docs-table",
+      sql: `CREATE TABLE IF NOT EXISTS shared_persona_docs (
+        id TEXT PRIMARY KEY,
+        persona_id TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        word_count INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      version: 111,
+      name: "shared-library-docs-table",
+      sql: `CREATE TABLE IF NOT EXISTS shared_library_docs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        tags TEXT,
+        content TEXT NOT NULL,
+        linked_persona_id TEXT,
+        linked_icp_id TEXT,
+        source_file_name TEXT,
+        owner_email TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+    },
   ],
   { table: "outreach_migrations" },
 );

@@ -1,9 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { icpPersonaDocs } from "../server/db/schema.js";
-import { rebuildPersonaIcpText } from "../server/helpers/persona-docs.js";
+import { getSharedDb, rebuildPersonaCriteriaText, sharedPersonaDocs } from "@xdr-hub/shared/server";
 import { requireAdminFromSessionOrToken } from "../server/helpers/require-admin.js";
 
 export default defineAction({
@@ -17,17 +15,17 @@ export default defineAction({
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
   run: async ({ id, apiToken }, ctx) => {
     await requireAdminFromSessionOrToken(apiToken, ctx);
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
-    const row = await db
-      .select({ personaId: icpPersonaDocs.personaId, name: icpPersonaDocs.name })
-      .from(icpPersonaDocs)
-      .where(eq(icpPersonaDocs.id, id))
+    const row = await sharedDb
+      .select({ personaId: sharedPersonaDocs.personaId, name: sharedPersonaDocs.fileName })
+      .from(sharedPersonaDocs)
+      .where(eq(sharedPersonaDocs.id, id))
       .limit(1);
     if (!row[0]) return { ok: false as const, error: "Document not found." };
 
-    await db.delete(icpPersonaDocs).where(eq(icpPersonaDocs.id, id));
-    const rebuilt = await rebuildPersonaIcpText(db, row[0].personaId);
+    await sharedDb.delete(sharedPersonaDocs).where(eq(sharedPersonaDocs.id, id));
+    const rebuilt = await rebuildPersonaCriteriaText(sharedDb, row[0].personaId);
 
     return {
       ok: true as const,

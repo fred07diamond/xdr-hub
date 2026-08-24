@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { desc, eq } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { personas, prospectPullPlans } from "../server/db/schema.js";
+import { prospectPullPlans } from "../server/db/schema.js";
 import { getUserRole, requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -27,7 +28,7 @@ export default defineAction({
 
     if (rows.length === 0) return { plans: [] };
 
-    const allPersonas = await db.select({ id: personas.id, name: personas.name, color: personas.color }).from(personas);
+    const allPersonas = await getSharedDb().select({ id: sharedPersonas.id, name: sharedPersonas.name, color: sharedPersonas.color }).from(sharedPersonas);
     const personaMap = new Map(allPersonas.map((p) => [p.id, p]));
 
     const plans = rows.map((r) => {

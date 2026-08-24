@@ -1,14 +1,13 @@
 import { defineAction } from "@agent-native/core";
 import { and, desc, eq, or, sql } from "@agent-native/core/db/schema";
 import { resourceGetByPath, resourcePut } from "@agent-native/core/resources";
+import { getSharedDb, sharedLibraryDocs, sharedPersonas } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import {
   contacts,
   icps,
-  libraryDocs,
-  personas,
   segments,
   sourcingRuleRunTargets,
   sourcingRules,
@@ -17,6 +16,7 @@ import {
 } from "../server/db/schema.js";
 import { logAnalyticsEvent } from "../server/helpers/analytics.js";
 import { deriveProspectorFilters } from "../server/helpers/derive-prospector-filters.js";
+import { unionWithOwnerScopedCompanies } from "../server/helpers/resolve-owner-scoped-companies.js";
 import { searchIcpCompanies } from "../server/helpers/icp-filters.js";
 import { SEARCH_TIME_BUDGET_MS, withinTimeBudget } from "../server/helpers/invocation-budget.js";
 import { searchProspectorContacts, type ProspectorMatch } from "../server/helpers/prospector-client.js";
@@ -303,7 +303,7 @@ export default defineAction({
         // but a persona/sub-persona/ICP deleted out from under a live rule
         // shouldn't surface as an opaque downstream error several steps
         // later.
-        const personaRow = await db.select({ id: personas.id }).from(personas).where(eq(personas.id, rule.personaId)).limit(1);
+        const personaRow = await getSharedDb().select({ id: sharedPersonas.id }).from(sharedPersonas).where(eq(sharedPersonas.id, rule.personaId)).limit(1);
         if (!personaRow[0]) {
           throw Object.assign(new Error(`Persona ${rule.personaId} not found.`), { statusCode: 404 });
         }
@@ -454,8 +454,18 @@ export default defineAction({
     // ── Fresh-start bootstrapping: existing ICP-qualification/short-circuit
     // and deriveProspectorFilters logic, run exactly ONCE per overall run.
     async function startFreshAndSearch(): Promise<PipelineResult> {
-      const manualAllowList: string[] | null = rule.companyAllowList ? JSON.parse(rule.companyAllowList) : null;
-      const manualDenyList: string[] | null = rule.companyDenyList ? JSON.parse(rule.companyDenyList) : null;
+      const staticAllowList: string[] | null = rule.companyAllowList ? JSON.parse(rule.companyAllowList) : null;
+      const staticDenyList: string[] | null = rule.companyDenyList ? JSON.parse(rule.companyDenyList) : null;
+      // Live-resolved once per fresh run start, then cached into
+      // syncRecords.metadata below (effectiveAllowList/effectiveDenyList) so
+      // a resumed/chunked continuation of THIS run doesn't re-resolve
+      // mid-run -- the next scheduled run picks up any book changes.
+      const [ownerAllowList, ownerDenyList] = await Promise.all([
+        unionWithOwnerScopedCompanies(staticAllowList, rule.companyAllowListOwnerId),
+        unionWithOwnerScopedCompanies(staticDenyList, rule.companyDenyListOwnerId),
+      ]);
+      const manualAllowList: string[] | null = ownerAllowList ?? null;
+      const manualDenyList: string[] | null = ownerDenyList ?? null;
 
       // ICP company qualification. Only changes behavior when the rule
       // actually has an icpId — otherwise this is exactly today's
@@ -545,13 +555,13 @@ export default defineAction({
 
       // Up to 2 linked Sales Library docs as extra grounding context for the
       // persona-filter derivation prompt.
-      const linkConditions = [eq(libraryDocs.linkedPersonaId, rule.personaId)];
-      if (rule.icpId) linkConditions.push(eq(libraryDocs.linkedIcpId, rule.icpId));
-      const linkedDocs = await db
-        .select({ id: libraryDocs.id, name: libraryDocs.name, category: libraryDocs.category, content: libraryDocs.content })
-        .from(libraryDocs)
+      const linkConditions = [eq(sharedLibraryDocs.linkedPersonaId, rule.personaId)];
+      if (rule.icpId) linkConditions.push(eq(sharedLibraryDocs.linkedIcpId, rule.icpId));
+      const linkedDocs = await getSharedDb()
+        .select({ id: sharedLibraryDocs.id, name: sharedLibraryDocs.name, category: sharedLibraryDocs.category, content: sharedLibraryDocs.content })
+        .from(sharedLibraryDocs)
         .where(or(...linkConditions))
-        .orderBy(desc(libraryDocs.createdAt));
+        .orderBy(desc(sharedLibraryDocs.createdAt));
 
       const groundingDocs = [...linkedDocs]
         .sort((a, b) => {

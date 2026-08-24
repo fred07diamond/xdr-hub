@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/index.js";
-import { icpPersonas } from "../db/schema.js";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import type { PersonaBriefing } from "./persona-briefing.js";
 
 // LinkedIn's query mini-language uses literal "(" / ")" as structural
@@ -63,13 +62,13 @@ export interface PersonaSalesNavSearch {
  * generate-persona-search-link.ts returns an error).
  */
 export async function buildPersonaSalesNavSearch(
-  db: ReturnType<typeof getDb>,
+  db: ReturnType<typeof getSharedDb>,
   options: { personaId: string; companyName?: string | null },
 ): Promise<PersonaSalesNavSearch | null> {
   const [persona] = await db
-    .select({ id: icpPersonas.id, name: icpPersonas.name, briefing: icpPersonas.briefing })
-    .from(icpPersonas)
-    .where(eq(icpPersonas.id, options.personaId))
+    .select({ id: sharedPersonas.id, name: sharedPersonas.name, briefing: sharedPersonas.briefing })
+    .from(sharedPersonas)
+    .where(eq(sharedPersonas.id, options.personaId))
     .limit(1);
 
   const briefing: PersonaBriefing | null = persona?.briefing ? JSON.parse(persona.briefing) : null;

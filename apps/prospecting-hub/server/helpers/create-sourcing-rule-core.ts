@@ -1,8 +1,9 @@
 import { eq, and } from "@agent-native/core/db/schema";
 import { resourceDeleteByPath, resourcePut } from "@agent-native/core/resources";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { getDb } from "../db/index.js";
-import { icps, personas, segmentContacts, segments, sourcingRules, subPersonas } from "../db/schema.js";
+import { icps, segmentContacts, segments, sourcingRules, subPersonas } from "../db/schema.js";
 import { buildSourcingRuleJobContent, computeIntervalCron } from "./sourcing-rule-jobs.js";
 
 type Db = ReturnType<typeof getDb>;
@@ -33,6 +34,8 @@ export interface CreateSourcingRuleCoreParams {
   icpId?: string | null;
   companyAllowList?: string[] | null;
   companyDenyList?: string[] | null;
+  companyAllowListOwnerId?: string | null;
+  companyDenyListOwnerId?: string | null;
   manualTitleKeywords?: string[] | null;
   manualSeniorities?: string[] | null;
   minLinkedinFollowers?: number | null;
@@ -60,6 +63,8 @@ export async function createSourcingRuleCore(
     icpId,
     companyAllowList,
     companyDenyList,
+    companyAllowListOwnerId,
+    companyDenyListOwnerId,
     manualTitleKeywords,
     manualSeniorities,
     minLinkedinFollowers,
@@ -68,7 +73,7 @@ export async function createSourcingRuleCore(
     intervalHours,
   } = params;
 
-  const persona = await db.select({ id: personas.id }).from(personas).where(eq(personas.id, personaId)).limit(1);
+  const persona = await getSharedDb().select({ id: sharedPersonas.id }).from(sharedPersonas).where(eq(sharedPersonas.id, personaId)).limit(1);
   if (!persona[0]) {
     throw Object.assign(new Error(`Persona ${personaId} not found.`), { statusCode: 404 });
   }
@@ -135,6 +140,8 @@ export async function createSourcingRuleCore(
       icpId: icpId ?? null,
       companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null,
       companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null,
+      companyAllowListOwnerId: companyAllowListOwnerId ?? null,
+      companyDenyListOwnerId: companyDenyListOwnerId ?? null,
       manualTitleKeywords: manualTitleKeywords && manualTitleKeywords.length > 0 ? JSON.stringify(manualTitleKeywords) : null,
       manualSeniorities: manualSeniorities && manualSeniorities.length > 0 ? JSON.stringify(manualSeniorities) : null,
       minLinkedinFollowers: minLinkedinFollowers ?? null,

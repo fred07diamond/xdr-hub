@@ -46,6 +46,8 @@ export default defineAction({
       profileSummary,
       messagingContext,
       profileUrl: prospect.profileUrl,
+      personaId,
+      personaName,
     });
 
     await db

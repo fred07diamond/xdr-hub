@@ -1,7 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { z } from "zod";
 import { fetchGoogleDocText } from "../server/helpers/google-drive-client.js";
-import { upsertPersonaFromDoc } from "../server/helpers/persona-sync.js";
+import { upsertSharedPersonaFromDoc } from "../server/helpers/persona-sync.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -16,7 +16,7 @@ export default defineAction({
   run: async ({ docUrl, name, description }, ctx) => {
     await requireRole(ctx?.userEmail, ["admin"]);
     const rawText = await fetchGoogleDocText(docUrl, ctx!.userEmail!);
-    const { personaId, created } = await upsertPersonaFromDoc({
+    const { personaId, created } = await upsertSharedPersonaFromDoc({
       sourceDocUrl: docUrl,
       rawText,
       ownerEmail: ctx!.userEmail!,

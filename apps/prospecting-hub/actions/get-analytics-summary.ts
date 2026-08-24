@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
-import { and, eq, sql } from "@agent-native/core/db/schema";
+import { and, eq, inArray, sql } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { analyticsEvents, contacts, personas, syncRecords } from "../server/db/schema.js";
+import { analyticsEvents, contacts, syncRecords } from "../server/db/schema.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 // Trend window -- 14 full calendar days, dense-filled so a chart always has
@@ -73,11 +74,10 @@ export default defineAction({
         .where(eq(contacts.status, "active"))
         .groupBy(contacts.source),
       db
-        .select({ personaId: contacts.personaId, name: personas.name, color: personas.color, n: sql<number>`count(*)` })
+        .select({ personaId: contacts.personaId, n: sql<number>`count(*)` })
         .from(contacts)
-        .leftJoin(personas, eq(contacts.personaId, personas.id))
         .where(and(eq(contacts.status, "active"), sql`${contacts.personaId} is not null`))
-        .groupBy(contacts.personaId, personas.name, personas.color),
+        .groupBy(contacts.personaId),
       db
         .select({ syncedAt: contacts.syncedAt, source: contacts.source })
         .from(contacts)
@@ -147,10 +147,24 @@ export default defineAction({
     // Actual persona composition today -- the same DonutBreakdown this
     // renders with is the surface a future "target vs. actual" composition
     // gauge (the scheduled multi-source pull) would extend, once a
-    // composition-rule concept with a target mix actually exists.
+    // composition-rule concept with a target mix actually exists. Personas
+    // live in the shared cross-app DB now -- separate query + Map merge for
+    // name/color, same idiom as list-personas.ts's own counts.
+    const activePersonaIds = personaRows.map((r) => r.personaId).filter((id): id is string => !!id);
+    const personaDisplayRows = activePersonaIds.length
+      ? await getSharedDb()
+          .select({ id: sharedPersonas.id, name: sharedPersonas.name, color: sharedPersonas.color })
+          .from(sharedPersonas)
+          .where(inArray(sharedPersonas.id, activePersonaIds))
+      : [];
+    const personaDisplayById = new Map(personaDisplayRows.map((p) => [p.id, p]));
+
     const personaBreakdown = personaRows
-      .filter((r): r is typeof r & { personaId: string; name: string } => !!r.personaId && !!r.name)
-      .map((r) => ({ id: r.personaId, name: r.name, color: r.color, total: Number(r.n) }))
+      .filter((r): r is typeof r & { personaId: string } => !!r.personaId && personaDisplayById.has(r.personaId))
+      .map((r) => {
+        const p = personaDisplayById.get(r.personaId)!;
+        return { id: r.personaId, name: p.name, color: p.color, total: Number(r.n) };
+      })
       .sort((a, b) => b.total - a.total);
 
     // Dense-fill each of the last TREND_DAYS days, per source -- a chart

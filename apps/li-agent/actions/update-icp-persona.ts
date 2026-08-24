@@ -2,9 +2,15 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import {
+  countWords,
+  getSharedDb,
+  rebuildPersonaCriteriaText,
+  sharedPersonaDocs,
+  sharedPersonas,
+} from "@xdr-hub/shared/server";
 import { getDb } from "../server/db/index.js";
-import { icpPersonaDocs, icpPersonas, leadListItems, postEngagements, prospects } from "../server/db/schema.js";
-import { countWords, rebuildPersonaIcpText } from "../server/helpers/persona-docs.js";
+import { leadListItems, postEngagements, prospects } from "../server/db/schema.js";
 import { requireAdminFromSessionOrToken } from "../server/helpers/require-admin.js";
 
 export default defineAction({
@@ -26,35 +32,36 @@ export default defineAction({
   run: async ({ id, name, color, icpText, apiToken }, ctx) => {
     await requireAdminFromSessionOrToken(apiToken, ctx);
     const db = getDb();
-    const existing = await db
-      .select({ name: icpPersonas.name })
-      .from(icpPersonas)
-      .where(eq(icpPersonas.id, id))
+    const sharedDb = getSharedDb();
+    const existing = await sharedDb
+      .select({ name: sharedPersonas.name })
+      .from(sharedPersonas)
+      .where(eq(sharedPersonas.id, id))
       .limit(1);
 
     const patch: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (name !== undefined) patch.name = name;
     if (color !== undefined) patch.color = color;
-    await db.update(icpPersonas).set(patch).where(eq(icpPersonas.id, id));
+    await sharedDb.update(sharedPersonas).set(patch).where(eq(sharedPersonas.id, id));
 
-    // icpText is DERIVED from icpPersonaDocs (server/helpers/persona-docs.ts),
-    // so this can't just write the column -- the next add/delete of a document
-    // would rebuild icpText from the docs table and silently throw this text
-    // away. Replace the document set instead, which keeps one source of truth
-    // and preserves this argument's original "replace the persona's text"
-    // meaning for existing callers.
+    // Criteria text is DERIVED from sharedPersonaDocs, so this can't just
+    // write a column -- the next add/delete of a document would rebuild it
+    // from the docs table and silently throw this text away. Replace the
+    // document set instead, which keeps one source of truth and preserves
+    // this argument's original "replace the persona's text" meaning for
+    // existing callers.
     if (icpText !== undefined) {
-      await db.delete(icpPersonaDocs).where(eq(icpPersonaDocs.personaId, id));
-      await db.insert(icpPersonaDocs).values({
+      await sharedDb.delete(sharedPersonaDocs).where(eq(sharedPersonaDocs.personaId, id));
+      await sharedDb.insert(sharedPersonaDocs).values({
         id: nanoid(),
         personaId: id,
-        name: `${name ?? existing[0]?.name ?? "ICP"} document`,
-        text: icpText,
+        fileName: `${name ?? existing[0]?.name ?? "ICP"} document`,
+        content: icpText,
         wordCount: countWords(icpText),
         sortOrder: 0,
         createdAt: new Date().toISOString(),
       });
-      await rebuildPersonaIcpText(db, id);
+      await rebuildPersonaCriteriaText(sharedDb, id);
     }
 
     // personaName/personaColor are DENORMALIZED onto every scored row

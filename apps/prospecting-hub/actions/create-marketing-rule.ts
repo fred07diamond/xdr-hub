@@ -14,6 +14,14 @@ export default defineAction({
     lifecycleStages: z.array(z.string()).min(1).nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
+    companyAllowListOwnerId: z
+      .string()
+      .nullish()
+      .describe("HubSpot owner id — when set, that owner's current book of business is resolved live at every run and unioned with companyAllowList"),
+    companyDenyListOwnerId: z
+      .string()
+      .nullish()
+      .describe("HubSpot owner id — when set, that owner's current book of business is resolved live at every run and unioned with companyDenyList"),
     intervalHours: z.number().int().refine(
       (v) => VALID_INTERVAL_HOURS.includes(v as (typeof VALID_INTERVAL_HOURS)[number]),
       `Must be one of ${VALID_INTERVAL_HOURS.join(", ")} hours`,
@@ -21,7 +29,10 @@ export default defineAction({
   }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ name, personaId, lifecycleStages, companyAllowList, companyDenyList, intervalHours }, ctx) => {
+  run: async (
+    { name, personaId, lifecycleStages, companyAllowList, companyDenyList, companyAllowListOwnerId, companyDenyListOwnerId, intervalHours },
+    ctx,
+  ) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
     const db = getDb();
 
@@ -33,6 +44,8 @@ export default defineAction({
       lifecycleStages,
       companyAllowList,
       companyDenyList,
+      companyAllowListOwnerId,
+      companyDenyListOwnerId,
       intervalHours,
     });
   },

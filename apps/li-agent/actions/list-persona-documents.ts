@@ -1,13 +1,13 @@
 import { defineAction } from "@agent-native/core";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { icpPersonaDocs } from "../server/db/schema.js";
+import { getSharedDb, sharedPersonaDocs } from "@xdr-hub/shared/server";
 import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 
 // Metadata only -- never returns document `text`. The full text is only ever
-// read server-side (rebuildPersonaIcpText -> icpPersonas.icpText), so there's
-// no reason to ship whole ICP documents down to a side panel or a browser.
+// read server-side (rebuildPersonaCriteriaText -> the persona's derived
+// criteria text), so there's no reason to ship whole ICP documents down to a
+// side panel or a browser.
 export default defineAction({
   description:
     "List the ICP documents attached to a persona (names and word counts, not the document text).",
@@ -25,19 +25,19 @@ export default defineAction({
     const email = await resolveOwnerStrict(apiToken, ctx);
     if (!email) return { documents: [] };
 
-    const db = getDb();
-    const documents = await db
+    const sharedDb = getSharedDb();
+    const docs = await sharedDb
       .select({
-        id: icpPersonaDocs.id,
-        name: icpPersonaDocs.name,
-        wordCount: icpPersonaDocs.wordCount,
-        sortOrder: icpPersonaDocs.sortOrder,
-        createdAt: icpPersonaDocs.createdAt,
+        id: sharedPersonaDocs.id,
+        fileName: sharedPersonaDocs.fileName,
+        wordCount: sharedPersonaDocs.wordCount,
+        sortOrder: sharedPersonaDocs.sortOrder,
+        createdAt: sharedPersonaDocs.createdAt,
       })
-      .from(icpPersonaDocs)
-      .where(eq(icpPersonaDocs.personaId, personaId))
-      .orderBy(asc(icpPersonaDocs.sortOrder), asc(icpPersonaDocs.createdAt));
+      .from(sharedPersonaDocs)
+      .where(eq(sharedPersonaDocs.personaId, personaId))
+      .orderBy(asc(sharedPersonaDocs.sortOrder), asc(sharedPersonaDocs.createdAt));
 
-    return { documents };
+    return { documents: docs.map((d) => ({ id: d.id, name: d.fileName, wordCount: d.wordCount, sortOrder: d.sortOrder, createdAt: d.createdAt })) };
   },
 });

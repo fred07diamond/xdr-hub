@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { desc, inArray, sql } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedLibraryDocs } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { icps, libraryDocs } from "../server/db/schema.js";
+import { icps } from "../server/db/schema.js";
 import { decodePersonaCriteria } from "../server/helpers/persona-sync.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
@@ -38,11 +39,11 @@ export default defineAction({
     // correlated-subquery form silently produces wrong (always-zero)
     // counts with this ORM's `sql` tag.
     const icpIds = rows.map((r) => r.id);
-    const libraryDocCounts = await db
-      .select({ icpId: libraryDocs.linkedIcpId, count: sql<number>`count(*)` })
-      .from(libraryDocs)
-      .where(inArray(libraryDocs.linkedIcpId, icpIds))
-      .groupBy(libraryDocs.linkedIcpId);
+    const libraryDocCounts = await getSharedDb()
+      .select({ icpId: sharedLibraryDocs.linkedIcpId, count: sql<number>`count(*)` })
+      .from(sharedLibraryDocs)
+      .where(inArray(sharedLibraryDocs.linkedIcpId, icpIds))
+      .groupBy(sharedLibraryDocs.linkedIcpId);
     const libraryDocCountMap = new Map(libraryDocCounts.map((c) => [c.icpId, Number(c.count)]));
 
     return {

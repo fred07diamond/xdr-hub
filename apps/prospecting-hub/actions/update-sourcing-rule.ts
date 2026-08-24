@@ -20,6 +20,8 @@ export default defineAction({
     icpId: z.string().nullish(),
     companyAllowList: z.array(z.string()).nullish(),
     companyDenyList: z.array(z.string()).nullish(),
+    companyAllowListOwnerId: z.string().nullish(),
+    companyDenyListOwnerId: z.string().nullish(),
     manualTitleKeywords: z.array(z.string()).nullish(),
     manualSeniorities: z.array(z.string()).nullish(),
     minLinkedinFollowers: z.number().int().min(0).nullish(),
@@ -44,6 +46,8 @@ export default defineAction({
       icpId,
       companyAllowList,
       companyDenyList,
+      companyAllowListOwnerId,
+      companyDenyListOwnerId,
       manualTitleKeywords,
       manualSeniorities,
       minLinkedinFollowers,
@@ -105,6 +109,8 @@ export default defineAction({
         ...(icpId !== undefined ? { icpId } : {}),
         ...(companyAllowList !== undefined ? { companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null } : {}),
         ...(companyDenyList !== undefined ? { companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null } : {}),
+        ...(companyAllowListOwnerId !== undefined ? { companyAllowListOwnerId } : {}),
+        ...(companyDenyListOwnerId !== undefined ? { companyDenyListOwnerId } : {}),
         ...(manualTitleKeywords !== undefined
           ? { manualTitleKeywords: manualTitleKeywords && manualTitleKeywords.length > 0 ? JSON.stringify(manualTitleKeywords) : null }
           : {}),

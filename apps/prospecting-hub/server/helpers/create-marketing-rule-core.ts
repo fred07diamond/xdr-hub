@@ -1,8 +1,9 @@
 import { eq } from "@agent-native/core/db/schema";
 import { resourceDeleteByPath, resourcePut } from "@agent-native/core/resources";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { getDb } from "../db/index.js";
-import { marketingRules, personas, segmentContacts, segments } from "../db/schema.js";
+import { marketingRules, segmentContacts, segments } from "../db/schema.js";
 import { DEFAULT_LIFECYCLE_STAGES } from "./hubspot-contact-properties.js";
 import { buildSourcingRuleJobContent, computeIntervalCron } from "./sourcing-rule-jobs.js";
 
@@ -33,6 +34,8 @@ export interface CreateMarketingRuleCoreParams {
   lifecycleStages?: string[] | null;
   companyAllowList?: string[] | null;
   companyDenyList?: string[] | null;
+  companyAllowListOwnerId?: string | null;
+  companyDenyListOwnerId?: string | null;
   intervalHours: number;
 }
 
@@ -46,9 +49,20 @@ export async function createMarketingRuleCore(
   db: Db,
   params: CreateMarketingRuleCoreParams,
 ): Promise<CreateMarketingRuleCoreResult> {
-  const { name, ownerEmail, orgId, personaId, lifecycleStages, companyAllowList, companyDenyList, intervalHours } = params;
+  const {
+    name,
+    ownerEmail,
+    orgId,
+    personaId,
+    lifecycleStages,
+    companyAllowList,
+    companyDenyList,
+    companyAllowListOwnerId,
+    companyDenyListOwnerId,
+    intervalHours,
+  } = params;
 
-  const persona = await db.select({ id: personas.id }).from(personas).where(eq(personas.id, personaId)).limit(1);
+  const persona = await getSharedDb().select({ id: sharedPersonas.id }).from(sharedPersonas).where(eq(sharedPersonas.id, personaId)).limit(1);
   if (!persona[0]) {
     throw Object.assign(new Error(`Persona ${personaId} not found.`), { statusCode: 404 });
   }
@@ -98,6 +112,8 @@ export async function createMarketingRuleCore(
       ),
       companyAllowList: companyAllowList ? JSON.stringify(companyAllowList) : null,
       companyDenyList: companyDenyList ? JSON.stringify(companyDenyList) : null,
+      companyAllowListOwnerId: companyAllowListOwnerId ?? null,
+      companyDenyListOwnerId: companyDenyListOwnerId ?? null,
       intervalHours,
       segmentId,
       jobResourcePath,

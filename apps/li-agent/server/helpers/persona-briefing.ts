@@ -9,8 +9,9 @@ import { NO_EM_DASH_RULE, stripEmDashes } from "./style-rules.js";
  * about at an organizational level.
  *
  * This is a READ of the ICP, not a second source of truth. Nothing scores or
- * drafts from it -- selectPersona/draftProfile still read icpPersonas.icpText
- * directly. If this and the documents ever disagree, the documents win, which
+ * drafts from it -- selectPersona computes criteria text fresh from the
+ * shared persona's documents (getPersonaCriteriaText) and passes that to
+ * draftProfile. If this and the documents ever disagree, the documents win, which
  * is why the briefing carries the hash of the text it came from (see
  * hashIcpText) and the UI marks it stale rather than quietly serving a
  * briefing that no longer matches the uploaded criteria.

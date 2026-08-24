@@ -502,6 +502,17 @@ export default runMigrations(
       // schema.ts's own comment on personas.liAgentPersonaId.
       sql: `ALTER TABLE personas ADD COLUMN li_agent_persona_id TEXT`,
     },
+    {
+      version: 38,
+      name: "sourcing-marketing-rules-company-owner-columns",
+      // Live HubSpot-owner-scoped company lists -- see schema.ts's own
+      // comment on sourcingRules.companyAllowListOwnerId.
+      sql: `
+        ALTER TABLE sourcing_rules ADD COLUMN company_allow_list_owner_id TEXT;
+        ALTER TABLE sourcing_rules ADD COLUMN company_deny_list_owner_id TEXT;
+        ALTER TABLE marketing_rules ADD COLUMN company_allow_list_owner_id TEXT;
+        ALTER TABLE marketing_rules ADD COLUMN company_deny_list_owner_id TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

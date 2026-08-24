@@ -1,9 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
-import { isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { icpPersonas } from "../server/db/schema.js";
+import { getPersonaCriteriaText, getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { buildFilterEntry, buildPersonaSalesNavSearch, encodeLeaf } from "../server/helpers/persona-sales-nav-link.js";
 import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
@@ -183,7 +181,7 @@ export default defineAction({
       return { error: "Rate limit reached -- try again shortly." };
     }
 
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
     // Deterministic fast path: the caller already knows which persona this
     // is (a click, not free text), so skip the fuzzy name-match + second
@@ -193,7 +191,7 @@ export default defineAction({
     // prompt-driven flow below has no concept of (it re-derives one flat,
     // untiered title list from raw ICP text on every click).
     if (personaId) {
-      const personaSearch = await buildPersonaSalesNavSearch(db, { personaId, companyName });
+      const personaSearch = await buildPersonaSalesNavSearch(sharedDb, { personaId, companyName });
       if (personaSearch) {
         return { ...personaSearch, unsupportedNotes: null, scopedAccounts: null };
       }
@@ -202,10 +200,21 @@ export default defineAction({
       // works off the persona's name as free text.
     }
 
-    const personas = await db
-      .select({ id: icpPersonas.id, name: icpPersonas.name, icpText: icpPersonas.icpText, summary: icpPersonas.summary })
-      .from(icpPersonas)
-      .where(isNotNull(icpPersonas.icpText));
+    const personaRows = await sharedDb
+      .select({ id: sharedPersonas.id, name: sharedPersonas.name, summary: sharedPersonas.summary })
+      .from(sharedPersonas);
+
+    // Criteria text is no longer a cached column -- compute it per persona
+    // and drop any persona with none, replicating the old
+    // isNotNull(icpPersonas.icpText) filter.
+    const personas = (
+      await Promise.all(
+        personaRows.map(async (p) => {
+          const { text: icpText } = await getPersonaCriteriaText(sharedDb, p.id);
+          return { ...p, icpText };
+        }),
+      )
+    ).filter((p) => p.icpText !== null);
 
     // icpText, not summary -- summary is only the persona document's FIRST
     // PARAGRAPH (see extractSummary() in create-icp-persona.ts, capped at

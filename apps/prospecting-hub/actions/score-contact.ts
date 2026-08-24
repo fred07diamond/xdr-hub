@@ -1,10 +1,11 @@
 import { defineAction } from "@agent-native/core";
-import { eq, sql } from "@agent-native/core/db/schema";
+import { eq } from "@agent-native/core/db/schema";
+import { getSharedDb } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { contacts, personas } from "../server/db/schema.js";
+import { contacts } from "../server/db/schema.js";
 import { requireRole } from "../server/helpers/require-role.js";
-import { scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
+import { loadScorablePersonas, scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 
 export default defineAction({
   description: "Score one contact against all personas with synced criteria, writing personaId/personaMatchScore/companyFitScore/engagementScore/overallScore/scoreReasoning back onto the contact.",
@@ -21,10 +22,7 @@ export default defineAction({
       throw Object.assign(new Error(`Contact ${contactId} not found.`), { statusCode: 404 });
     }
 
-    const personaRows = await db
-      .select({ id: personas.id, name: personas.name, criteria: personas.criteria })
-      .from(personas)
-      .where(sql`${personas.criteria} IS NOT NULL`);
+    const personaRows = await loadScorablePersonas(getSharedDb());
 
     const score = await scoreContactAgainstPersonas({
       contact: {

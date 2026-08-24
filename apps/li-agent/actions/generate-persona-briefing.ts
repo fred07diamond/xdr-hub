@@ -1,9 +1,7 @@
 import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { icpPersonas } from "../server/db/schema.js";
-import { adoptLegacyIcpTextAsDoc, rebuildPersonaIcpText } from "../server/helpers/persona-docs.js";
+import { getPersonaCriteriaText, getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { buildPersonaBriefing, hashIcpText } from "../server/helpers/persona-briefing.js";
 import { requireAdminFromSessionOrToken } from "../server/helpers/require-admin.js";
 
@@ -22,30 +20,17 @@ export default defineAction({
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
   run: async ({ personaId, apiToken }, ctx) => {
     await requireAdminFromSessionOrToken(apiToken, ctx);
-    const db = getDb();
+    const sharedDb = getSharedDb();
 
-    const rows = await db
-      .select({ id: icpPersonas.id, name: icpPersonas.name, icpText: icpPersonas.icpText })
-      .from(icpPersonas)
-      .where(eq(icpPersonas.id, personaId))
+    const rows = await sharedDb
+      .select({ id: sharedPersonas.id, name: sharedPersonas.name })
+      .from(sharedPersonas)
+      .where(eq(sharedPersonas.id, personaId))
       .limit(1);
     const persona = rows[0];
     if (!persona) return { ok: false as const, error: "Persona not found." };
 
-    // A persona from before multi-document support has icpText but no doc rows.
-    // Adopt it before reading, so its briefing is generated from the same text
-    // the document list will show rather than from a column about to be
-    // rebuilt out from under it.
-    if (await adoptLegacyIcpTextAsDoc(db, persona)) {
-      await rebuildPersonaIcpText(db, personaId);
-    }
-
-    const current = await db
-      .select({ icpText: icpPersonas.icpText })
-      .from(icpPersonas)
-      .where(eq(icpPersonas.id, personaId))
-      .limit(1);
-    const icpText = current[0]?.icpText ?? null;
+    const { text: icpText } = await getPersonaCriteriaText(sharedDb, personaId);
 
     if (!icpText?.trim()) {
       return {
@@ -73,15 +58,15 @@ export default defineAction({
     }
 
     const generatedAt = new Date().toISOString();
-    await db
-      .update(icpPersonas)
+    await sharedDb
+      .update(sharedPersonas)
       .set({
         briefing: JSON.stringify(briefing),
         briefingGeneratedAt: generatedAt,
         briefingSourceHash: hashIcpText(icpText),
         updatedAt: generatedAt,
       })
-      .where(eq(icpPersonas.id, personaId));
+      .where(eq(sharedPersonas.id, personaId));
 
     return { ok: true as const, personaId, briefing, generatedAt };
   },

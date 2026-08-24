@@ -1,8 +1,9 @@
 import { defineAction } from "@agent-native/core";
 import { and, desc, eq, inArray, or, sql } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
-import { marketingRules, personas, segmentContacts, segments, sourcingRules } from "../server/db/schema.js";
+import { marketingRules, segmentContacts, segments, sourcingRules } from "../server/db/schema.js";
 import { getUserRole, requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
@@ -40,13 +41,10 @@ export default defineAction({
         status: segments.status,
         lastRefreshedAt: segments.lastRefreshedAt,
         createdAt: segments.createdAt,
-        personaName: personas.name,
-        personaColor: personas.color,
         sourcingRuleId: sourcingRules.id,
         marketingRuleId: marketingRules.id,
       })
       .from(segments)
-      .leftJoin(personas, eq(segments.personaId, personas.id))
       .leftJoin(sourcingRules, eq(sourcingRules.segmentId, segments.id))
       .leftJoin(marketingRules, eq(marketingRules.segmentId, segments.id))
       .where(whereClause)
@@ -61,9 +59,23 @@ export default defineAction({
       .groupBy(segmentContacts.segmentId);
     const countMap = new Map(counts.map((c) => [c.segmentId, Number(c.count)]));
 
+    // Personas live in the shared cross-app DB now -- separate query + Map
+    // merge, same idiom as list-personas.ts's own sub-persona/library-doc
+    // counts.
+    const personaIds = [...new Set(rows.map((r) => r.personaId).filter((id): id is string => !!id))];
+    const personaRows = personaIds.length
+      ? await getSharedDb()
+          .select({ id: sharedPersonas.id, name: sharedPersonas.name, color: sharedPersonas.color })
+          .from(sharedPersonas)
+          .where(inArray(sharedPersonas.id, personaIds))
+      : [];
+    const personaById = new Map(personaRows.map((p) => [p.id, p]));
+
     return {
       segments: rows.map((r) => ({
         ...r,
+        personaName: r.personaId ? (personaById.get(r.personaId)?.name ?? null) : null,
+        personaColor: r.personaId ? (personaById.get(r.personaId)?.color ?? null) : null,
         kind: r.sourcingRuleId != null ? ("prospected" as const) : r.marketingRuleId != null ? ("marketing" as const) : ("static" as const),
         contactCount: countMap.get(r.id) ?? 0,
       })),
