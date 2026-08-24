@@ -18,8 +18,34 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
 // ── Mock modules before importing the action ──────────────────────────────────
-
-vi.mock("../server/helpers/hubspot-client.js", () => ({
+//
+// The real HubSpot client moved to @xdr-hub/shared/server a while back (see
+// packages/shared/src/server/hubspot-client.ts) -- this file used to mock a
+// local server/helpers/hubspot-client.js that no longer exists, so every
+// mockFetch expectation below was silently dead: check-hubspot-contact.ts
+// was calling the REAL getHubSpotToken/hubspotFetch the whole time.
+//
+// resolveOwnerStrict (the action's actual import) was also never mocked --
+// only a resolveOwner export that check-hubspot-contact.ts doesn't use -- and
+// checkRateLimit wasn't mocked at all, even though it calls db.insert()/
+// db.update(), which the db mock below doesn't implement. Both are now
+// mocked directly, matching the action's real imports.
+//
+// KNOWN LIMITATION even with all of the above fixed: this file is currently
+// the only test in this suite that statically imports a real action module
+// (`import action from "../actions/...";`). Doing that still triggers a
+// real getDb() migration attempt against the app's actual local SQLite file
+// regardless of the vi.mock("../server/db/index.js", ...) above -- confirmed
+// by instrumenting the mock's own getDb factory, which never fires before
+// the hang. This matches the exact, separately pre-existing "local dev
+// database can't migrate past v8 (a pre-existing `ON CONFLICT DO NOTHING`
+// syntax failure)" limitation documented in test/persona-docs.test.ts's own
+// comment -- every other test in this suite avoids it by never statically
+// importing a real action file. Fixing that migration is a separate,
+// unrelated task; these mock corrections are still worth keeping (they're
+// now accurate to the real module structure and are the fix this test needs
+// once that migration bug is fixed).
+vi.mock("@xdr-hub/shared/server", () => ({
   getHubSpotToken: vi.fn().mockResolvedValue("pat-test-token"),
   hubspotFetch: vi.fn(),
 }));
@@ -37,10 +63,14 @@ vi.mock("../server/db/index.js", () => ({
 }));
 
 vi.mock("../server/helpers/resolve-owner.js", () => ({
-  resolveOwner: () => Promise.resolve(null),
+  resolveOwnerStrict: () => Promise.resolve("test@builder.io"),
 }));
 
-import { hubspotFetch } from "../server/helpers/hubspot-client.js";
+vi.mock("../server/helpers/rate-limit.js", () => ({
+  checkRateLimit: () => Promise.resolve(true),
+}));
+
+import { hubspotFetch } from "@xdr-hub/shared/server";
 import action from "../actions/check-hubspot-contact.js";
 
 const mockFetch = hubspotFetch as ReturnType<typeof vi.fn>;
@@ -309,7 +339,7 @@ describe("HubSpot API errors", () => {
   });
 
   it("returns connected:false when no HubSpot token is configured", async () => {
-    const { getHubSpotToken } = await import("../server/helpers/hubspot-client.js");
+    const { getHubSpotToken } = await import("@xdr-hub/shared/server");
     (getHubSpotToken as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
     const result = await (action as any).run(
       { profileUrl: "https://linkedin.com/in/simoncorry/", name: "Simon Corry", company: "Ramp" },

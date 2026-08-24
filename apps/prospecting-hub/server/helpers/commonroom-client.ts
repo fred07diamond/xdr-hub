@@ -27,13 +27,14 @@ export function resolveServerId(orgId: string | null | undefined): string {
 // connection (confirmed to happen live: a run-sourcing-rule-pipeline call
 // hung indefinitely at 0% CPU, meaning it was blocked on a network call that
 // never returned) leaves the awaiting call, and everything sequenced after
-// it, stuck forever with no error and no recovery. Promise.race can't cancel
-// the underlying call (the framework gives us no cancellation hook), but it
-// lets OUR code stop waiting and treat a stalled connection as a failure —
-// converting an indefinite hang into a normal, catchable error that the
-// existing "CommonRoom hiccup -> null signal, never fail the whole
-// operation" handling (score-contact.ts, prospector-client.ts) already
-// knows how to absorb.
+// it, stuck forever with no error and no recovery. This races the call
+// against a timeout the same way @xdr-hub/shared/server's withTimeout()
+// does (same "can't cancel the callee, but can stop waiting on it" logic),
+// but doesn't reuse that helper directly: the breaker below needs to tell
+// "the timeout fired" apart from "CommonRoom answered and the answer was an
+// error", which means tagging the timeout's own rejection (see STALLED
+// below) -- a capability the shared helper doesn't need for its one caller
+// (HubSpot) and shouldn't grow just for this.
 const DEFAULT_MCP_TIMEOUT_MS = 20_000;
 
 // Marks an error as "the connection stalled", as opposed to "CommonRoom

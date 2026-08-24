@@ -1,5 +1,6 @@
 import { readAppSecret } from "@agent-native/core/secrets";
 import { getRequestOrgId } from "@agent-native/core/server";
+import { withTimeout } from "./timeout.js";
 
 const HUBSPOT_API_BASE = "https://api.hubapi.com";
 
@@ -62,25 +63,16 @@ const DEFAULT_HUBSPOT_TIMEOUT_MS = 20_000;
 
 // `hubspotFetch` above is a bare `fetch()` with no timeout at all — a
 // stalled HubSpot API request leaves the awaiting call, and everything
-// sequenced after it, stuck forever with no error and no recovery. Same
-// class of bug as `callMcpToolWithTimeout` (commonroom-client.ts) and
-// `completeText()`'s `timeoutMs` option already guard against elsewhere in
-// this workspace. `Promise.race` can't cancel the underlying `fetch()` (no
-// abort hook threaded through here), but it lets calling code stop waiting
-// and treat a stalled request as a normal, catchable error instead of an
-// indefinite hang. Additive — existing `hubspotFetch`/`hubspotFetchIfConnected`
-// call sites are unchanged; use this for new code paths that need a bounded
-// worst case (e.g. a resumable, chunked pipeline with its own wall-clock
-// time budget).
+// sequenced after it, stuck forever with no error and no recovery. See
+// withTimeout's own comment for why a race (rather than a real abort) is
+// the right tool here. Additive — existing `hubspotFetch`/
+// `hubspotFetchIfConnected` call sites are unchanged; use this for new code
+// paths that need a bounded worst case (e.g. a resumable, chunked pipeline
+// with its own wall-clock time budget).
 export async function hubspotFetchWithTimeout(
   path: string,
   options?: RequestInit,
   timeoutMs: number = DEFAULT_HUBSPOT_TIMEOUT_MS,
 ): Promise<unknown> {
-  return Promise.race([
-    hubspotFetch(path, options),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`HubSpot API call to "${path}" timed out after ${timeoutMs}ms — the connection may have stalled.`)), timeoutMs),
-    ),
-  ]);
+  return withTimeout(hubspotFetch(path, options), timeoutMs, `HubSpot API call to "${path}"`);
 }
