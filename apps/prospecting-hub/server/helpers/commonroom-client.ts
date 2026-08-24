@@ -36,21 +36,108 @@ export function resolveServerId(orgId: string | null | undefined): string {
 // knows how to absorb.
 const DEFAULT_MCP_TIMEOUT_MS = 20_000;
 
+// Marks an error as "the connection stalled", as opposed to "CommonRoom
+// answered and the answer was an error". Only stalls feed the breaker below:
+// a real tool error (a bad filter field, an unknown objectType) proves the
+// connection is alive and is a caller bug, not an outage — counting those
+// would let one malformed query trip the breaker for every other caller.
+const STALLED = Symbol("commonroom-stalled");
+
+function isStallError(err: unknown): boolean {
+  return !!err && typeof err === "object" && STALLED in err;
+}
+
+// Once a connection is genuinely stalled, every subsequent call still pays
+// the full 20s timeout before failing. Under the unattended scheduled runs
+// this app is moving toward, that turns one dead connection into minutes of
+// dead wall-clock inside a function invocation with a hard 75s ceiling --
+// the run burns its whole budget waiting on a connection that is not coming
+// back, and does less real work than if it had given up immediately.
+//
+// So: after BREAKER_FAILURE_THRESHOLD consecutive stalls against one server,
+// fail fast for BREAKER_COOLDOWN_MS instead of waiting on it. Any single
+// success (or any real answer, including an error answer) proves the
+// connection is alive again and resets the count.
+//
+// Module-level in-memory state, with the same serverless caveat as
+// commonroom-engagement.ts's leadScoreIdCache: a cold function instance
+// starts with a clean breaker, so this does NOT guarantee cross-invocation
+// protection in production. It DOES guarantee that within one invocation --
+// exactly where the 75s ceiling bites -- a dead connection costs one timeout
+// rather than one per call, which is the actual problem being solved.
+const BREAKER_FAILURE_THRESHOLD = 3;
+const BREAKER_COOLDOWN_MS = 60_000;
+
+interface BreakerState {
+  consecutiveStalls: number;
+  openUntil: number;
+}
+
+const breakers = new Map<string, BreakerState>();
+
+function getBreaker(serverId: string): BreakerState {
+  let state = breakers.get(serverId);
+  if (!state) {
+    state = { consecutiveStalls: 0, openUntil: 0 };
+    breakers.set(serverId, state);
+  }
+  return state;
+}
+
+/** Test seam -- module-level breaker state would otherwise leak between tests. */
+export function resetCommonRoomBreaker(): void {
+  breakers.clear();
+}
+
 export async function callMcpToolWithTimeout(
   serverId: string,
   toolName: string,
   args?: Record<string, unknown>,
   timeoutMs: number = DEFAULT_MCP_TIMEOUT_MS,
 ): Promise<unknown> {
-  return Promise.race([
-    callMcpTool(serverId, toolName, args),
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`CommonRoom MCP call "${toolName}" timed out after ${timeoutMs}ms — the connection may have stalled.`)),
-        timeoutMs,
+  const breaker = getBreaker(serverId);
+  if (Date.now() < breaker.openUntil) {
+    // Deliberately NOT flagged as a stall: this is the breaker reporting a
+    // known-bad connection, not new evidence of one. Flagging it would let
+    // the breaker feed itself and extend its own cooldown indefinitely.
+    throw new Error(
+      `CommonRoom is not responding (${breaker.consecutiveStalls} consecutive stalled calls) — skipping "${toolName}" until the connection recovers.`,
+    );
+  }
+
+  try {
+    const result = await Promise.race([
+      callMcpTool(serverId, toolName, args),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              Object.assign(
+                new Error(`CommonRoom MCP call "${toolName}" timed out after ${timeoutMs}ms — the connection may have stalled.`),
+                { [STALLED]: true },
+              ),
+            ),
+          timeoutMs,
+        ),
       ),
-    ),
-  ]);
+    ]);
+    breaker.consecutiveStalls = 0;
+    breaker.openUntil = 0;
+    return result;
+  } catch (err) {
+    if (isStallError(err)) {
+      breaker.consecutiveStalls += 1;
+      if (breaker.consecutiveStalls >= BREAKER_FAILURE_THRESHOLD) {
+        breaker.openUntil = Date.now() + BREAKER_COOLDOWN_MS;
+      }
+    } else {
+      // CommonRoom answered, even if the answer was an error -- the
+      // connection is alive, so any stall streak is over.
+      breaker.consecutiveStalls = 0;
+      breaker.openUntil = 0;
+    }
+    throw err;
+  }
 }
 
 export function parseMcpToolResult(result: unknown): unknown {

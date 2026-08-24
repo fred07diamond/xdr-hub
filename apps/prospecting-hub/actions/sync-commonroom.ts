@@ -40,13 +40,34 @@ export default defineAction({
     try {
       const pulled: CommonRoomContact[] = [];
       let cursor: string | undefined;
+      // A page failure part-way through pagination used to throw straight to
+      // the catch below, discarding every page already pulled and marking the
+      // whole sync failed -- one transient 20s CommonRoom timeout on page 4
+      // threw away pages 1-3 and left the XDR to notice and restart from
+      // scratch. Same class of bug as the sourcing pipeline's own retry fix
+      // (commit b22b9a0). Contacts already in hand are still good, so a
+      // mid-pagination failure now stops paging and imports what it has,
+      // reporting the shortfall rather than pretending it finished.
+      let pageError: string | null = null;
       while (pulled.length < limit) {
         const pageSize = Math.min(PAGE_SIZE, limit - pulled.length);
-        const page = await commonroomListContactsInSegment({ orgId: ctx?.orgId, segmentId, limit: pageSize, cursor });
+        let page;
+        try {
+          page = await commonroomListContactsInSegment({ orgId: ctx?.orgId, segmentId, limit: pageSize, cursor });
+        } catch (err) {
+          pageError = err instanceof Error ? err.message : String(err);
+          break;
+        }
         pulled.push(...page.records);
 
         cursor = page.nextCursor;
         if (!page.has_more || !cursor) break;
+      }
+
+      // Nothing at all came back -- there's no partial progress to keep, so
+      // this is a genuine failure and belongs in the catch below.
+      if (pageError && pulled.length === 0) {
+        throw new Error(pageError);
       }
 
       const now = new Date().toISOString();
@@ -103,12 +124,30 @@ export default defineAction({
 
       await db
         .update(syncRecords)
-        .set({ status: "success", completedAt: new Date().toISOString(), recordsPulled: pulled.length })
+        .set({
+          status: "success",
+          completedAt: new Date().toISOString(),
+          recordsPulled: pulled.length,
+          // Kept on the record even though the status is "success" -- the
+          // contacts that did import are real and worth keeping, but the run
+          // stopped early and that shouldn't silently look like a clean sync.
+          ...(pageError ? { error: `Stopped early after importing ${pulled.length}: ${pageError}` } : {}),
+        })
         .where(eq(syncRecords.id, syncId));
 
       await logAnalyticsEvent(ctx!.userEmail!, "sync_run", { source: "commonroom", status: "success", recordsPulled: pulled.length });
 
-      return { syncId, status: "success" as const, recordsPulled: pulled.length, created, updated };
+      return {
+        syncId,
+        status: "success" as const,
+        recordsPulled: pulled.length,
+        created,
+        updated,
+        partial: pageError !== null,
+        warning: pageError
+          ? `CommonRoom stopped responding part-way through, so only ${pulled.length} contact${pulled.length === 1 ? "" : "s"} were pulled. Run the sync again to continue.`
+          : null,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await db
