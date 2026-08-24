@@ -5,6 +5,7 @@ let _ownerCtx: { userEmail: string; orgId?: string } | null | undefined = undefi
 
 export async function getOwnerCtx() {
   if (_ownerCtx !== undefined) return _ownerCtx;
+  // guard:allow-env-credential — single-workspace deployment config (the one workspace owner), not a per-user credential
   const email = process.env.WORKSPACE_OWNER_EMAIL;
   if (!email) { _ownerCtx = null; return null; }
   try {

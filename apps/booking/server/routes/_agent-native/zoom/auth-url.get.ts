@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
     return { error: "Must be signed in to connect Zoom." };
   }
 
+  // guard:allow-env-credential — this workspace's own Zoom OAuth app registration (client id), not a per-user credential
   const clientId = process.env.ZOOM_CLIENT_ID;
   if (!clientId) {
     setResponseStatus(event, 503);

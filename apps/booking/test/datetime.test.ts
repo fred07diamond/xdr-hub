@@ -5,6 +5,7 @@ import { localDatetimeValueToISO, toLocalDatetimeValue } from "../app/lib/utils"
 beforeAll(() => {
   // Fix the runtime's local timezone so the test is deterministic regardless
   // of where it runs.
+  // guard:allow-env-credential — test-only timezone override, not a credential
   process.env.TZ = "America/New_York";
 });
 

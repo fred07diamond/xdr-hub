@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
   // After the guard passes (user is authenticated), enforce the workspace's
   // Google Workspace domain restriction (same pattern as booking/li-agent).
   const session = await getSession(event);
+  // guard:allow-env-credential — single-workspace deployment config (the one allowed email domain), not a per-user credential
   const orgDomain = process.env.WORKSPACE_ORG_DOMAIN;
   if (session && orgDomain && !session.email.toLowerCase().endsWith(`@${orgDomain.toLowerCase()}`)) {
     throw createError({ statusCode: 403, message: `Access restricted to @${orgDomain} accounts.` });

@@ -16,7 +16,9 @@ const CALENDAR_EVENTS_URL =
 const GOOGLE_TOKEN_TIMEOUT_MS = 20_000;
 
 async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+  // guard:allow-env-credential — this workspace's own Google OAuth app registration (client id), not a per-user credential
   const clientId = process.env.GOOGLE_CLIENT_ID;
+  // guard:allow-env-credential — same OAuth app registration as above
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
   const res = await fetch(GOOGLE_TOKEN_URL, {

@@ -1,8 +1,4 @@
-import {
-  callAction,
-  useActionMutation,
-  useActionQuery,
-} from "@agent-native/core/client";
+import { callAction, useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import {
   IconArrowsSort,
   IconBrandLinkedin,

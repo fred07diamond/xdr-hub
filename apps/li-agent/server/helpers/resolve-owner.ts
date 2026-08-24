@@ -81,6 +81,7 @@ export async function resolveOwner(
     }
   }
 
+  // guard:allow-env-credential — single-workspace deployment config (the one workspace owner), not a per-user credential
   const fallback = process.env.WORKSPACE_OWNER_EMAIL ?? null;
   if (fallback) {
     const callSite = new Error().stack?.split("\n")[2]?.trim().slice(0, 160) ?? "unknown";

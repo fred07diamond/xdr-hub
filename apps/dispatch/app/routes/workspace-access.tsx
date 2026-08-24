@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery, useSession } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery, useSession } from "@agent-native/core/client/hooks";
 import { DispatchShell } from "@agent-native/dispatch/components";
 import { Badge } from "@agent-native/dispatch/components/ui/badge";
 import { Button } from "@agent-native/dispatch/components/ui/button";

@@ -1,4 +1,5 @@
-import * as AgentClient from "@agent-native/core/client";
+import * as AgentClient from "@agent-native/core/client/agent-chat";
+import { useT } from "@agent-native/core/client/i18n";
 import { useOrgRole } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { Navigate } from "react-router";
@@ -11,7 +12,7 @@ export function meta() {
 }
 
 export default function AgentRoute() {
-  const t = AgentClient.useT();
+  const t = useT();
   const { canManageOrg } = useOrgRole();
   useSetPageTitle(t("settings.agentTitle"));
 

@@ -1,4 +1,4 @@
-import { useActionQuery } from "@agent-native/core/client";
+import { useActionQuery } from "@agent-native/core/client/hooks";
 
 // Shape returned by actions/get-hubspot-company.ts. Shared by the
 // Prospects table's Company hover card, ProspectSheet's Company section,

@@ -1,5 +1,5 @@
 // apps/outreach/app/routes/engagement.tsx
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import {
   IconActivity,
   IconBrandLinkedin,

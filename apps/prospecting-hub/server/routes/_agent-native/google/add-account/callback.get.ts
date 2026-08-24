@@ -36,7 +36,9 @@ export default defineEventHandler(async (event) => {
     return oauthErrorPage("Session expired. Sign in and try again.");
   }
 
+  // guard:allow-env-credential — this workspace's own Google OAuth app registration (client id), not a per-user credential
   const clientId = process.env.GOOGLE_CLIENT_ID;
+  // guard:allow-env-credential — same OAuth app registration as above
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     return oauthErrorPage("Google OAuth credentials are not configured.");

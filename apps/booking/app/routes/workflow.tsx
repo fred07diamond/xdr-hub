@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { IconBell, IconCheck, IconCopy, IconLoader2, IconPencil, IconRefresh, IconX } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
 

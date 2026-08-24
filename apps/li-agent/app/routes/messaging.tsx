@@ -1,9 +1,5 @@
-import {
-  sendToAgentChat,
-  useActionMutation,
-  useActionQuery,
-  useAgentChatGenerating,
-} from "@agent-native/core/client";
+import { sendToAgentChat, useAgentChatGenerating } from "@agent-native/core/client/agent-chat";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { useOrgRole } from "@agent-native/core/client/org";
 import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";

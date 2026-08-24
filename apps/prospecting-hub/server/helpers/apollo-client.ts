@@ -15,6 +15,7 @@ export async function getApolloToken(): Promise<string | null> {
     const stored = await readAppSecret({ key: "APOLLO_API_KEY", scope: "workspace", scopeId: orgId });
     if (stored?.value) return stored.value;
   }
+  // guard:allow-env-credential — env fallback only when no vault-stored secret exists for this org (single-workspace bootstrap/local-dev path, not a per-user credential)
   return process.env.APOLLO_API_KEY ?? null;
 }
 

@@ -1,0 +1,11 @@
+{
+  "doctor": {
+    "dbToolScopingDenylist": {
+      "segment_contacts": "Join table scoped indirectly via segment_id -> segments.owner_email; no direct owner column of its own.",
+      "contact_sub_personas": "Join table scoped indirectly via contact_id -> contacts.owner_email; no direct owner column of its own.",
+      "persona_documents": "Vestigial as of the shared-personas migration (see server/db/schema.ts) -- no longer read/written by any action, kept only for historical persona_id references.",
+      "analytics_events": "Has a user_email column (not owner_email) that already scopes every row to the user who triggered the event -- naming convention mismatch, not an unscoped table.",
+      "prospect_pull_plan_runs": "Scoped indirectly via plan_id -> prospect_pull_plans.owner_email; no direct owner column of its own."
+    }
+  }
+}

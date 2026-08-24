@@ -21,6 +21,7 @@ export default defineEventHandler(async (event) => {
     return { error: "Must be signed in to connect Google Calendar." };
   }
 
+  // guard:allow-env-credential — this workspace's own Google OAuth app registration (client id), not a per-user credential
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
     setResponseStatus(event, 503);

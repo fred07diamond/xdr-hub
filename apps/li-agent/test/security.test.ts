@@ -142,6 +142,7 @@ describe("Layer 3 — server middleware + extension helper scope to workspace or
       console.warn("No local DB — skipping");
       return;
     }
+    // guard:allow-env-credential — test-only read of single-workspace deployment config, not a per-user credential
     const ownerEmail = process.env.WORKSPACE_OWNER_EMAIL ?? "fred@builder.io";
     const orgId = sql(
       `SELECT org_id FROM org_members WHERE lower(email) = lower('${ownerEmail}') AND role = 'owner' LIMIT 1`

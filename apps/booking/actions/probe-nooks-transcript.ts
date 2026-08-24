@@ -32,7 +32,9 @@ function decodeJwtClaims(token: string): DecodedClaims {
 async function refreshAccessToken(
   refreshToken: string,
 ): Promise<{ access_token: string; refresh_token?: string } | null> {
+  // guard:allow-env-credential — this workspace's own Nooks OAuth app registration (client id), not a per-user credential
   const clientId = process.env.NOOKS_CLIENT_ID;
+  // guard:allow-env-credential — same OAuth app registration as above
   const clientSecret = process.env.NOOKS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
   const res = await fetch(NOOKS_TOKEN_URL, {

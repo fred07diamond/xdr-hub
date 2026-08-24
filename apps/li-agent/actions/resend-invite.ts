@@ -39,12 +39,14 @@ export default defineAction({
     const appUrl = getAppProductionUrl();
     const inviter = ctx.userEmail ?? "your team";
 
+    // guard:allow-env-credential — this workspace's own Resend account key, not a per-user credential
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
       console.error("[resend-invite] RESEND_API_KEY not set in environment");
       return { ok: false, error: "RESEND_API_KEY is not configured — add it in Netlify environment variables" };
     }
 
+    // guard:allow-env-credential — single-workspace deployment config (the sender address), not a per-user credential
     const from = process.env.EMAIL_FROM ?? "LinkedIn Agent <onboarding@resend.dev>";
 
     const emailRes = await fetch("https://api.resend.com/emails", {

@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery, useSession } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery, useSession } from "@agent-native/core/client/hooks";
 import { useOrgRole } from "@agent-native/core/client/org";
 import {
   IconCheck,

@@ -1,0 +1,15 @@
+{
+  "doctor": {
+    "dbToolScopingDenylist": {
+      "icp_personas": "Legacy/frozen as of the shared-personas migration (see server/db/schema.ts) -- personas now live in packages/shared's sharedPersonas; kept only so historical rows still resolve.",
+      "api_tokens": "Has a user_email column (not owner_email) that already scopes every row to its owner -- naming convention mismatch, not an unscoped table.",
+      "prospect_tag_links": "Join table scoped indirectly via prospect_id -> prospects.owner_email; no direct owner column of its own.",
+      "feedback": "Has a nullable user_email column that already scopes attributed rows to their owner -- naming convention mismatch, not an unscoped table. Anonymous feedback is intentionally allowed (null).",
+      "workspace_settings": "Singleton key-value config store by design (single-workspace deployment), not per-user data.",
+      "hubspot_queue_items": "Scoped indirectly via queue_id -> hubspot_queues.owner_email; no direct owner column of its own.",
+      "lead_list_items": "Scoped indirectly via list_id -> lead_lists.owner_email; no direct owner column of its own.",
+      "icp_sources": "Legacy singleton fallback table (single 'singleton' row) for a workspace with no personas at all -- not per-user data.",
+      "rate_limit_counters": "Infra rate-limit bucket keyed by \"<ownerEmail>|<action>\" composite id (see server/helpers/rate-limit.ts) -- already owner-scoped via the id itself, not a separate column."
+    }
+  }
+}

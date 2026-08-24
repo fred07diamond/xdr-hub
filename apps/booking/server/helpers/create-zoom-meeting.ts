@@ -9,7 +9,9 @@ const ZOOM_CREATE_MEETING_URL = "https://api.zoom.us/v2/users/me/meetings";
 async function refreshZoomTokens(
   refreshToken: string,
 ): Promise<Record<string, unknown> | null> {
+  // guard:allow-env-credential — this workspace's own Zoom OAuth app registration (client id), not a per-user credential
   const clientId = process.env.ZOOM_CLIENT_ID;
+  // guard:allow-env-credential — same OAuth app registration as above
   const clientSecret = process.env.ZOOM_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
   const res = await fetch(ZOOM_TOKEN_URL, {

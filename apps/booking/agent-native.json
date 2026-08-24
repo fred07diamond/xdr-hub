@@ -1,0 +1,11 @@
+{
+  "doctor": {
+    "dbToolScopingDenylist": {
+      "api_tokens": "Has a user_email column (not owner_email) that already scopes every row to its owner -- naming convention mismatch, not an unscoped table.",
+      "user_roles": "Keyed by email as its own primary key (one row per user) -- the row itself IS the user, no separate owner column needed.",
+      "booked_meetings": "Has an ae_user_email column (not owner_email) that already scopes every row to its owner -- naming convention mismatch, not an unscoped table.",
+      "generated_notes": "Has an xdr_user_email column (not owner_email) that already scopes every row to its owner -- naming convention mismatch, not an unscoped table.",
+      "deals": "Has an ae_owner_email column (not owner_email) that already scopes every row to its owner -- naming convention mismatch, not an unscoped table."
+    }
+  }
+}

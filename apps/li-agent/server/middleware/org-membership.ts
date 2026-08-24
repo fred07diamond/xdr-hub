@@ -44,6 +44,7 @@ export default defineEventHandler(async (event) => {
   if (!userEmail) return; // unauthenticated — auth guard already handled this
 
   // Workspace owner always has access.
+  // guard:allow-env-credential — single-workspace deployment config (the one workspace owner), not a per-user credential
   if (userEmail === process.env.WORKSPACE_OWNER_EMAIL) return;
 
   // Resolve workspace org_id and check membership in that specific org.

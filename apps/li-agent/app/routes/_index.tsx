@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import {
   IconBrandLinkedin,
   IconBriefcase,

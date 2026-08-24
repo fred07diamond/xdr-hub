@@ -90,6 +90,7 @@ export default defineEventHandler(async (event) => {
   //   header absent            → acknowledged but NEVER creates data — Nooks'
   //                              save-time verification ping arrives unsigned
   //                              and a 401 would make the URL save fail.
+  // guard:allow-env-credential — this workspace's own webhook signing secret, not a per-user credential
   const signingKey = process.env.NOOKS_WEBHOOK_SIGNING_KEY;
   const sigHeader = getHeader(event, "x-webhook-signature");
   let verified = false;
@@ -99,6 +100,7 @@ export default defineEventHandler(async (event) => {
     if (verified) {
       console.log(`[nooks-webhook] signature verified (${variant})`);
     } else {
+      // guard:allow-env-credential — deployment feature flag, not a per-user credential
       if (process.env.NOOKS_SIG_CAPTURE === "1") {
         console.warn(
           "[nooks-webhook] signature verification failed — header:",
@@ -116,6 +118,7 @@ export default defineEventHandler(async (event) => {
       // Capture mode (NOOKS_SIG_CAPTURE=1): acknowledge mismatches so
       // Nooks' save-time signed test can succeed while a key rotation is
       // being sorted out. Data creation stays blocked (verified=false).
+      // guard:allow-env-credential — deployment feature flag, not a per-user credential
       if (process.env.NOOKS_SIG_CAPTURE !== "1") {
         setResponseStatus(event, 401);
         return { error: "invalid signature" };

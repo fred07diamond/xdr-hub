@@ -1,5 +1,4 @@
-import type { LocaleCode } from "@agent-native/core/client";
-
+import type { LocaleCode } from "@agent-native/core/client/i18n";
 import zhTW from "./i18n/zh-TW";
 
 const enUS = {

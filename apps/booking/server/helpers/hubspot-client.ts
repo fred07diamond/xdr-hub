@@ -9,6 +9,7 @@ export async function getHubSpotToken(): Promise<string | null> {
     const stored = await readAppSecret({ key: "HUBSPOT_ACCESS_TOKEN", scope: "org", scopeId: orgId });
     if (stored?.value) return stored.value;
   }
+  // guard:allow-env-credential — env fallback only when no vault-stored secret exists for this org (single-workspace bootstrap/local-dev path, not a per-user credential)
   return process.env.HUBSPOT_ACCESS_TOKEN ?? null;
 }
 

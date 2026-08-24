@@ -32,7 +32,9 @@ export default defineEventHandler(async (event) => {
     return oauthErrorPage("Session expired. Sign in and try again.");
   }
 
+  // guard:allow-env-credential — this workspace's own Zoom OAuth app registration (client id), not a per-user credential
   const clientId = process.env.ZOOM_CLIENT_ID;
+  // guard:allow-env-credential — same OAuth app registration as above
   const clientSecret = process.env.ZOOM_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     return oauthErrorPage("Zoom OAuth credentials are not configured.");

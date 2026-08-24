@@ -7,6 +7,7 @@ export default defineEventHandler(async (event) => {
     return {
       connected: false,
       accounts: [] as { email: string }[],
+      // guard:allow-env-credential — this workspace's own Nooks OAuth app registration (client id), not a per-user credential
       configured: !!process.env.NOOKS_CLIENT_ID,
     };
   }
@@ -15,6 +16,7 @@ export default defineEventHandler(async (event) => {
   return {
     connected,
     accounts: accounts.map((a) => ({ email: a.accountId })),
+    // guard:allow-env-credential — this workspace's own Nooks OAuth app registration (client id), not a per-user credential
     configured: !!process.env.NOOKS_CLIENT_ID,
   };
 });

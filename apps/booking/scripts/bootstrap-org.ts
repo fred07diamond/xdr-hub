@@ -1,6 +1,8 @@
 import { createOrganization } from "@agent-native/core/org";
 
+// guard:allow-env-credential — one-time local bootstrap script; single-workspace deployment config, not a per-user credential
 const name = process.env.WORKSPACE_ORG_NAME ?? "Builder.io";
+// guard:allow-env-credential — one-time local bootstrap script; single-workspace deployment config, not a per-user credential
 const email = process.env.WORKSPACE_OWNER_EMAIL;
 
 if (!email) {

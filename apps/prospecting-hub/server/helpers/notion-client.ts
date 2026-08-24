@@ -69,6 +69,7 @@ async function collectText(blockId: string, token: string, depth: number): Promi
 }
 
 export async function fetchNotionPageText(pageIdOrUrl: string): Promise<string> {
+  // guard:allow-env-credential — this workspace's own Notion integration token, not a per-user credential
   const token = process.env.NOTION_API_KEY;
   if (!token) {
     throw new Error("Notion is not connected. Add NOTION_API_KEY to your .env file.");

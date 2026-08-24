@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
   const userEmail = event.context?.userEmail as string | undefined;
   if (!userEmail) return;
 
+  // guard:allow-env-credential — single-workspace deployment config (the one workspace owner), not a per-user credential
   if (userEmail === process.env.WORKSPACE_OWNER_EMAIL) return;
 
   // Workspace admins always have access to every app, including its

@@ -1,11 +1,6 @@
-import {
-  ChangelogSettingsCard,
-  LanguagePicker,
-  SettingsTabsPage,
-  useAgentSettingsTabs,
-  useT,
-  type SettingsSearchEntry,
-} from "@agent-native/core/client";
+import { ChangelogSettingsCard } from "@agent-native/core/client/changelog";
+import { LanguagePicker, useT } from "@agent-native/core/client/i18n";
+import { SettingsTabsPage, useAgentSettingsTabs, type SettingsSearchEntry } from "@agent-native/core/client/settings";
 import { TeamPage } from "@agent-native/core/client/org";
 import { Button } from "@agent-native/dispatch/components/ui/button";
 import {

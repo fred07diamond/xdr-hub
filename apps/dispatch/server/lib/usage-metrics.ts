@@ -167,8 +167,8 @@ function normalizeAppKey(value: string | null | undefined): string {
   return raw.replace(/^agent-native-/, "");
 }
 
-function envEmails(name: string): string[] {
-  return (process.env[name] ?? "")
+function parseEnvEmails(raw: string | undefined): string[] {
+  return (raw ?? "")
     .split(",")
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
@@ -177,9 +177,12 @@ function envEmails(name: string): string[] {
 function isEnvAdmin(email: string): boolean {
   const normalized = email.trim().toLowerCase();
   return [
-    ...envEmails("DISPATCH_ADMIN_EMAILS"),
-    ...envEmails("WORKSPACE_OWNER_EMAIL"),
-    ...envEmails("DISPATCH_DEFAULT_OWNER_EMAIL"),
+    // guard:allow-env-credential — single-workspace deployment; workspace-level admin config, not a per-user credential
+    ...parseEnvEmails(process.env.DISPATCH_ADMIN_EMAILS),
+    // guard:allow-env-credential — same as above; matches packages/shared/src/server/workspace-org.ts's own WORKSPACE_OWNER_EMAIL read
+    ...parseEnvEmails(process.env.WORKSPACE_OWNER_EMAIL),
+    // guard:allow-env-credential — single-workspace deployment; workspace-level admin config, not a per-user credential
+    ...parseEnvEmails(process.env.DISPATCH_DEFAULT_OWNER_EMAIL),
   ].includes(normalized);
 }
 

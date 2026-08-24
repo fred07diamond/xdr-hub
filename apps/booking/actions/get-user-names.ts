@@ -15,6 +15,7 @@ export default defineAction({
   run: async ({ emails }, ctx) => {
     await requireRole(ctx?.userEmail, ["xdr", "ae", "admin"]);
 
+    // guard:allow-env-credential — single-workspace deployment config (the allowed email domain), not a per-user credential
     const orgDomain = process.env.WORKSPACE_ORG_DOMAIN?.toLowerCase();
     const names: Record<string, string> = {};
 

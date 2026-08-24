@@ -1,10 +1,6 @@
-import {
-  appPath,
-  navigateWithAgentChatViewTransition,
-  useChatThreads,
-  useT,
-  type ChatThreadSummary,
-} from "@agent-native/core/client";
+import { appPath } from "@agent-native/core/client/api-path";
+import { navigateWithAgentChatViewTransition, useChatThreads, type ChatThreadSummary } from "@agent-native/core/client/agent-chat";
+import { useT } from "@agent-native/core/client/i18n";
 import { ExtensionsSidebarSection } from "@agent-native/core/client/extensions";
 import { OrgSwitcher, useOrgRole } from "@agent-native/core/client/org";
 import {

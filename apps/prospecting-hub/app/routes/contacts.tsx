@@ -1,4 +1,4 @@
-import { useActionQuery } from "@agent-native/core/client";
+import { useActionQuery } from "@agent-native/core/client/hooks";
 import { IconSparkles } from "@tabler/icons-react";
 import { useState } from "react";
 

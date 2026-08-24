@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { IconBrandLinkedin, IconBriefcase, IconChevronDown, IconCoin, IconExternalLink, IconLoader2, IconRefresh, IconSearch, IconTag, IconUsers, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";

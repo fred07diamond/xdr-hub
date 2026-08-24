@@ -1,15 +1,10 @@
-import { useDbSync } from "@agent-native/core/client";
-import {
-  AppProviders,
-  CommandMenu,
-  appPath,
-  configureTracking,
-  createAgentNativeQueryClient,
-  getLocaleInitScript,
-  getThemeInitScript,
-  useCommandMenuShortcut,
-  useT,
-} from "@agent-native/core/client";
+import { useDbSync } from "@agent-native/core/client/hooks";
+import { AppProviders, createAgentNativeQueryClient } from "@agent-native/core/client/hooks";
+import { CommandMenu, useCommandMenuShortcut } from "@agent-native/core/client/navigation";
+import { appPath } from "@agent-native/core/client/api-path";
+import { configureTracking } from "@agent-native/core/client/analytics";
+import { getLocaleInitScript, useT } from "@agent-native/core/client/i18n";
+import { getThemeInitScript } from "@agent-native/core/client/ui";
 import { useOrg, useAcceptInvitation } from "@agent-native/core/client/org";
 import { IconBrain, IconSun, IconMoon, IconLoader2, IconUserPlus } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -268,4 +263,4 @@ export default function Root() {
   );
 }
 
-export { ErrorBoundary } from "@agent-native/core/client";
+export { ErrorBoundary } from "@agent-native/core/client/ui";

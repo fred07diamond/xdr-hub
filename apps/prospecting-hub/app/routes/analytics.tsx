@@ -1,4 +1,4 @@
-import { useActionQuery, useSession } from "@agent-native/core/client";
+import { useActionQuery, useSession } from "@agent-native/core/client/hooks";
 import { IconChartBar, IconLoader2, IconRefresh, IconUsers } from "@tabler/icons-react";
 import { useState } from "react";
 import {

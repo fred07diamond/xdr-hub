@@ -9,7 +9,7 @@ import {
   type SettingsSearchEntry,
 } from "@agent-native/core/client/settings";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { useActionMutation, useActionQuery } from "@agent-native/core/client";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconCheck, IconCircleCheck, IconCircleX, IconClipboard, IconExternalLink, IconKey, IconLoader2 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";

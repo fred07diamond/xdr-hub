@@ -13,6 +13,7 @@ export default defineAction({
   http: { method: "GET" },
   readOnly: true,
   run: async ({ keyword }) => {
+    // guard:allow-env-credential — this workspace's own Notion integration token, not a per-user credential
     const token = process.env.NOTION_API_KEY;
     if (!token) {
       return {

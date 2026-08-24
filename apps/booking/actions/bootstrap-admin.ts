@@ -14,6 +14,7 @@ export default defineAction({
   requiresAuth: true,
   http: { method: "POST" },
   run: async ({ email, role }, ctx) => {
+    // guard:allow-env-credential — single-workspace deployment config (the one workspace owner), not a per-user credential
     const ownerEmail = process.env.WORKSPACE_OWNER_EMAIL;
     if (!ownerEmail || ctx?.userEmail !== ownerEmail) {
       throw Object.assign(new Error("Only the workspace owner can bootstrap roles."), { statusCode: 403 });

@@ -202,6 +202,7 @@ describe("compound unique index — same URL, different owners", () => {
 // ─── 4. requireAdmin helper logic ────────────────────────────────────────────
 
 describe("requireAdmin — helper logic (verified via DB data)", () => {
+  // guard:allow-env-credential — test-only read of single-workspace deployment config, not a per-user credential
   const WORKSPACE_OWNER = process.env.WORKSPACE_OWNER_EMAIL ?? "fred@builder.io";
 
   it("workspace owner email is accepted without a DB lookup", () => {

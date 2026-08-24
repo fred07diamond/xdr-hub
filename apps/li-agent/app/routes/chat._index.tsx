@@ -1,8 +1,4 @@
-import {
-  AgentChatSurface,
-  markAgentChatHomeHandoff,
-  sendToAgentChat,
-} from "@agent-native/core/client";
+import { AgentChatSurface, markAgentChatHomeHandoff, sendToAgentChat } from "@agent-native/core/client/agent-chat";
 import { useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router";
 

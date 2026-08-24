@@ -1,4 +1,4 @@
-import { useActionMutation } from "@agent-native/core/client";
+import { useActionMutation } from "@agent-native/core/client/hooks";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconCheck, IconLoader2, IconThumbDown, IconThumbUp } from "@tabler/icons-react";
 import { useState } from "react";

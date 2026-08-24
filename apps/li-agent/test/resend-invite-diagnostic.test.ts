@@ -23,6 +23,7 @@ async function callResendApi(apiKey: string, to: string): Promise<{ status: numb
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      // guard:allow-env-credential — manual diagnostic test script reading local env, not a per-user credential
       from: process.env.EMAIL_FROM ?? "LinkedIn Agent <onboarding@resend.dev>",
       to,
       subject: "LinkedIn Agent — invite test",
@@ -37,8 +38,10 @@ async function callResendApi(apiKey: string, to: string): Promise<{ status: numb
 // ─── 1. Action source checks ──────────────────────────────────────────────────
 
 describe("resend-invite action: source checks", () => {
+  // guard:allow-env-credential — test name string literal, not an actual env read
   it("uses process.env.RESEND_API_KEY directly (not resolveSecret)", () => {
     const src = readFile("actions/resend-invite.ts");
+    // guard:allow-env-credential — string literal assertion, not an actual env read
     expect(src).toContain("process.env.RESEND_API_KEY");
     expect(src).not.toContain("resolveSecret");
     expect(src).not.toContain("sendEmail");
@@ -60,6 +63,7 @@ describe("resend-invite action: source checks", () => {
 
 describe("local env: RESEND_API_KEY status", () => {
   it("reports RESEND_API_KEY status", () => {
+    // guard:allow-env-credential — manual diagnostic test script reading local env, not a per-user credential
     const key = process.env.RESEND_API_KEY;
     if (key) {
       console.log(`✓ RESEND_API_KEY is set locally (length=${key.length}, prefix=${key.slice(0, 8)}...)`);
@@ -70,6 +74,7 @@ describe("local env: RESEND_API_KEY status", () => {
   });
 
   it("reports EMAIL_FROM status", () => {
+    // guard:allow-env-credential — manual diagnostic test script reading local env, not a per-user credential
     const from = process.env.EMAIL_FROM;
     if (from) {
       console.log(`✓ EMAIL_FROM is set: "${from}"`);
@@ -85,7 +90,9 @@ describe("local env: RESEND_API_KEY status", () => {
 
 describe("live: Resend API call", () => {
   it("sends a test email via Resend API (skipped if no key)", async () => {
+    // guard:allow-env-credential — manual diagnostic test script reading local env, not a per-user credential
     const key = process.env.RESEND_API_KEY;
+    // guard:allow-env-credential — manual diagnostic test script reading local env, not a per-user credential
     const testTo = process.env.TEST_EMAIL ?? process.env.EMAIL_FROM?.match(/<(.+)>/)?.[1];
     if (!key) {
       console.warn("Skipping — RESEND_API_KEY not in local env (must be set in Netlify)");
@@ -96,6 +103,7 @@ describe("live: Resend API call", () => {
       return;
     }
 
+    // guard:allow-env-credential — manual diagnostic test script reading local env, not a per-user credential
     console.log(`Sending test email to ${testTo} from "${process.env.EMAIL_FROM ?? "onboarding@resend.dev"}"...`);
     const result = await callResendApi(key, testTo);
     console.log("Resend API response:", result.status, JSON.stringify(result.body, null, 2));
