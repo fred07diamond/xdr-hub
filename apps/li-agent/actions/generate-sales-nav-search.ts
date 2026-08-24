@@ -1,9 +1,10 @@
 import { defineAction } from "@agent-native/core";
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
-import { isNotNull } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { icpPersonas } from "../server/db/schema.js";
+import type { PersonaBriefing } from "../server/helpers/persona-briefing.js";
 import { resolveOwnerStrict } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 import { getOwnerCtx } from "../server/helpers/get-owner-ctx.js";
@@ -188,9 +189,19 @@ function resolveEnumValues<T extends string | number>(
 }
 
 export default defineAction({
-  description: "Generate a Sales Navigator search URL with real filter chips (Current job title, Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one -- a persona's exact \"Common titles\" list becomes a real multi-value Current job title filter, not just a keyword search. Pass companyName to scope the search to one account (e.g. from My Accounts) -- becomes a real \"Current company\" filter chip, so it returns only people who work there now, not former employees. Also resolves references to the rep's own HubSpot book of accounts (\"product folks at my top 3 accounts by activity\") into concrete Current-company chips.",
+  description: "Generate a Sales Navigator search URL with real filter chips (Current job title, Function, Seniority, Geography, Company size/type) from a plain-English prompt, grounded in the workspace's saved ICP personas when the prompt matches one -- a persona's exact \"Common titles\" list becomes a real multi-value Current job title filter, not just a keyword search. Pass personaId (e.g. a persona click, rather than free text) to use that persona's exact generated briefing directly -- primary titles plus its fallback tier become INCLUDED Current job title entries, and its 'wrong buyer' avoid-titles become EXCLUDED entries -- skipping the free-text extraction entirely. Pass companyName to scope the search to one account (e.g. from My Accounts) -- becomes a real \"Current company\" filter chip, so it returns only people who work there now, not former employees. Also resolves references to the rep's own HubSpot book of accounts (\"product folks at my top 3 accounts by activity\") into concrete Current-company chips.",
   schema: z.object({
     prompt: z.string().min(1),
+    personaId: z
+      .string()
+      .nullish()
+      .describe(
+        "Optional id of a saved persona (e.g. from clicking a persona in My Accounts or the ICP tab). When given " +
+          "and that persona has a generated briefing, its exact titles/fallbackTitles/avoidTitles are used " +
+          "directly as real Current job title filter chips instead of re-deriving titles from `prompt` with a " +
+          "fresh model call -- deterministic and reuses the same curated list the rep already reviewed in the " +
+          "briefing sheet, including the fallback tier and the 'wrong buyer' exclusions.",
+      ),
     companyName: z
       .string()
       .nullish()
@@ -203,7 +214,7 @@ export default defineAction({
   requiresAuth: false,
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
   http: { method: "POST" },
-  run: async ({ prompt, companyName, apiToken }, ctx) => {
+  run: async ({ prompt, personaId, companyName, apiToken }, ctx) => {
     const ownerEmail = await resolveOwnerStrict(apiToken, ctx);
     if (!ownerEmail) return { error: "Sign in with a personal API token to use this." };
 
@@ -212,6 +223,72 @@ export default defineAction({
     }
 
     const db = getDb();
+
+    // Deterministic fast path: the caller already knows which persona this
+    // is (a click, not free text), so skip the fuzzy name-match + second
+    // title-extraction LLM call entirely and reuse the persona's own
+    // generated briefing -- the same curated primary/fallback/avoid title
+    // tiers the rep already reviewed in the briefing sheet, which the old
+    // prompt-driven flow below has no concept of (it re-derives one flat,
+    // untiered title list from raw ICP text on every click).
+    if (personaId) {
+      const [persona] = await db
+        .select({ id: icpPersonas.id, name: icpPersonas.name, briefing: icpPersonas.briefing })
+        .from(icpPersonas)
+        .where(eq(icpPersonas.id, personaId))
+        .limit(1);
+
+      const briefing: PersonaBriefing | null = persona?.briefing ? JSON.parse(persona.briefing) : null;
+      const primaryTitles = briefing?.titles ?? [];
+      const fallbackTitles = briefing?.fallbackTitles ?? [];
+      const avoidTitles = briefing?.avoidTitles ?? [];
+
+      if (persona && (primaryTitles.length || fallbackTitles.length)) {
+        const MAX_TITLES = 25;
+        // Sales Nav's own "Current job title" filter lets a rep mark
+        // individual entries as Exclude within the same filter -- that's
+        // why buildFilterEntry already takes a per-entry selectionType
+        // rather than one for the whole call. Primary and fallback tiers
+        // both become INCLUDED (no way to conditionally search "fallback
+        // only if this account has none of the primary titles" -- Sales
+        // Nav has no such conditional -- so both tiers go in to maximize
+        // recall), and avoidTitles become EXCLUDED so a "wrong buyer" the
+        // briefing flagged as looking close never shows up in results.
+        const includeTitles = Array.from(new Set([...primaryTitles, ...fallbackTitles])).slice(0, MAX_TITLES);
+        const excludeTitles = Array.from(new Set(avoidTitles)).slice(0, MAX_TITLES);
+
+        const filterEntries: string[] = [
+          buildFilterEntry("CURRENT_TITLE", [
+            ...includeTitles.map((text) => ({ text, selectionType: "INCLUDED" as const })),
+            ...excludeTitles.map((text) => ({ text, selectionType: "EXCLUDED" as const })),
+          ]),
+        ];
+        const appliedFilters: string[] = [`Current job title: ${includeTitles.join(", ")}`];
+        if (excludeTitles.length) appliedFilters.push(`Excludes wrong-buyer titles: ${excludeTitles.join(", ")}`);
+
+        const trimmedCompanyName = companyName?.trim() || "";
+        if (trimmedCompanyName) {
+          filterEntries.push(buildFilterEntry("CURRENT_COMPANY", [{ text: trimmedCompanyName }]));
+          appliedFilters.push(`Current company: ${trimmedCompanyName}`);
+        }
+
+        const rawQuery = `(filters:List(${filterEntries.join(",")}))`;
+        const searchUrl = `https://www.linkedin.com/sales/search/people?query=${encodeURIComponent(rawQuery)}`;
+
+        return {
+          searchUrl,
+          summary: briefing?.positioning || `${persona.name} at ${trimmedCompanyName || "this account"}`,
+          matchedPersonaName: persona.name,
+          appliedFilters,
+          unsupportedNotes: null,
+          scopedAccounts: null,
+        };
+      }
+      // No persona row, or one with no briefing/titles generated yet --
+      // fall through to the legacy prompt-driven flow below, which still
+      // works off the persona's name as free text.
+    }
+
     const personas = await db
       .select({ id: icpPersonas.id, name: icpPersonas.name, icpText: icpPersonas.icpText, summary: icpPersonas.summary })
       .from(icpPersonas)

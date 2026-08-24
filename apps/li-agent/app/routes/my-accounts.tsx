@@ -203,11 +203,12 @@ interface GenerateSearchResult {
 // separate "everyone here" button plus a persona button.
 //
 // "Everyone" is a plain client-built CURRENT_COMPANY link (no round trip).
-// Persona entries go through generate-sales-nav-search.ts, which does the
-// real translation of a persona's free-text criteria (icpText -- titles,
-// seniority language) into actual Sales Nav filter chips, and takes the
-// account's company name so the result stays scoped to this one account
-// instead of every "Design Persona"-shaped lead on LinkedIn.
+// Persona entries go through generate-sales-nav-search.ts and pass this
+// persona's id, which lets the server use that persona's exact generated
+// briefing (primary titles, fallback titles, "wrong buyer" exclusions)
+// directly as real Sales Nav filter chips, and takes the account's company
+// name so the result stays scoped to this one account instead of every
+// "Design Persona"-shaped lead on LinkedIn.
 function QuickSearchPopover({ companyName, personas }: { companyName: string; personas: IcpPersona[] }) {
   const [open, setOpen] = useState(false);
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>(null);
@@ -216,7 +217,11 @@ function QuickSearchPopover({ companyName, personas }: { companyName: string; pe
   async function handlePersonaClick(persona: IcpPersona) {
     setPendingPersonaId(persona.id);
     try {
-      const result = (await generateSearch.mutateAsync({ prompt: persona.name, companyName })) as GenerateSearchResult;
+      const result = (await generateSearch.mutateAsync({
+        prompt: persona.name,
+        personaId: persona.id,
+        companyName,
+      })) as GenerateSearchResult;
       if (!result?.searchUrl) {
         toast.error(result?.error ?? "Could not generate a search for that persona -- try again.");
         return;
