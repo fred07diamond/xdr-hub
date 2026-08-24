@@ -163,3 +163,40 @@ Resume ONE specific in-progress prospecting-hub ${ruleLabel} run — a server-si
 4. This is an unattended background job with no user present — once you reach done:true, an error confirming the run already finished, or done:true was already reached, call manage-jobs with { action: "delete", name: "${jobName}" } to remove this one-off job. Do this without asking for confirmation; there is no one here to confirm with, and leaving the job in place would just fire again every minute for nothing.
 `;
 }
+
+/**
+ * Job resource path for a prospect pull plan's own recurring reconcile job —
+ * distinct from each of its per-persona sourcing-rule/marketing-rule jobs,
+ * which already fire independently on the same cadence via
+ * buildSourcingRuleJobContent above. This job's only responsibility is the
+ * cross-source top-up: count this cycle's contacts per persona, pull from
+ * li-agent's unused LinkedIn lead pool for any shortfall, and generate a
+ * refill-nudge link if the pool is short too.
+ */
+export function pullPlanReconcileJobResourcePath(planId: string): string {
+  return `jobs/prospect-pull-plan-${planId}-reconcile.md`;
+}
+
+/**
+ * Unlike buildSourcingRuleJobContent's job, this one is a SINGLE bounded
+ * action call, not a resumable loop — reconcile-prospect-pull-plan.ts has no
+ * long-running search/score phase of its own; it only counts already-synced
+ * contacts and makes one cross-app read call, so there's nothing to loop.
+ */
+export function buildPullPlanReconcileJobContent(params: {
+  cron: string;
+  enabled: boolean;
+  createdBy: string;
+  planId: string;
+  orgId?: string | null;
+}): string {
+  const { cron, enabled, createdBy, planId, orgId } = params;
+  return `---
+schedule: "${cron}"
+enabled: ${enabled}
+createdBy: ${createdBy}
+${orgId ? `orgId: ${orgId}\n` : ""}runAs: creator
+---
+Call reconcile-prospect-pull-plan with { planId: "${planId}" }. This is a single bounded call, not a loop — it counts this cycle's new contacts per persona against the plan's target, tops up any shortfall from already-captured LinkedIn leads, and generates a refill-nudge link for any persona still short after that. Report the per-persona summary the call returns.
+`;
+}

@@ -70,7 +70,13 @@ export const contacts = table("contacts", {
   draftEmailBody: text("draft_email_body"),
   draftLinkedinMessage: text("draft_linkedin_message"),
   draftGeneratedAt: text("draft_generated_at"),
-  source: text("source", { enum: ["hubspot", "commonroom", "prospector"] }).notNull(),
+  // "linkedin" contacts come from a prospect pull plan's LinkedIn leg
+  // (server/helpers/prospect-pull-plan.ts) -- leads already captured by
+  // li-agent's Chrome extension, read via a cross-app A2A call, never a
+  // live LinkedIn scrape. No migration needed for this addition: this
+  // column has always been plain TEXT with no DB-level CHECK constraint,
+  // so the enum here is a TypeScript-only restriction.
+  source: text("source", { enum: ["hubspot", "commonroom", "prospector", "linkedin"] }).notNull(),
   externalId: text("external_id"), // the source system's own record id, for de-duping re-syncs
   personaId: text("persona_id"), // exactly one persona per contact once matched
   // HubSpot's `lifecyclestage` contact property (RAW/MEL/QL/SAL/S0/S1/Closed,
@@ -119,6 +125,15 @@ export const personas = table("personas", {
   color: text("color"), // UI accent color, hex string
   criteria: text("criteria"), // JSON: titles/attributes/rules parsed from source_doc_url
   sourceDocUrl: text("source_doc_url"), // Notion or Google Docs source of truth
+  // Explicit link to the matching persona in li-agent's OWN icpPersonas
+  // table -- a completely separate table/ID space in a separate app, no
+  // shared identity between them otherwise. Set manually by an XDR/admin
+  // (update-persona.ts) so a prospect pull plan's LinkedIn leg
+  // (reconcile-prospect-pull-plan.ts) knows which li-agent persona's
+  // captured-lead pool and Sales Nav search to draw from for this persona.
+  // Null until explicitly configured; that persona's LinkedIn leg is simply
+  // skipped (no pool pull, no refill nudge) until it's set.
+  liAgentPersonaId: text("li_agent_persona_id"),
   ownerEmail: text("owner_email").notNull(),
   createdAt: text("created_at").default(now()),
 });
@@ -332,4 +347,49 @@ export const sourcingRuleRunTargets = table("sourcing_rule_run_targets", {
   // step for the exact threshold and reasoning.
   claimedAt: text("claimed_at"),
   createdAt: text("created_at").default(now()),
+});
+
+// A composition rule: "N prospects every interval, split across personas by
+// percentage." Fans out into one sourcingRules row (CommonRoom/Prospector,
+// genuinely volume-targeted) and, when HubSpot is enabled, one marketingRules
+// row (HubSpot, an unbounded background contributor -- see
+// server/helpers/prospect-pull-plan.ts's own comment for why HubSpot can't be
+// volume-targeted the way CommonRoom can) PER PERSONA in the mix. Those
+// sub-rules keep their own independent schedules/segments/history exactly
+// like a standalone rule would -- this table only owns the mix math and the
+// reconcile job that tops up any shortfall from the LinkedIn lead pool.
+export const prospectPullPlans = table("prospect_pull_plans", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  ownerEmail: text("owner_email").notNull(),
+  totalVolume: integer("total_volume").notNull(),
+  intervalHours: integer("interval_hours").notNull(),
+  // JSON string array: [{ personaId, targetPercent }], sums to 100.
+  personaMix: text("persona_mix").notNull(),
+  // JSON string array: [{ personaId, sourcingRuleId }] -- one per persona in
+  // the mix, always present.
+  sourcingRuleIds: text("sourcing_rule_ids").notNull(),
+  // JSON string array: [{ personaId, marketingRuleId }] -- one per persona,
+  // present only when this plan's HubSpot leg is enabled.
+  marketingRuleIds: text("marketing_rule_ids"),
+  // WHEN the reconcile job last ran, so the next tick only counts contacts
+  // synced since then rather than re-counting a prior cycle's contribution.
+  lastReconciledAt: text("last_reconciled_at"),
+  jobResourcePath: text("job_resource_path"),
+  status: text("status", { enum: ["active", "paused"] }).notNull().default("active"),
+  createdAt: text("created_at").default(now()),
+});
+
+// One row per reconcile-job tick -- the run-history record the progress UI
+// reads, same shape/purpose as sync_records for the single-rule flow.
+export const prospectPullPlanRuns = table("prospect_pull_plan_runs", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull(),
+  startedAt: text("started_at").default(now()),
+  completedAt: text("completed_at"),
+  status: text("status", { enum: ["success", "failed"] }).notNull().default("success"),
+  // JSON: per-persona breakdown -- [{ personaId, target, fromSourcingRule,
+  // fromHubspotSinceLastRun, fromLinkedinPool, refillNudgeUrl }].
+  metadata: text("metadata"),
+  error: text("error"),
 });

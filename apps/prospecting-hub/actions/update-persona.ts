@@ -7,17 +7,21 @@ import { encodePersonaCriteria } from "../server/helpers/persona-sync.js";
 import { requireRole } from "../server/helpers/require-role.js";
 
 export default defineAction({
-  description: "Update a core persona's name, color, description, or document text (replacing its criteria).",
+  description: "Update a core persona's name, color, description, document text (replacing its criteria), or its linked li-agent persona (for LinkedIn-leg pool pulls in prospect pull plans).",
   schema: z.object({
     id: z.string().min(1),
     name: z.string().nullish(),
     color: z.string().nullish(),
     description: z.string().nullish(),
     text: z.string().nullish().describe("New document text to replace the persona's criteria"),
+    liAgentPersonaId: z
+      .string()
+      .nullish()
+      .describe("Id of the matching persona in li-agent's icpPersonas table, or null to unlink"),
   }),
   requiresAuth: true,
   http: { method: "POST" },
-  run: async ({ id, name, color, description, text }, ctx) => {
+  run: async ({ id, name, color, description, text, liAgentPersonaId }, ctx) => {
     await requireRole(ctx?.userEmail, ["admin"]);
     const db = getDb();
 
@@ -33,6 +37,7 @@ export default defineAction({
         ...(color ? { color } : {}),
         ...(description !== undefined && description !== null ? { description } : {}),
         ...(text ? { criteria: encodePersonaCriteria(text) } : {}),
+        ...(liAgentPersonaId !== undefined ? { liAgentPersonaId: liAgentPersonaId ?? null } : {}),
       })
       .where(eq(personas.id, id));
 

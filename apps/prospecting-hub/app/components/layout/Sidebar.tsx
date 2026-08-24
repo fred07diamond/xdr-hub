@@ -17,6 +17,7 @@ import {
   IconChartBar,
   IconCheck,
   IconChevronDown,
+  IconGauge,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLibrary,
@@ -173,6 +174,13 @@ const navItems = [
     labelKey: "Analytics",
     href: "/analytics",
     view: "analytics",
+  },
+  {
+    icon: IconGauge,
+    label: "Pull Plans",
+    labelKey: "Pull Plans",
+    href: "/pull-plans",
+    view: "pull-plans",
   },
   {
     icon: IconMessageCircle,

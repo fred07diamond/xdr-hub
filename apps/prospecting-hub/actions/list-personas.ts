@@ -24,6 +24,7 @@ export default defineAction({
         description: personas.description,
         sourceDocUrl: personas.sourceDocUrl,
         criteria: personas.criteria,
+        liAgentPersonaId: personas.liAgentPersonaId,
         ownerEmail: personas.ownerEmail,
         createdAt: personas.createdAt,
       })
@@ -65,6 +66,7 @@ export default defineAction({
           description: p.description,
           sourceDocUrl: p.sourceDocUrl,
           wordCount: rawText ? rawText.split(/\s+/).filter(Boolean).length : 0,
+          liAgentPersonaId: p.liAgentPersonaId,
           ownerEmail: p.ownerEmail,
           createdAt: p.createdAt,
           subPersonaCount: subPersonaCountMap.get(p.id) ?? 0,

@@ -463,6 +463,45 @@ export default runMigrations(
         ALTER TABLE contacts ADD COLUMN apollo_enrichment_json TEXT;
         ALTER TABLE contacts ADD COLUMN apollo_enriched_at TEXT`,
     },
+    {
+      version: 36,
+      name: "prospect-pull-plans-tables",
+      // Composition rules: "N prospects every interval, split by persona
+      // percentage" -- see schema.ts's own comment on prospectPullPlans for
+      // the full design. contacts.source's "linkedin" value needs no
+      // migration of its own (see schema.ts) -- that column has always been
+      // plain TEXT with no DB-level CHECK constraint.
+      sql: `CREATE TABLE IF NOT EXISTS prospect_pull_plans (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        owner_email TEXT NOT NULL,
+        total_volume INTEGER NOT NULL,
+        interval_hours INTEGER NOT NULL,
+        persona_mix TEXT NOT NULL,
+        sourcing_rule_ids TEXT NOT NULL,
+        marketing_rule_ids TEXT,
+        last_reconciled_at TEXT,
+        job_resource_path TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+        CREATE TABLE IF NOT EXISTS prospect_pull_plan_runs (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        started_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT,
+        status TEXT NOT NULL DEFAULT 'success',
+        metadata TEXT,
+        error TEXT
+      )`,
+    },
+    {
+      version: 37,
+      name: "personas-li-agent-persona-id-column",
+      // Explicit cross-app persona link, set manually per persona -- see
+      // schema.ts's own comment on personas.liAgentPersonaId.
+      sql: `ALTER TABLE personas ADD COLUMN li_agent_persona_id TEXT`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

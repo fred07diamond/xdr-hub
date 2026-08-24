@@ -10,6 +10,14 @@ const createWorkspaceAgentChatPlugin = (workspaceServer as Record<string, unknow
 const options = {
   appId: "chat",
   actions: loadActionsFromStaticRegistry(actionsRegistry),
+  // Allowlist for cross-app A2A calls (invokeAgentAction) -- without this,
+  // filterDirectA2AActions returns nothing for ANY action regardless of its
+  // own publicAgent config, and every invokeAgentAction call against this
+  // app fails with "Unknown or unavailable read-only action". Named
+  // explicitly here (rather than externalAgents.authenticatedReads: "auto")
+  // so only actions we've deliberately reviewed for cross-app exposure are
+  // reachable this way, not every readOnly+requiresAuth action in the app.
+  connectorCatalog: ["list-unused-persona-leads", "generate-persona-search-link"],
 } satisfies AgentChatPluginOptions;
 
 export default typeof createWorkspaceAgentChatPlugin === "function"
