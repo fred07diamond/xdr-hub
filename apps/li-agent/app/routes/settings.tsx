@@ -513,7 +513,8 @@ export function meta() {
 export default function SettingsRoute() {
   const t = useT();
   const agentSettingsTabs = useAgentSettingsTabs();
-  const { canManageOrg } = useOrgRole();
+  const { data: roleData } = useActionQuery("get-my-role", {});
+  const isWorkspaceAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
   useSetPageTitle(t("settings.title"));
 
   const generalSearchEntries = useMemo<SettingsSearchEntry[]>(
@@ -586,8 +587,8 @@ export default function SettingsRoute() {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workspace</h2>
             <div className="space-y-6">
               <HubSpotCard />
-              {canManageOrg && <DailyLimitCard />}
-              {canManageOrg && <AgentWorkspaceCard />}
+              {isWorkspaceAdmin && <DailyLimitCard />}
+              {isWorkspaceAdmin && <AgentWorkspaceCard />}
             </div>
           </div>
         </div>

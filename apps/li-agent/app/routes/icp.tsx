@@ -1,5 +1,4 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
-import { useOrgRole } from "@agent-native/core/client/org";
 import {
   IconAlertTriangle,
   IconBriefcase,
@@ -1121,8 +1120,8 @@ function NewPersonaPanel({
 // ── Route ────────────────────────────────────────────────────────────────────
 
 export default function IcpRoute() {
-  const { canManageOrg } = useOrgRole();
-  const isAdmin = canManageOrg;
+  const { data: roleData } = useActionQuery("get-my-role", {});
+  const isAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
 
   const { data, isLoading, refetch } = useActionQuery("list-icp-personas", {}, {
     refetchInterval: 30000,

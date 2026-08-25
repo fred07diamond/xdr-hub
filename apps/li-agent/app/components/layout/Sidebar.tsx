@@ -1,8 +1,9 @@
 import { appPath } from "@agent-native/core/client/api-path";
 import { navigateWithAgentChatViewTransition, useChatThreads, type ChatThreadSummary } from "@agent-native/core/client/agent-chat";
+import { useActionQuery } from "@agent-native/core/client/hooks";
 import { useT } from "@agent-native/core/client/i18n";
 import { ExtensionsSidebarSection } from "@agent-native/core/client/extensions";
-import { OrgSwitcher, useOrgRole } from "@agent-native/core/client/org";
+import { OrgSwitcher } from "@agent-native/core/client/org";
 import {
   IconArchive,
   IconChartBar,
@@ -468,9 +469,10 @@ export function Sidebar({
   const location = useLocation();
   const navigate = useNavigate();
   const t = useT();
-  const { canManageOrg } = useOrgRole();
+  const { data: roleData } = useActionQuery("get-my-role", {});
+  const isWorkspaceAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
   const visibleNavItems = navItems.filter(
-    (item) => item.view !== "analytics" || canManageOrg,
+    (item) => item.view !== "analytics" || isWorkspaceAdmin,
   );
   const isChatRoute =
     location.pathname === "/chat" || location.pathname.startsWith("/chat/");

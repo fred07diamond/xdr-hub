@@ -1,5 +1,4 @@
 import { useActionMutation, useActionQuery, useSession } from "@agent-native/core/client/hooks";
-import { useOrgRole } from "@agent-native/core/client/org";
 import {
   IconCheck,
   IconChartBar,
@@ -116,12 +115,14 @@ type LeadListsData = {
 
 export default function AnalyticsRoute() {
   useSetPageTitle("Analytics");
-  const { canManageOrg } = useOrgRole();
-  if (!canManageOrg) return <Navigate to="/" replace />;
+  const { data: roleData, isLoading: isRoleLoading } = useActionQuery("get-my-role", {});
+  const isWorkspaceAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
   const { data, isLoading, error } = useActionQuery("get-analytics", {});
   const { data: feedbackData, refetch: refetchFeedback } = useActionQuery("list-feedback", {});
 
-  if (isLoading) {
+  if (!isRoleLoading && !isWorkspaceAdmin) return <Navigate to="/" replace />;
+
+  if (isLoading || isRoleLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <IconLoader2 className="size-6 animate-spin text-muted-foreground" />

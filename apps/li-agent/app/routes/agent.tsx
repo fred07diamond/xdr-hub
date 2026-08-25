@@ -1,6 +1,6 @@
 import * as AgentClient from "@agent-native/core/client/agent-chat";
+import { useActionQuery } from "@agent-native/core/client/hooks";
 import { useT } from "@agent-native/core/client/i18n";
-import { useOrgRole } from "@agent-native/core/client/org";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { Navigate } from "react-router";
 
@@ -13,10 +13,12 @@ export function meta() {
 
 export default function AgentRoute() {
   const t = useT();
-  const { canManageOrg } = useOrgRole();
+  const { data: roleData, isLoading: isRoleLoading } = useActionQuery("get-my-role", {});
+  const isWorkspaceAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
   useSetPageTitle(t("settings.agentTitle"));
 
-  if (!canManageOrg) return <Navigate to="/" replace />;
+  if (isRoleLoading) return null;
+  if (!isWorkspaceAdmin) return <Navigate to="/" replace />;
 
   const AgentPage = resolveAgentPageComponent(AgentClient);
   return <AgentPage appName={APP_TITLE} />;

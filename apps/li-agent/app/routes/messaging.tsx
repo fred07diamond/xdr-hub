@@ -1,6 +1,5 @@
 import { sendToAgentChat, useAgentChatGenerating } from "@agent-native/core/client/agent-chat";
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
-import { useOrgRole } from "@agent-native/core/client/org";
 import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 import {
@@ -1501,8 +1500,8 @@ export default function MessagingPage() {
 }
 
 function MessagingCanvas() {
-  const { canManageOrg } = useOrgRole();
-  const isAdmin = canManageOrg;
+  const { data: roleData } = useActionQuery("get-my-role", {});
+  const isAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
 
   const { data: canvasData, refetch: refetchCanvases } = useActionQuery<{
     canvases: Array<{ id: string; name: string; isSystem: number; templateSlug: string | null }>;
