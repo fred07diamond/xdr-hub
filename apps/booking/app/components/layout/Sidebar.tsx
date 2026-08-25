@@ -133,15 +133,26 @@ function AppSwitcher({ collapsed }: { collapsed: boolean }) {
         <DropdownMenuSeparator />
         {others.map((app) => (
           <DropdownMenuItem key={app.href} asChild>
-            <a href={app.href} className="flex items-center gap-2.5">
+            {/* Must not be a real <a href>: the framework's global chat-home
+                click interceptor (document, capture phase) hijacks anchor
+                clicks on the chat route and re-runs the path through this
+                app's React Router navigate(), which re-prepends this app's
+                basename (e.g. "/booking/li-agent" instead of "/li-agent").
+                A <button> + window.location.assign bypasses that a[href]
+                match entirely. */}
+            <button
+              type="button"
+              onClick={() => window.location.assign(app.href)}
+              className="flex items-center gap-2.5"
+            >
               <span
                 className="shrink-0 rounded px-1 py-0.5 text-[10px] font-black tracking-tight text-white"
                 style={{ backgroundColor: app.color }}
               >
                 {app.badge}
               </span>
-              <span className="flex-1 text-sm">{app.name}</span>
-            </a>
+              <span className="flex-1 text-left text-sm">{app.name}</span>
+            </button>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
