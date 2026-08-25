@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { invokeAgentAction } from "@agent-native/core/a2a";
+import { invokeAgentAction, resolveAgentInvocationTarget } from "@agent-native/core/a2a";
 import { eq } from "@agent-native/core/db/schema";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -74,14 +74,29 @@ export default defineAction({
       phDocsByPersona.set(doc.personaId, list);
     }
 
-    const { result } = await invokeAgentAction({
-      target: "li-agent",
-      action: "list-icp-personas-for-migration",
-      input: {},
-      userEmail: ctx!.userEmail!,
-    });
+    // TEMPORARY diagnostic for the "Invalid or expired A2A token" investigation
+    // -- surfaces exactly what invokeAgentAction resolves internally, since a
+    // manually-minted token with the audience the chat's own describe-
+    // workspace-apps tool reports verifies fine against li-agent directly.
+    const resolvedTarget = await resolveAgentInvocationTarget("li-agent");
+
+    let result;
+    try {
+      ({ result } = await invokeAgentAction({
+        target: "li-agent",
+        action: "list-icp-personas-for-migration",
+        input: {},
+        userEmail: ctx!.userEmail!,
+      }));
+    } catch (err) {
+      throw new Error(
+        `A2A call threw. resolvedTarget=${JSON.stringify(resolvedTarget)} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     if (result.status !== "completed") {
-      throw new Error("Could not read li-agent's personas over A2A — check that li-agent is reachable and this org's A2A_SECRET is configured.");
+      throw new Error(
+        `Could not read li-agent's personas over A2A. resolvedTarget=${JSON.stringify(resolvedTarget)} result=${JSON.stringify(result)}`,
+      );
     }
     const liPersonas: LiAgentPersona[] = (JSON.parse(result.output) as { personas: LiAgentPersona[] }).personas;
 
