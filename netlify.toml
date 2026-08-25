@@ -45,3 +45,32 @@
   from = "/privacy"
   to = "/li-agent/privacy"
   status = 301
+
+# SettingsTabsPage (framework component, used by every app's settings.tsx)
+# reflects the active tab in the URL via a raw window.history.pushState, not
+# real React Router navigation -- so only "/settings" is ever a real,
+# server-matched route; a direct load or reload of "/settings/<tab>" hits the
+# server with no matching route and 404s, even though clicking a tab in a
+# live session works fine (client-side only, no request ever made). These
+# rewrites (200, not a redirect) serve the real "/settings" route's content
+# while leaving the browser's URL untouched, so the client can still read
+# window.location on hydration and show the right tab.
+[[redirects]]
+  from = "/dispatch/settings/*"
+  to = "/dispatch/settings"
+  status = 200
+
+[[redirects]]
+  from = "/li-agent/settings/*"
+  to = "/li-agent/settings"
+  status = 200
+
+[[redirects]]
+  from = "/booking/settings/*"
+  to = "/booking/settings"
+  status = 200
+
+[[redirects]]
+  from = "/prospecting-hub/settings/*"
+  to = "/prospecting-hub/settings"
+  status = 200
