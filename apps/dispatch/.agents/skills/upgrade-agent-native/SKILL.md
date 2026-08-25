@@ -14,17 +14,45 @@ metadata:
 ## Rule
 
 When an older Agent Native app/branch needs to run on current packages, use
-`agent-native upgrade`. Never "fix" upgrade breakage with
-`pnpm.overrides`, `patchedDependencies`, `resolutions`, local patches, or
-edits under `node_modules/@agent-native/*` — especially not against
-`@agent-native/core` or `@agent-native/dispatch`.
+`agent-native upgrade`. Don't "fix" upgrade breakage caused by an old app
+being incompatible with current packages using `pnpm.overrides`,
+`patchedDependencies`, `resolutions`, local patches, or edits under
+`node_modules/@agent-native/*` — that class of problem is an app-level
+incompatibility and the fix belongs in app code, not a framework patch.
+
+**Exception:** a version-pinned `patchedDependencies` entry against
+`@agent-native/core` (or `@agent-native/dispatch`) is allowed when the break
+is a confirmed bug in the framework's own currently-resolved version, not app
+code incompatible with it — e.g. a floating `"latest"` dependency silently
+resolved to a version with a real server-side or client-side defect, verified
+by reading that exact version's published source. Requirements when doing
+this:
+
+- Verify against the actual installed/resolved version's source before
+  writing the patch — don't guess from docs or a different version.
+- Patch the exact resolved version only (`pnpm patch <pkg>@<exact-version>`,
+  producing a version-pinned `patchedDependencies` key), never the unpinned
+  package name, so it can't silently apply to or block a different version
+  elsewhere in the workspace.
+- Pin that package's `package.json` specifier to the exact patched version
+  (not `"latest"`) so the fix can't be silently dropped by a future install
+  re-resolving `latest`.
+- Keep the patch minimal and scoped to the one confirmed defect, with a
+  comment in the diff explaining the bug and why app code can't work around
+  it.
+- Treat it as temporary: note in the patch/commit that it should be removed
+  once the fix ships upstream, and re-check with `agent-native upgrade check`
+  before the next real framework upgrade.
 
 ## Why
 
 Agents often respond to a failed core bump by inventing framework patches and
-dispatch behavior overrides. That hides the real app-level break, drifts from
-upstream, and makes the next upgrade worse. The supported path is bump →
-install → refresh scaffold skills → verify, then fix **app** code only.
+dispatch behavior overrides to paper over app code that hasn't caught up with
+a real upstream change. That hides the real app-level break, drifts from
+upstream, and makes the next upgrade worse. For that case, the supported path
+is bump → install → refresh scaffold skills → verify, then fix **app** code
+only. The exception above is for the opposite situation — the framework
+itself regressed — where patching app code can't fix a server-side defect.
 
 ## How
 
@@ -71,14 +99,17 @@ install → refresh scaffold skills → verify, then fix **app** code only.
 
 ## Don't
 
-- Don't add `pnpm.overrides`, `overrides`, `resolutions`, or
-  `patchedDependencies` for any `@agent-native/*` package
-- Don't edit `node_modules/@agent-native/core` or
-  `node_modules/@agent-native/dispatch`
+- Don't add `pnpm.overrides`, `overrides`, `resolutions`, or an *unpinned*
+  `patchedDependencies` entry for any `@agent-native/*` package
+- Don't patch a framework package to route around app code that just hasn't
+  caught up with a real upstream change — fix the app code instead
 - Don't invent local "dispatch behavior" shims to paper over version skew
-- Don't keep iterating with more framework patches after a failed install
+- Don't keep iterating with more framework patches after a failed install —
+  if `agent-native upgrade` fails, that's an app-level break; fix app code
 - Don't skip `skills update scaffold --project` after a core bump (the
   upgrade command does this for you)
+- Don't leave a framework patch unpinned to a specific version, and don't
+  forget to note it should be removed once fixed upstream
 
 ## Related Skills
 

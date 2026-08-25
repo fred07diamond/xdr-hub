@@ -1,0 +1,27 @@
+diff --git a/dist/server/auth.js b/dist/server/auth.js
+index 9395cdd022904bddcd2610f61b2084718cacb00b..2e615b3b07b739e22d3fb4cf5c381c3f826c3f41 100644
+--- a/dist/server/auth.js
++++ b/dist/server/auth.js
+@@ -2334,8 +2334,22 @@ function createAuthGuardFn(app) {
+         const session = await getSession(event);
+         if (session) {
+             const workspaceAppId = getAppConfig().app.workspaceId?.trim() || "";
++            // Fix: a session with no orgId yet (an org invitation that hasn't
++            // been accepted) must still be able to load its own org/invitation
++            // status and accept an invite -- otherwise it can never discover or
++            // accept the invite that would grant it an orgId in the first
++            // place, and is permanently stuck on "You do not have access to
++            // this workspace app" for a non-Dispatch app it was linked to
++            // directly. Scoped tightly to only these read-only self-status/
++            // accept endpoints, and only when orgId is absent, so an actual
++            // member's access boundary (including a real, granted "no access
++            // to this app" denial) is completely unchanged.
++            const isOrgSelfServicePath = !session.orgId &&
++                (p === "/_agent-native/org/me" ||
++                    /^\/_agent-native\/org\/invitations\/[^/]+\/accept\/?$/.test(p));
+             if (workspaceAppId &&
+                 workspaceAppId !== "dispatch" &&
++                !isOrgSelfServicePath &&
+                 (p.startsWith("/api/") || p.startsWith("/_agent-native/")) &&
+                 !(await isWorkspaceAppAccessAllowed(workspaceAppId, {
+                     email: session.email,

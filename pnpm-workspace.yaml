@@ -48,3 +48,4 @@ overrides:
 
 patchedDependencies:
   '@agent-native/core': patches/@agent-native__core.patch
+  '@agent-native/core@0.172.3': patches/@agent-native__core@0.172.3.patch

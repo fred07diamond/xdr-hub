@@ -15,8 +15,8 @@
     "package-extension": "node scripts/package-extension.mjs"
   },
   "dependencies": {
-    "@agent-native/core": "latest",
-    "@agent-native/toolkit": "latest",
+    "@agent-native/core": "0.172.3",
+    "@agent-native/toolkit": "0.16.11",
     "@dagrejs/dagre": "3.1.1",
     "@fontsource-variable/inter": "^5.2.8",
     "@libsql/client": "^0.15.8",
