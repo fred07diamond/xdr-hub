@@ -54,23 +54,30 @@
 # live session works fine (client-side only, no request ever made). These
 # rewrites (200, not a redirect) serve the real "/settings" route's content
 # while leaving the browser's URL untouched, so the client can still read
-# window.location on hydration and show the right tab.
+# window.location on hydration and show the right tab. `force = true` is
+# required: each app's server function declares its own catch-all path
+# match (e.g. "/dispatch/*"), which otherwise claims the request before
+# this more specific rewrite is ever considered.
 [[redirects]]
   from = "/dispatch/settings/*"
   to = "/dispatch/settings"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/li-agent/settings/*"
   to = "/li-agent/settings"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/booking/settings/*"
   to = "/booking/settings"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/prospecting-hub/settings/*"
   to = "/prospecting-hub/settings"
   status = 200
+  force = true
