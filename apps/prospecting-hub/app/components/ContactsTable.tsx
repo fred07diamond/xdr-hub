@@ -4,6 +4,7 @@ import {
   IconBrandLinkedin,
   IconChevronDown,
   IconChevronUp,
+  IconDownload,
   IconExternalLink,
   IconLoader2,
   IconRefresh,
@@ -20,6 +21,7 @@ import { Pagination } from "@/components/Pagination";
 import { buildOverallScoreBreakdown, SCORE_INFO, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildCsv, downloadCsv } from "@/lib/csv";
 import { applyShiftClickSelection } from "@/lib/selection";
 
 // The shared, filterable/sortable/multi-selectable contact table used by
@@ -53,6 +55,12 @@ export const RESCORE_CHUNK_TIMEOUT_MS = 150_000;
 // error page instead of a clean action error. A smaller chunk keeps worst-
 // case sequential LLM calls per invocation comfortably bounded.
 export const DRAFT_CHUNK_SIZE = 3;
+
+// CSV export is a plain DB read (no LLM cost), so it can pull far more rows
+// per request than the LLM-bound chunk sizes above — capped only by the
+// server's own list-contacts page-size ceiling (PAGE_SIZE_MAX).
+export const EXPORT_FETCH_PAGE_SIZE = 200;
+export const EXPORT_MAX_ROWS = 2000;
 
 export function chunkArray<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -152,6 +160,23 @@ interface PersonaOption {
   color: string | null;
 }
 
+export function contactsToCsv(rows: ContactRow[]): string {
+  const header = ["Name", "Title", "Company", "Email", "LinkedIn URL", "Persona", "Source", "Status", "Overall Score", "Synced At"];
+  const body = rows.map((c) => [
+    c.name,
+    c.title ?? "",
+    c.company ?? "",
+    c.email ?? "",
+    c.linkedinUrl ?? "",
+    c.personaName ?? "",
+    c.source,
+    c.status,
+    c.overallScore != null ? String(c.overallScore) : "",
+    c.syncedAt ?? "",
+  ]);
+  return buildCsv(header, body);
+}
+
 function relativeTime(iso: string | null) {
   if (!iso) return "—";
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -204,6 +229,8 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
   const [draftError, setDraftError] = useState<string | null>(null);
   const [draftProgress, setDraftProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   // Anchor row (by id) for shift-click range select.
   const lastCheckedRowIdRef = useRef<string | null>(null);
 
@@ -396,6 +423,48 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
     refetch();
   }
 
+  async function handleExportCsv() {
+    setExportError(null);
+    setIsExporting(true);
+    try {
+      let rows: ContactRow[];
+      if (selected.size > 0) {
+        // Selection can span pages the table no longer has loaded locally, so
+        // re-fetch the selected ids directly rather than trusting `contacts`.
+        rows = [];
+        for (const chunk of chunkArray(Array.from(selected), EXPORT_FETCH_PAGE_SIZE)) {
+          const result = await callAction<{ contacts: ContactRow[] }>(
+            "list-contacts",
+            { ids: chunk, limit: chunk.length, offset: 0 },
+            { method: "GET" },
+          );
+          rows.push(...result.contacts);
+        }
+      } else {
+        rows = [];
+        let fetchOffset = 0;
+        while (rows.length < EXPORT_MAX_ROWS) {
+          const result = await callAction<{ contacts: ContactRow[]; hasMore: boolean }>(
+            "list-contacts",
+            { search: search.trim() || undefined, personaId, source, status, segmentId, sortBy, sortDirection, limit: EXPORT_FETCH_PAGE_SIZE, offset: fetchOffset },
+            { method: "GET" },
+          );
+          rows.push(...result.contacts);
+          if (!result.hasMore) break;
+          fetchOffset += result.contacts.length;
+        }
+      }
+
+      if (rows.length === 0) return;
+
+      downloadCsv(`contacts-${new Date().toISOString().slice(0, 10)}.csv`, contactsToCsv(rows));
+    } catch (err) {
+      setExportError(sanitizeActionError(err, "Couldn't export contacts."));
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
   const activeScopeLabel = segmentId ? "all active contacts in this list" : "all active contacts";
 
@@ -438,6 +507,24 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
               ? `Generate outreach for ${selected.size} selected`
               : "Generate Outreach"}
         </button>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={isExporting || total === 0}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+          title={selected.size > 0 ? `Export ${selected.size} selected contact${selected.size === 1 ? "" : "s"} as CSV` : `Export ${activeScopeLabel} as CSV (capped at ${EXPORT_MAX_ROWS.toLocaleString()} rows)`}
+        >
+          {isExporting ? (
+            <IconLoader2 size={13} className="animate-spin" />
+          ) : (
+            <IconDownload size={13} />
+          )}
+          {isExporting
+            ? "Exporting…"
+            : selected.size > 0
+              ? `Make CSV of ${selected.size} selected`
+              : "Export CSV"}
+        </button>
       </div>
 
       {rescoreError && (
@@ -445,6 +532,9 @@ export function ContactsTable({ segmentId, showPersonaFilter = true, onStatsChan
       )}
       {draftError && (
         <p role="alert" className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{draftError}</p>
+      )}
+      {exportError && (
+        <p role="alert" className="border-b border-border bg-destructive/5 px-4 py-2 text-xs text-destructive">{exportError}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
