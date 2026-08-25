@@ -1,10 +1,11 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconCheck, IconExternalLink, IconListCheck, IconLoader2, IconPencil, IconSparkles, IconTrash, IconUsers, IconX } from "@tabler/icons-react";
+import { IconCheck, IconDownload, IconExternalLink, IconListCheck, IconLoader2, IconPencil, IconSparkles, IconTrash, IconUsers, IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { APP_TITLE } from "@/lib/app-config";
+import { buildMasterCsv } from "@/lib/prospects-csv";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/Pagination";
@@ -322,6 +323,7 @@ export default function LeadListsPage() {
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [isExportingItems, setIsExportingItems] = useState(false);
   const [renamingListId, setRenamingListId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -371,6 +373,25 @@ export default function LeadListsPage() {
 
   function handleOpenLinkedIn(item: LeadListItem) {
     window.open(linkedInUrl(item), "_blank", "noopener,noreferrer");
+  }
+
+  function handleExportItemsCsv(rows: LeadListItem[], filenamePrefix: string) {
+    setIsExportingItems(true);
+    try {
+      if (rows.length === 0) return;
+      const csv = buildMasterCsv(rows);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsExportingItems(false);
+    }
   }
 
   async function handleEnrich(item: LeadListItem) {
@@ -630,30 +651,53 @@ export default function LeadListsPage() {
                   </p>
                 </div>
               )}
-              {bulkEnrichProgress ? (
-                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <IconLoader2 size={12} className="animate-spin" />
-                  Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
-                </span>
-              ) : selectedItemIds.size > 0 ? (
-                <button
-                  type="button"
-                  onClick={handleBulkEnrichSelected}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
-                >
-                  <IconSparkles size={12} />
-                  Enrich selected ({selectedItemIds.size})
-                </button>
-              ) : enrichEligibleItems.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={handleBulkEnrichAllEligible}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
-                >
-                  <IconSparkles size={12} />
-                  Enrich all ({enrichEligibleItems.length})
-                </button>
-              ) : null}
+              <div className="flex items-center gap-2">
+                {bulkEnrichProgress ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <IconLoader2 size={12} className="animate-spin" />
+                    Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
+                  </span>
+                ) : selectedItemIds.size > 0 ? (
+                  <button
+                    type="button"
+                    onClick={handleBulkEnrichSelected}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                  >
+                    <IconSparkles size={12} />
+                    Enrich selected ({selectedItemIds.size})
+                  </button>
+                ) : enrichEligibleItems.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={handleBulkEnrichAllEligible}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                  >
+                    <IconSparkles size={12} />
+                    Enrich all ({enrichEligibleItems.length})
+                  </button>
+                ) : null}
+                {selectedItemIds.size > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => handleExportItemsCsv(allItems.filter((i) => selectedItemIds.has(i.id)), "selected-leads")}
+                    disabled={isExportingItems}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    {isExportingItems ? <IconLoader2 size={12} className="animate-spin" /> : <IconDownload size={12} />}
+                    Make CSV of {selectedItemIds.size} selected
+                  </button>
+                ) : allItems.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => handleExportItemsCsv(allItems, "lead-list")}
+                    disabled={isExportingItems}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    {isExportingItems ? <IconLoader2 size={12} className="animate-spin" /> : <IconDownload size={12} />}
+                    Export CSV
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             {/* Items table */}

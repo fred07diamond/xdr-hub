@@ -1499,26 +1499,43 @@ export default function ProspectsRoute() {
 
   const hasActiveFilter = verdictFilter !== "all" || tagFilterIds.size > 0 || personaFilter !== "all" || recencyFilter !== "all" || search;
 
+  function exportProspectsCsv(rows: Prospect[], filenamePrefix: string) {
+    if (rows.length === 0) {
+      setExportError("Nothing to export yet.");
+      return;
+    }
+    const csv = buildMasterCsv(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleExportAll() {
     setIsExporting(true);
     setExportError(null);
     try {
       // allProspects already holds everything (the main query fetches up to
       // PROSPECTS_FETCH_LIMIT in one shot) -- no need for a separate fetch.
-      if (allProspects.length === 0) {
-        setExportError("Nothing to export yet.");
-        return;
-      }
-      const csv = buildMasterCsv(allProspects);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `all-prospects-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      exportProspectsCsv(allProspects, "all-prospects");
+    } catch {
+      setExportError("Could not export -- try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function handleExportSelected() {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const rows = allProspects.filter((p) => selectedIds.has(p.id));
+      exportProspectsCsv(rows, "selected-prospects");
     } catch {
       setExportError("Could not export -- try again.");
     } finally {
@@ -1591,6 +1608,12 @@ export default function ProspectsRoute() {
                   allTags={allTags}
                   onApply={handleBulkTag}
                 />
+                <button type="button" onClick={handleExportSelected} disabled={isExporting}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
+                  {isExporting ? <IconLoader2 size={13} className="animate-spin" /> : <IconDownload size={13} />}
+                  Make CSV of {selectedIds.size} selected
+                </button>
+                {exportError && <span className="text-xs text-destructive">{exportError}</span>}
               </>
             )}
           </div>
