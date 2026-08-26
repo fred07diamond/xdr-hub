@@ -12,7 +12,6 @@ import {
 } from "@tabler/icons-react";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { useState } from "react";
-import { Navigate } from "react-router";
 import {
   Area,
   AreaChart,
@@ -115,14 +114,10 @@ type LeadListsData = {
 
 export default function AnalyticsRoute() {
   useSetPageTitle("Analytics");
-  const { data: roleData, isLoading: isRoleLoading } = useActionQuery("get-my-role", {});
-  const isWorkspaceAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
   const { data, isLoading, error } = useActionQuery("get-analytics", {});
   const { data: feedbackData, refetch: refetchFeedback } = useActionQuery("list-feedback", {});
 
-  if (!isRoleLoading && !isWorkspaceAdmin) return <Navigate to="/" replace />;
-
-  if (isLoading || isRoleLoading) {
+  if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <IconLoader2 className="size-6 animate-spin text-muted-foreground" />

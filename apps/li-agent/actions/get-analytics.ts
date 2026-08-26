@@ -3,15 +3,14 @@ import { count, countDistinct, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects, sendHistory, postEngagements, leadLists, leadListItems, leadCounters } from "../server/db/schema.js";
-import { requireAdmin } from "../server/helpers/require-admin.js";
 
 export default defineAction({
-  description: "Return workspace-wide pipeline analytics. Admin only.",
+  description: "Return workspace-wide pipeline analytics. Available to every signed-in workspace member, not just admins.",
   schema: z.object({}),
+  requiresAuth: true,
   http: { method: "GET" },
   readOnly: true,
-  run: async (_args, ctx) => {
-    await requireAdmin(ctx);
+  run: async (_args) => {
     const db = getDb();
 
     const now = new Date();

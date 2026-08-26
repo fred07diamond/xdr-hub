@@ -1,6 +1,5 @@
 import { appPath } from "@agent-native/core/client/api-path";
 import { navigateWithAgentChatViewTransition, useChatThreads, type ChatThreadSummary } from "@agent-native/core/client/agent-chat";
-import { useActionQuery } from "@agent-native/core/client/hooks";
 import { useT } from "@agent-native/core/client/i18n";
 import { ExtensionsSidebarSection } from "@agent-native/core/client/extensions";
 import { OrgSwitcher } from "@agent-native/core/client/org";
@@ -469,11 +468,6 @@ export function Sidebar({
   const location = useLocation();
   const navigate = useNavigate();
   const t = useT();
-  const { data: roleData } = useActionQuery("get-my-role", {});
-  const isWorkspaceAdmin = (roleData as { role?: string } | undefined)?.role === "admin";
-  const visibleNavItems = navItems.filter(
-    (item) => item.view !== "analytics" || isWorkspaceAdmin,
-  );
   const isChatRoute =
     location.pathname === "/chat" || location.pathname.startsWith("/chat/");
   const ToggleIcon = collapsed
@@ -544,7 +538,7 @@ export function Sidebar({
         )}
       >
         <div className={cn("grid", collapsed ? "gap-0" : "gap-1")}>
-          {visibleNavItems.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               item.href === "/"
