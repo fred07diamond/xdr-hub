@@ -1081,6 +1081,49 @@ function isSalesNavSearchUrl(url) {
   return /linkedin\.com\/sales\/search\/people/i.test(url);
 }
 
+// A saved list's identity is its path (/sales/lists/people/{id}), so
+// stripping the whole query string there is safe and intentional -- it's
+// how pagination/sort params on a list URL get ignored instead of looking
+// like a new list. A search-results page has NO such stable path segment:
+// every search lives at the same bare "/sales/search/people", and the
+// actual filter criteria (company, title, etc.) live entirely in the query
+// string. Stripping that away collapsed every search down to one identical
+// identity, so starting a fresh search for a different company was
+// silently treated as "still the same search" and kept accumulating the
+// previous company's leads into the same capture instead of starting
+// fresh.
+//
+// LIVE-VERIFY: which query key Sales Nav actually uses for pagination is
+// unconfirmed (same caveat as isSalesNavListUrl's own LIVE-VERIFY note) --
+// this strips the common candidate names and keeps everything else as the
+// identity, so a same-search page turn is very likely still recognized as
+// a continuation rather than a new search. Worst case if the real
+// pagination key isn't in this list: a page turn gets (incorrectly) treated
+// as a new search and resets the in-progress capture -- annoying, but not
+// data loss, and unrelated leads still can't re-populate once sent (see
+// alreadySentByUrl above).
+const SEARCH_PAGINATION_QUERY_KEYS = ["page", "start", "offset", "p"];
+
+function deriveSearchIdentityUrl(url) {
+  try {
+    const parsed = new URL(url);
+    for (const key of SEARCH_PAGINATION_QUERY_KEYS) parsed.searchParams.delete(key);
+    parsed.searchParams.sort();
+    return `${parsed.origin}${parsed.pathname}?${parsed.searchParams.toString()}`;
+  } catch {
+    // Malformed/relative URL — fall back to the pre-existing (imperfect but
+    // safe) behavior rather than throwing.
+    return url.split("?")[0];
+  }
+}
+
+// The identity to use for "is this genuinely a different list/search"
+// comparisons and for what gets persisted as listImportSession.listUrl --
+// query-stripped for a saved list, filter-preserving for a search.
+function deriveListIdentityUrl(url) {
+  return isSalesNavSearchUrl(url) ? deriveSearchIdentityUrl(url) : url.split("?")[0];
+}
+
 // The "Export a saved list to Apollo" section doesn't read anything off
 // the current page -- it only needs the tab switcher to stay visible and
 // the Lists tab to stay open while the rep is actually on Apollo, since
@@ -2251,11 +2294,18 @@ function startUrlPollingWithEngagers() {
       // currentProfileUrl) for the same reason the post branch uses
       // currentPostUrl — a background profile tab shouldn't spuriously
       // reset an in-progress list import.
+      //
+      // listIdentityUrl (not the plain path-stripped cleanUrl) is what
+      // decides "genuinely different" here -- for a search-results page
+      // that has to include the actual filter criteria (see
+      // deriveListIdentityUrl's comment), not just the shared bare
+      // "/sales/search/people" path every search lives at.
       tabSwitcher.style.display = "flex";
       if (listsCaptureSection) listsCaptureSection.style.display = "block";
       if (apolloExportSection) apolloExportSection.style.display = "none";
-      if (cleanUrl !== currentListUrl) {
-        currentListUrl = cleanUrl;
+      const listIdentityUrl = deriveListIdentityUrl(url);
+      if (listIdentityUrl !== currentListUrl) {
+        currentListUrl = listIdentityUrl;
         currentProfileUrl = cleanUrl;
         currentTabUrl = cleanUrl;
         notLinkedin.style.display = "none";
@@ -2269,11 +2319,11 @@ function startUrlPollingWithEngagers() {
         // "resuming the same list I was just on," and was silently keeping
         // a previous list's already-captured leads around when the xDR
         // opened a different Sales Nav list in a fresh panel.
-        if (!listImportSession.listUrl || listImportSession.listUrl !== cleanUrl) {
-          const derivedName = isSalesNavSearchUrl(cleanUrl)
+        if (!listImportSession.listUrl || listImportSession.listUrl !== listIdentityUrl) {
+          const derivedName = isSalesNavSearchUrl(url)
             ? deriveSalesNavSearchName()
             : deriveSalesNavListName(tab.title);
-          resetListImportSession(cleanUrl, derivedName);
+          resetListImportSession(listIdentityUrl, derivedName);
         }
         listsStatus.textContent = "";
         scrapeCurrentListPage(tab.id);
