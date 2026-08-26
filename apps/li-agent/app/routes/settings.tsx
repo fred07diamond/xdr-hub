@@ -483,6 +483,51 @@ function LinkedInImportPropertiesCheck() {
           {JSON.stringify(result, null, 2)}
         </pre>
       )}
+      <SendTestLinkedInImportValues />
+    </div>
+  );
+}
+
+// TEMPORARY -- see LinkedInImportPropertiesCheck's comment above. Writes
+// real test values to a dedicated li-agent-integration-test@builder.io
+// HubSpot contact (created if it doesn't exist yet) so the field-type
+// mapping can be confirmed end to end, without touching a real contact.
+function SendTestLinkedInImportValues() {
+  const send = useActionMutation("send-test-linkedin-import-values");
+  const [result, setResult] = useState<unknown>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSend() {
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await send.mutateAsync({}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-2 border-t border-dashed border-border/60 pt-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-muted-foreground">
+          Temp: send test values to li-agent-integration-test@builder.io
+        </p>
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={send.isPending}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-40"
+        >
+          {send.isPending ? <IconLoader2 size={12} className="animate-spin" /> : "Send test values"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      {result != null && (
+        <pre className="overflow-auto rounded-md bg-muted/40 p-2 text-[10px] leading-relaxed">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }
