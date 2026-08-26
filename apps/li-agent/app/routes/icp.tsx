@@ -492,18 +492,31 @@ interface NotionSearchResult {
   icon: string | null;
 }
 
-function NotionPickerSheet({
-  persona,
+interface NotionAttachResult {
+  ok: boolean;
+  error?: string;
+}
+
+// Shared by both places a persona document can come from Notion: an existing
+// persona's card (attaches immediately via add-persona-documents) and the New
+// Persona dialog (stages the doc locally until the persona is actually
+// created). onAttach owns what "attaching" means for the caller; this
+// component only owns search + block-traversal fetch.
+function NotionSearchSheet({
+  title,
+  subtitle,
+  subtitleColor,
   onClose,
-  onAttached,
+  onAttach,
 }: {
-  persona: Persona;
+  title: string;
+  subtitle?: string;
+  subtitleColor?: string;
   onClose: () => void;
-  onAttached: () => void;
+  onAttach: (doc: { name: string; text: string }) => Promise<NotionAttachResult>;
 }) {
   const searchNotion = useActionMutation("search-notion-persona-docs");
   const fetchNotionPage = useActionMutation("fetch-notion-page-text");
-  const addDocuments = useActionMutation("add-persona-documents");
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<NotionSearchResult[]>([]);
@@ -541,15 +554,11 @@ function NotionPickerSheet({
         setError(fetched?.error ?? "Could not read that Notion page.");
         return;
       }
-      const added = (await addDocuments.mutateAsync({
-        personaId: persona.id,
-        documents: [{ name: fetched.name ?? page.title, text: fetched.text }],
-      })) as { ok?: boolean; error?: string };
-      if (added?.ok === false) {
-        setError(added.error ?? "Could not attach that page.");
+      const result = await onAttach({ name: fetched.name ?? page.title, text: fetched.text });
+      if (!result.ok) {
+        setError(result.error ?? "Could not attach that page.");
         return;
       }
-      onAttached();
       onClose();
     } finally {
       setAttachingId(null);
@@ -559,14 +568,16 @@ function NotionPickerSheet({
   const searching = searchNotion.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-foreground">Attach a Notion page</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              to <span style={{ color: persona.color }}>{persona.name}</span>
-            </p>
+            <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+            {subtitle && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {subtitleColor ? <span style={{ color: subtitleColor }}>{subtitle}</span> : subtitle}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -1097,10 +1108,20 @@ function PersonaCard({
       )}
 
       {notionPickerOpen && (
-        <NotionPickerSheet
-          persona={persona}
+        <NotionSearchSheet
+          title="Attach a Notion page"
+          subtitle={`to ${persona.name}`}
+          subtitleColor={persona.color}
           onClose={() => setNotionPickerOpen(false)}
-          onAttached={onRefetch}
+          onAttach={async (doc) => {
+            const added = (await addDocuments.mutateAsync({
+              personaId: persona.id,
+              documents: [doc],
+            })) as { ok?: boolean; error?: string };
+            if (added?.ok === false) return { ok: false, error: added.error };
+            onRefetch();
+            return { ok: true };
+          }}
         />
       )}
 
@@ -1144,6 +1165,20 @@ function NewPersonaPanel({
   const [pendingDocs, setPendingDocs] = useState<LoadedDoc[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notionPickerOpen, setNotionPickerOpen] = useState(false);
+
+  // Same merge-by-name behavior as loadFiles -- a Notion page can be
+  // re-attached to pick up a fresh version without creating a duplicate row.
+  function stagePendingDoc(doc: LoadedDoc) {
+    setPendingDocs((prev) => {
+      const merged = [...prev];
+      const at = merged.findIndex((d) => d.name === doc.name);
+      if (at >= 0) merged[at] = doc;
+      else merged.push(doc);
+      return merged.slice(0, MAX_DOCS_PER_PERSONA);
+    });
+    if (!name) setName(doc.name.replace(/\.[^.]+$/, ""));
+  }
 
   async function loadFiles(files: FileList | File[]) {
     setError(null);
@@ -1285,6 +1320,14 @@ function NewPersonaPanel({
                 <p className="text-[11px] text-muted-foreground/50">.txt · .md · select several at once</p>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => setNotionPickerOpen(true)}
+              className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <IconSearch size={12} />
+              Search Notion
+            </button>
             {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
           </div>
         </div>
@@ -1304,6 +1347,17 @@ function NewPersonaPanel({
           </button>
         </div>
       </div>
+
+      {notionPickerOpen && (
+        <NotionSearchSheet
+          title="Add a Notion page"
+          onClose={() => setNotionPickerOpen(false)}
+          onAttach={(doc) => {
+            stagePendingDoc(doc);
+            return Promise.resolve({ ok: true });
+          }}
+        />
+      )}
     </div>
   );
 }
