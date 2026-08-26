@@ -245,19 +245,19 @@ function OverviewTab({
         label="Prospects"
         value={d.totalProspects}
         color={PIPELINE.prospects.color}
-        sub={d.totalProspects === 0 ? "No profiles captured yet" : undefined}
+        sub={d.totalProspects === 0 ? "No profiles captured yet" : "LinkedIn profiles captured and scored"}
       />
       <KpiCard
         label="Engagers"
         value={d.postEngagement.totalEngagers}
         color={PIPELINE.engagers.color}
-        sub={d.postEngagement.totalEngagers === 0 ? "No post engagers captured yet" : undefined}
+        sub={d.postEngagement.totalEngagers === 0 ? "No post engagers captured yet" : "Post commenters captured"}
       />
       <KpiCard
         label="Leads"
         value={d.leadLists.totalLeads}
         color={PIPELINE.leads.color}
-        sub={d.leadLists.totalLeads === 0 ? "No lead lists imported yet" : undefined}
+        sub={d.leadLists.totalLeads === 0 ? "No lead lists imported yet" : "Sales Navigator leads imported"}
       />
       <KpiCard
         label="This Week"
