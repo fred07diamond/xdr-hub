@@ -1335,6 +1335,45 @@ const LIST_SESSION_STORAGE_KEY = "bliListImportSession";
 let listImportSession = { listUrl: null, listName: null, listDescription: null, pages: 1, leadsByUrl: {}, excludedUrls: [] };
 let currentListUrl = null; // tracks the list URL independently of currentProfileUrl/currentPostUrl
 
+// Tracks every lead already sent to a list, across ALL captures forever --
+// chrome.storage.local (not .session), so it survives browser restarts, not
+// just the current session. Without this, a lead already sent to "Helix
+// Outbound List" would silently reappear and re-count the moment the same
+// Sales Nav rows got rescraped (e.g. the xDR is still on that same search
+// page after sending, or revisits it later), making a second list look like
+// it captured real net-new prospects when it's actually the same people
+// again -- exactly what compounds lists into looking larger than they are.
+// Keyed by salesNavLeadUrl -> { listName, sentAt }.
+const ALREADY_SENT_STORAGE_KEY = "bliAlreadySentLeadUrls";
+let alreadySentByUrl = {};
+
+async function loadAlreadySentLeads() {
+  try {
+    const stored = await chrome.storage.local.get([ALREADY_SENT_STORAGE_KEY]);
+    if (stored?.[ALREADY_SENT_STORAGE_KEY]) alreadySentByUrl = stored[ALREADY_SENT_STORAGE_KEY];
+  } catch {
+    // best-effort, same as the session-storage reads below
+  }
+}
+loadAlreadySentLeads();
+
+function saveAlreadySentLeads() {
+  try {
+    chrome.storage.local.set({ [ALREADY_SENT_STORAGE_KEY]: alreadySentByUrl });
+  } catch {
+    // best-effort
+  }
+}
+
+function markLeadsAlreadySent(leads, listName) {
+  const sentAt = new Date().toISOString();
+  for (const lead of leads) {
+    if (!lead.salesNavLeadUrl) continue;
+    alreadySentByUrl[lead.salesNavLeadUrl] = { listName, sentAt };
+  }
+  saveAlreadySentLeads();
+}
+
 // Live-confirmed a Sales Nav list page's tab title looks like
 // "{List Name} | Lead Lists | Sales Navigator" -- taking just the first
 // "|"-delimited segment is more robust than trying to strip every possible
@@ -1398,8 +1437,19 @@ function mergeLeadRows(rows) {
   let addedAny = false;
   for (const row of rows) {
     if (!row.salesNavLeadUrl) continue;
-    if (!listImportSession.leadsByUrl[row.salesNavLeadUrl]) addedAny = true;
+    const isNewToThisCapture = !listImportSession.leadsByUrl[row.salesNavLeadUrl];
+    if (isNewToThisCapture) addedAny = true;
+    const previouslySent = alreadySentByUrl[row.salesNavLeadUrl] ?? null;
+    row.alreadySent = previouslySent;
     listImportSession.leadsByUrl[row.salesNavLeadUrl] = row;
+    // Auto-exclude from the count/send only the first time this row enters
+    // the current capture -- if the xDR deliberately re-checks an
+    // already-sent lead (e.g. to add them to a second list too), later
+    // rescrapes of the same still-visible page must not silently
+    // re-exclude it out from under them.
+    if (isNewToThisCapture && previouslySent && !isLeadExcluded(row)) {
+      listImportSession.excludedUrls.push(row.salesNavLeadUrl);
+    }
   }
   saveListImportSession();
   renderListsTab();
@@ -1469,7 +1519,7 @@ function renderListsTab() {
       nameEl.textContent = lead.name || "—";
       info.appendChild(nameEl);
 
-      if (lead.headline || lead.company) {
+      if (lead.headline || lead.company || lead.alreadySent) {
         const chips = document.createElement("div");
         chips.className = "list-lead-chips";
 
@@ -1485,6 +1535,14 @@ function renderListsTab() {
           companyChip.className = "list-lead-company-chip";
           companyChip.textContent = lead.company;
           chips.appendChild(companyChip);
+        }
+
+        if (lead.alreadySent) {
+          const alreadySentChip = document.createElement("span");
+          alreadySentChip.className = "list-lead-already-sent-chip";
+          alreadySentChip.textContent = `✓ Already in ${lead.alreadySent.listName}`;
+          alreadySentChip.title = `Sent to "${lead.alreadySent.listName}" on ${new Date(lead.alreadySent.sentAt).toLocaleDateString()}`;
+          chips.appendChild(alreadySentChip);
         }
 
         info.appendChild(chips);
@@ -1579,6 +1637,7 @@ async function sendImport({ existingListId, listName: nameArg, listDescription: 
       : "";
     const destNote = existingListId ? "Added to your list." : "Find it in the Lead Lists tab.";
     listsStatus.textContent = `Imported ${result.totalCount} lead${result.totalCount === 1 ? "" : "s"}${dupeNote}${skippedNote}${result.truncated ? " (list was capped at 500)" : ""}. ${destNote}`;
+    markLeadsAlreadySent(leads, listName);
     resetListImportSession(listImportSession.listUrl, listImportSession.listName);
     return true;
   }
