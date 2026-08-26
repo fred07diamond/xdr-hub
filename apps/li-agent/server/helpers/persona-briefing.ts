@@ -232,27 +232,55 @@ export async function buildPersonaBriefing({
       `Note this under coverageGaps so the rep knows the briefing may not cover everything.]`
     : icpText;
 
-  const call = () =>
-    completeText({
-      systemPrompt,
-      input: `Persona name: ${personaName}\n\nICP documents:\n${documentBlock}`,
-      // Raised alongside the title caps: an exhaustive title list plus every
-      // prose section does not fit in 1600 output tokens, and running out
-      // mid-array produces the unparseable JSON this used to throw on.
-      maxOutputTokens: 4000,
-    });
+  // A real persona ICP (multiple documents, an exhaustive boolean title
+  // expansion per the TITLES instructions above, plus 8 prose sections) can
+  // still run past 4000 output tokens and get cut off mid-JSON -- that used
+  // to be a hard failure with no retry. completeText's stopReason tells us
+  // definitively when that happened (as opposed to a genuine malformed
+  // response), so retry once with a stricter size instruction instead of
+  // making the user press the button again themselves.
+  async function attempt(constrained: boolean) {
+    const call = () =>
+      completeText({
+        systemPrompt: constrained
+          ? `${systemPrompt}\n\nIMPORTANT: your previous response was cut off for being too long. ` +
+            "This time, cap every list (including titles/fallbackTitles/avoidTitles/avoidTitlesSearch) " +
+            "at 15 items and keep every line short. A shorter complete briefing is far more useful than " +
+            "a longer one that gets cut off."
+          : systemPrompt,
+        input: `Persona name: ${personaName}\n\nICP documents:\n${documentBlock}`,
+        maxOutputTokens: 8000,
+      });
+    return ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
+  }
 
-  const result = ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
-
-  const raw = result.text
+  let result = await attempt(false);
+  let raw = result.text
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .trim();
 
-  let parsed: Record<string, any>;
+  let parsed: Record<string, any> | undefined;
   try {
     parsed = JSON.parse(raw);
   } catch {
+    parsed = undefined;
+  }
+
+  if (!parsed && result.stopReason === "max_tokens") {
+    result = await attempt(true);
+    raw = result.text
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/i, "")
+      .trim();
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = undefined;
+    }
+  }
+
+  if (!parsed) {
     throw new Error("The model did not return a usable briefing. Try generating it again.");
   }
 
