@@ -11,6 +11,7 @@ import {
   IconMessageCircle,
   IconPlus,
   IconRefresh,
+  IconSearch,
   IconSparkles,
   IconTarget,
   IconTrash,
@@ -476,6 +477,177 @@ function BriefingSheet({
   );
 }
 
+// ── Notion persona-doc picker ────────────────────────────────────────────────
+// Search/browse Notion pages and attach one as a persona document directly
+// from the ICP tab -- no chat round-trip. Page content is fetched via
+// fetch-notion-page-text (block traversal lives server-side, since core's
+// Notion connection is metadata-only) and then goes through the same
+// add-persona-documents path a manual file upload would.
+
+interface NotionSearchResult {
+  id: string;
+  title: string;
+  url: string | null;
+  lastEditedTime: string | null;
+  icon: string | null;
+}
+
+function NotionPickerSheet({
+  persona,
+  onClose,
+  onAttached,
+}: {
+  persona: Persona;
+  onClose: () => void;
+  onAttached: () => void;
+}) {
+  const searchNotion = useActionMutation("search-notion-persona-docs");
+  const fetchNotionPage = useActionMutation("fetch-notion-page-text");
+  const addDocuments = useActionMutation("add-persona-documents");
+
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<NotionSearchResult[]>([]);
+  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attachingId, setAttachingId] = useState<string | null>(null);
+
+  async function runSearch(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!query.trim()) return;
+    setError(null);
+    const result = (await searchNotion.mutateAsync({ query: query.trim() })) as {
+      ok?: boolean;
+      error?: string;
+      pages?: NotionSearchResult[];
+    };
+    setSearched(true);
+    if (result?.ok === false) {
+      setError(result.error ?? "Notion search failed.");
+      setResults([]);
+      return;
+    }
+    setResults(result?.pages ?? []);
+  }
+
+  async function handleAttach(page: NotionSearchResult) {
+    setError(null);
+    setAttachingId(page.id);
+    try {
+      const fetched = (await fetchNotionPage.mutateAsync({
+        pageId: page.id,
+        title: page.title,
+      })) as { ok?: boolean; error?: string; name?: string; text?: string };
+      if (fetched?.ok === false || !fetched?.text) {
+        setError(fetched?.error ?? "Could not read that Notion page.");
+        return;
+      }
+      const added = (await addDocuments.mutateAsync({
+        personaId: persona.id,
+        documents: [{ name: fetched.name ?? page.title, text: fetched.text }],
+      })) as { ok?: boolean; error?: string };
+      if (added?.ok === false) {
+        setError(added.error ?? "Could not attach that page.");
+        return;
+      }
+      onAttached();
+      onClose();
+    } finally {
+      setAttachingId(null);
+    }
+  }
+
+  const searching = searchNotion.isPending;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-foreground">Attach a Notion page</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              to <span style={{ color: persona.color }}>{persona.name}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted"
+            aria-label="Close"
+          >
+            <IconX size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={runSearch} className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-3">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search Notion pages…"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <button
+            type="submit"
+            disabled={searching || !query.trim()}
+            className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          >
+            {searching ? <IconLoader2 size={14} className="animate-spin" /> : "Search"}
+          </button>
+        </form>
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
+          {error && (
+            <p className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          {!searched && !error && (
+            <p className="text-xs text-muted-foreground/60">
+              Search by page title or content. Only pages shared with the workspace's Notion
+              connection will show up.
+            </p>
+          )}
+          {searched && !searching && results.length === 0 && !error && (
+            <p className="text-xs text-muted-foreground/60">No matching Notion pages found.</p>
+          )}
+          <ul className="flex flex-col gap-1.5">
+            {results.map((page) => (
+              <li
+                key={page.id}
+                className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/10 px-3 py-2"
+              >
+                <span className="shrink-0 text-sm">{page.icon ?? "📄"}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-foreground" title={page.title}>
+                    {page.title}
+                  </p>
+                  {page.lastEditedTime && (
+                    <p className="text-[10px] text-muted-foreground/60">
+                      Edited {formatGeneratedAt(page.lastEditedTime)}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAttach(page)}
+                  disabled={attachingId !== null}
+                  className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                >
+                  {attachingId === page.id ? (
+                    <IconLoader2 size={12} className="animate-spin" />
+                  ) : (
+                    "Attach"
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Persona card ─────────────────────────────────────────────────────────────
 
 function PersonaCard({
@@ -504,6 +676,7 @@ function PersonaCard({
   const [removingDocId, setRemovingDocId] = useState<string | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [briefingError, setBriefingError] = useState<string | null>(null);
+  const [notionPickerOpen, setNotionPickerOpen] = useState(false);
 
   const isActive = persona.isActive === 1;
   const documents = persona.documents ?? [];
@@ -830,6 +1003,16 @@ function PersonaCard({
                   : "Drop or click to upload documents"}
           </div>
         )}
+        {isAdmin && remainingSlots > 0 && (
+          <button
+            type="button"
+            onClick={() => setNotionPickerOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 self-start text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <IconSearch size={12} />
+            Search Notion
+          </button>
+        )}
         {docError && <p className="text-[11px] text-destructive">{docError}</p>}
         {documents.length === 0 && !isAdmin && (
           <p className="text-xs text-muted-foreground/50 italic">No documents uploaded yet</p>
@@ -910,6 +1093,14 @@ function PersonaCard({
           onClose={() => setBriefingOpen(false)}
           onRegenerate={() => handleGenerateBriefing()}
           regenerating={generateBriefing.isPending}
+        />
+      )}
+
+      {notionPickerOpen && (
+        <NotionPickerSheet
+          persona={persona}
+          onClose={() => setNotionPickerOpen(false)}
+          onAttached={onRefetch}
         />
       )}
 
