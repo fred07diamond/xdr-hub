@@ -2,6 +2,7 @@ import { useActionMutation, useActionQuery, useSession } from "@agent-native/cor
 import {
   IconCheck,
   IconChartBar,
+  IconDownload,
   IconListCheck,
   IconLoader2,
   IconMessageReport,
@@ -112,6 +113,89 @@ type LeadListsData = {
   byUser: { ownerEmail: string | null; lists: number; leads: number }[];
 };
 
+interface EnrichmentAuditRow {
+  source: "prospect" | "lead_list_item";
+  id: string;
+  name: string | null;
+  company: string | null;
+  ownerEmail: string | null;
+  enrichmentStatus: string;
+  enrichmentSource: string | null;
+  enrichedEmail: string | null;
+  enrichedPhone: string | null;
+  enrichmentError: string | null;
+  enrichedAt: string | null;
+  link: string | null;
+}
+
+function csvEscape(value: string | null | undefined): string {
+  const s = value == null ? "" : String(value);
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function buildEnrichmentAuditCsv(rows: EnrichmentAuditRow[]): string {
+  const header = [
+    "Source", "Name", "Company", "Owner", "Status", "Enrichment Source",
+    "Enriched Email", "Enriched Phone", "Error", "Enriched At", "Link",
+  ];
+  const body = rows.map((r) =>
+    [
+      r.source === "prospect" ? "Prospect" : "Lead List Item",
+      r.name, r.company, r.ownerEmail, r.enrichmentStatus, r.enrichmentSource,
+      r.enrichedEmail, r.enrichedPhone, r.enrichmentError, r.enrichedAt, r.link,
+    ].map(csvEscape).join(","),
+  );
+  return [header.join(","), ...body].join("\r\n");
+}
+
+// Every signed-in workspace member can pull this -- same access level as
+// the rest of this page, opened up to everyone earlier. A CSV export
+// rather than a persistent view/table, per Fred's ask.
+function EnrichmentAuditLogExport() {
+  const list = useActionMutation("list-enrichment-audit-log");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleExport() {
+    setError(null);
+    try {
+      const result = (await list.mutateAsync({})) as { rows?: EnrichmentAuditRow[] };
+      const rows = result.rows ?? [];
+      if (rows.length === 0) {
+        setError("No enriched prospects or leads yet.");
+        return;
+      }
+      const csv = buildEnrichmentAuditCsv(rows);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `enrichment-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export the audit log.");
+    }
+  }
+
+  return (
+    <div className="flex shrink-0 flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={handleExport}
+        disabled={list.isPending}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+      >
+        {list.isPending ? <IconLoader2 size={13} className="animate-spin" /> : <IconDownload size={13} />}
+        Export enrichment audit log
+      </button>
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 export default function AnalyticsRoute() {
   useSetPageTitle("Analytics");
   const { data, isLoading, error } = useActionQuery("get-analytics", {});
@@ -159,9 +243,12 @@ export default function AnalyticsRoute() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 px-6 py-8">
-      <div>
-        <h1 className="text-xl font-semibold">Analytics</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Workspace-wide pipeline overview.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">Analytics</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Workspace-wide pipeline overview.</p>
+        </div>
+        <EnrichmentAuditLogExport />
       </div>
 
       <Tabs defaultValue="overview">
