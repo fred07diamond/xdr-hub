@@ -25,7 +25,16 @@ const DEFAULT_APOLLO_TIMEOUT_MS = 20_000;
 // class of bug already fixed for commonroom-client.ts's callMcpToolWithTimeout
 // and hubspot-client.ts's hubspotFetchWithTimeout, both added only after a
 // live-confirmed hang — this ships with the timeout built in from the start.
+// TEMPORARY kill switch (2026-08-26, at Fred's request) -- every Apollo call
+// in this app goes through this one function, so gating here disables all of
+// it in one place instead of touching each call site. Flip back to false to
+// re-enable.
+const APOLLO_ENRICHMENT_DISABLED = true;
+
 async function apolloFetch(path: string, options?: RequestInit, timeoutMs: number = DEFAULT_APOLLO_TIMEOUT_MS): Promise<unknown> {
+  if (APOLLO_ENRICHMENT_DISABLED) {
+    throw new Error("Apollo enrichment is temporarily disabled.");
+  }
   const apiKey = await getApolloToken();
   if (!apiKey) {
     throw new Error("Apollo not connected. Set APOLLO_API_KEY in Settings or your environment.");

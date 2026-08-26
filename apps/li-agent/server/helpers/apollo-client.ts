@@ -20,7 +20,17 @@ export async function getApolloToken(): Promise<string | null> {
 
 const DEFAULT_APOLLO_TIMEOUT_MS = 20_000;
 
+// TEMPORARY kill switch (2026-08-26, at Fred's request) -- every Apollo call
+// in this app, automatic (lead-pipeline-sweep.ts) and manual (the "Enrich"
+// buttons), goes through this one function, so gating here disables all of
+// it in one place instead of touching each call site. Flip back to false to
+// re-enable.
+const APOLLO_ENRICHMENT_DISABLED = true;
+
 async function apolloFetch(path: string, options?: RequestInit, timeoutMs: number = DEFAULT_APOLLO_TIMEOUT_MS): Promise<unknown> {
+  if (APOLLO_ENRICHMENT_DISABLED) {
+    throw new Error("Apollo enrichment is temporarily disabled.");
+  }
   const apiKey = await getApolloToken();
   if (!apiKey) {
     throw new Error("Apollo not connected. Set APOLLO_API_KEY in Settings or your environment.");
