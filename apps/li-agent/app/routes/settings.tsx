@@ -449,6 +449,18 @@ function LinkedInImportPropertiesCheck() {
     connected: boolean;
     properties?: Record<string, LinkedInImportPropertyCheck>;
   } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleCheck() {
+    setError(null);
+    setResult(null);
+    try {
+      const res = await check.mutateAsync({});
+      setResult(res as typeof result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   return (
     <div className="mt-3 flex flex-col gap-2 rounded-lg border border-dashed border-border/60 p-3">
@@ -458,13 +470,14 @@ function LinkedInImportPropertiesCheck() {
         </p>
         <button
           type="button"
-          onClick={async () => setResult((await check.mutateAsync({})) as typeof result)}
+          onClick={handleCheck}
           disabled={check.isPending}
           className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-40"
         >
           {check.isPending ? <IconLoader2 size={12} className="animate-spin" /> : "Check"}
         </button>
       </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
       {result && (
         <pre className="overflow-auto rounded-md bg-muted/40 p-2 text-[10px] leading-relaxed">
           {JSON.stringify(result, null, 2)}
