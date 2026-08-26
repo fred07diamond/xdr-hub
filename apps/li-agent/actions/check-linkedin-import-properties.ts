@@ -50,7 +50,6 @@ export default defineAction({
   schema: z.object({}),
   requiresAuth: true,
   readOnly: true,
-  http: { method: "GET" },
   run: async () => {
     const token = await getHubSpotToken();
     if (!token) return { connected: false as const };
