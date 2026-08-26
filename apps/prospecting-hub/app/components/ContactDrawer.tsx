@@ -15,6 +15,7 @@ import { useState, type ReactNode } from "react";
 import { buildOverallScoreBreakdown, SCORE_INFO, ScorePill } from "@/components/ScorePill";
 import { SourceBadge } from "@/components/SourceBadge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { APOLLO_ENRICHMENT_DISABLED, APOLLO_ENRICHMENT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 
 // The contact detail drawer — Task 6's answer to Fred's ask: "add an
 // interface where I can dive a little bit deeper into these contacts...
@@ -423,7 +424,8 @@ export function ContactDrawer({
                 <button
                   type="button"
                   onClick={handleEnrichApollo}
-                  disabled={enrichApollo.isPending}
+                  disabled={enrichApollo.isPending || APOLLO_ENRICHMENT_DISABLED}
+                  title={APOLLO_ENRICHMENT_DISABLED ? APOLLO_ENRICHMENT_DISABLED_MESSAGE : undefined}
                   className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
                 >
                   {enrichApollo.isPending ? (
@@ -449,7 +451,8 @@ export function ContactDrawer({
                     <button
                       type="button"
                       onClick={handleEnrichApollo}
-                      disabled={enrichApollo.isPending}
+                      disabled={enrichApollo.isPending || APOLLO_ENRICHMENT_DISABLED}
+                      title={APOLLO_ENRICHMENT_DISABLED ? APOLLO_ENRICHMENT_DISABLED_MESSAGE : undefined}
                       className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
                     >
                       {enrichApollo.isPending ? (

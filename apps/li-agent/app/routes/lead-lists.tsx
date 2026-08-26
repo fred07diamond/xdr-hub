@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { APP_TITLE } from "@/lib/app-config";
+import { APOLLO_ENRICHMENT_DISABLED, APOLLO_ENRICHMENT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { buildMasterCsv } from "@/lib/prospects-csv";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -150,7 +151,7 @@ function EnrichedField({
     status === "failed" ? "text-xs italic text-destructive/70"
     : status === "idle" || !status ? "text-xs text-muted-foreground/50"
     : "text-xs italic text-muted-foreground/70";
-  if (!onEnrich) return <span className={emptyClass}>{emptyLabel}</span>;
+  if (!onEnrich || APOLLO_ENRICHMENT_DISABLED) return <span className={emptyClass}>{emptyLabel}</span>;
   return (
     <button
       type="button"
@@ -177,6 +178,18 @@ function EnrichButton({
       <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <IconLoader2 size={11} className="animate-spin" />
         Enriching…
+      </span>
+    );
+  }
+
+  if (APOLLO_ENRICHMENT_DISABLED) {
+    return (
+      <span
+        title={APOLLO_ENRICHMENT_DISABLED_MESSAGE}
+        className="inline-flex items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground/40"
+      >
+        <IconSparkles size={11} />
+        Enrich
       </span>
     );
   }
@@ -657,7 +670,7 @@ export default function LeadListsPage() {
                     <IconLoader2 size={12} className="animate-spin" />
                     Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
                   </span>
-                ) : selectedItemIds.size > 0 ? (
+                ) : APOLLO_ENRICHMENT_DISABLED ? null : selectedItemIds.size > 0 ? (
                   <button
                     type="button"
                     onClick={handleBulkEnrichSelected}

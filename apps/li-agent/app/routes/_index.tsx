@@ -70,6 +70,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Pagination } from "@/components/Pagination";
 import { APP_TITLE } from "@/lib/app-config";
+import { APOLLO_ENRICHMENT_DISABLED, APOLLO_ENRICHMENT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 
 export function meta() {
@@ -391,7 +392,7 @@ function EnrichedField({
     status === "failed" ? "text-xs italic text-destructive/70"
     : status === "idle" || !status ? "text-xs text-muted-foreground/50"
     : "text-xs italic text-muted-foreground/70";
-  if (!onEnrich) return <span className={emptyClass}>{emptyLabel}</span>;
+  if (!onEnrich || APOLLO_ENRICHMENT_DISABLED) return <span className={emptyClass}>{emptyLabel}</span>;
   return (
     <button
       type="button"
@@ -418,6 +419,18 @@ function EnrichButton({
       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
         <IconLoader2 size={11} className="animate-spin" />
         Enriching…
+      </span>
+    );
+  }
+
+  if (APOLLO_ENRICHMENT_DISABLED) {
+    return (
+      <span
+        title={APOLLO_ENRICHMENT_DISABLED_MESSAGE}
+        className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground/40"
+      >
+        <IconSparkles size={11} />
+        Enrich
       </span>
     );
   }
@@ -844,15 +857,25 @@ function ProspectSheet({
             <div className="mb-2 flex items-center justify-between">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Apollo enrichment</p>
               {!isEnriching && prospect.enrichmentStatus !== "enriching" && (
-                <button type="button" onClick={handleEnrichFromSheet}
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted">
-                  <IconSparkles size={11} />
-                  {prospect.enrichmentStatus === "done"
-                    ? "Re-enrich"
-                    : prospect.enrichmentStatus === "failed" || prospect.enrichmentStatus === "not_found"
-                    ? "Retry enrich"
-                    : "Enrich"}
-                </button>
+                APOLLO_ENRICHMENT_DISABLED ? (
+                  <span
+                    title={APOLLO_ENRICHMENT_DISABLED_MESSAGE}
+                    className="inline-flex items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground/40"
+                  >
+                    <IconSparkles size={11} />
+                    Enrich
+                  </span>
+                ) : (
+                  <button type="button" onClick={handleEnrichFromSheet}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted">
+                    <IconSparkles size={11} />
+                    {prospect.enrichmentStatus === "done"
+                      ? "Re-enrich"
+                      : prospect.enrichmentStatus === "failed" || prospect.enrichmentStatus === "not_found"
+                      ? "Retry enrich"
+                      : "Enrich"}
+                  </button>
+                )
               )}
             </div>
             {isEnriching || prospect.enrichmentStatus === "enriching" ? (
@@ -1581,7 +1604,8 @@ export default function ProspectsRoute() {
                     Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
                   </span>
                 ) : (
-                  <button type="button" onClick={handleBulkEnrich}
+                  <button type="button" onClick={handleBulkEnrich} disabled={APOLLO_ENRICHMENT_DISABLED}
+                    title={APOLLO_ENRICHMENT_DISABLED ? APOLLO_ENRICHMENT_DISABLED_MESSAGE : undefined}
                     className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
                     <IconSparkles size={13} /> Enrich selected
                   </button>
