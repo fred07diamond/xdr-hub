@@ -25,7 +25,8 @@ interface PersonaWithCriteria {
 async function loadPersonasWithCriteria(sharedDb: SharedDb): Promise<PersonaWithCriteria[]> {
   const allPersonas = await sharedDb
     .select({ id: sharedPersonas.id, name: sharedPersonas.name, color: sharedPersonas.color, summary: sharedPersonas.summary })
-    .from(sharedPersonas);
+    .from(sharedPersonas)
+    .orderBy(sharedPersonas.name);
 
   const withCriteria = await Promise.all(
     allPersonas.map(async (p) => {
@@ -95,19 +96,27 @@ export async function selectPersona(db: Db, profile: ProfileData): Promise<Perso
     try {
       const selectCall = () =>
         completeText({
-          systemPrompt: "You match LinkedIn profiles to ICP personas. Reply with ONLY the number of the best-matching persona (e.g. '2'). If none fits, reply '1'.",
+          systemPrompt: "You match LinkedIn profiles to ICP personas. Reply with ONLY the number of the best-matching persona (e.g. '2'). If none clearly fits, reply '0'.",
           input: `Personas:\n${personaList}\n\nProfile: ${profileBlurb}`,
           maxOutputTokens: 5,
         });
       const selResult = ownerCtxForSel
         ? await runWithRequestContext(ownerCtxForSel, selectCall)
         : await selectCall();
-      const idx = parseInt(selResult.text.trim()) - 1;
-      const picked = personasWithDocs[idx] ?? personasWithDocs[0];
+      // "0", unparseable text, or an out-of-range number all mean "no clear
+      // match" -- this used to default to personasWithDocs[0] (whichever
+      // persona happens to sort first, an arbitrary and unstable choice with
+      // no ORDER BY on the query), which is how a "VP Design" profile could
+      // get confidently labeled with a completely unrelated persona instead
+      // of being left unscored. No persona (null) is a more honest outcome
+      // than a specific, silently-wrong one.
+      const idx = parseInt(selResult.text.trim(), 10) - 1;
+      const picked = personasWithDocs[idx];
+      if (!picked) return { icpText: null, personaId: null, personaName: null, personaColor: null };
       return { icpText: picked.icpText ?? null, personaId: picked.id, personaName: picked.name, personaColor: picked.color };
     } catch {
-      const p = personasWithDocs[0];
-      return { icpText: p.icpText ?? null, personaId: p.id, personaName: p.name, personaColor: p.color };
+      // A failed LLM call is a real "we don't know," not "assume persona 1."
+      return { icpText: null, personaId: null, personaName: null, personaColor: null };
     }
   }
 
@@ -150,11 +159,17 @@ export async function selectPersonasBatch(db: Db, profiles: BatchProfileInput[])
     return profiles.map(() => ({ icpText: p.icpText ?? null, personaId: p.id, personaName: p.name, personaColor: p.color }));
   }
 
-  const fallbackToFirst = () =>
-    profiles.map(() => {
-      const p = personasWithDocs[0];
-      return { icpText: p.icpText ?? null, personaId: p.id, personaName: p.name, personaColor: p.color };
-    });
+  // No confident match, an out-of-range pick, or a line the regex couldn't
+  // parse (including one truncated off the end of the response) all mean
+  // "we don't know" now -- this used to silently fall back to
+  // personasWithDocs[0] (whichever persona happens to sort first; the query
+  // has no ORDER BY, so that isn't even a stable choice), which is how an
+  // unambiguous "VP Design" profile could end up confidently labeled with
+  // some unrelated persona instead of being left unscored. Leaving personaId
+  // null is a more honest outcome than a specific, silently-wrong one, and
+  // the UI already renders no persona chip at all when it's null.
+  const noPersonaForAll = () =>
+    profiles.map(() => ({ icpText: null, personaId: null, personaName: null, personaColor: null }));
 
   const personaList = personasWithDocs
     .map((p, i) => `${i + 1}. ${p.name}: ${(p.summary ?? p.icpText ?? "").slice(0, 300)}`)
@@ -170,9 +185,14 @@ export async function selectPersonasBatch(db: Db, profiles: BatchProfileInput[])
         systemPrompt:
           "You match a numbered list of LinkedIn profiles to a numbered list of ICP personas. " +
           'Reply with ONLY one line per profile, in the exact format "<profile number>:<persona number>", nothing else. ' +
-          "If a profile doesn't clearly fit any persona, use persona 1.",
+          "If a profile doesn't clearly fit any persona, use persona 0 for that line.",
         input: `Personas:\n${personaList}\n\nProfiles:\n${profileList}`,
-        maxOutputTokens: Math.max(200, profiles.length * 6),
+        // ~6 tokens/profile was cutting responses off mid-batch for larger
+        // imports -- everything after the truncation point silently fell
+        // back to "persona 1" below with no signal anything had gone wrong.
+        // More headroom per line ("<n>:<m>\n" plus normal model formatting
+        // slop) makes that failure mode much less likely to trigger at all.
+        maxOutputTokens: Math.max(300, profiles.length * 16),
       });
     const result = ownerCtxForSel ? await runWithRequestContext(ownerCtxForSel, call) : await call();
 
@@ -183,11 +203,15 @@ export async function selectPersonasBatch(db: Db, profiles: BatchProfileInput[])
     }
 
     return profiles.map((_, i) => {
-      const personaIdx = (picks.get(i + 1) ?? 1) - 1;
-      const picked = personasWithDocs[personaIdx] ?? personasWithDocs[0];
+      const pick = picks.get(i + 1);
+      if (pick === undefined || pick === 0) {
+        return { icpText: null, personaId: null, personaName: null, personaColor: null };
+      }
+      const picked = personasWithDocs[pick - 1];
+      if (!picked) return { icpText: null, personaId: null, personaName: null, personaColor: null };
       return { icpText: picked.icpText ?? null, personaId: picked.id, personaName: picked.name, personaColor: picked.color };
     });
   } catch {
-    return fallbackToFirst();
+    return noPersonaForAll();
   }
 }
