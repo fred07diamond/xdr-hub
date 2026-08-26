@@ -47,6 +47,17 @@ export const sharedPersonas = table("shared_personas", {
   ownerEmail: text("owner_email"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
+  // Structured CommonRoom Prospector targeting, settable directly on the
+  // Personas page — JSON-encoded string arrays. These are the persona-level
+  // source of truth for title/org filters (see run-sourcing-rule-pipeline.ts),
+  // replacing the LLM-guessed title keyword as the default once set. There is
+  // no server-side "exclude" operator in CommonRoom's filter grammar
+  // (confirmed live against the real API), so both exclude lists are always
+  // applied as a post-filter, never sent to CommonRoom itself.
+  titleIncludeKeywords: text("title_include_keywords"),
+  titleExcludeKeywords: text("title_exclude_keywords"),
+  orgIncludeList: text("org_include_list"),
+  orgExcludeList: text("org_exclude_list"),
 });
 
 export const sharedPersonaDocs = table("shared_persona_docs", {

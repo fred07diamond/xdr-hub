@@ -1,7 +1,9 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import {
+  IconAdjustmentsHorizontal,
   IconCheck,
   IconChevronDown,
+  IconChevronRight,
   IconChevronUp,
   IconFileText,
   IconLoader2,
@@ -15,6 +17,7 @@ import {
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
 
+import { safeParseList, TagInput } from "@/components/TagInput";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -60,6 +63,10 @@ interface Persona {
   linkedLibraryDocCount: number;
   ownerEmail: string;
   createdAt: string | null;
+  titleIncludeKeywords: string | null;
+  titleExcludeKeywords: string | null;
+  orgIncludeList: string | null;
+  orgExcludeList: string | null;
 }
 
 interface SubPersona {
@@ -275,6 +282,101 @@ function SubPersonaSection({ personaId }: { personaId: string }) {
               <IconPlus size={11} />
               Add sub-persona
             </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Prospector targeting (structured title/org include-exclude) ─────────────
+//
+// Feeds pull-plan sourcing rules directly (run-sourcing-rule-pipeline.ts):
+// title include replaces the LLM-guessed keyword, and all four lists here
+// are the only source of title-exclude/org-exclude — there is no
+// auto-derived equivalent for those two. Matches the same CommonRoom
+// Prospector UI shape (Title include/exclude, Current organization
+// include/exclude) this is meant to replicate.
+
+function ProspectorTargetingSection({
+  persona,
+  isAdmin,
+  onRefetch,
+}: {
+  persona: Persona;
+  isAdmin: boolean;
+  onRefetch: () => void;
+}) {
+  const updatePersona = useActionMutation("update-persona");
+  const [expanded, setExpanded] = useState(false);
+
+  const titleInclude = safeParseList(persona.titleIncludeKeywords);
+  const titleExclude = safeParseList(persona.titleExcludeKeywords);
+  const orgInclude = safeParseList(persona.orgIncludeList);
+  const orgExclude = safeParseList(persona.orgExcludeList);
+  const activeCount =
+    (titleInclude.length > 0 ? 1 : 0) +
+    (titleExclude.length > 0 ? 1 : 0) +
+    (orgInclude.length > 0 ? 1 : 0) +
+    (orgExclude.length > 0 ? 1 : 0);
+
+  async function save(field: "titleIncludeKeywords" | "titleExcludeKeywords" | "orgIncludeList" | "orgExcludeList", values: string[]) {
+    await updatePersona.mutateAsync({ id: persona.id, [field]: values });
+    onRefetch();
+  }
+
+  if (!isAdmin && activeCount === 0) return null;
+
+  return (
+    <div className="border-t border-border/60 px-4 py-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <IconAdjustmentsHorizontal size={12} />
+        Prospector targeting
+        {activeCount > 0 && (
+          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            {activeCount}
+          </span>
+        )}
+        <span className="ml-auto">{expanded ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}</span>
+      </button>
+
+      {expanded && (
+        <div className="mt-2 flex flex-col gap-3">
+          {isAdmin ? (
+            <>
+              <div>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Title include</label>
+                <TagInput values={titleInclude} onChange={(v) => save("titleIncludeKeywords", v)} placeholder="e.g. Design, Product Design…" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Title exclude</label>
+                <TagInput values={titleExclude} onChange={(v) => save("titleExcludeKeywords", v)} placeholder="e.g. Product Marketing…" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Current organization include</label>
+                <TagInput values={orgInclude} onChange={(v) => save("orgIncludeList", v)} placeholder="e.g. Gusto, Asana…" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">Current organization exclude</label>
+                <TagInput values={orgExclude} onChange={(v) => save("orgExcludeList", v)} placeholder="Companies to skip…" />
+              </div>
+              <p className="text-[10px] text-muted-foreground/60">
+                Used directly by pull plans as CommonRoom Prospector search filters — replaces the auto-guessed
+                title for this persona once set. Exclude lists are applied after the search (CommonRoom has no
+                server-side exclude).
+              </p>
+            </>
+          ) : (
+            <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+              {titleInclude.length > 0 && <p>Title include: {titleInclude.join(", ")}</p>}
+              {titleExclude.length > 0 && <p>Title exclude: {titleExclude.join(", ")}</p>}
+              {orgInclude.length > 0 && <p>Org include: {orgInclude.join(", ")}</p>}
+              {orgExclude.length > 0 && <p>Org exclude: {orgExclude.join(", ")}</p>}
+            </div>
           )}
         </div>
       )}
@@ -500,6 +602,8 @@ function PersonaCard({
 
       <SubPersonaSection personaId={persona.id} />
 
+      <ProspectorTargetingSection persona={persona} isAdmin={isAdmin} onRefetch={onRefetch} />
+
       <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
         {isAdmin ? (
           <div className="ml-auto">
@@ -561,6 +665,11 @@ function NewPersonaPanel({
   const [pendingFile, setPendingFile] = useState<{ name: string; text: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [targetingOpen, setTargetingOpen] = useState(false);
+  const [titleInclude, setTitleInclude] = useState<string[]>([]);
+  const [titleExclude, setTitleExclude] = useState<string[]>([]);
+  const [orgInclude, setOrgInclude] = useState<string[]>([]);
+  const [orgExclude, setOrgExclude] = useState<string[]>([]);
 
   async function loadFile(file: File) {
     setError(null);
@@ -578,6 +687,10 @@ function NewPersonaPanel({
       color,
       description: description.trim() || undefined,
       text: pendingFile.text,
+      titleIncludeKeywords: titleInclude.length > 0 ? titleInclude : undefined,
+      titleExcludeKeywords: titleExclude.length > 0 ? titleExclude : undefined,
+      orgIncludeList: orgInclude.length > 0 ? orgInclude : undefined,
+      orgExcludeList: orgExclude.length > 0 ? orgExclude : undefined,
     });
     onCreated();
     onClose();
@@ -654,6 +767,46 @@ function NewPersonaPanel({
               </div>
             )}
             {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
+          </div>
+
+          <div className="rounded-lg border border-border">
+            <button
+              type="button"
+              onClick={() => setTargetingOpen((v) => !v)}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+            >
+              <IconAdjustmentsHorizontal size={14} className="text-muted-foreground" />
+              <span className="flex-1 text-xs font-medium text-foreground">Prospector targeting (optional)</span>
+              {targetingOpen ? (
+                <IconChevronDown size={14} className="text-muted-foreground" />
+              ) : (
+                <IconChevronRight size={14} className="text-muted-foreground" />
+              )}
+            </button>
+            {targetingOpen && (
+              <div className="flex flex-col gap-3 border-t border-border p-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Title include</label>
+                  <TagInput values={titleInclude} onChange={setTitleInclude} placeholder="e.g. Design, Product Design…" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Title exclude</label>
+                  <TagInput values={titleExclude} onChange={setTitleExclude} placeholder="e.g. Product Marketing…" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    Current organization include
+                  </label>
+                  <TagInput values={orgInclude} onChange={setOrgInclude} placeholder="e.g. Gusto, Asana…" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    Current organization exclude
+                  </label>
+                  <TagInput values={orgExclude} onChange={setOrgExclude} placeholder="Companies to skip…" />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

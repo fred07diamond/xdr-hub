@@ -788,6 +788,23 @@ export default runMigrations(
         created_at TEXT DEFAULT (datetime('now'))
       )`,
     },
+    // Structured CommonRoom Prospector targeting, set on prospecting-hub's
+    // Personas page -- li-agent never reads these, but shares the same
+    // sharedPersonas Drizzle table definition (packages/shared/src/server/
+    // db/schema.ts), so its own copy of the table needs the columns too or
+    // any default-column-list query against sharedPersonas from either app
+    // fails with "no such column". Plain ADD COLUMN, no IF NOT EXISTS, same
+    // as version 106-108 above.
+    {
+      version: 112,
+      name: "shared-personas-prospector-targeting-columns",
+      sql: [
+        `ALTER TABLE shared_personas ADD COLUMN title_include_keywords TEXT`,
+        `ALTER TABLE shared_personas ADD COLUMN title_exclude_keywords TEXT`,
+        `ALTER TABLE shared_personas ADD COLUMN org_include_list TEXT`,
+        `ALTER TABLE shared_personas ADD COLUMN org_exclude_list TEXT`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );

@@ -513,6 +513,21 @@ export default runMigrations(
         ALTER TABLE marketing_rules ADD COLUMN company_allow_list_owner_id TEXT;
         ALTER TABLE marketing_rules ADD COLUMN company_deny_list_owner_id TEXT`,
     },
+    {
+      version: 39,
+      name: "contacts-hubspot-workflow-enrollment-columns",
+      // See schema.ts's own comment on contacts.hubspotContactId.
+      sql: `
+        ALTER TABLE contacts ADD COLUMN hubspot_contact_id TEXT;
+        ALTER TABLE contacts ADD COLUMN hubspot_workflow_enrolled_at TEXT;
+        ALTER TABLE contacts ADD COLUMN hubspot_enroll_error TEXT`,
+    },
+    {
+      version: 40,
+      name: "prospect-pull-plans-auto-enroll-hubspot-workflow-column",
+      // See schema.ts's own comment on prospectPullPlans.autoEnrollHubspotWorkflow.
+      sql: `ALTER TABLE prospect_pull_plans ADD COLUMN auto_enroll_hubspot_workflow INTEGER NOT NULL DEFAULT 1`,
+    },
   ],
   { table: "prospecting_hub_migrations" },
 );

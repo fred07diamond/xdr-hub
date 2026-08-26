@@ -100,6 +100,20 @@ export default runMigrations(
         resolved_at TEXT
       )`,
     },
+    // Structured CommonRoom Prospector targeting -- see schema.ts's own
+    // comment on sharedPersonas.titleIncludeKeywords. Plain ADD COLUMN, no
+    // IF NOT EXISTS -- matches this file's/db.ts's established convention;
+    // the framework's migration runner already treats a duplicate-column
+    // error as a no-op.
+    {
+      version: 7,
+      name: "prospecting-hub-shared-personas-prospector-targeting-columns",
+      sql: `
+        ALTER TABLE shared_personas ADD COLUMN title_include_keywords TEXT;
+        ALTER TABLE shared_personas ADD COLUMN title_exclude_keywords TEXT;
+        ALTER TABLE shared_personas ADD COLUMN org_include_list TEXT;
+        ALTER TABLE shared_personas ADD COLUMN org_exclude_list TEXT`,
+    },
   ],
   { table: "prospecting_hub_workspace_migrations" },
 );

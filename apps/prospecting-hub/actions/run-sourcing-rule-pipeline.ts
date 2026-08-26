@@ -37,6 +37,16 @@ const PREFERRED_GROUNDING_CATEGORIES = new Set(["icp", "persona_messaging"]);
 const MAX_GROUNDING_DOCS = 2;
 const GROUNDING_DOC_EXCERPT_LENGTH = 3000;
 
+function parseJsonStringList(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
 // ── Resumable, chunked execution (raising the volume cap 200 -> 1000) ──────
 //
 // Scoring 1000 contacts one HTTP request at a time (even with the existing
@@ -454,8 +464,40 @@ export default defineAction({
     // ── Fresh-start bootstrapping: existing ICP-qualification/short-circuit
     // and deriveProspectorFilters logic, run exactly ONCE per overall run.
     async function startFreshAndSearch(): Promise<PipelineResult> {
-      const staticAllowList: string[] | null = rule.companyAllowList ? JSON.parse(rule.companyAllowList) : null;
-      const staticDenyList: string[] | null = rule.companyDenyList ? JSON.parse(rule.companyDenyList) : null;
+      // Structured targeting fields set on the Personas page — the existence
+      // check earlier only fetched `id`, so this is a second, small fetch
+      // scoped to this function specifically (it's the only place these are
+      // used, and only on a fresh run start).
+      const [personaTargeting] = await getSharedDb()
+        .select({
+          titleIncludeKeywords: sharedPersonas.titleIncludeKeywords,
+          titleExcludeKeywords: sharedPersonas.titleExcludeKeywords,
+          orgIncludeList: sharedPersonas.orgIncludeList,
+          orgExcludeList: sharedPersonas.orgExcludeList,
+        })
+        .from(sharedPersonas)
+        .where(eq(sharedPersonas.id, rule.personaId))
+        .limit(1);
+      const personaTitleInclude = parseJsonStringList(personaTargeting?.titleIncludeKeywords ?? null);
+      const personaTitleExclude = parseJsonStringList(personaTargeting?.titleExcludeKeywords ?? null);
+      const personaOrgInclude = parseJsonStringList(personaTargeting?.orgIncludeList ?? null);
+      const personaOrgExclude = parseJsonStringList(personaTargeting?.orgExcludeList ?? null);
+
+      // Persona-level org include/exclude (sharedPersonas.orgIncludeList/
+      // orgExcludeList, set on the Personas page) union into the rule's own
+      // static lists — same "union multiple sources" pattern already
+      // established for the owner-book-of-business feature just below,
+      // extended one source further.
+      const staticAllowList: string[] | null = (() => {
+        const ruleList: string[] = rule.companyAllowList ? JSON.parse(rule.companyAllowList) : [];
+        const merged = [...new Set([...ruleList, ...personaOrgInclude])];
+        return merged.length > 0 ? merged : null;
+      })();
+      const staticDenyList: string[] | null = (() => {
+        const ruleList: string[] = rule.companyDenyList ? JSON.parse(rule.companyDenyList) : [];
+        const merged = [...new Set([...ruleList, ...personaOrgExclude])];
+        return merged.length > 0 ? merged : null;
+      })();
       // Live-resolved once per fresh run start, then cached into
       // syncRecords.metadata below (effectiveAllowList/effectiveDenyList) so
       // a resumed/chunked continuation of THIS run doesn't re-resolve
@@ -586,9 +628,16 @@ export default defineAction({
       const manualTitleKeywords: string[] = rule.manualTitleKeywords ? JSON.parse(rule.manualTitleKeywords) : [];
       const manualSeniorities: string[] = rule.manualSeniorities ? JSON.parse(rule.manualSeniorities) : [];
 
-      let titleKeywords = manualTitleKeywords;
+      // Precedence: rule-level manual override (highest, unchanged) →
+      // persona-level structured titleIncludeKeywords (new — set on the
+      // Personas page) → LLM-derived (existing fallback for personas that
+      // haven't set structured fields yet). Title EXCLUDE has no rule-level
+      // override and no auto-derived equivalent — it's persona-only, always
+      // passed straight through to searchProspectorContacts as a post-filter.
+      let titleKeywords = manualTitleKeywords.length > 0 ? manualTitleKeywords : personaTitleInclude;
       let seniorities = manualSeniorities;
-      if (manualTitleKeywords.length === 0 || manualSeniorities.length === 0) {
+      const titleExcludeKeywords = personaTitleExclude;
+      if (titleKeywords.length === 0 || manualSeniorities.length === 0) {
         // deriveProspectorFilters runs at most ONCE per overall run, here at
         // the very start of the search phase — its result is cached into
         // sync_records.metadata below so a resumed search-continuation
@@ -604,7 +653,7 @@ export default defineAction({
         // phrasings (not one rigid phrase) — see derive-prospector-filters.ts
         // for why a single derived phrase was too brittle against
         // CommonRoom's literal-substring title match.
-        if (manualTitleKeywords.length === 0 && filters.titleKeywords.length > 0) titleKeywords = filters.titleKeywords;
+        if (titleKeywords.length === 0 && filters.titleKeywords.length > 0) titleKeywords = filters.titleKeywords;
         if (manualSeniorities.length === 0 && filters.seniority) seniorities = [filters.seniority];
       }
 
@@ -616,6 +665,7 @@ export default defineAction({
         dedupedSoFar: 0,
         alreadyKnownSoFar: 0,
         titleKeywords,
+        titleExcludeKeywords,
         seniorities,
         minLinkedinFollowers: rule.minLinkedinFollowers ?? null,
         previousCompanyName: rule.previousCompanyName ?? null,
@@ -651,6 +701,10 @@ export default defineAction({
       const oldSeniority = meta.seniority as string | null | undefined;
       const titleKeywords =
         (meta.titleKeywords as string[] | undefined) ?? (oldTitleKeyword ? [oldTitleKeyword] : []);
+      // No "old" fallback needed — this key didn't exist before this
+      // feature, so a pre-existing checkpointed row simply has no title
+      // exclude, same as it always has (empty list = no exclude post-filter).
+      const titleExcludeKeywords = (meta.titleExcludeKeywords as string[] | undefined) ?? [];
       const seniorities = (meta.seniorities as string[] | undefined) ?? (oldSeniority ? [oldSeniority] : []);
       const minLinkedinFollowers = (meta.minLinkedinFollowers as number | null | undefined) ?? null;
       const previousCompanyName = (meta.previousCompanyName as string | null | undefined) ?? null;
@@ -689,6 +743,7 @@ export default defineAction({
         dedupedSoFar,
         alreadyKnownSoFar,
         titleKeywords,
+        titleExcludeKeywords,
         seniorities,
         minLinkedinFollowers,
         previousCompanyName,
@@ -726,6 +781,7 @@ export default defineAction({
       dedupedSoFar: number;
       alreadyKnownSoFar: number;
       titleKeywords: string[];
+      titleExcludeKeywords: string[];
       seniorities: string[];
       minLinkedinFollowers: number | null;
       previousCompanyName: string | null;
@@ -763,6 +819,7 @@ export default defineAction({
         const pageResult = await searchProspectorContacts({
           orgId: ctx?.orgId,
           titleKeywords: params.titleKeywords,
+          titleExcludeKeywords: params.titleExcludeKeywords,
           seniorities: params.seniorities,
           minLinkedinFollowers: params.minLinkedinFollowers ?? undefined,
           previousCompanyName: params.previousCompanyName ?? undefined,
@@ -827,6 +884,7 @@ export default defineAction({
               deduped,
               alreadyKnown,
               titleKeywords: params.titleKeywords,
+              titleExcludeKeywords: params.titleExcludeKeywords,
               seniorities: params.seniorities,
               minLinkedinFollowers: params.minLinkedinFollowers,
               previousCompanyName: params.previousCompanyName,

@@ -106,6 +106,12 @@ export async function searchProspectorContacts(options: {
   // single-value callers (import-prospects-to-segment.ts,
   // search-commonroom-prospects.ts) need no changes at all.
   titleKeywords?: string[];
+  // Structured persona-level title exclude (sharedPersonas.titleExcludeKeywords)
+  // — always a post-filter, applied the same way as companyDenyList below.
+  // No auto-derived equivalent and no server-side filter exists for this
+  // (see companyDenyList's own comment on why CommonRoom's filter grammar
+  // has no negation operator).
+  titleExcludeKeywords?: string[];
   seniorities?: string[];
   // Purely additive filters with no LLM-derived equivalent — always AND'd
   // in on top of whichever title/seniority filter ends up applying.
@@ -223,6 +229,7 @@ export async function searchProspectorContacts(options: {
 
   const allowList = options.companyAllowList?.map((c) => c.toLowerCase()).filter(Boolean);
   const denyList = options.companyDenyList?.map((c) => c.toLowerCase()).filter(Boolean);
+  const titleExcludeList = options.titleExcludeKeywords?.map((t) => t.toLowerCase()).filter(Boolean);
   const effectiveSeniorities = (options.seniorities?.filter(Boolean) ?? []).map(normalizeSeniority);
   const normalizedSeniority =
     effectiveSeniorities.length === 0 && options.seniority ? normalizeSeniority(options.seniority) : null;
@@ -234,6 +241,10 @@ export async function searchProspectorContacts(options: {
     }
     if (denyList && denyList.length > 0) {
       if (company && denyList.includes(company)) return false;
+    }
+    if (titleExcludeList && titleExcludeList.length > 0) {
+      const title = record.title?.toLowerCase();
+      if (title && titleExcludeList.some((kw) => title.includes(kw))) return false;
     }
     if (effectiveSeniorities.length > 0) {
       const recordSeniority = record.seniority ? normalizeSeniority(record.seniority) : "";
@@ -264,6 +275,48 @@ export async function searchProspectorContacts(options: {
     nextCursor: parsed.nextCursor,
     hasMore: parsed.has_more ?? false,
   };
+}
+
+export interface AddedCommonRoomContact {
+  commonRoomContactId: string | null;
+  email: string | null;
+}
+
+// The literal API equivalent of clicking "Add" on a Prospector search result
+// in CommonRoom's own UI: converts a ProspectorContact into a real workspace
+// Contact record. This is how a pull-plan-sourced contact gets an email
+// (when CommonRoom has one) WITHOUT Apollo — ProspectorContact search
+// results themselves never carry an email (confirmed: not in CommonRoom's
+// live catalog for that object type). Only called for contacts actually
+// being pushed onward to HubSpot (reconcile-prospect-pull-plan.ts), never
+// for every raw search result, since it's a real write into the user's
+// CommonRoom workspace.
+export async function addProspectorContactToCommonRoom(
+  orgId: string | null | undefined,
+  prospectorContactId: string,
+): Promise<AddedCommonRoomContact> {
+  const serverId = resolveServerId(orgId);
+  const created = await callMcpToolWithTimeout(serverId, "commonroom_create_object", {
+    objectType: "Contact",
+    prospectorContactId,
+  });
+  const parsedCreated = parseMcpToolResult(created) as { id?: string } | null;
+  const commonRoomContactId = parsedCreated?.id ?? null;
+  if (!commonRoomContactId) return { commonRoomContactId: null, email: null };
+
+  // The create response's own shape isn't documented to always include the
+  // enriched email inline, so read the contact back explicitly rather than
+  // assume — a wasted extra call is far cheaper than silently missing an
+  // email CommonRoom actually had.
+  const fetched = await callMcpToolWithTimeout(serverId, "commonroom_list_objects", {
+    objectType: "Contact",
+    id: commonRoomContactId,
+    properties: ["primaryEmail"],
+  });
+  const parsedFetched = parseMcpToolResult(fetched) as { records?: Array<{ primaryEmail?: string }> } | null;
+  const email = parsedFetched?.records?.[0]?.primaryEmail ?? null;
+
+  return { commonRoomContactId, email };
 }
 
 export interface ProspectorCompanyMatch {

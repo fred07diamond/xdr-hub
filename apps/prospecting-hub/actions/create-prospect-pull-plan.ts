@@ -47,6 +47,10 @@ export default defineAction({
       .string()
       .nullish()
       .describe("HubSpot owner id — when set, that owner's current book of business is resolved live at every run and unioned with companyDenyList"),
+    autoEnrollHubspotWorkflow: z
+      .boolean()
+      .default(true)
+      .describe("When on, each reconcile tick pushes newly-synced CommonRoom/Prospector-leg contacts into HubSpot and enrolls them in each persona's matching HubSpot workflow (resolved by name)"),
   }),
   requiresAuth: true,
   http: { method: "POST" },
@@ -62,6 +66,7 @@ export default defineAction({
       companyDenyList,
       companyAllowListOwnerId,
       companyDenyListOwnerId,
+      autoEnrollHubspotWorkflow,
     },
     ctx,
   ) => {
@@ -179,6 +184,7 @@ export default defineAction({
         jobResourcePath,
         status: "active",
         createdAt: now,
+        autoEnrollHubspotWorkflow: autoEnrollHubspotWorkflow ? 1 : 0,
       });
     } catch (err) {
       try {

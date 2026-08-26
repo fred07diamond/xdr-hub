@@ -26,6 +26,10 @@ export default defineAction({
         sourceDocUrl: sharedPersonas.sourceDocUrl,
         ownerEmail: sharedPersonas.ownerEmail,
         createdAt: sharedPersonas.createdAt,
+        titleIncludeKeywords: sharedPersonas.titleIncludeKeywords,
+        titleExcludeKeywords: sharedPersonas.titleExcludeKeywords,
+        orgIncludeList: sharedPersonas.orgIncludeList,
+        orgExcludeList: sharedPersonas.orgExcludeList,
       })
       .from(sharedPersonas)
       .orderBy(desc(sharedPersonas.createdAt));
@@ -78,6 +82,10 @@ export default defineAction({
           description: p.description,
           sourceDocUrl: p.sourceDocUrl,
           wordCount,
+          titleIncludeKeywords: p.titleIncludeKeywords,
+          titleExcludeKeywords: p.titleExcludeKeywords,
+          orgIncludeList: p.orgIncludeList,
+          orgExcludeList: p.orgExcludeList,
           liAgentPersonaId: liAgentPersonaIdByPersonaId.get(p.id) ?? null,
           ownerEmail: p.ownerEmail,
           createdAt: p.createdAt,
