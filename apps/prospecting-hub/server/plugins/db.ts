@@ -525,8 +525,11 @@ export default runMigrations(
     {
       version: 40,
       name: "prospect-pull-plans-auto-enroll-hubspot-workflow-column",
-      // See schema.ts's own comment on prospectPullPlans.autoEnrollHubspotWorkflow.
-      sql: `ALTER TABLE prospect_pull_plans ADD COLUMN auto_enroll_hubspot_workflow INTEGER NOT NULL DEFAULT 1`,
+      // Backfills every EXISTING plan to off (0) -- see schema.ts's own
+      // comment on prospectPullPlans.autoEnrollHubspotWorkflow for why. New
+      // plans get "on" from create-prospect-pull-plan.ts's zod default, not
+      // this column default.
+      sql: `ALTER TABLE prospect_pull_plans ADD COLUMN auto_enroll_hubspot_workflow INTEGER NOT NULL DEFAULT 0`,
     },
   ],
   { table: "prospecting_hub_migrations" },
