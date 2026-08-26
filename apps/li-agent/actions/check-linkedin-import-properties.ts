@@ -8,11 +8,19 @@ import { getHubSpotToken, hubspotFetch } from "@xdr-hub/shared/server";
 // code is written against them. Safe to delete once that integration ships.
 const PROPERTY_NAMES = ["linkedin_app_last_imported_by", "linkedin_app_last_imported"] as const;
 
+interface PropertyOption {
+  label: string;
+  value: string;
+  hidden?: boolean;
+}
+
 interface PropertyCheck {
   exists: boolean;
   type?: string;
   fieldType?: string;
   label?: string;
+  /** Valid values for an enumeration/select property -- omitted for other types. */
+  options?: PropertyOption[];
 }
 
 async function checkContactProperty(name: string): Promise<PropertyCheck> {
@@ -21,8 +29,15 @@ async function checkContactProperty(name: string): Promise<PropertyCheck> {
       type?: string;
       fieldType?: string;
       label?: string;
+      options?: PropertyOption[];
     };
-    return { exists: true, type: prop.type, fieldType: prop.fieldType, label: prop.label };
+    return {
+      exists: true,
+      type: prop.type,
+      fieldType: prop.fieldType,
+      label: prop.label,
+      options: prop.type === "enumeration" ? prop.options : undefined,
+    };
   } catch (err) {
     if (err instanceof Error && err.message.includes("(404)")) return { exists: false };
     throw err;
