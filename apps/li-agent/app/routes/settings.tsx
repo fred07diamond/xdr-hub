@@ -428,6 +428,52 @@ function OrgMembersSection() {
   );
 }
 
+interface LinkedInImportPropertyCheck {
+  exists: boolean;
+  type?: string;
+  fieldType?: string;
+  label?: string;
+  options?: Array<{ label: string; value: string; hidden?: boolean }>;
+}
+
+// TEMPORARY -- diagnostic panel for a new integration being built (writes
+// linkedin_app_last_imported_by / linkedin_app_last_imported onto HubSpot
+// contacts). Raw-URL testing of check-linkedin-import-properties hit the
+// workspace-app-access gate outside the app's own authenticated fetch path;
+// this button goes through the same useActionMutation path every other
+// working feature in this app already uses. Remove this panel (and the
+// action it calls) once that integration ships.
+function LinkedInImportPropertiesCheck() {
+  const check = useActionMutation("check-linkedin-import-properties");
+  const [result, setResult] = useState<{
+    connected: boolean;
+    properties?: Record<string, LinkedInImportPropertyCheck>;
+  } | null>(null);
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-dashed border-border/60 p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-muted-foreground">
+          Temp: check linkedin_app_last_imported* properties
+        </p>
+        <button
+          type="button"
+          onClick={async () => setResult((await check.mutateAsync({})) as typeof result)}
+          disabled={check.isPending}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-40"
+        >
+          {check.isPending ? <IconLoader2 size={12} className="animate-spin" /> : "Check"}
+        </button>
+      </div>
+      {result && (
+        <pre className="overflow-auto rounded-md bg-muted/40 p-2 text-[10px] leading-relaxed">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function HubSpotCard() {
   const { data: connData, isLoading: connLoading } = useActionQuery("get-hubspot-connection", {});
   const conn = connData as { connected?: boolean; error?: string; portalId?: string | null } | undefined;
@@ -473,6 +519,11 @@ function HubSpotCard() {
             Manage in Dispatch
             <IconExternalLink size={12} />
           </a>
+        </CardContent>
+      )}
+      {conn?.connected && (
+        <CardContent>
+          <LinkedInImportPropertiesCheck />
         </CardContent>
       )}
     </Card>
