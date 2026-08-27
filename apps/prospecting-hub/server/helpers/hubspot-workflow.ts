@@ -15,12 +15,21 @@ interface HubSpotFlow {
 }
 
 interface ListFlowsResponse {
-  results?: HubSpotFlow[];
+  // HubSpot's own docs: the LIST endpoint only returns key fields --
+  // id/isEnabled/objectTypeId/revisionId -- NOT name. Confirmed live: every
+  // result here came back with `name` undefined. Getting a flow's name
+  // requires a second GET per flow id (/automation/v4/flows/{flowId}).
+  results?: Array<{ id: string }>;
   paging?: { next?: { after?: string } };
 }
 
-export async function listHubSpotFlows(): Promise<HubSpotFlow[]> {
-  const flows: HubSpotFlow[] = [];
+interface FlowDetail {
+  id: string;
+  name?: string;
+}
+
+async function listFlowIds(): Promise<string[]> {
+  const ids: string[] = [];
   let after: string | undefined;
   // Bounded to a few pages -- a portal with an unreasonable number of flows
   // would otherwise risk this call alone blowing the reconcile job's own
@@ -29,11 +38,42 @@ export async function listHubSpotFlows(): Promise<HubSpotFlow[]> {
   for (let page = 0; page < 5; page++) {
     const query = after ? `?limit=100&after=${encodeURIComponent(after)}` : "?limit=100";
     const res = (await hubspotFetchWithTimeout(`/automation/v4/flows${query}`)) as ListFlowsResponse;
-    flows.push(...(res.results ?? []));
+    ids.push(...(res.results ?? []).map((r) => r.id));
     after = res.paging?.next?.after;
     if (!after) break;
   }
-  return flows;
+  return ids;
+}
+
+// Fetches each flow's full detail (including name) in small concurrent
+// batches -- the list endpoint's own response has no name field at all, so
+// this second round-trip per flow is unavoidable to match by persona name.
+// A failed individual detail fetch is skipped (name stays undefined, so it
+// simply never matches) rather than failing the whole lookup over one bad
+// flow id.
+async function fetchFlowDetails(ids: string[]): Promise<FlowDetail[]> {
+  const BATCH_SIZE = 10;
+  const details: FlowDetail[] = [];
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const batch = ids.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (id) => {
+        try {
+          const flow = (await hubspotFetchWithTimeout(`/automation/v4/flows/${id}`)) as { id: string; name?: string };
+          return { id, name: flow.name };
+        } catch {
+          return { id, name: undefined };
+        }
+      }),
+    );
+    details.push(...results);
+  }
+  return details;
+}
+
+export async function listHubSpotFlows(): Promise<HubSpotFlow[]> {
+  const ids = await listFlowIds();
+  return fetchFlowDetails(ids);
 }
 
 // Never guesses: exactly one case-insensitive match on both "commonroom" and
@@ -51,8 +91,14 @@ export function matchWorkflowForPersona(flows: HubSpotFlow[], personaName: strin
   });
 
   if (matches.length === 0) {
+    // Self-diagnosing on purpose: this is the exact spot that broke once
+    // already (the list endpoint's missing `name` field made every match
+    // fail silently) -- surfacing what was actually fetched turns "no
+    // matching workflow" from a dead end into an immediate diagnosis.
+    const sample = flows.slice(0, 10).map((f) => f.name ?? "(unnamed)");
     throw new Error(
-      `No HubSpot workflow found matching persona "${personaName}" (looked for a flow name containing "commonroom" and "${needle}").`,
+      `No HubSpot workflow found matching persona "${personaName}" (looked for a flow name containing "commonroom" and "${needle}"). ` +
+        `Fetched ${flows.length} workflow(s) total${sample.length > 0 ? `, e.g.: ${sample.join(" | ")}` : " (none returned at all)"}.`,
     );
   }
   if (matches.length > 1) {
