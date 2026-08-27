@@ -90,38 +90,25 @@ export function resetCommonRoomBreaker(): void {
   breakers.clear();
 }
 
-// The framework sets a container-global MCP manager during its agent-chat
-// plugin's own async init, but a request can reach this call before that
-// init has finished on a freshly spun-up container -- confirmed live via
-// "Find prospects now" repeatedly failing with the framework's own "MCP
-// client is not configured." (a distinct condition from a real CommonRoom-
-// side stall or error; nothing about CommonRoom's own health). NOT a
-// permanent per-app failure: this app's Chat feature (same plugin, same
-// init) works fine, and CommonRoom's own Connections page shows a healthy
-// "Connected" status. But lengthening this retry budget to ~34s total (an
-// earlier attempt) made things WORSE, not better -- it came back as a raw
-// Netlify 502 (the platform's own gateway giving up), not even a clean
-// error response, meaning the real enforced limit for this deployment is
-// well under the 75s configured in netlify.toml. Kept modest and safely
-// below that unknown-but-real ceiling; a 7s budget (1s/2s/4s) previously
-// returned cleanly every time, just without succeeding, so this stays in
-// that same safe range rather than guessing at a longer one again. If a
-// cold start genuinely needs longer than this, the right move is a second
-// manual attempt (a fresh request, fresh timeout budget), not a longer
-// single-request wait.
-// Deliberately NOT fed into the stall breaker below -- that breaker exists
-// for CommonRoom's OWN responsiveness, and this has nothing to do with it.
-const MCP_NOT_CONFIGURED_MESSAGE = "MCP client is not configured";
-const MCP_NOT_CONFIGURED_RETRY_DELAYS_MS = [1500, 3000, 5000];
-
-function isMcpNotConfiguredError(err: unknown): boolean {
-  return err instanceof Error && err.message.includes(MCP_NOT_CONFIGURED_MESSAGE);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
+// NOTE on "MCP client is not configured": this app previously carried a
+// retry loop here for that specific framework error (getGlobalMcpManager()
+// returning null), on the theory that it meant a cold-starting container
+// hadn't finished its agent-chat plugin init yet. Definitively disproven via
+// live Netlify function logs: a failing request was tagged
+// "cold_start": false with "process_age_ms": 3095 (an already-warm,
+// 3-second-old container that had served a prior request) and STILL hit
+// this error. The real cause is a separate framework-level crash-loop bug
+// (an uncaught "socket hang up" from a reaped idle MCP transport socket,
+// ~60s after an earlier request -- see @agent-native/core's own comment in
+// mcp-client/manager.js about this exact AWS Lambda behavior) that
+// periodically kills and restarts the whole process. No amount of
+// in-request retry/backoff can paper over a process-level crash -- the
+// retry loop only added up to ~25s of pure wasted latency (confirmed: one
+// failing request logged duration_ms: 22026) with zero improvement in
+// success rate, and an earlier, longer version of it caused a raw Netlify
+// 502 by exceeding some real (shorter-than-documented) function timeout.
+// Removed. This is a real upstream bug, reported separately -- not
+// something fixable from this app's code.
 export async function callMcpToolWithTimeout(
   serverId: string,
   toolName: string,
@@ -138,25 +125,6 @@ export async function callMcpToolWithTimeout(
     );
   }
 
-  for (const delayMs of MCP_NOT_CONFIGURED_RETRY_DELAYS_MS) {
-    try {
-      return await attemptCall(serverId, toolName, args, timeoutMs, breaker);
-    } catch (err) {
-      if (!isMcpNotConfiguredError(err)) throw err;
-      await sleep(delayMs);
-    }
-  }
-  // Final attempt — let its error (whatever it is) propagate unchanged.
-  return attemptCall(serverId, toolName, args, timeoutMs, breaker);
-}
-
-async function attemptCall(
-  serverId: string,
-  toolName: string,
-  args: Record<string, unknown> | undefined,
-  timeoutMs: number,
-  breaker: BreakerState,
-): Promise<unknown> {
   try {
     const result = await Promise.race([
       callMcpTool(serverId, toolName, args),
