@@ -3,32 +3,57 @@ import { hubspotFetchWithTimeout } from "@xdr-hub/shared/server";
 import { z } from "zod";
 import { requireRole } from "../server/helpers/require-role.js";
 
-// Temporary diagnostic — not part of any product flow. HubSpot's own
-// token-introspection endpoint (GET /oauth/v1/access-tokens/{token}) turned
-// out to be OAuth-only -- it rejects Private App (pat-) tokens outright with
-// "must have the correct format", and HubSpot has no equivalent scope
-// listing API for Private Apps (confirmed: the Auth tab in the Private App's
-// own settings UI is the only place to see its scopes). So instead of
-// introspecting, this just tries the two real operations under discussion
-// and reports whether each one actually works. Delete once the
-// automation-vs-crm.lists.write question is settled.
-async function tryCall(label: string, call: () => Promise<unknown>): Promise<{ ok: boolean; detail: string }> {
+// Temporary diagnostic — not part of any product flow. There is no scope-
+// listing API for HubSpot Private App tokens (confirmed: /oauth/v1/access-
+// tokens/{token} is OAuth-only and rejects pat- tokens outright), so this
+// tests every scope family this app could plausibly need by actually
+// calling a representative endpoint for each and reporting pass/fail.
+//
+// WRITE scopes are tested with zero side effects: each write call targets a
+// deliberately nonexistent object id (999999999999). HubSpot checks scope
+// authorization BEFORE checking whether the object exists, so the response
+// tells us which one failed:
+//   - 404 Not Found  -> the scope IS present (request passed auth, object just doesn't exist)
+//   - 403 Forbidden   -> the scope is MISSING (blocked before the object lookup)
+// Delete this action once the scope picture is settled.
+
+interface ScopeCheckResult {
+  scope: string;
+  ok: boolean;
+  detail: string;
+}
+
+const FAKE_ID = "999999999999";
+
+async function checkRead(scope: string, path: string): Promise<ScopeCheckResult> {
   try {
-    await call();
-    return { ok: true, detail: `${label}: succeeded` };
+    await hubspotFetchWithTimeout(path);
+    return { scope, ok: true, detail: "read succeeded" };
   } catch (err) {
-    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    return { scope, ok: false, detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// See file header: a 404 on a fake id means the scope is present.
+async function checkWriteAgainstFakeId(scope: string, path: string, body: unknown): Promise<ScopeCheckResult> {
+  try {
+    await hubspotFetchWithTimeout(path, { method: "PATCH", body: JSON.stringify(body) });
+    // Genuinely unexpected (the fake id shouldn't exist) but still proves the scope works.
+    return { scope, ok: true, detail: "write succeeded (unexpectedly matched a real object)" };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("(404)")) {
+      return { scope, ok: true, detail: "write scope present (404 on fake id — passed auth, object not found, as expected)" };
+    }
+    return { scope, ok: false, detail: message };
   }
 }
 
 export default defineAction({
-  description: "Test whether the configured HubSpot token can actually call the Automation and Lists APIs.",
+  description: "Test every plausibly-relevant HubSpot scope family the configured token might have, using safe (no side-effect) calls.",
   schema: z.object({}),
   requiresAuth: true,
-  // NOT read-only -- the list-write check below creates a real (immediately
-  // self-deleted) list to test crm.lists.write specifically, since read
-  // access succeeding doesn't prove write access also does.
-  readOnly: false,
+  readOnly: false, // write-scope checks make real (fake-id, 404-expected) PATCH calls
   http: { method: "GET" },
   run: async (_input, ctx) => {
     try {
@@ -37,81 +62,45 @@ export default defineAction({
       return { stage: "requireRole", error: err instanceof Error ? err.message : String(err) };
     }
 
-    const automation = await tryCall("automation (list workflows)", () =>
-      hubspotFetchWithTimeout("/automation/v4/flows?limit=1"),
-    );
-    // Harmless read-only call — searching lists with no query returns
-    // everything, same call this app would need to resolve a list by name
-    // before adding a contact to it.
-    const listsRead = await tryCall("crm.lists (search lists)", () =>
-      hubspotFetchWithTimeout("/crm/v3/lists/search", { method: "POST", body: JSON.stringify({ count: 1 }) }),
-    );
-
-    // Write test: create a throwaway list, then delete it immediately --
-    // self-cleaning, leaves nothing behind either way. Read access succeeding
-    // above does NOT prove write access also works, so this is a separate,
-    // real test rather than an assumption.
-    let listsWrite: { ok: boolean; detail: string };
-    try {
-      const created = (await hubspotFetchWithTimeout("/crm/v3/lists", {
-        method: "POST",
-        body: JSON.stringify({
-          name: `claude-scope-test-DELETE-ME-${Date.now()}`,
-          objectTypeId: "0-1",
-          processingType: "MANUAL",
-        }),
-      })) as { list?: { listId?: string } };
-      const listId = created.list?.listId;
-      if (listId) {
-        await hubspotFetchWithTimeout(`/crm/v3/lists/${listId}`, { method: "DELETE" });
-      }
-      listsWrite = { ok: true, detail: "crm.lists.write (create + delete test list): succeeded" };
-    } catch (err) {
-      listsWrite = { ok: false, detail: err instanceof Error ? err.message : String(err) };
-    }
-
-    // Fred's own real test case: add a specific real contact to a specific
-    // real, already-existing list -- the exact operation the actual pipeline
-    // will perform, not a throwaway. Left in place (not removed) since the
-    // contact staying in that list is the intended, permanent outcome here,
-    // not a side effect to clean up.
-    const REAL_TEST_LIST_ID = "238797";
-    const REAL_TEST_CONTACT_ID = "87694817025";
-    const realAdd = await tryCall(`add contact ${REAL_TEST_CONTACT_ID} to list ${REAL_TEST_LIST_ID}`, () =>
-      hubspotFetchWithTimeout(`/crm/v3/lists/${REAL_TEST_LIST_ID}/memberships/add`, {
-        method: "PUT",
-        body: JSON.stringify([REAL_TEST_CONTACT_ID]),
-      }),
-    );
-
-    // Which HubSpot PORTAL does the configured token actually belong to?
-    // Private App tokens are portal-specific -- if this doesn't match the
-    // portal ID visible in the browser URL while looking at "xDR App for
-    // Extracting LinkedIn Contacts" (app.hubspot.com/.../<portalId>/...),
-    // that alone explains everything without contradicting "it's the same
-    // app" being true in a different portal (e.g. a sandbox vs. production
-    // account with an app of the same name in each).
     let portalId: number | null = null;
-    let portalDetail = "";
     try {
       const raw = (await hubspotFetchWithTimeout("/account-info/v3/details")) as { portalId?: number };
       portalId = raw?.portalId ?? null;
-      portalDetail = "account-info: succeeded";
-    } catch (err) {
-      portalDetail = err instanceof Error ? err.message : String(err);
+    } catch {
+      // best-effort, ignore
     }
+
+    const checks: Array<Promise<ScopeCheckResult>> = [
+      checkRead("crm.objects.contacts.read", "/crm/v3/objects/contacts?limit=1"),
+      checkWriteAgainstFakeId("crm.objects.contacts.write", `/crm/v3/objects/contacts/${FAKE_ID}`, { properties: {} }),
+      checkRead("crm.objects.companies.read", "/crm/v3/objects/companies?limit=1"),
+      checkWriteAgainstFakeId("crm.objects.companies.write", `/crm/v3/objects/companies/${FAKE_ID}`, { properties: {} }),
+      checkRead("crm.objects.deals.read", "/crm/v3/objects/deals?limit=1"),
+      checkWriteAgainstFakeId("crm.objects.deals.write", `/crm/v3/objects/deals/${FAKE_ID}`, { properties: {} }),
+      checkRead("crm.objects.owners.read", "/crm/v3/owners?limit=1"),
+      checkRead("crm.schemas.contacts.read (properties)", "/crm/v3/properties/contacts?limit=1"),
+      checkRead("crm.schemas.companies.read (properties)", "/crm/v3/properties/companies?limit=1"),
+      checkRead("automation (workflows)", "/automation/v4/flows?limit=1"),
+      checkRead("tickets.read", "/crm/v3/objects/tickets?limit=1"),
+      checkRead("marketing-email.read", "/marketing/v3/emails?limit=1"),
+      (async (): Promise<ScopeCheckResult> => {
+        try {
+          await hubspotFetchWithTimeout("/crm/v3/lists/search", { method: "POST", body: JSON.stringify({ count: 1 }) });
+          return { scope: "crm.lists.read", ok: true, detail: "read succeeded" };
+        } catch (err) {
+          return { scope: "crm.lists.read", ok: false, detail: err instanceof Error ? err.message : String(err) };
+        }
+      })(),
+      checkWriteAgainstFakeId("crm.lists.write", `/crm/v3/lists/${FAKE_ID}/memberships/add`, [FAKE_ID]),
+    ];
+
+    const merged = await Promise.all(checks);
 
     return {
       portalId,
-      portalDetail,
-      canListWorkflows: automation.ok,
-      automationDetail: automation.detail,
-      canSearchLists: listsRead.ok,
-      listsReadDetail: listsRead.detail,
-      canWriteLists: listsWrite.ok,
-      listsWriteDetail: listsWrite.detail,
-      realAddSucceeded: realAdd.ok,
-      realAddDetail: realAdd.detail,
+      present: merged.filter((r) => r.ok).map((r) => r.scope),
+      missing: merged.filter((r) => !r.ok).map((r) => ({ scope: r.scope, detail: r.detail })),
+      all: merged,
     };
   },
 });
