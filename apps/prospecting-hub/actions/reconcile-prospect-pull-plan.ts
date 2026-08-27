@@ -96,8 +96,22 @@ export default defineAction({
     }> = [];
 
     // Fetched once for the whole tick, not once per persona -- every
-    // persona's workflow lookup matches against the same flow list.
-    const hubspotFlows = plan.autoEnrollHubspotWorkflow ? await listHubSpotFlows() : [];
+    // persona's workflow lookup matches against the same flow list. NOT
+    // allowed to throw here: a HubSpot hiccup (not connected, missing
+    // automation scope, timeout) must degrade to "no HubSpot enrollment
+    // this tick" for every persona, never fail the entire reconcile call --
+    // the LinkedIn-pool top-up and refill-nudge logic below have nothing to
+    // do with HubSpot and must still run. The real error message is kept
+    // and surfaced per-persona as hubspotWorkflowError below, not swallowed.
+    let hubspotFlows: Awaited<ReturnType<typeof listHubSpotFlows>> = [];
+    let hubspotFlowsError: string | null = null;
+    if (plan.autoEnrollHubspotWorkflow) {
+      try {
+        hubspotFlows = await listHubSpotFlows();
+      } catch (err) {
+        hubspotFlowsError = err instanceof Error ? err.message : String(err);
+      }
+    }
     const personaNameRows = plan.autoEnrollHubspotWorkflow
       ? await getSharedDb()
           .select({ id: sharedPersonas.id, name: sharedPersonas.name })
@@ -196,6 +210,7 @@ export default defineAction({
         const personaName = personaNameById.get(personaId);
         let workflowId: string | null = null;
         try {
+          if (hubspotFlowsError) throw new Error(hubspotFlowsError);
           if (!personaName) throw new Error(`Persona ${personaId} not found.`);
           workflowId = matchWorkflowForPersona(hubspotFlows, personaName);
         } catch (err) {
