@@ -48,7 +48,6 @@ export default defineAction({
         createdAt: r.createdAt,
         lastReconciledAt: r.lastReconciledAt,
         hasHubspot: !!r.marketingRuleIds,
-        autoEnrollHubspotWorkflow: !!r.autoEnrollHubspotWorkflow,
         personaMix: personaMix.map((p) => ({
           personaId: p.personaId,
           targetPercent: p.targetPercent,

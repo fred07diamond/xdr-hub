@@ -75,9 +75,6 @@ export default defineAction({
           fromLinkedinPool: number;
           shortfall: number;
           refillNudgeUrl: string | null;
-          hubspotEnrolled?: number;
-          hubspotEnrollErrors?: number;
-          hubspotWorkflowError?: string | null;
         };
         const persona = personaMap.get(b.personaId);
         return {

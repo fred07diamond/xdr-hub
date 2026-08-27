@@ -513,10 +513,21 @@ export default runMigrations(
         ALTER TABLE marketing_rules ADD COLUMN company_allow_list_owner_id TEXT;
         ALTER TABLE marketing_rules ADD COLUMN company_deny_list_owner_id TEXT`,
     },
+    // Versions 39-40 added columns for an app-side HubSpot contact-push +
+    // workflow-enrollment pipeline that turned out to be the wrong approach:
+    // CommonRoom already has its own native "Workflows" automation (set up
+    // per-persona directly in CommonRoom's UI, filter criteria -> "Add to
+    // HubSpot workflow" as the final step) that runs this exact flow
+    // continuously without any app code -- and isn't exposed via CommonRoom's
+    // API/MCP surface for this app to drive instead. Reverted in the same
+    // pass this was found (schema.ts's Drizzle columns and every reader/
+    // writer removed) -- these two migrations are kept AS-IS, unused, rather
+    // than dropped, matching this file's own "frozen legacy, never delete a
+    // ran migration" convention elsewhere (see e.g. the old icpPersonas
+    // tables in li-agent).
     {
       version: 39,
       name: "contacts-hubspot-workflow-enrollment-columns",
-      // See schema.ts's own comment on contacts.hubspotContactId.
       sql: `
         ALTER TABLE contacts ADD COLUMN hubspot_contact_id TEXT;
         ALTER TABLE contacts ADD COLUMN hubspot_workflow_enrolled_at TEXT;
@@ -525,10 +536,6 @@ export default runMigrations(
     {
       version: 40,
       name: "prospect-pull-plans-auto-enroll-hubspot-workflow-column",
-      // Backfills every EXISTING plan to off (0) -- see schema.ts's own
-      // comment on prospectPullPlans.autoEnrollHubspotWorkflow for why. New
-      // plans get "on" from create-prospect-pull-plan.ts's zod default, not
-      // this column default.
       sql: `ALTER TABLE prospect_pull_plans ADD COLUMN auto_enroll_hubspot_workflow INTEGER NOT NULL DEFAULT 0`,
     },
   ],

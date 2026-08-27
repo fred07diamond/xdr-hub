@@ -70,19 +70,6 @@ export const contacts = table("contacts", {
   draftEmailBody: text("draft_email_body"),
   draftLinkedinMessage: text("draft_linkedin_message"),
   draftGeneratedAt: text("draft_generated_at"),
-  // Automatic HubSpot workflow enrollment for pull-plan-sourced contacts
-  // (reconcile-prospect-pull-plan.ts). hubspotContactId is set once this
-  // contact has been pushed/upserted into HubSpot (via CommonRoom's own
-  // "Add" — commonroom_create_object with prospectorContactId — surfacing
-  // email when CommonRoom has one, then a HubSpot contact upsert); a
-  // contact with hubspotContactId set but no hubspotWorkflowEnrolledAt has
-  // succeeded through the push but not yet the enroll call, and only the
-  // enroll step is retried next tick. hubspotEnrollError holds the last
-  // failure message and stops indefinite retries — a persona-mix pull is
-  // idempotent per-contact by design, not "retry forever."
-  hubspotContactId: text("hubspot_contact_id"),
-  hubspotWorkflowEnrolledAt: text("hubspot_workflow_enrolled_at"),
-  hubspotEnrollError: text("hubspot_enroll_error"),
   // "linkedin" contacts come from a prospect pull plan's LinkedIn leg
   // (server/helpers/prospect-pull-plan.ts) -- leads already captured by
   // li-agent's Chrome extension, read via a cross-app A2A call, never a
@@ -407,18 +394,6 @@ export const prospectPullPlans = table("prospect_pull_plans", {
   jobResourcePath: text("job_resource_path"),
   status: text("status", { enum: ["active", "paused"] }).notNull().default("active"),
   createdAt: text("created_at").default(now()),
-  // When on, each reconcile tick also pushes newly-synced, not-yet-pushed
-  // CommonRoom/Prospector-leg contacts for this plan's personas into HubSpot
-  // and enrolls them in that persona's matching HubSpot workflow (resolved
-  // by name, not a stored mapping -- see hubspot-workflow.ts). Scoped to
-  // pull-plan-created sourcing rules only, not every sourcing rule in the
-  // app. Column default is 0 (off) deliberately -- it backfills every
-  // PRE-EXISTING plan to off on migration, so this new automated-enrollment
-  // behavior never turns itself on for a plan already running in production
-  // without explicit review. create-prospect-pull-plan.ts's own zod schema
-  // defaults NEW plans to `true` and always sets this column explicitly on
-  // insert, so the column default here only ever applies to old rows.
-  autoEnrollHubspotWorkflow: integer("auto_enroll_hubspot_workflow").notNull().default(0),
 });
 
 // One row per reconcile-job tick -- the run-history record the progress UI
