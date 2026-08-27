@@ -5,6 +5,7 @@ import {
   IconGauge,
   IconLoader2,
   IconPlus,
+  IconRefresh,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
@@ -334,7 +335,9 @@ function NewPullPlanPanel({
 }
 
 function PlanProgress({ planId }: { planId: string }) {
-  const { data, isLoading } = useActionQuery("get-prospect-pull-plan-progress", { planId }, { refetchInterval: 30000 });
+  const { data, isLoading, refetch } = useActionQuery("get-prospect-pull-plan-progress", { planId }, { refetchInterval: 30000 });
+  const reconcileNow = useActionMutation("reconcile-prospect-pull-plan");
+  const [runError, setRunError] = useState<string | null>(null);
   const progress = data as
     | {
         hasRun: boolean;
@@ -353,6 +356,29 @@ function PlanProgress({ planId }: { planId: string }) {
       }
     | undefined;
 
+  async function handleRunNow() {
+    setRunError(null);
+    try {
+      await reconcileNow.mutateAsync({ planId });
+      await refetch();
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : "Reconcile run failed — try again.");
+    }
+  }
+
+  const runNowButton = (
+    <button
+      type="button"
+      onClick={handleRunNow}
+      disabled={reconcileNow.isPending}
+      title="Run one reconcile cycle right now, instead of waiting for the next scheduled interval — useful for testing"
+      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+    >
+      {reconcileNow.isPending ? <IconLoader2 size={11} className="animate-spin" /> : <IconRefresh size={11} />}
+      {reconcileNow.isPending ? "Running…" : "Run once now"}
+    </button>
+  );
+
   if (isLoading) {
     return (
       <div className="flex h-16 items-center justify-center">
@@ -362,11 +388,23 @@ function PlanProgress({ planId }: { planId: string }) {
   }
 
   if (!progress?.hasRun) {
-    return <p className="py-3 text-xs text-muted-foreground">No reconcile run yet — this plan's first scheduled cycle hasn't fired.</p>;
+    return (
+      <div className="flex items-center justify-between gap-2 py-3">
+        <p className="text-xs text-muted-foreground">No reconcile run yet — this plan's first scheduled cycle hasn't fired.</p>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {runNowButton}
+          {runError && <p role="alert" className="text-[10px] text-destructive">{runError}</p>}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-3 py-3">
+      <div className="flex items-center justify-end gap-2">
+        {runNowButton}
+      </div>
+      {runError && <p role="alert" className="text-[10px] text-destructive">{runError}</p>}
       <DonutBreakdown segments={progress.breakdown.map((b) => ({ label: b.name, value: b.actual, color: b.color ?? DEFAULT_PERSONA_COLOR }))} />
       <div className="space-y-1.5">
         {progress.breakdown.map((b) => (
