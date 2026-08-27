@@ -84,7 +84,26 @@ export default defineAction({
       }),
     );
 
+    // Which HubSpot PORTAL does the configured token actually belong to?
+    // Private App tokens are portal-specific -- if this doesn't match the
+    // portal ID visible in the browser URL while looking at "xDR App for
+    // Extracting LinkedIn Contacts" (app.hubspot.com/.../<portalId>/...),
+    // that alone explains everything without contradicting "it's the same
+    // app" being true in a different portal (e.g. a sandbox vs. production
+    // account with an app of the same name in each).
+    let portalId: number | null = null;
+    let portalDetail = "";
+    try {
+      const raw = (await hubspotFetchWithTimeout("/account-info/v3/details")) as { portalId?: number };
+      portalId = raw?.portalId ?? null;
+      portalDetail = "account-info: succeeded";
+    } catch (err) {
+      portalDetail = err instanceof Error ? err.message : String(err);
+    }
+
     return {
+      portalId,
+      portalDetail,
       canListWorkflows: automation.ok,
       automationDetail: automation.detail,
       canSearchLists: listsRead.ok,
