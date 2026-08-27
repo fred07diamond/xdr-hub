@@ -513,18 +513,15 @@ export default runMigrations(
         ALTER TABLE marketing_rules ADD COLUMN company_allow_list_owner_id TEXT;
         ALTER TABLE marketing_rules ADD COLUMN company_deny_list_owner_id TEXT`,
     },
-    // Versions 39-40 added columns for an app-side HubSpot contact-push +
-    // workflow-enrollment pipeline that turned out to be the wrong approach:
-    // CommonRoom already has its own native "Workflows" automation (set up
-    // per-persona directly in CommonRoom's UI, filter criteria -> "Add to
-    // HubSpot workflow" as the final step) that runs this exact flow
-    // continuously without any app code -- and isn't exposed via CommonRoom's
-    // API/MCP surface for this app to drive instead. Reverted in the same
-    // pass this was found (schema.ts's Drizzle columns and every reader/
-    // writer removed) -- these two migrations are kept AS-IS, unused, rather
-    // than dropped, matching this file's own "frozen legacy, never delete a
-    // ran migration" convention elsewhere (see e.g. the old icpPersonas
-    // tables in li-agent).
+    // HubSpot workflow enrollment for pull-plan-sourced contacts -- see
+    // schema.ts's own comments on contacts.hubspotContactId and
+    // prospectPullPlans.autoEnrollHubspotWorkflow. (These columns briefly
+    // went unused for one deploy cycle while the exact mechanism was worked
+    // out with Fred -- CommonRoom's OWN "Workflows" automation feature was
+    // tried and rejected, since it isn't API-drivable and moves the
+    // automation logic outside this app; the real answer is a minimal
+    // HubSpot contact create + the existing HubSpot workflow's own
+    // "manually triggered" enrollment, which the app calls directly.)
     {
       version: 39,
       name: "contacts-hubspot-workflow-enrollment-columns",

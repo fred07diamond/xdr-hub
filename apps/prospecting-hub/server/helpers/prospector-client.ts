@@ -277,6 +277,48 @@ export async function searchProspectorContacts(options: {
   };
 }
 
+export interface AddedCommonRoomContact {
+  commonRoomContactId: string | null;
+  email: string | null;
+}
+
+// The literal API equivalent of clicking "Add" on a Prospector search result
+// in CommonRoom's own UI: converts a ProspectorContact into a real workspace
+// Contact record. This is how a pull-plan-sourced contact gets an email
+// (when CommonRoom has one) WITHOUT Apollo — ProspectorContact search
+// results themselves never carry an email (confirmed: not in CommonRoom's
+// live catalog for that object type). Only called for contacts actually
+// being pushed onward to HubSpot (reconcile-prospect-pull-plan.ts), never
+// for every raw search result, since it's a real write into the user's
+// CommonRoom workspace.
+export async function addProspectorContactToCommonRoom(
+  orgId: string | null | undefined,
+  prospectorContactId: string,
+): Promise<AddedCommonRoomContact> {
+  const serverId = resolveServerId(orgId);
+  const created = await callMcpToolWithTimeout(serverId, "commonroom_create_object", {
+    objectType: "Contact",
+    prospectorContactId,
+  });
+  const parsedCreated = parseMcpToolResult(created) as { id?: string } | null;
+  const commonRoomContactId = parsedCreated?.id ?? null;
+  if (!commonRoomContactId) return { commonRoomContactId: null, email: null };
+
+  // The create response's own shape isn't documented to always include the
+  // enriched email inline, so read the contact back explicitly rather than
+  // assume — a wasted extra call is far cheaper than silently missing an
+  // email CommonRoom actually had.
+  const fetched = await callMcpToolWithTimeout(serverId, "commonroom_list_objects", {
+    objectType: "Contact",
+    id: commonRoomContactId,
+    properties: ["primaryEmail"],
+  });
+  const parsedFetched = parseMcpToolResult(fetched) as { records?: Array<{ primaryEmail?: string }> } | null;
+  const email = parsedFetched?.records?.[0]?.primaryEmail ?? null;
+
+  return { commonRoomContactId, email };
+}
+
 export interface ProspectorCompanyMatch {
   id: string;
   name?: string;

@@ -1,11 +1,26 @@
 import { defineAction } from "@agent-native/core";
 import { invokeAgentAction } from "@agent-native/core/a2a";
-import { and, eq, sql } from "@agent-native/core/db/schema";
+import { and, eq, inArray, isNull, sql } from "@agent-native/core/db/schema";
+import { getSharedDb, sharedPersonas } from "@xdr-hub/shared/server";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { contacts, prospectPullPlanRuns, prospectPullPlans } from "../server/db/schema.js";
+import {
+  enrollContactInFlow,
+  listHubSpotFlows,
+  matchWorkflowForPersona,
+  upsertHubSpotContact,
+} from "../server/helpers/hubspot-workflow.js";
+import { addProspectorContactToCommonRoom } from "../server/helpers/prospector-client.js";
 import { requireRole } from "../server/helpers/require-role.js";
+
+// Bounded per persona per tick -- each contact costs up to 3 sequential
+// network calls (CommonRoom add, minimal HubSpot contact create, HubSpot
+// workflow enroll), so this keeps one reconcile invocation for one plan
+// well within a single serverless invocation even with an unlucky number of
+// personas.
+const HUBSPOT_ENROLL_BATCH_SIZE = 20;
 
 interface PersonaMixEntry {
   personaId: string;
@@ -40,7 +55,7 @@ async function callLiAgent<T>(action: string, input: Record<string, unknown>, us
 
 export default defineAction({
   description:
-    "Reconcile one prospect pull plan for the current cycle: count this cycle's new contacts per persona against target, top up any shortfall from li-agent's already-captured LinkedIn lead pool (deduped by externalId so a lead is never imported twice), and generate a refill-nudge Sales Nav link for any persona still short after that. A single bounded call, not a resumable loop -- there is no long-running search/score phase here, unlike run-sourcing-rule-pipeline.ts.",
+    "Reconcile one prospect pull plan for the current cycle: count this cycle's new contacts per persona against target, top up any shortfall from li-agent's already-captured LinkedIn lead pool (deduped by externalId so a lead is never imported twice), generate a refill-nudge Sales Nav link for any persona still short after that, and — when the plan's autoEnrollHubspotWorkflow is on — create a minimal HubSpot contact for each newly-synced CommonRoom/Prospector-leg contact and enroll it in that persona's matching HubSpot workflow (resolved by name against HubSpot's flow list); the workflow itself owns everything past enrollment. A single bounded call, not a resumable loop -- there is no long-running search/score phase here, unlike run-sourcing-rule-pipeline.ts.",
   schema: z.object({ planId: z.string().min(1) }),
   requiresAuth: true,
   http: { method: "POST" },
@@ -75,7 +90,21 @@ export default defineAction({
       fromLinkedinPool: number;
       shortfall: number;
       refillNudgeUrl: string | null;
+      hubspotEnrolled: number;
+      hubspotEnrollErrors: number;
+      hubspotWorkflowError: string | null;
     }> = [];
+
+    // Fetched once for the whole tick, not once per persona -- every
+    // persona's workflow lookup matches against the same flow list.
+    const hubspotFlows = plan.autoEnrollHubspotWorkflow ? await listHubSpotFlows() : [];
+    const personaNameRows = plan.autoEnrollHubspotWorkflow
+      ? await getSharedDb()
+          .select({ id: sharedPersonas.id, name: sharedPersonas.name })
+          .from(sharedPersonas)
+          .where(inArray(sharedPersonas.id, personaMix.map((p) => p.personaId)))
+      : [];
+    const personaNameById = new Map(personaNameRows.map((p) => [p.id, p.name]));
 
     for (const { personaId, targetPercent } of personaMix) {
       const target = Math.max(1, Math.round((plan.totalVolume * targetPercent) / 100));
@@ -149,6 +178,74 @@ export default defineAction({
         refillNudgeUrl = linkResult?.searchUrl ?? null;
       }
 
+      // Create a bare-minimum HubSpot contact (just enough to get an id) for
+      // each newly-synced, not-yet-enrolled CommonRoom/Prospector-leg
+      // contact for this persona, then call HubSpot's enrollment endpoint --
+      // the already-built HubSpot workflow does everything past that itself
+      // (list membership, branching, etc.), so nothing else happens here.
+      // Scoped to pull-plan-created sourcing rules only (this whole block,
+      // via plan.autoEnrollHubspotWorkflow), never every sourcing rule in
+      // the app. Contacts already enrolled OR permanently failed
+      // (hubspotEnrollError set) are excluded, so this only ever touches
+      // genuinely new work each tick.
+      let hubspotEnrolled = 0;
+      let hubspotEnrollErrors = 0;
+      let hubspotWorkflowError: string | null = null;
+
+      if (plan.autoEnrollHubspotWorkflow) {
+        const personaName = personaNameById.get(personaId);
+        let workflowId: string | null = null;
+        try {
+          if (!personaName) throw new Error(`Persona ${personaId} not found.`);
+          workflowId = matchWorkflowForPersona(hubspotFlows, personaName);
+        } catch (err) {
+          hubspotWorkflowError = err instanceof Error ? err.message : String(err);
+        }
+
+        if (workflowId) {
+          const pending = await db
+            .select({ id: contacts.id, name: contacts.name, company: contacts.company, title: contacts.title, externalId: contacts.externalId, hubspotContactId: contacts.hubspotContactId })
+            .from(contacts)
+            .where(
+              and(
+                eq(contacts.personaId, personaId),
+                eq(contacts.source, "prospector"),
+                isNull(contacts.hubspotEnrollError),
+                isNull(contacts.hubspotWorkflowEnrolledAt),
+              ),
+            )
+            .limit(HUBSPOT_ENROLL_BATCH_SIZE);
+
+          for (const contact of pending) {
+            try {
+              let hubspotContactId = contact.hubspotContactId;
+              if (!hubspotContactId) {
+                // externalId is this contact's ProspectorContact id, captured
+                // at import time (run-sourcing-rule-pipeline.ts) -- the same
+                // id CommonRoom's own "Add" button would act on.
+                const added = contact.externalId
+                  ? await addProspectorContactToCommonRoom(ctx?.orgId, contact.externalId)
+                  : { commonRoomContactId: null, email: null };
+                hubspotContactId = await upsertHubSpotContact({
+                  email: added.email,
+                  fullName: contact.name,
+                  company: contact.company,
+                  title: contact.title,
+                });
+                await db.update(contacts).set({ hubspotContactId, updatedAt: now }).where(eq(contacts.id, contact.id));
+              }
+              await enrollContactInFlow(workflowId, hubspotContactId);
+              await db.update(contacts).set({ hubspotWorkflowEnrolledAt: now, updatedAt: now }).where(eq(contacts.id, contact.id));
+              hubspotEnrolled++;
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              await db.update(contacts).set({ hubspotEnrollError: message, updatedAt: now }).where(eq(contacts.id, contact.id));
+              hubspotEnrollErrors++;
+            }
+          }
+        }
+      }
+
       breakdown.push({
         personaId,
         target,
@@ -157,6 +254,9 @@ export default defineAction({
         fromLinkedinPool,
         shortfall: Math.max(0, remaining),
         refillNudgeUrl,
+        hubspotEnrolled,
+        hubspotEnrollErrors,
+        hubspotWorkflowError,
       });
     }
 

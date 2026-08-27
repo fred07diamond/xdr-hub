@@ -113,6 +113,7 @@ function NewPullPlanPanel({
   const [totalVolume, setTotalVolume] = useState(50);
   const [intervalHours, setIntervalHours] = useState<number | "">("");
   const [includeHubspot, setIncludeHubspot] = useState(true);
+  const [autoEnrollHubspotWorkflow, setAutoEnrollHubspotWorkflow] = useState(true);
   const [mix, setMix] = useState<MixRow[]>([]);
   const [addPersonaOpen, setAddPersonaOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +147,7 @@ function NewPullPlanPanel({
         intervalHours,
         personaMix: mix,
         includeHubspot,
+        autoEnrollHubspotWorkflow,
       });
       onCreated();
     } catch (err) {
@@ -219,6 +221,22 @@ function NewPullPlanPanel({
             <input type="checkbox" checked={includeHubspot} onChange={(e) => setIncludeHubspot(e.target.checked)} className="size-3.5 rounded border-border" />
             Include HubSpot as a background contributor
           </label>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={autoEnrollHubspotWorkflow}
+                onChange={(e) => setAutoEnrollHubspotWorkflow(e.target.checked)}
+                className="size-3.5 rounded border-border"
+              />
+              Auto-enroll new contacts in each persona's HubSpot workflow
+            </label>
+            <p className="ml-5.5 mt-1 text-[11px] text-muted-foreground/60">
+              Matches by name against your existing HubSpot workflows (e.g. "Eng Persona - xDR Add to Hubspot
+              Workflow") — no setup needed here beyond having that workflow already exist.
+            </p>
+          </div>
 
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -328,6 +346,9 @@ function PlanProgress({ planId }: { planId: string }) {
           actual: number;
           shortfall: number;
           refillNudgeUrl: string | null;
+          hubspotEnrolled?: number;
+          hubspotEnrollErrors?: number;
+          hubspotWorkflowError?: string | null;
         }>;
       }
     | undefined;
@@ -373,6 +394,29 @@ function PlanProgress({ planId }: { planId: string }) {
           </div>
         ))}
       </div>
+      {progress.breakdown.some((b) => (b.hubspotEnrolled ?? 0) > 0 || (b.hubspotEnrollErrors ?? 0) > 0 || b.hubspotWorkflowError) && (
+        <div className="space-y-1 border-t border-border/60 pt-2">
+          <p className="text-[10px] font-semibold uppercase text-muted-foreground/60">HubSpot workflow enrollment</p>
+          {progress.breakdown.map((b) => (
+            <div key={`${b.personaId}-hubspot`} className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full" style={{ background: b.color ?? DEFAULT_PERSONA_COLOR }} />
+                {b.name}
+              </span>
+              {b.hubspotWorkflowError ? (
+                <span className="text-destructive" title={b.hubspotWorkflowError}>No matching workflow</span>
+              ) : (
+                <span className="text-muted-foreground">
+                  {b.hubspotEnrolled ?? 0} enrolled
+                  {(b.hubspotEnrollErrors ?? 0) > 0 && (
+                    <span className="text-destructive"> · {b.hubspotEnrollErrors} failed</span>
+                  )}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
