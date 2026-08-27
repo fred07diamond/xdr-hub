@@ -70,6 +70,20 @@ export default defineAction({
       listsWrite = { ok: false, detail: err instanceof Error ? err.message : String(err) };
     }
 
+    // Fred's own real test case: add a specific real contact to a specific
+    // real, already-existing list -- the exact operation the actual pipeline
+    // will perform, not a throwaway. Left in place (not removed) since the
+    // contact staying in that list is the intended, permanent outcome here,
+    // not a side effect to clean up.
+    const REAL_TEST_LIST_ID = "238797";
+    const REAL_TEST_CONTACT_ID = "87694817025";
+    const realAdd = await tryCall(`add contact ${REAL_TEST_CONTACT_ID} to list ${REAL_TEST_LIST_ID}`, () =>
+      hubspotFetchWithTimeout(`/crm/v3/lists/${REAL_TEST_LIST_ID}/memberships/add`, {
+        method: "PUT",
+        body: JSON.stringify([REAL_TEST_CONTACT_ID]),
+      }),
+    );
+
     return {
       canListWorkflows: automation.ok,
       automationDetail: automation.detail,
@@ -77,6 +91,8 @@ export default defineAction({
       listsReadDetail: listsRead.detail,
       canWriteLists: listsWrite.ok,
       listsWriteDetail: listsWrite.detail,
+      realAddSucceeded: realAdd.ok,
+      realAddDetail: realAdd.detail,
     };
   },
 });
