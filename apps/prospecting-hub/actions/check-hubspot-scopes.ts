@@ -25,7 +25,10 @@ export default defineAction({
   description: "Test whether the configured HubSpot token can actually call the Automation and Lists APIs.",
   schema: z.object({}),
   requiresAuth: true,
-  readOnly: true,
+  // NOT read-only -- the list-write check below creates a real (immediately
+  // self-deleted) list to test crm.lists.write specifically, since read
+  // access succeeding doesn't prove write access also does.
+  readOnly: false,
   http: { method: "GET" },
   run: async (_input, ctx) => {
     try {
@@ -40,15 +43,40 @@ export default defineAction({
     // Harmless read-only call — searching lists with no query returns
     // everything, same call this app would need to resolve a list by name
     // before adding a contact to it.
-    const lists = await tryCall("crm.lists (search lists)", () =>
+    const listsRead = await tryCall("crm.lists (search lists)", () =>
       hubspotFetchWithTimeout("/crm/v3/lists/search", { method: "POST", body: JSON.stringify({ count: 1 }) }),
     );
+
+    // Write test: create a throwaway list, then delete it immediately --
+    // self-cleaning, leaves nothing behind either way. Read access succeeding
+    // above does NOT prove write access also works, so this is a separate,
+    // real test rather than an assumption.
+    let listsWrite: { ok: boolean; detail: string };
+    try {
+      const created = (await hubspotFetchWithTimeout("/crm/v3/lists", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `claude-scope-test-DELETE-ME-${Date.now()}`,
+          objectTypeId: "0-1",
+          processingType: "MANUAL",
+        }),
+      })) as { list?: { listId?: string } };
+      const listId = created.list?.listId;
+      if (listId) {
+        await hubspotFetchWithTimeout(`/crm/v3/lists/${listId}`, { method: "DELETE" });
+      }
+      listsWrite = { ok: true, detail: "crm.lists.write (create + delete test list): succeeded" };
+    } catch (err) {
+      listsWrite = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
 
     return {
       canListWorkflows: automation.ok,
       automationDetail: automation.detail,
-      canSearchLists: lists.ok,
-      listsDetail: lists.detail,
+      canSearchLists: listsRead.ok,
+      listsReadDetail: listsRead.detail,
+      canWriteLists: listsWrite.ok,
+      listsWriteDetail: listsWrite.detail,
     };
   },
 });
