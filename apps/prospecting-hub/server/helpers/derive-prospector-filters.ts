@@ -81,7 +81,18 @@ export async function deriveProspectorFilters(options: {
   }
 
   if (!criteriaText) {
-    throw new Error(`Persona ${options.personaId} has no synced criteria text to derive Prospector filters from.`);
+    // statusCode matters here, not just message text -- an unclassified
+    // thrown Error surfaces to the client as a bare "Internal server error"
+    // (the framework masks raw exception messages by default), while one
+    // tagged with a statusCode gets its real message shown. This is an
+    // expected, actionable condition (persona has no title-targeting
+    // configured), not a genuine bug, so it should read as one.
+    throw Object.assign(
+      new Error(
+        `Persona ${options.personaId} has no synced criteria text to derive Prospector filters from — add Title include keywords on the Personas page, or upload a criteria document, before running this sourcing rule.`,
+      ),
+      { statusCode: 400 },
+    );
   }
 
   const systemPrompt =
