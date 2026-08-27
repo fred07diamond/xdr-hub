@@ -90,6 +90,29 @@ export function resetCommonRoomBreaker(): void {
   breakers.clear();
 }
 
+// The framework sets a container-global MCP manager very early in its own
+// plugin init (before route registration finishes), but a request can still
+// occasionally reach this call before that init has run at all on a freshly
+// spun-up container -- confirmed live: three consecutive real "Find
+// prospects now" clicks, minutes apart, all failed with the framework's own
+// "MCP client is not configured." (a distinct condition from a real
+// CommonRoom-side stall or error; nothing about CommonRoom's own health).
+// Deliberately NOT fed into the stall breaker below -- that breaker exists
+// for CommonRoom's OWN responsiveness, and this has nothing to do with
+// CommonRoom at all. A short bounded retry gives the framework's init a
+// little more time to finish on the SAME container rather than failing the
+// whole run over what should be a momentary startup race.
+const MCP_NOT_CONFIGURED_MESSAGE = "MCP client is not configured";
+const MCP_NOT_CONFIGURED_RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+function isMcpNotConfiguredError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes(MCP_NOT_CONFIGURED_MESSAGE);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function callMcpToolWithTimeout(
   serverId: string,
   toolName: string,
@@ -106,6 +129,25 @@ export async function callMcpToolWithTimeout(
     );
   }
 
+  for (const delayMs of MCP_NOT_CONFIGURED_RETRY_DELAYS_MS) {
+    try {
+      return await attemptCall(serverId, toolName, args, timeoutMs, breaker);
+    } catch (err) {
+      if (!isMcpNotConfiguredError(err)) throw err;
+      await sleep(delayMs);
+    }
+  }
+  // Final attempt — let its error (whatever it is) propagate unchanged.
+  return attemptCall(serverId, toolName, args, timeoutMs, breaker);
+}
+
+async function attemptCall(
+  serverId: string,
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+  timeoutMs: number,
+  breaker: BreakerState,
+): Promise<unknown> {
   try {
     const result = await Promise.race([
       callMcpTool(serverId, toolName, args),
