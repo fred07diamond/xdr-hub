@@ -90,20 +90,25 @@ export function resetCommonRoomBreaker(): void {
   breakers.clear();
 }
 
-// The framework sets a container-global MCP manager very early in its own
-// plugin init (before route registration finishes), but a request can still
-// occasionally reach this call before that init has run at all on a freshly
-// spun-up container -- confirmed live: three consecutive real "Find
-// prospects now" clicks, minutes apart, all failed with the framework's own
-// "MCP client is not configured." (a distinct condition from a real
-// CommonRoom-side stall or error; nothing about CommonRoom's own health).
+// The framework sets a container-global MCP manager during its agent-chat
+// plugin's own async init, but a request can reach this call before that
+// init has finished on a freshly spun-up container -- confirmed live,
+// repeatedly, via "Find prospects now" (a sporadically-clicked button, so
+// it disproportionately lands on cold containers) failing every time with
+// the framework's own "MCP client is not configured." (a distinct condition
+// from a real CommonRoom-side stall or error; nothing about CommonRoom's
+// own health). Confirmed NOT a permanent per-app failure either: this app's
+// Chat feature (same plugin, same init) works fine, and CommonRoom's own
+// Connections page shows a healthy "Connected" status -- meaning the plugin
+// DOES finish initializing, just not always within a short window on a cold
+// start. An earlier, shorter retry budget (1s/2s/4s = 7s total) was NOT
+// enough and still failed every time; this app's full agent-chat plugin
+// init is heavier than that. Budgeted well inside the platform's ~75s
+// function timeout, leaving headroom for the actual search work after.
 // Deliberately NOT fed into the stall breaker below -- that breaker exists
-// for CommonRoom's OWN responsiveness, and this has nothing to do with
-// CommonRoom at all. A short bounded retry gives the framework's init a
-// little more time to finish on the SAME container rather than failing the
-// whole run over what should be a momentary startup race.
+// for CommonRoom's OWN responsiveness, and this has nothing to do with it.
 const MCP_NOT_CONFIGURED_MESSAGE = "MCP client is not configured";
-const MCP_NOT_CONFIGURED_RETRY_DELAYS_MS = [1000, 2000, 4000];
+const MCP_NOT_CONFIGURED_RETRY_DELAYS_MS = [3000, 6000, 10000, 15000];
 
 function isMcpNotConfiguredError(err: unknown): boolean {
   return err instanceof Error && err.message.includes(MCP_NOT_CONFIGURED_MESSAGE);
