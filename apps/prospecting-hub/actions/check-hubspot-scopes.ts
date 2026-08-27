@@ -15,30 +15,51 @@ export default defineAction({
   readOnly: true,
   http: { method: "GET" },
   run: async (_input, ctx) => {
-    await requireRole(ctx?.userEmail, ["admin"]);
+    // Everything below is caught and returned IN THE RESPONSE BODY rather
+    // than thrown -- a thrown error here was showing up to the caller as a
+    // bare "Internal server error" with no detail, so this makes whatever
+    // actually fails self-diagnosing on the very next call instead of
+    // requiring another round of guessing.
+    try {
+      try {
+        await requireRole(ctx?.userEmail, ["admin"]);
+      } catch (err) {
+        return { stage: "requireRole", error: err instanceof Error ? err.message : String(err) };
+      }
 
-    const token = await getHubSpotToken();
-    if (!token) {
-      return { connected: false, scopes: [], hasAutomation: false, hasListsWrite: false };
+      let token: string | null;
+      try {
+        token = await getHubSpotToken();
+      } catch (err) {
+        return { stage: "getHubSpotToken", error: err instanceof Error ? err.message : String(err) };
+      }
+      if (!token) {
+        return { connected: false, scopes: [], hasAutomation: false, hasListsWrite: false };
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(`https://api.hubapi.com/oauth/v1/access-tokens/${encodeURIComponent(token)}`);
+      } catch (err) {
+        return { stage: "fetch", error: err instanceof Error ? err.message : String(err) };
+      }
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { stage: "hubspot-response", status: res.status, error: body };
+      }
+
+      const data = (await res.json()) as { scopes?: string[]; hub_id?: number; user?: string };
+      const scopes = data.scopes ?? [];
+      return {
+        connected: true,
+        hubId: data.hub_id ?? null,
+        scopes,
+        hasAutomation: scopes.includes("automation"),
+        hasListsWrite: scopes.includes("crm.lists.write"),
+        hasListsRead: scopes.includes("crm.lists.read"),
+      };
+    } catch (err) {
+      return { stage: "unexpected", error: err instanceof Error ? err.message : String(err) };
     }
-
-    const res = await fetch(`https://api.hubapi.com/oauth/v1/access-tokens/${encodeURIComponent(token)}`);
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw Object.assign(new Error(`HubSpot token introspection failed (${res.status}): ${body}`), {
-        statusCode: 502,
-      });
-    }
-    const data = (await res.json()) as { scopes?: string[]; hub_id?: number; user?: string };
-
-    const scopes = data.scopes ?? [];
-    return {
-      connected: true,
-      hubId: data.hub_id ?? null,
-      scopes,
-      hasAutomation: scopes.includes("automation"),
-      hasListsWrite: scopes.includes("crm.lists.write"),
-      hasListsRead: scopes.includes("crm.lists.read"),
-    };
   },
 });
