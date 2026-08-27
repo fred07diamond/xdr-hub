@@ -92,23 +92,27 @@ export function resetCommonRoomBreaker(): void {
 
 // The framework sets a container-global MCP manager during its agent-chat
 // plugin's own async init, but a request can reach this call before that
-// init has finished on a freshly spun-up container -- confirmed live,
-// repeatedly, via "Find prospects now" (a sporadically-clicked button, so
-// it disproportionately lands on cold containers) failing every time with
-// the framework's own "MCP client is not configured." (a distinct condition
-// from a real CommonRoom-side stall or error; nothing about CommonRoom's
-// own health). Confirmed NOT a permanent per-app failure either: this app's
-// Chat feature (same plugin, same init) works fine, and CommonRoom's own
-// Connections page shows a healthy "Connected" status -- meaning the plugin
-// DOES finish initializing, just not always within a short window on a cold
-// start. An earlier, shorter retry budget (1s/2s/4s = 7s total) was NOT
-// enough and still failed every time; this app's full agent-chat plugin
-// init is heavier than that. Budgeted well inside the platform's ~75s
-// function timeout, leaving headroom for the actual search work after.
+// init has finished on a freshly spun-up container -- confirmed live via
+// "Find prospects now" repeatedly failing with the framework's own "MCP
+// client is not configured." (a distinct condition from a real CommonRoom-
+// side stall or error; nothing about CommonRoom's own health). NOT a
+// permanent per-app failure: this app's Chat feature (same plugin, same
+// init) works fine, and CommonRoom's own Connections page shows a healthy
+// "Connected" status. But lengthening this retry budget to ~34s total (an
+// earlier attempt) made things WORSE, not better -- it came back as a raw
+// Netlify 502 (the platform's own gateway giving up), not even a clean
+// error response, meaning the real enforced limit for this deployment is
+// well under the 75s configured in netlify.toml. Kept modest and safely
+// below that unknown-but-real ceiling; a 7s budget (1s/2s/4s) previously
+// returned cleanly every time, just without succeeding, so this stays in
+// that same safe range rather than guessing at a longer one again. If a
+// cold start genuinely needs longer than this, the right move is a second
+// manual attempt (a fresh request, fresh timeout budget), not a longer
+// single-request wait.
 // Deliberately NOT fed into the stall breaker below -- that breaker exists
 // for CommonRoom's OWN responsiveness, and this has nothing to do with it.
 const MCP_NOT_CONFIGURED_MESSAGE = "MCP client is not configured";
-const MCP_NOT_CONFIGURED_RETRY_DELAYS_MS = [3000, 6000, 10000, 15000];
+const MCP_NOT_CONFIGURED_RETRY_DELAYS_MS = [1500, 3000, 5000];
 
 function isMcpNotConfiguredError(err: unknown): boolean {
   return err instanceof Error && err.message.includes(MCP_NOT_CONFIGURED_MESSAGE);
