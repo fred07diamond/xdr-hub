@@ -28,6 +28,13 @@ function friendlyError(err) {
 }
 
 const draftBtn = document.getElementById("draft-btn");
+const addToListBtn = document.getElementById("add-to-list-btn");
+const addToListPanel = document.getElementById("add-to-list-panel");
+const addToListSelect = document.getElementById("add-to-list-select");
+const addToListNewName = document.getElementById("add-to-list-new-name");
+const addToListConfirmBtn = document.getElementById("add-to-list-confirm-btn");
+const addToListCancelBtn = document.getElementById("add-to-list-cancel-btn");
+const addToListStatus = document.getElementById("add-to-list-status");
 const statusEl = document.getElementById("status");
 const verdictSection = document.getElementById("verdict-section");
 const verdictBadge = document.getElementById("verdict-badge");
@@ -332,6 +339,8 @@ function resetPanel() {
   hideBanner(dailyMeter);
   draftBtn.disabled = true;
   draftBtn.textContent = "Draft note";
+  addToListBtn.disabled = true;
+  closeAddToListPanel();
   setStatus("");
   verdictSection.style.display = "none";
   personaChip.style.display = "none";
@@ -413,6 +422,7 @@ async function init({ navTriggered = false } = {}) {
   }
 
   draftBtn.disabled = false;
+  addToListBtn.disabled = false;
 
   // Check for an existing draft on this profile (fire-and-forget).
   const urlForDraftCheck = currentProfileUrl;
@@ -862,6 +872,133 @@ draftBtn.addEventListener("click", async () => {
   } catch (err) {
     setStatus(friendlyError(err));
     draftBtn.disabled = false;
+  }
+});
+
+// ── Add to list (single scanned profile) ────────────────────────────────────
+// Lets the xDR drop the profile currently open in the panel straight into
+// one of their Lead Lists, without first saving a whole Sales Navigator
+// list. Reuses import-sales-nav-list.ts's exact plumbing (dedup, create-or-
+// append, autoEnrich opt-in, lead counter) with a `leads` array of exactly
+// one -- that schema was already shaped to allow this, it was only ever
+// called with more than one lead. Unlike a Sales Nav import, this lead
+// carries a real linkedin.com/in/... profileUrl (not just a Sales Nav lead
+// URL), so it dedupes and matches against capture-profile.ts's prospects
+// rows cleanly instead of hitting the salesNavLeadUrl-fallback duplicate-row
+// gap documented in CLAUDE.md.
+let addToListOptions = [];
+let addToListLoaded = false;
+
+function closeAddToListPanel() {
+  addToListPanel.style.display = "none";
+  addToListNewName.style.display = "none";
+  addToListNewName.value = "";
+  addToListStatus.textContent = "";
+  addToListStatus.className = "";
+}
+
+async function openAddToListPanel() {
+  addToListPanel.style.display = "block";
+  addToListStatus.textContent = "";
+  addToListStatus.className = "";
+
+  if (addToListLoaded) return;
+  addToListSelect.innerHTML = '<option value="">Loading lists…</option>';
+  const result = await chrome.runtime
+    .sendMessage({ type: "LIST_LEAD_LISTS" })
+    .catch((err) => ({ ok: false, error: friendlyError(err) }));
+  addToListOptions = result?.lists || [];
+  addToListLoaded = true;
+
+  addToListSelect.innerHTML = "";
+  const newOpt = document.createElement("option");
+  newOpt.value = "__new__";
+  newOpt.textContent = "+ New list";
+  addToListSelect.appendChild(newOpt);
+  addToListOptions.forEach((l) => {
+    const opt = document.createElement("option");
+    opt.value = l.id;
+    opt.textContent = `${l.name} (${l.totalCount})`;
+    addToListSelect.appendChild(opt);
+  });
+  // Default to the most recently used list when there is one -- matches
+  // sendImport()'s own "usually appending, not starting fresh" assumption.
+  addToListSelect.value = addToListOptions.length > 0 ? addToListOptions[0].id : "__new__";
+  addToListNewName.style.display = addToListSelect.value === "__new__" ? "block" : "none";
+}
+
+addToListBtn.addEventListener("click", () => {
+  if (addToListPanel.style.display === "block") closeAddToListPanel();
+  else openAddToListPanel();
+});
+
+addToListCancelBtn.addEventListener("click", closeAddToListPanel);
+
+addToListSelect.addEventListener("change", () => {
+  addToListNewName.style.display = addToListSelect.value === "__new__" ? "block" : "none";
+});
+
+addToListConfirmBtn.addEventListener("click", async () => {
+  const isNew = addToListSelect.value === "__new__";
+  const newName = addToListNewName.value.trim();
+
+  if (isNew && !newName) {
+    addToListStatus.textContent = "Enter a name for the new list.";
+    addToListStatus.className = "error";
+    return;
+  }
+  if (!isNew && !addToListSelect.value) {
+    addToListStatus.textContent = "Pick a list.";
+    addToListStatus.className = "error";
+    return;
+  }
+
+  addToListConfirmBtn.disabled = true;
+  addToListStatus.textContent = "Adding…";
+  addToListStatus.className = "";
+
+  try {
+    // Re-scrape only if the initial scrape failed on open -- same fallback
+    // draftBtn's own click handler uses.
+    let scrapeData = cachedScrape;
+    if (!scrapeData) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const scrapeResult = await scrapeTab(tab.id, { retryMs: 600, maxRetries: 4 });
+      if (!scrapeResult?.ok) throw new Error("Could not read the profile. Make sure you're on a LinkedIn profile page.");
+      scrapeData = scrapeResult.data;
+      if (scrapeData.profileUrl) currentProfileUrl = scrapeData.profileUrl;
+    }
+
+    const selectedOption = !isNew ? addToListOptions.find((l) => l.id === addToListSelect.value) : null;
+    const result = await chrome.runtime.sendMessage({
+      type: "IMPORT_SALES_NAV_LIST",
+      listName: isNew ? newName : selectedOption?.name || "List",
+      existingListId: isNew ? null : addToListSelect.value,
+      leads: [
+        {
+          name: scrapeData.name || null,
+          headline: scrapeData.headline || null,
+          company: scrapeData.company || scrapeData.role || null,
+          location: scrapeData.location || null,
+          profileUrl: currentProfileUrl || scrapeData.profileUrl || null,
+        },
+      ],
+    });
+
+    // A duplicate (this profile is already in that list) comes back as a
+    // normal ok response carrying an `error` field, not a thrown exception
+    // -- see import-sales-nav-list.ts's "nothing new to add" branch.
+    if (!result?.ok || result?.error) throw new Error(result?.error || "Could not add to list.");
+
+    addToListStatus.textContent = `Added to "${isNew ? newName : selectedOption?.name || "list"}".`;
+    addToListStatus.className = "success";
+    addToListLoaded = false; // refresh options (counts, the new list) next time it opens
+    setTimeout(closeAddToListPanel, 1500);
+  } catch (err) {
+    addToListStatus.textContent = friendlyError(err);
+    addToListStatus.className = "error";
+  } finally {
+    addToListConfirmBtn.disabled = false;
   }
 });
 

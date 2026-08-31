@@ -15,7 +15,7 @@ const IMPORT_LIMIT = 500;
 
 export default defineAction({
   description:
-    "Import a Sales Navigator saved lead list captured by the LinkedIn Agent extension. The import itself stays a fast, shallow insert -- Apollo enrichment, ICP fit scoring, and connection-note drafting run afterward, automatically and in the background (server/helpers/lead-pipeline-sweep.ts), independent of the extension or browser staying open.",
+    "Import a Sales Navigator saved lead list captured by the LinkedIn Agent extension, or add a single profile from the extension's 'Add to list' action (one lead, carrying a real profileUrl instead of a salesNavLeadUrl). The import itself stays a fast, shallow insert -- Apollo enrichment, ICP fit scoring, and connection-note drafting run afterward, automatically and in the background (server/helpers/lead-pipeline-sweep.ts), independent of the extension or browser staying open.",
   schema: z.object({
     listName: z.string().describe("Name of the Sales Navigator list, or a derived/fallback name"),
     listDescription: z.string().nullish().describe("Optional description, only used when creating a new list (ignored if existingListId is set)"),
@@ -29,10 +29,18 @@ export default defineAction({
           company: z.string().nullish(),
           location: z.string().nullish(),
           salesNavLeadUrl: z.string().url().nullish(),
+          // Set when this lead came from the extension's single-profile
+          // "Add to list" flow (a real linkedin.com/in/... URL) rather than
+          // a Sales Nav list page, which only ever has a salesNavLeadUrl.
+          // Stored on the row so it dedupes cleanly against a later real
+          // profile visit (capture-profile.ts) instead of hitting the
+          // salesNavLeadUrl-fallback duplicate-row gap documented in
+          // CLAUDE.md.
+          profileUrl: z.string().url().nullish(),
         }),
       )
       .min(1)
-      .describe("Leads accumulated across all pages of the list, deduped by salesNavLeadUrl"),
+      .describe("Leads accumulated across all pages of the list (or a single lead from the extension's 'Add to list' action), deduped by salesNavLeadUrl/profileUrl"),
     apiToken: z.string().nullish().describe("Personal API token from Settings"),
   }),
   requiresAuth: false,
@@ -46,14 +54,18 @@ export default defineAction({
 
     const db = getDb();
 
-    // Defensive within-batch dedupe by salesNavLeadUrl -- the extension's
-    // accumulator already dedupes client-side, but don't assume that holds
-    // for every caller of this public action.
+    // Defensive within-batch dedupe by salesNavLeadUrl/profileUrl -- the
+    // extension's accumulator already dedupes client-side, but don't assume
+    // that holds for every caller of this public action. profileUrl matters
+    // here too now: the extension's single-profile "Add to list" action
+    // (unlike a Sales Nav list import) sends a real linkedin.com/in/... URL
+    // instead of a salesNavLeadUrl.
     const seenInBatch = new Set<string>();
     const withinBatchDeduped = leads.filter((lead) => {
-      if (!lead.salesNavLeadUrl) return true;
-      if (seenInBatch.has(lead.salesNavLeadUrl)) return false;
-      seenInBatch.add(lead.salesNavLeadUrl);
+      const key = lead.salesNavLeadUrl || lead.profileUrl;
+      if (!key) return true;
+      if (seenInBatch.has(key)) return false;
+      seenInBatch.add(key);
       return true;
     });
 
@@ -64,19 +76,34 @@ export default defineAction({
     // lead lists (not just the list being imported into) doesn't get
     // inserted again -- e.g. re-importing "Recommended Leads" after it
     // changed on LinkedIn shouldn't recreate every lead that was already
-    // imported last time.
+    // imported last time, and re-clicking "Add to list" on a profile
+    // already added this way shouldn't create a second row for them either.
     const ownerFilter = ownerEmail ? eq(leadLists.ownerEmail, ownerEmail) : isNull(leadLists.ownerEmail);
-    const urlsToCheck = capped.map((l) => l.salesNavLeadUrl).filter((u): u is string => !!u);
-    let existingUrls = new Set<string>();
-    if (urlsToCheck.length > 0) {
+    const salesNavUrlsToCheck = capped.map((l) => l.salesNavLeadUrl).filter((u): u is string => !!u);
+    const profileUrlsToCheck = capped.map((l) => l.profileUrl).filter((u): u is string => !!u);
+    let existingSalesNavUrls = new Set<string>();
+    let existingProfileUrls = new Set<string>();
+    if (salesNavUrlsToCheck.length > 0) {
       const existingRows = await db
         .select({ salesNavLeadUrl: leadListItems.salesNavLeadUrl })
         .from(leadListItems)
         .innerJoin(leadLists, eq(leadListItems.listId, leadLists.id))
-        .where(and(ownerFilter, inArray(leadListItems.salesNavLeadUrl, urlsToCheck)));
-      existingUrls = new Set(existingRows.map((r) => r.salesNavLeadUrl).filter((u): u is string => !!u));
+        .where(and(ownerFilter, inArray(leadListItems.salesNavLeadUrl, salesNavUrlsToCheck)));
+      existingSalesNavUrls = new Set(existingRows.map((r) => r.salesNavLeadUrl).filter((u): u is string => !!u));
     }
-    const deduped = capped.filter((lead) => !lead.salesNavLeadUrl || !existingUrls.has(lead.salesNavLeadUrl));
+    if (profileUrlsToCheck.length > 0) {
+      const existingRows = await db
+        .select({ profileUrl: leadListItems.profileUrl })
+        .from(leadListItems)
+        .innerJoin(leadLists, eq(leadListItems.listId, leadLists.id))
+        .where(and(ownerFilter, inArray(leadListItems.profileUrl, profileUrlsToCheck)));
+      existingProfileUrls = new Set(existingRows.map((r) => r.profileUrl).filter((u): u is string => !!u));
+    }
+    const deduped = capped.filter((lead) => {
+      if (lead.salesNavLeadUrl && existingSalesNavUrls.has(lead.salesNavLeadUrl)) return false;
+      if (lead.profileUrl && existingProfileUrls.has(lead.profileUrl)) return false;
+      return true;
+    });
     const duplicatesSkipped = capped.length - deduped.length;
 
     if (deduped.length === 0) {
@@ -178,7 +205,7 @@ export default defineAction({
           headline: lead.headline ?? null,
           company: lead.company ?? null,
           location: lead.location ?? null,
-          profileUrl: null,
+          profileUrl: lead.profileUrl ?? null,
           salesNavLeadUrl: lead.salesNavLeadUrl ?? null,
           position: positionOffset + i,
           personaId: persona?.personaId ?? null,
