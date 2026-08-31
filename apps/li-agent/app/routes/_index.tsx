@@ -1204,9 +1204,10 @@ export default function ProspectsRoute() {
   // loaded, and there's no server-side filter param to push this down to.
   // If this ever grows past the cap, this needs real server-side
   // filtering/pagination instead.
-  const PROSPECTS_PAGE_SIZE = 25;
+  const DEFAULT_PROSPECTS_PAGE_SIZE = 25;
   const PROSPECTS_FETCH_LIMIT = 5000;
   const [prospectsPage, setProspectsPage] = useState(1);
+  const [prospectsPageSize, setProspectsPageSize] = useState(DEFAULT_PROSPECTS_PAGE_SIZE);
 
   const { data, refetch, isLoading, isFetching } = useActionQuery(
     "list-all-prospects",
@@ -1279,8 +1280,8 @@ export default function ProspectsRoute() {
   // What's actually rendered in the table -- one page's worth of the
   // filtered set.
   const pageRows = useMemo(
-    () => filtered.slice((prospectsPage - 1) * PROSPECTS_PAGE_SIZE, prospectsPage * PROSPECTS_PAGE_SIZE),
-    [filtered, prospectsPage],
+    () => filtered.slice((prospectsPage - 1) * prospectsPageSize, prospectsPage * prospectsPageSize),
+    [filtered, prospectsPage, prospectsPageSize],
   );
 
   // Whether every row on the CURRENT page is selected (header checkbox) --
@@ -2027,7 +2028,16 @@ export default function ProspectsRoute() {
 
       {filtered.length > 0 && (
         <div className="flex items-center justify-end border-t border-border px-4 py-2">
-          <Pagination page={prospectsPage} pageSize={PROSPECTS_PAGE_SIZE} totalCount={filtered.length} onPageChange={setProspectsPage} />
+          <Pagination
+            page={prospectsPage}
+            pageSize={prospectsPageSize}
+            totalCount={filtered.length}
+            onPageChange={setProspectsPage}
+            onPageSizeChange={(size) => {
+              setProspectsPageSize(size);
+              setProspectsPage(1);
+            }}
+          />
         </div>
       )}
 

@@ -13,7 +13,7 @@ import { APP_TITLE } from "@/lib/app-config";
 import { contactLinkedInHref, formatDealAmount, formatRelativeActivity, useHubSpotCompany } from "@/lib/hubspot-company";
 import { cn } from "@/lib/utils";
 
-const ACCOUNTS_PAGE_SIZE = 25;
+const DEFAULT_ACCOUNTS_PAGE_SIZE = 25;
 
 // Same pill styling as the Prospects table's filter row (FilterPill there).
 function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -493,6 +493,7 @@ export default function MyAccounts() {
   const [search, setSearch] = useState("");
   const [ownerFilter, setOwnerFilter] = useState<"all" | MatchedVia>("all");
   const [page, setPage] = useState(1);
+  const [accountsPageSize, setAccountsPageSize] = useState(DEFAULT_ACCOUNTS_PAGE_SIZE);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
 
@@ -540,9 +541,9 @@ export default function MyAccounts() {
 
   // Reset to page 1 whenever filters change, so a filtered set can't leave
   // you stranded on a page that no longer exists.
-  const pageCount = Math.max(1, Math.ceil(filtered.length / ACCOUNTS_PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / accountsPageSize));
   const safePage = Math.min(page, pageCount);
-  const pageRows = filtered.slice((safePage - 1) * ACCOUNTS_PAGE_SIZE, safePage * ACCOUNTS_PAGE_SIZE);
+  const pageRows = filtered.slice((safePage - 1) * accountsPageSize, safePage * accountsPageSize);
   const selected = companies.find((c) => c.id === selectedId) ?? null;
 
   return (
@@ -743,7 +744,16 @@ export default function MyAccounts() {
 
       {filtered.length > 0 && (
         <div className="flex items-center justify-end border-t border-border px-4 py-2">
-          <Pagination page={safePage} pageSize={ACCOUNTS_PAGE_SIZE} totalCount={filtered.length} onPageChange={setPage} />
+          <Pagination
+            page={safePage}
+            pageSize={accountsPageSize}
+            totalCount={filtered.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setAccountsPageSize(size);
+              setPage(1);
+            }}
+          />
         </div>
       )}
 

@@ -345,11 +345,15 @@ export default function LeadListsPage() {
   const lists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
 
   // Paginated -- a list can hold up to 500 items and this used to fetch
-  // every one of them on every selection/poll. Page-number navigation
-  // (25/page), not accumulating "Load more" -- switching lists resets back
-  // to page 1.
-  const ITEMS_PAGE_SIZE = 25;
+  // every one of them on every selection/poll. Page-number navigation,
+  // not accumulating "Load more" -- switching lists resets back to page 1.
+  // ITEMS_PAGE_SIZE_CAP mirrors get-lead-list-items.ts's own zod max(500) --
+  // a list can't hold more than that anyway, and clamping here means typing
+  // a bigger number just shows the whole list instead of erroring.
+  const DEFAULT_ITEMS_PAGE_SIZE = 25;
+  const ITEMS_PAGE_SIZE_CAP = 500;
   const [itemsPage, setItemsPage] = useState(1);
+  const [itemsPageSize, setItemsPageSize] = useState(DEFAULT_ITEMS_PAGE_SIZE);
 
   useEffect(() => {
     setItemsPage(1);
@@ -357,7 +361,7 @@ export default function LeadListsPage() {
 
   const itemsQuery = useActionQuery(
     "get-lead-list-items",
-    { listId: selectedListId ?? "", limit: ITEMS_PAGE_SIZE, offset: (itemsPage - 1) * ITEMS_PAGE_SIZE },
+    { listId: selectedListId ?? "", limit: itemsPageSize, offset: (itemsPage - 1) * itemsPageSize },
     { enabled: !!selectedListId, refetchInterval: 5_000 },
   );
 
@@ -764,7 +768,16 @@ export default function LeadListsPage() {
             </div>
             {itemsTotalCount > 0 && (
               <div className="flex items-center justify-end border-t border-border px-4 py-2">
-                <Pagination page={itemsPage} pageSize={ITEMS_PAGE_SIZE} totalCount={itemsTotalCount} onPageChange={setItemsPage} />
+                <Pagination
+                  page={itemsPage}
+                  pageSize={itemsPageSize}
+                  totalCount={itemsTotalCount}
+                  onPageChange={setItemsPage}
+                  onPageSizeChange={(size) => {
+                    setItemsPageSize(Math.min(size, ITEMS_PAGE_SIZE_CAP));
+                    setItemsPage(1);
+                  }}
+                />
               </div>
             )}
           </>
