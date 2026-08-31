@@ -155,14 +155,23 @@ function buildEnrichmentAuditCsv(rows: EnrichmentAuditRow[]): string {
 function EnrichmentAuditLogExport() {
   const list = useActionMutation("list-enrichment-audit-log");
   const [error, setError] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   async function handleExport() {
     setError(null);
+    if (startDate && endDate && startDate > endDate) {
+      setError("Start date must be before end date.");
+      return;
+    }
     try {
-      const result = (await list.mutateAsync({})) as { rows?: EnrichmentAuditRow[] };
+      const result = (await list.mutateAsync({
+        startDate: startDate || null,
+        endDate: endDate || null,
+      })) as { rows?: EnrichmentAuditRow[] };
       const rows = result.rows ?? [];
       if (rows.length === 0) {
-        setError("No enriched prospects or leads yet.");
+        setError("No enriched prospects or leads in that range.");
         return;
       }
       const csv = buildEnrichmentAuditCsv(rows);
@@ -170,7 +179,8 @@ function EnrichmentAuditLogExport() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `enrichment-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      const rangeSuffix = startDate || endDate ? `_${startDate || "start"}_to_${endDate || "now"}` : "";
+      a.download = `enrichment-audit-log-${new Date().toISOString().slice(0, 10)}${rangeSuffix}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -182,15 +192,46 @@ function EnrichmentAuditLogExport() {
 
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={handleExport}
-        disabled={list.isPending}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-      >
-        {list.isPending ? <IconLoader2 size={13} className="animate-spin" /> : <IconDownload size={13} />}
-        Export enrichment audit log
-      </button>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          max={endDate || undefined}
+          aria-label="Start date"
+          className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground"
+        />
+        <span className="text-xs text-muted-foreground">to</span>
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          min={startDate || undefined}
+          aria-label="End date"
+          className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground"
+        />
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={list.isPending}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          {list.isPending ? <IconLoader2 size={13} className="animate-spin" /> : <IconDownload size={13} />}
+          Export enrichment audit log
+        </button>
+      </div>
+      {(startDate || endDate) && (
+        <button
+          type="button"
+          onClick={() => {
+            setStartDate("");
+            setEndDate("");
+          }}
+          className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+        >
+          Clear date range
+        </button>
+      )}
       {error && <p className="text-[11px] text-destructive">{error}</p>}
     </div>
   );

@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadListItems, leadLists, prospects } from "../server/db/schema.js";
@@ -25,12 +25,21 @@ export interface EnrichmentAuditRow {
 // workspace member can call this, same as get-analytics.
 export default defineAction({
   description:
-    "List every prospect and lead-list item that has been Apollo-enriched (attempted or successful), for a CSV audit export.",
-  schema: z.object({}),
+    "List every prospect and lead-list item that has been Apollo-enriched (attempted or successful), for a CSV audit export. Optionally bounded to an enrichedAt date range.",
+  schema: z.object({
+    // Plain "YYYY-MM-DD" from a date-picker, not a full ISO timestamp -- the
+    // UI sends calendar days, so these are widened to UTC day boundaries
+    // below rather than compared as-is against enrichedAt's full timestamps.
+    startDate: z.string().nullish(),
+    endDate: z.string().nullish(),
+  }),
   requiresAuth: true,
   readOnly: true,
-  run: async () => {
+  run: async ({ startDate, endDate }) => {
     const db = getDb();
+
+    const startIso = startDate ? `${startDate}T00:00:00.000Z` : null;
+    const endIso = endDate ? `${endDate}T23:59:59.999Z` : null;
 
     const prospectRows = await db
       .select({
@@ -47,7 +56,13 @@ export default defineAction({
         profileUrl: prospects.profileUrl,
       })
       .from(prospects)
-      .where(ne(prospects.enrichmentStatus, "idle"))
+      .where(
+        and(
+          ne(prospects.enrichmentStatus, "idle"),
+          startIso ? gte(prospects.enrichedAt, startIso) : undefined,
+          endIso ? lte(prospects.enrichedAt, endIso) : undefined,
+        ),
+      )
       .orderBy(desc(prospects.enrichedAt));
 
     const leadListItemRows = await db
@@ -67,7 +82,13 @@ export default defineAction({
       })
       .from(leadListItems)
       .innerJoin(leadLists, eq(leadListItems.listId, leadLists.id))
-      .where(ne(leadListItems.enrichmentStatus, "idle"))
+      .where(
+        and(
+          ne(leadListItems.enrichmentStatus, "idle"),
+          startIso ? gte(leadListItems.enrichedAt, startIso) : undefined,
+          endIso ? lte(leadListItems.enrichedAt, endIso) : undefined,
+        ),
+      )
       .orderBy(desc(leadListItems.enrichedAt));
 
     const rows: EnrichmentAuditRow[] = [
