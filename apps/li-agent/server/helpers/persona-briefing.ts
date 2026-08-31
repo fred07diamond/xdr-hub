@@ -82,6 +82,23 @@ const MAX_ITEMS = 8;
 const MAX_TITLE_ITEMS = 30;
 const MAX_ITEM_CHARS = 240;
 
+// completeText() has NO default internal timeout (confirmed against
+// @agent-native/core's own source) -- an omitted timeoutMs leaves the call
+// fully at the mercy of the model provider's own response time, with no
+// upper bound at all. This action is one synchronous, non-streaming HTTP
+// response: the client sees zero bytes until buildPersonaBriefing fully
+// resolves, so an unbounded hang here doesn't surface as a normal error --
+// it surfaces as a CDN-level "Inactivity Timeout" with the button looking
+// like it did nothing. A large persona (multiple documents, an exhaustive
+// boolean title expansion per the TITLES instructions above) is exactly the
+// case likely to run long or hit max_tokens and trigger the second
+// sequential attempt below, doubling an already-unbounded wait. Bounding
+// both attempts turns that into a fast, honest, catchable error instead --
+// same fix already applied in prospecting-hub's invocation-budget.ts for
+// this identical bug class.
+const FIRST_ATTEMPT_TIMEOUT_MS = 40_000;
+const RETRY_ATTEMPT_TIMEOUT_MS = 20_000;
+
 /**
  * Bump when a change to the prompt or the briefing shape means previously
  * generated briefings are worse than what regenerating would produce. It is
@@ -250,6 +267,7 @@ export async function buildPersonaBriefing({
           : systemPrompt,
         input: `Persona name: ${personaName}\n\nICP documents:\n${documentBlock}`,
         maxOutputTokens: 8000,
+        timeoutMs: constrained ? RETRY_ATTEMPT_TIMEOUT_MS : FIRST_ATTEMPT_TIMEOUT_MS,
       });
     return ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
   }
