@@ -19,12 +19,45 @@ export interface EnrichLeadListItemResult {
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
 }
 
+// Once Apollo has actually returned a usable result, holding onto it for
+// this long before a re-check is worth spending real Apollo credits on --
+// title/company/contact data drifts on a timescale of months, not the
+// minutes between an import and the auto-sweep (or a re-click of "Enrich")
+// picking the row up again. Only a complete "done" result is ever held this
+// way -- idle/failed/not_found rows have nothing worth keeping and are
+// always retried.
+export const ENRICHMENT_STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function isEnrichmentFresh(item: { enrichmentStatus: string; enrichedAt: string | null }): boolean {
+  if (item.enrichmentStatus !== "done" || !item.enrichedAt) return false;
+  return Date.now() - new Date(item.enrichedAt).getTime() < ENRICHMENT_STALE_AFTER_MS;
+}
+
 // Apollo person+org lookup, shared verbatim between the manual "Enrich"
 // button (actions/enrich-lead-list-item.ts) and the automatic background
 // pipeline (server/helpers/lead-pipeline-sweep.ts) -- one implementation so
 // the two paths can't drift apart. Writes the resulting columns onto the
 // given lead_list_items row and returns the same shape both callers expose.
+//
+// Checks isEnrichmentFresh() before ever touching Apollo: this is the one
+// choke point every enrichment trigger in the app goes through for lead
+// list items, so the "don't pay for what we already have" rule lives here
+// once instead of being re-implemented (or forgotten) at each call site.
 export async function enrichLeadListItem(db: Db, item: LeadListItem): Promise<EnrichLeadListItemResult> {
+  if (isEnrichmentFresh(item)) {
+    return {
+      enrichmentStatus: item.enrichmentStatus as "done",
+      enrichedEmail: item.enrichedEmail,
+      enrichedTitle: item.enrichedTitle,
+      enrichedPhone: item.enrichedPhone,
+      enrichedLinkedinUrl: item.enrichedLinkedinUrl,
+      enrichedCompanyIndustry: item.enrichedCompanyIndustry,
+      enrichedCompanySize: item.enrichedCompanySize,
+      companyDomain: item.companyDomain,
+      enrichmentError: item.enrichmentError,
+      phoneRevealStatus: item.phoneRevealStatus,
+    };
+  }
   // Person Match and Organization Enrich are independent Apollo endpoints
   // with independently-scoped API-key permissions (live-confirmed
   // elsewhere in this workspace: a key can be authorized for one and

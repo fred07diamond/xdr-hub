@@ -14,6 +14,11 @@ import { requireRole } from "../server/helpers/require-role.js";
 import { loadScorablePersonas, scoreContactAgainstPersonas } from "../server/helpers/score-contact.js";
 import type { ApolloOrganization, ApolloPersonMatch } from "../server/helpers/apollo-client.js";
 
+// See li-agent's enrich-lead-list-item.ts ENRICHMENT_STALE_AFTER_MS for the
+// same reasoning -- contact/title/org data drifts on a timescale of months,
+// not the minutes between clicks.
+const ENRICHMENT_STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
 export default defineAction({
   description:
     "Enrich one contact with Apollo.io person + organization data (title/seniority/email status, industry/headcount/funding), compute an independent Apollo Company Fit signal, and immediately rescore the contact so Overall Score reflects it. On-demand only — never called automatically during sync or the sourcing-rule pipeline.",
@@ -28,6 +33,17 @@ export default defineAction({
     const contact = contactRows[0];
     if (!contact) {
       throw Object.assign(new Error(`Contact ${contactId} not found.`), { statusCode: 404 });
+    }
+
+    // Same rule as li-agent's enrich-lead-list-item.ts/enrich-prospect.ts:
+    // a real Apollo result this recent isn't worth spending credits to
+    // re-fetch, so a repeat click (or a bulk re-run) on an already-enriched
+    // contact is a no-op instead of a second real Apollo call. Scoring is
+    // skipped too in this branch -- nothing about the contact's Apollo
+    // signal changed, so whatever score the last real enrichment produced
+    // still holds.
+    if (contact.apolloEnrichedAt && Date.now() - new Date(contact.apolloEnrichedAt).getTime() < ENRICHMENT_STALE_AFTER_MS) {
+      return { contactId, apolloEnrichedAt: contact.apolloEnrichedAt, warnings: [] };
     }
 
     // Person Match and Organization Enrich are independent Apollo endpoints

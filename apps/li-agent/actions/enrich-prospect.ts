@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
 import { matchApolloPerson, enrichApolloOrganization, extractApolloPhone } from "../server/helpers/apollo-client.js";
+import { isEnrichmentFresh } from "../server/helpers/enrich-lead-list-item.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 export default defineAction({
@@ -36,6 +37,27 @@ export default defineAction({
 
     if (!prospect.name) {
       return { ok: false, error: "Prospect has no name to match against Apollo." };
+    }
+
+    // Same rule as enrich-lead-list-item.ts: a complete, recent Apollo
+    // result is left alone instead of spending credits to re-fetch data
+    // that hasn't gone stale -- this is what makes clicking "Enrich" again
+    // on an already-enriched prospect (or re-running a bulk enrich) a
+    // no-op instead of a second real Apollo call.
+    if (isEnrichmentFresh(prospect)) {
+      return {
+        ok: true,
+        enrichmentStatus: prospect.enrichmentStatus,
+        enrichedEmail: prospect.enrichedEmail,
+        enrichedTitle: prospect.enrichedTitle,
+        enrichedPhone: prospect.enrichedPhone,
+        enrichedLinkedinUrl: prospect.enrichedLinkedinUrl,
+        enrichedCompanyIndustry: prospect.enrichedCompanyIndustry,
+        enrichedCompanySize: prospect.enrichedCompanySize,
+        companyDomain: prospect.companyDomain,
+        enrichmentError: prospect.enrichmentError,
+        phoneRevealStatus: prospect.phoneRevealStatus,
+      };
     }
 
     const now = new Date().toISOString();
