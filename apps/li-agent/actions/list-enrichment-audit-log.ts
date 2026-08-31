@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadListItems, leadLists, prospects } from "../server/db/schema.js";
@@ -85,6 +85,12 @@ export default defineAction({
       .where(
         and(
           ne(leadListItems.enrichmentStatus, "idle"),
+          // A promoted item's enrichment fields were COPIED onto its
+          // prospects row at promotion time (score-lead-list-item.ts), not
+          // re-fetched -- the promoted row above already represents this
+          // exact same enrichment event. Without this, every promoted lead
+          // shows up twice (once per table) for one real Apollo call.
+          isNull(leadListItems.promotedProspectId),
           startIso ? gte(leadListItems.enrichedAt, startIso) : undefined,
           endIso ? lte(leadListItems.enrichedAt, endIso) : undefined,
         ),
