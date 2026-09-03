@@ -180,7 +180,29 @@ describe("buildPersonaBriefing", () => {
     reply("neither is this");
     await expect(
       buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }),
-    ).rejects.toThrow(/did not return a usable briefing/);
+    ).rejects.toThrow(/Could not generate the briefing/);
+  });
+
+  it("reports WHY both phases failed, not just that they did", async () => {
+    // This message is the user's only signal. A fixed "try again" string sent
+    // a real provider failure (exhausted quota, bad key, timeout) back as
+    // something indistinguishable from a transient blip, and cost a full
+    // deploy-and-retry cycle to learn what had actually gone wrong.
+    completeText.mockRejectedValueOnce(new Error("insufficient credits for this workspace"));
+    completeText.mockRejectedValueOnce(new Error("completeText timed out after 28000ms"));
+
+    await expect(
+      buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }),
+    ).rejects.toThrow(/insufficient credits[\s\S]*timed out after 28000ms/);
+  });
+
+  it("carries a failed phase's real reason into the briefing it still returns", async () => {
+    reply({ titles: ["VP Engineering"] });
+    completeText.mockRejectedValueOnce(new Error("model overloaded, please retry"));
+    const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
+
+    expect(b.titles).toEqual(["VP Engineering"]);
+    expect(b.coverageGaps.join(" ")).toContain("model overloaded");
   });
 
   it("throws rather than persisting a contentless briefing", async () => {
@@ -242,11 +264,14 @@ describe("buildPersonaBriefing", () => {
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
 
     expect(completeText).toHaveBeenCalledTimes(2);
-    // Concurrent, so the wall-clock cost is the slower phase, not the sum --
-    // but even summed the two phases must stay under the 40s ceiling that
-    // core's durable-agent-runs design doc pins as the safe budget.
-    const total = completeText.mock.calls.reduce((n, [args]) => n + args.timeoutMs, 0);
-    expect(total).toBeLessThanOrEqual(40_000);
+    // The phases are concurrent, so wall-clock is the SLOWEST phase, not the
+    // sum -- asserting the sum would wrongly force each phase down to half
+    // the budget. What has to fit under the 40s ceiling that core's
+    // durable-agent-runs design doc pins as the safe budget is one phase
+    // plus its own constrained retry.
+    const slowestPhase = Math.max(...completeText.mock.calls.map(([args]) => args.timeoutMs));
+    expect(slowestPhase).toBeLessThan(40_000);
+    expect(slowestPhase + 10_000).toBeLessThanOrEqual(40_000);
   });
 
   it("gives each phase an output cap well under the single call's 8000", async () => {

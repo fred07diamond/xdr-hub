@@ -111,8 +111,13 @@ const MAX_ITEM_CHARS = 240;
 // the cap that the retry effectively stops firing, and costs no briefing
 // quality: each call gets a smaller, more focused instruction set than the
 // combined prompt gave either half.
-const PHASE_TIMEOUT_MS = 20_000;
-const RETRY_ATTEMPT_TIMEOUT_MS = 12_000;
+// Because the phases run CONCURRENTLY, the wall-clock cost is one phase's
+// budget, not both added together -- so each phase gets close to the whole
+// 40s rather than half of it. (28s + a 10s constrained retry = 38s worst
+// case for either phase, and the retry only fires when the first attempt
+// already returned at the token cap, which is the fast case.)
+const PHASE_TIMEOUT_MS = 28_000;
+const RETRY_ATTEMPT_TIMEOUT_MS = 10_000;
 
 /**
  * Bump when a change to the prompt or the briefing shape means previously
@@ -332,11 +337,17 @@ export async function buildPersonaBriefing({
   // retries once with a stricter size instruction instead of making the user
   // press the button again themselves.
   //
-  // Returns undefined instead of throwing: with two phases in flight, one
-  // failing half should not discard the other half's real work (see the
-  // merge below), and a phase that fails for a caller-visible reason still
-  // needs to be reported as a named gap rather than a silent empty section.
-  async function runPhase(phaseSystemPrompt: string, retryHint: string) {
+  // Never throws: with two phases in flight, one failing half must not
+  // discard the other half's real work (see the merge below). It reports WHY
+  // it failed rather than just that it did -- a provider error ("insufficient
+  // credits", "invalid API key", a timeout) is information the user can act
+  // on, and flattening every cause into one generic "try again" hides the
+  // only thing that would tell them what to do next.
+  type PhaseResult =
+    | { ok: true; value: Record<string, any> }
+    | { ok: false; reason: string };
+
+  async function runPhase(label: string, phaseSystemPrompt: string, retryHint: string): Promise<PhaseResult> {
     async function attempt(constrained: boolean) {
       const call = () =>
         completeText({
@@ -351,55 +362,83 @@ export async function buildPersonaBriefing({
       return ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
     }
 
-    let result = await attempt(false);
-    let parsed = parseJsonResponse(result.text);
-    if (!parsed && result.stopReason === "max_tokens") {
-      result = await attempt(true);
-      parsed = parseJsonResponse(result.text);
+    const startedAt = Date.now();
+    try {
+      let result = await attempt(false);
+      let parsed = parseJsonResponse(result.text);
+      if (!parsed && result.stopReason === "max_tokens") {
+        result = await attempt(true);
+        parsed = parseJsonResponse(result.text);
+      }
+      if (parsed) return { ok: true, value: parsed };
+
+      // Answered, but not with usable JSON. Which of those two it was
+      // matters: a max_tokens stop means the output is still too big for the
+      // cap, while anything else means the model ignored the JSON-only
+      // instruction -- different fixes, so don't collapse them.
+      const detail =
+        result.stopReason === "max_tokens"
+          ? `response still exceeded the ${PHASE_MAX_OUTPUT_TOKENS}-token cap after a constrained retry`
+          : `response was not valid JSON (stopReason: ${result.stopReason ?? "none"}, ${result.text?.length ?? 0} chars)`;
+      const reason = `${label}: ${detail}`;
+      console.error(`[persona-briefing] ${reason} after ${Date.now() - startedAt}ms`);
+      return { ok: false, reason };
+    } catch (err) {
+      // Timeout or provider/engine error. completeText's own timeout rejects
+      // with "completeText timed out after Nms", and EngineError carries the
+      // provider's real message -- both are worth showing verbatim.
+      const message = err instanceof Error ? err.message : String(err);
+      const reason = `${label}: ${message}`;
+      console.error(`[persona-briefing] ${reason} after ${Date.now() - startedAt}ms`);
+      return { ok: false, reason };
     }
-    return parsed;
   }
 
   // Concurrent, not sequential: the two halves are independent reads of the
   // same ICP text, so total wall-clock is the slower of the two rather than
   // their sum -- the whole point of the split (see PHASE_TIMEOUT_MS above).
-  // allSettled, so a thrown call (timeout, provider error) in one phase is
-  // handled the same way as an unparseable one rather than rejecting the
-  // whole briefing.
-  const [titlesOutcome, proseOutcome] = await Promise.allSettled([
+  // runPhase never rejects, so Promise.all is safe here and one slow half
+  // does not hide the other's failure reason.
+  const [titlesResult, proseResult] = await Promise.all([
     runPhase(
+      "titles",
       titlesSystemPrompt,
       "This time, cap every list at 15 items and keep every entry to just the job title.",
     ),
     runPhase(
+      "messaging",
       proseSystemPrompt,
       "This time, cap every list at 5 items and keep every line to one short sentence.",
     ),
   ]);
 
-  const titlesParsed = titlesOutcome.status === "fulfilled" ? titlesOutcome.value : undefined;
-  const proseParsed = proseOutcome.status === "fulfilled" ? proseOutcome.value : undefined;
-
   // Both halves failed -- there is no briefing here, so don't overwrite
-  // whatever the persona already had.
-  if (!titlesParsed && !proseParsed) {
-    throw new Error("The model did not return a usable briefing. Try generating it again.");
+  // whatever the persona already had. Surface BOTH real reasons: this used to
+  // be a fixed "did not return a usable briefing" string, which told the user
+  // (and anyone debugging) nothing about whether it was a timeout, an
+  // exhausted quota, a bad key, or a malformed response.
+  if (!titlesResult.ok && !proseResult.ok) {
+    throw new Error(
+      `Could not generate the briefing. ${titlesResult.reason}. ${proseResult.reason}.`,
+    );
   }
 
-  const titles = titlesParsed ?? {};
-  const prose = proseParsed ?? {};
+  const titles = titlesResult.ok ? titlesResult.value : {};
+  const prose = proseResult.ok ? proseResult.value : {};
   const voice = (prose.voice ?? {}) as Record<string, unknown>;
 
   // A half that failed is recorded as an explicit gap rather than left as a
   // silently-empty section -- same principle the prompts themselves enforce
   // for a thin ICP document: an empty section plus a named gap is honest, an
-  // empty section on its own reads as "the documents didn't say".
+  // empty section on its own reads as "the documents didn't say". The real
+  // reason rides along, so a repeatable failure is diagnosable from the
+  // briefing sheet itself.
   const phaseGaps: string[] = [];
-  if (!titlesParsed) {
-    phaseGaps.push("Target job titles could not be generated this run. Regenerate to fill them in.");
+  if (!titlesResult.ok) {
+    phaseGaps.push(`Target job titles could not be generated this run (${titlesResult.reason}). Regenerate to fill them in.`);
   }
-  if (!proseParsed) {
-    phaseGaps.push("Messaging guidance could not be generated this run. Regenerate to fill it in.");
+  if (!proseResult.ok) {
+    phaseGaps.push(`Messaging guidance could not be generated this run (${proseResult.reason}). Regenerate to fill it in.`);
   }
 
   const briefing: PersonaBriefing = {
