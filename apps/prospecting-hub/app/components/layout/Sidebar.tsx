@@ -638,8 +638,12 @@ export function Sidebar({
         <SidebarFooterActions
           collapsed={collapsed}
           feedback={feedbackButton}
-          translate={translateButton}
-          search={searchButton}
+          search={
+            <div className="flex items-center gap-1">
+              {searchButton}
+              {translateButton}
+            </div>
+          }
           collapse={collapseButton}
         />
       </div>

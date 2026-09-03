@@ -47,5 +47,4 @@ overrides:
   nf3: 0.3.17
 
 patchedDependencies:
-  '@agent-native/core@0.124.6': patches/@agent-native__core@0.124.6.patch
   '@agent-native/core@0.176.4': patches/@agent-native__core@0.176.4.patch
