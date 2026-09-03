@@ -111,13 +111,22 @@ const MAX_ITEM_CHARS = 240;
 // the cap that the retry effectively stops firing, and costs no briefing
 // quality: each call gets a smaller, more focused instruction set than the
 // combined prompt gave either half.
-// Because the phases run CONCURRENTLY, the wall-clock cost is one phase's
-// budget, not both added together -- so each phase gets close to the whole
-// 40s rather than half of it. (28s + a 10s constrained retry = 38s worst
-// case for either phase, and the retry only fires when the first attempt
-// already returned at the token cap, which is the fast case.)
-const PHASE_TIMEOUT_MS = 28_000;
-const RETRY_ATTEMPT_TIMEOUT_MS = 10_000;
+// The real wall is TIGHTER than the framework's 40s, and it is not ours.
+// Live-observed, bracketed by changing this value: with a 20s phase budget a
+// slow phase returned this code's own clean error; raising it to 28s meant
+// the response never arrived at all and the browser got an "Inactivity
+// Timeout" HTML page from the proxy in front of the function instead. So the
+// proxy gives up somewhere in the low 20s, and a phase budget above that
+// converts a reportable failure into an unreadable one.
+//
+// Every phase budget therefore stays UNDER that threshold, so this code's
+// error always wins the race and the user gets a real message (and a partial
+// briefing) rather than a proxy page. Phases run concurrently, so wall-clock
+// is the slowest phase, not the sum: 16s + a 6s constrained retry = 22s worst
+// case, and the retry only fires when the first attempt already returned at
+// the token cap, which is the fast case.
+const PHASE_TIMEOUT_MS = 16_000;
+const RETRY_ATTEMPT_TIMEOUT_MS = 6_000;
 
 /**
  * Bump when a change to the prompt or the briefing shape means previously
@@ -141,8 +150,15 @@ const RETRY_ATTEMPT_TIMEOUT_MS = 10_000;
  * regenerating: the single combined call they came from was frequently
  * truncated at the token cap, so their later sections (voice, openingAngles,
  * coverageGaps) are the ones most likely to have been cut short or dropped.
+ *
+ * v5: three concurrent calls -- the title phase split again into target vs
+ * excluded -- and the prompts now state the same MAX_TITLE_ITEMS cap the code
+ * enforces instead of asking for an unbounded "exhaustive" expansion. v4
+ * briefings are worth regenerating because that one combined title call was
+ * timing out outright for real personas, so they were stored with their job
+ * titles missing entirely and only the prose sections filled in.
  */
-const BRIEFING_PROMPT_VERSION = "v4";
+const BRIEFING_PROMPT_VERSION = "v5";
 
 /**
  * Fingerprint of the ICP text a briefing was generated from, stored alongside
@@ -179,15 +195,27 @@ function cleanList(value: unknown, max = MAX_ITEMS): string[] {
   return out;
 }
 
-// The two response shapes, one per concurrent call. Between them they cover
-// exactly the PersonaBriefing fields above, with no overlap -- mergeBriefing
-// below assembles one briefing from both.
-const TITLES_SHAPE = `{
-  "titles": ["<every primary job title to target, verbatim from the documents>"],
+// The response shapes, one per concurrent call. Between them they cover
+// exactly the PersonaBriefing fields above, with no overlap -- the merge
+// below assembles one briefing from all three.
+//
+// Titles are TWO calls, not one. The include side (titles/fallbackTitles)
+// and the exclude side (avoidTitles/avoidTitlesSearch) are independent
+// extractions from different blocks of the ICP, and the exclude side carries
+// by far the longest instruction block in this file. Asking for both in one
+// call made it the slowest phase by a wide margin -- it was timing out for
+// every persona, which is exactly why generated briefings were arriving with
+// their job titles missing while the prose sections came back fine.
+const TITLES_INCLUDE_SHAPE = `{
+  "titles": ["<primary job titles to target, verbatim from the documents>"],
   "fallbackTitles": ["<titles to use only when an account has none of the primary titles>"],
+  "coverageGaps": ["<anything about WHO TO TARGET that the documents do not cover>"]
+}`;
+
+const TITLES_EXCLUDE_SHAPE = `{
   "avoidTitles": ["<titles and role types the documents exclude>"],
   "avoidTitlesSearch": ["<the same excluded roles, flattened into individual literal job titles -- no grouping, no parentheses>"],
-  "coverageGaps": ["<anything about WHO TO TARGET that the documents do not cover>"]
+  "coverageGaps": ["<anything about WHO TO EXCLUDE that the documents do not cover>"]
 }`;
 
 const PROSE_SHAPE = `{
@@ -239,34 +267,61 @@ export async function buildPersonaBriefing({
     "- Be specific and concrete. Prefer the document's own words for titles and criteria over paraphrase.\n" +
     "- Keep every list item to one short line.\n\n";
 
-  // Phase 1: WHO to target. This half is the one that legitimately needs a
-  // lot of output tokens (an exhaustive boolean cross-product expansion), and
-  // it is the half other code actually consumes -- generate-sales-nav-search.ts
-  // reads avoidTitlesSearch -- so it gets its own call rather than competing
-  // for the same token budget as the prose sections.
-  const titlesSystemPrompt =
-    sharedRules +
-    "Your ONLY job in this response is WHO TO TARGET: the job titles. Do not produce positioning, " +
-    "messaging, pain points, or voice guidance -- a separate pass handles those.\n\n" +
-    // The single biggest quality problem in practice: these documents carry an
-    // explicit, authoritative title list (often as a Sales Navigator boolean
-    // filter block), and the model would summarize the prose intro instead of
-    // reading it -- returning a handful of plausible titles while ignoring the
-    // list the team actually prospects by.
-    "TITLES -- read this carefully:\n" +
+  // Shared by both title phases: how to find the authoritative list at all.
+  // The single biggest quality problem in practice is that these documents
+  // carry an explicit title list (often as a Sales Navigator boolean filter
+  // block) and the model would summarize the prose intro instead of reading
+  // it -- returning a handful of plausible titles while ignoring the list the
+  // team actually prospects by.
+  const titleSourceRules =
     "- The documents may contain an explicit title list: a section like \"Job Title (Include)\", " +
     '"Job Title (Exclude)", "Titles", "Personas", or a boolean search string. That list is ' +
     "AUTHORITATIVE. Extract from it. Do not substitute titles you infer from the prose.\n" +
+    "- Use the document's own seniority and function wording. Do not invent a title whose terms " +
+    "do not appear in the documents.\n" +
+    "- If the documents contain no explicit title list, derive titles from the prose and say so " +
+    'in "coverageGaps".\n';
+
+  // Telling the model the SAME cap the code enforces is what makes these
+  // phases fast. cleanList() keeps at most MAX_TITLE_ITEMS per list, but the
+  // prompt used to demand an unbounded "be exhaustive: a long, complete
+  // title list is correct and expected here" -- so on a wide cross product
+  // the model generated far past the cap, ran for 28s+ against the token
+  // ceiling, and every one of those extra titles was then discarded. Being
+  // explicit costs nothing that was ever kept.
+  const titleBudgetRule =
+    `- Return AT MOST ${MAX_TITLE_ITEMS} entries per list, ordered most-important first. Cover the ` +
+    "distinct seniority/function combinations the documents specify; if a cross product would run " +
+    `past ${MAX_TITLE_ITEMS}, keep the ones a rep should search first rather than listing every ` +
+    "permutation. Do not pad the list to reach the limit.\n";
+
+  // Phase 1a: who to TARGET.
+  const titlesIncludeSystemPrompt =
+    sharedRules +
+    "Your ONLY job in this response is the job titles to TARGET. Do not produce excluded titles, " +
+    "positioning, messaging, pain points, or voice guidance -- separate passes handle those.\n\n" +
+    "TITLES TO TARGET -- read this carefully:\n" +
+    titleSourceRules +
     "- Expand a boolean cross product into real titles. Given " +
     '("VP" OR "Head") AND ("Product Design" OR "Design Systems"), return "VP of Product Design", ' +
     '"VP of Design Systems", "Head of Product Design", "Head of Design Systems" -- not a summary ' +
-    "of the pattern. Cover every seniority term against every function term. Be exhaustive: " +
-    "a long, complete title list is correct and expected here.\n" +
-    "- Use the document's own seniority and function wording. Do not invent a title whose terms " +
-    "do not appear in the documents.\n" +
+    "of the pattern.\n" +
+    titleBudgetRule +
     '- If the documents rank seniority (for example "VP and Head first, Director is the fallback", ' +
     'or a "Prioritize within results" note), put the top tier in "titles" and the lower tier in ' +
-    '"fallbackTitles". Never encode that ranking as text inside a title.\n' +
+    '"fallbackTitles". Never encode that ranking as text inside a title.\n\n' +
+    `Reply with valid JSON only, in exactly this shape:\n${TITLES_INCLUDE_SHAPE}`;
+
+  // Phase 1b: who to AVOID. Split from the include side because this is the
+  // longest instruction block in the file (the flattening rules below), and
+  // pairing it with the cross-product expansion above made one call that
+  // consistently blew its whole budget.
+  const titlesExcludeSystemPrompt =
+    sharedRules +
+    "Your ONLY job in this response is the job titles to EXCLUDE. Do not produce titles to target, " +
+    "positioning, messaging, pain points, or voice guidance -- separate passes handle those.\n\n" +
+    "TITLES TO EXCLUDE -- read this carefully:\n" +
+    titleSourceRules +
     '- Put excluded titles in "avoidTitles". An exclude block mixing role types with industry ' +
     "terms (hardware, silicon, brand, gaming) should come back as the role types a rep would " +
     "actually mistake for a match, grouped where the raw terms are not titles on their own.\n" +
@@ -282,9 +337,9 @@ export async function buildPersonaBriefing({
     "turn each into a real title a LinkedIn profile could show (\"ASIC Designer\", \"Hardware Design " +
     'Engineer\", "Chip Design Engineer"), not the bare term alone. Never put a comma/slash-joined or ' +
     "parenthetical string into this array as a single entry.\n" +
-    "- If the documents contain no explicit title list, derive titles from the prose and say so " +
-    'in "coverageGaps".\n\n' +
-    `Reply with valid JSON only, in exactly this shape:\n${TITLES_SHAPE}`;
+    titleBudgetRule +
+    "\n" +
+    `Reply with valid JSON only, in exactly this shape:\n${TITLES_EXCLUDE_SHAPE}`;
 
   // Phase 2: HOW to speak to them. Runs concurrently with phase 1 above.
   const proseSystemPrompt =
@@ -312,12 +367,14 @@ export async function buildPersonaBriefing({
 
   const input = `Persona name: ${personaName}\n\nICP documents:\n${documentBlock}`;
 
-  // Per-phase output cap. Deliberately well below the 8000 the single
-  // combined call used: each half's realistic output (4 title lists, or 8
-  // prose sections) fits inside this with room to spare, so hitting the cap
-  // -- and paying for the truncation retry below -- becomes the rare
-  // exception rather than the normal path for a large persona.
-  const PHASE_MAX_OUTPUT_TOKENS = 4000;
+  // Per-phase output cap, sized to what each phase can actually return now
+  // that the prompts state the same MAX_TITLE_ITEMS limit the code enforces:
+  // two title lists of at most 30 short entries, or eight prose sections, are
+  // both comfortably inside this. The point is headroom, not room to ramble
+  // -- a cap the model can realistically reach is a cap that costs a
+  // truncation retry, and at 8000 for one combined call that was the normal
+  // path for a large persona rather than the exception.
+  const PHASE_MAX_OUTPUT_TOKENS = 2000;
 
   function parseJsonResponse(text: string): Record<string, any> | undefined {
     const raw = text
@@ -394,16 +451,21 @@ export async function buildPersonaBriefing({
     }
   }
 
-  // Concurrent, not sequential: the two halves are independent reads of the
-  // same ICP text, so total wall-clock is the slower of the two rather than
-  // their sum -- the whole point of the split (see PHASE_TIMEOUT_MS above).
-  // runPhase never rejects, so Promise.all is safe here and one slow half
-  // does not hide the other's failure reason.
-  const [titlesResult, proseResult] = await Promise.all([
+  // Concurrent, not sequential: the three phases are independent reads of the
+  // same ICP text, so total wall-clock is the slowest phase rather than their
+  // sum -- the whole point of the split (see PHASE_TIMEOUT_MS above).
+  // runPhase never rejects, so Promise.all is safe here and one slow phase
+  // does not hide another's failure reason.
+  const [titlesIncludeResult, titlesExcludeResult, proseResult] = await Promise.all([
     runPhase(
-      "titles",
-      titlesSystemPrompt,
-      "This time, cap every list at 15 items and keep every entry to just the job title.",
+      "target titles",
+      titlesIncludeSystemPrompt,
+      "This time, return at most 15 entries per list and keep every entry to just the job title.",
+    ),
+    runPhase(
+      "excluded titles",
+      titlesExcludeSystemPrompt,
+      "This time, return at most 15 entries per list and keep every entry to just the job title.",
     ),
     runPhase(
       "messaging",
@@ -412,30 +474,34 @@ export async function buildPersonaBriefing({
     ),
   ]);
 
-  // Both halves failed -- there is no briefing here, so don't overwrite
-  // whatever the persona already had. Surface BOTH real reasons: this used to
-  // be a fixed "did not return a usable briefing" string, which told the user
-  // (and anyone debugging) nothing about whether it was a timeout, an
+  // Every phase failed -- there is no briefing here, so don't overwrite
+  // whatever the persona already had. Surface ALL the real reasons: this used
+  // to be a fixed "did not return a usable briefing" string, which told the
+  // user (and anyone debugging) nothing about whether it was a timeout, an
   // exhausted quota, a bad key, or a malformed response.
-  if (!titlesResult.ok && !proseResult.ok) {
-    throw new Error(
-      `Could not generate the briefing. ${titlesResult.reason}. ${proseResult.reason}.`,
-    );
+  const allResults = [titlesIncludeResult, titlesExcludeResult, proseResult];
+  if (allResults.every((r) => !r.ok)) {
+    const reasons = allResults.map((r) => (r.ok ? "" : r.reason)).filter(Boolean);
+    throw new Error(`Could not generate the briefing. ${reasons.join(". ")}.`);
   }
 
-  const titles = titlesResult.ok ? titlesResult.value : {};
+  const titlesInclude = titlesIncludeResult.ok ? titlesIncludeResult.value : {};
+  const titlesExclude = titlesExcludeResult.ok ? titlesExcludeResult.value : {};
   const prose = proseResult.ok ? proseResult.value : {};
   const voice = (prose.voice ?? {}) as Record<string, unknown>;
 
-  // A half that failed is recorded as an explicit gap rather than left as a
+  // A phase that failed is recorded as an explicit gap rather than left as a
   // silently-empty section -- same principle the prompts themselves enforce
   // for a thin ICP document: an empty section plus a named gap is honest, an
   // empty section on its own reads as "the documents didn't say". The real
   // reason rides along, so a repeatable failure is diagnosable from the
   // briefing sheet itself.
   const phaseGaps: string[] = [];
-  if (!titlesResult.ok) {
-    phaseGaps.push(`Target job titles could not be generated this run (${titlesResult.reason}). Regenerate to fill them in.`);
+  if (!titlesIncludeResult.ok) {
+    phaseGaps.push(`Target job titles could not be generated this run (${titlesIncludeResult.reason}). Regenerate to fill them in.`);
+  }
+  if (!titlesExcludeResult.ok) {
+    phaseGaps.push(`Excluded job titles could not be generated this run (${titlesExcludeResult.reason}). Regenerate to fill them in.`);
   }
   if (!proseResult.ok) {
     phaseGaps.push(`Messaging guidance could not be generated this run (${proseResult.reason}). Regenerate to fill it in.`);
@@ -443,10 +509,10 @@ export async function buildPersonaBriefing({
 
   const briefing: PersonaBriefing = {
     positioning: cleanLine(prose.positioning).slice(0, 600),
-    titles: cleanList(titles.titles, MAX_TITLE_ITEMS),
-    fallbackTitles: cleanList(titles.fallbackTitles, MAX_TITLE_ITEMS),
-    avoidTitles: cleanList(titles.avoidTitles, MAX_TITLE_ITEMS),
-    avoidTitlesSearch: cleanList(titles.avoidTitlesSearch, MAX_TITLE_ITEMS),
+    titles: cleanList(titlesInclude.titles, MAX_TITLE_ITEMS),
+    fallbackTitles: cleanList(titlesInclude.fallbackTitles, MAX_TITLE_ITEMS),
+    avoidTitles: cleanList(titlesExclude.avoidTitles, MAX_TITLE_ITEMS),
+    avoidTitlesSearch: cleanList(titlesExclude.avoidTitlesSearch, MAX_TITLE_ITEMS),
     orgPriorities: cleanList(prose.orgPriorities),
     whyTheyBuy: cleanList(prose.whyTheyBuy),
     painPoints: cleanList(prose.painPoints),
@@ -456,11 +522,18 @@ export async function buildPersonaBriefing({
       donts: cleanList(voice.donts),
     },
     openingAngles: cleanList(prose.openingAngles),
-    // Both shapes carry coverageGaps (each scoped to its own half), so this
-    // unions them -- cleanList already dedupes case-insensitively.
+    // All three shapes carry coverageGaps (each scoped to its own phase), so
+    // this unions them -- cleanList already dedupes case-insensitively.
+    // phaseGaps come first so a real failure is never the entry that gets
+    // dropped when the list is capped.
     coverageGaps: cleanList(
-      [...phaseGaps, ...(Array.isArray(titles.coverageGaps) ? titles.coverageGaps : []), ...(Array.isArray(prose.coverageGaps) ? prose.coverageGaps : [])],
-      MAX_ITEMS * 2,
+      [
+        ...phaseGaps,
+        ...[titlesInclude, titlesExclude, prose].flatMap((phase) =>
+          Array.isArray(phase.coverageGaps) ? phase.coverageGaps : [],
+        ),
+      ],
+      MAX_ITEMS * 3,
     ),
   };
 

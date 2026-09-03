@@ -25,30 +25,38 @@ const FULL = {
   coverageGaps: ["No budget or procurement detail"],
 };
 
-// buildPersonaBriefing makes TWO concurrent calls -- titles first, then prose
+// buildPersonaBriefing makes THREE concurrent calls, in this order
 // (deterministic: each runPhase reaches completeText synchronously, in array
-// order). `reply` queues one response; `replyBoth` splits a combined payload
-// into the two halves each phase actually returns, so the tests below can keep
-// describing a briefing as one object.
-const TITLE_FIELDS = ["titles", "fallbackTitles", "avoidTitles", "avoidTitlesSearch"] as const;
+// order): target titles, excluded titles, then messaging. `reply` queues one
+// response; `replyAll` splits a combined payload into the three slices each
+// phase actually returns, so the tests below can keep describing a briefing
+// as one object.
+const INCLUDE_FIELDS = ["titles", "fallbackTitles"] as const;
+const EXCLUDE_FIELDS = ["avoidTitles", "avoidTitlesSearch"] as const;
 
 function reply(payload: unknown, wrap?: "fence") {
   const json = typeof payload === "string" ? payload : JSON.stringify(payload);
   completeText.mockResolvedValueOnce({ text: wrap === "fence" ? "```json\n" + json + "\n```" : json });
 }
 
-function replyBoth(payload: Record<string, unknown>, wrap?: "fence") {
-  const titles: Record<string, unknown> = {};
+function replyAll(payload: Record<string, unknown>, wrap?: "fence") {
+  const include: Record<string, unknown> = {};
+  const exclude: Record<string, unknown> = {};
   const prose: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
-    if ((TITLE_FIELDS as readonly string[]).includes(key)) titles[key] = value;
+    if ((INCLUDE_FIELDS as readonly string[]).includes(key)) include[key] = value;
+    else if ((EXCLUDE_FIELDS as readonly string[]).includes(key)) exclude[key] = value;
     else prose[key] = value;
   }
-  // Both shapes declare coverageGaps (each scoped to its own half) and the
-  // merge unions + dedupes them, so echoing it into both mirrors reality
+  // All three shapes declare coverageGaps (each scoped to its own phase) and
+  // the merge unions + dedupes them, so echoing it into each mirrors reality
   // without changing what the assertions see.
-  if ("coverageGaps" in payload) titles.coverageGaps = payload.coverageGaps;
-  reply(titles, wrap);
+  if ("coverageGaps" in payload) {
+    include.coverageGaps = payload.coverageGaps;
+    exclude.coverageGaps = payload.coverageGaps;
+  }
+  reply(include, wrap);
+  reply(exclude, wrap);
   reply(prose, wrap);
 }
 
@@ -62,7 +70,7 @@ describe("buildPersonaBriefing", () => {
   });
 
   it("maps every section of a well-formed response", async () => {
-    replyBoth(FULL);
+    replyAll(FULL);
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
 
     expect(b.titles).toEqual(["VP Engineering", "Head of Platform"]);
@@ -79,7 +87,7 @@ describe("buildPersonaBriefing", () => {
   });
 
   it("instructs the model not to invent criteria and to name gaps instead", async () => {
-    replyBoth(FULL);
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
     const { systemPrompt } = completeText.mock.calls[0][0];
     expect(systemPrompt).toContain("Do not invent");
@@ -89,7 +97,7 @@ describe("buildPersonaBriefing", () => {
   it("strips em dashes from every generated string", async () => {
     // CLAUDE.md hard rule: no em dashes in anything this app generates. The
     // prompt says so and the output is sanitized as a backstop.
-    replyBoth({
+    replyAll({
       ...FULL,
       positioning: "Senior leaders — usually post-Series B.",
       titles: ["VP Engineering — Platform"],
@@ -116,13 +124,13 @@ describe("buildPersonaBriefing", () => {
   });
 
   it("handles a fenced ```json response", async () => {
-    replyBoth(FULL, "fence");
+    replyAll(FULL, "fence");
     const b = await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
     expect(b?.titles).toEqual(["VP Engineering", "Head of Platform"]);
   });
 
   it("tolerates missing and wrong-typed sections", async () => {
-    replyBoth({ positioning: "Just a positioning line.", titles: "not an array" });
+    replyAll({ positioning: "Just a positioning line.", titles: "not an array" });
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
     expect(b.positioning).toBe("Just a positioning line.");
     expect(b.titles).toEqual([]);
@@ -134,7 +142,7 @@ describe("buildPersonaBriefing", () => {
     // A boolean include block of (5 seniority) AND (13 function) terms expands
     // well past the 8 items prose sections are capped at; clamping titles that
     // hard silently dropped targets the team prospects by.
-    replyBoth({
+    replyAll({
       ...FULL,
       titles: Array.from({ length: 40 }, (_, i) => `Title ${i}`),
       avoidTitles: Array.from({ length: 40 }, (_, i) => `Avoid ${i}`),
@@ -147,7 +155,7 @@ describe("buildPersonaBriefing", () => {
   });
 
   it("truncates an over-long item", async () => {
-    replyBoth({ ...FULL, painPoints: ["x".repeat(500)] });
+    replyAll({ ...FULL, painPoints: ["x".repeat(500)] });
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
     expect(b.painPoints[0].length).toBe(240);
   });
@@ -155,7 +163,7 @@ describe("buildPersonaBriefing", () => {
   it("dedupes titles case-insensitively", async () => {
     // Expanding a boolean cross product reliably repeats a title, and a repeat
     // is also a duplicate React key in the briefing sheet.
-    replyBoth({ ...FULL, titles: ["VP of Design", "VP of Design", "vp of design", "Head of Design"] });
+    replyAll({ ...FULL, titles: ["VP of Design", "VP of Design", "vp of design", "Head of Design"] });
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
     expect(b.titles).toEqual(["VP of Design", "Head of Design"]);
   });
@@ -164,7 +172,7 @@ describe("buildPersonaBriefing", () => {
     // The regression this guards: the ICP carries an authoritative
     // "Job Title (Include)" boolean block and the briefing paraphrased a
     // handful of titles from the prose intro instead of reading it.
-    replyBoth(FULL);
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
     const { systemPrompt } = completeText.mock.calls[0][0];
     expect(systemPrompt).toContain("Job Title (Include)");
@@ -189,11 +197,12 @@ describe("buildPersonaBriefing", () => {
     // something indistinguishable from a transient blip, and cost a full
     // deploy-and-retry cycle to learn what had actually gone wrong.
     completeText.mockRejectedValueOnce(new Error("insufficient credits for this workspace"));
-    completeText.mockRejectedValueOnce(new Error("completeText timed out after 28000ms"));
+    completeText.mockRejectedValueOnce(new Error("model overloaded"));
+    completeText.mockRejectedValueOnce(new Error("completeText timed out after 16000ms"));
 
     await expect(
       buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }),
-    ).rejects.toThrow(/insufficient credits[\s\S]*timed out after 28000ms/);
+    ).rejects.toThrow(/insufficient credits[\s\S]*overloaded[\s\S]*timed out after 16000ms/);
   });
 
   it("carries a failed phase's real reason into the briefing it still returns", async () => {
@@ -209,7 +218,7 @@ describe("buildPersonaBriefing", () => {
     // Guards the caller's contract: generate-persona-briefing leaves the
     // previous briefing in place on failure, so an all-empty response must
     // fail loudly instead of overwriting a good briefing with nothing.
-    replyBoth({
+    replyAll({
       titles: [],
       fallbackTitles: [],
       whyTheyBuy: [],
@@ -226,13 +235,13 @@ describe("buildPersonaBriefing", () => {
     // Job Title Include/Exclude blocks, which sit near the end -- so the
     // briefing could not have used them even with a perfect prompt.
     const icpText = "y".repeat(40_000) + "\n\nJob Title (Include): VP OR Head";
-    replyBoth(FULL);
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText });
     expect(completeText.mock.calls[0][0].input).toContain("Job Title (Include)");
   });
 
   it("tells the model when an ICP really is too long to fit", async () => {
-    replyBoth(FULL);
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "y".repeat(80_000) });
     const { input } = completeText.mock.calls[0][0];
     expect(input).toContain("truncated");
@@ -250,7 +259,7 @@ describe("buildPersonaBriefing", () => {
     // The root cause: completeText has no default internal timeout, so an
     // omitted timeoutMs is an unbounded hang, and this action holds the HTTP
     // response open for its whole duration.
-    replyBoth(FULL);
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
     expect(completeText.mock.calls.length).toBeGreaterThan(0);
     for (const [args] of completeText.mock.calls) {
@@ -259,49 +268,74 @@ describe("buildPersonaBriefing", () => {
     }
   });
 
-  it("splits the work into exactly two calls whose timeouts fit the hosted-run wall", async () => {
-    replyBoth(FULL);
+  it("splits the work into three calls whose budget fits UNDER the proxy threshold", async () => {
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
 
-    expect(completeText).toHaveBeenCalledTimes(2);
+    expect(completeText).toHaveBeenCalledTimes(3);
     // The phases are concurrent, so wall-clock is the SLOWEST phase, not the
-    // sum -- asserting the sum would wrongly force each phase down to half
-    // the budget. What has to fit under the 40s ceiling that core's
-    // durable-agent-runs design doc pins as the safe budget is one phase
-    // plus its own constrained retry.
+    // sum -- asserting the sum would wrongly force each phase down to a third
+    // of the budget. The binding limit is NOT core's 40s: the proxy in front
+    // of the function was observed giving up in the low 20s (a 28s phase
+    // budget produced an "Inactivity Timeout" HTML page instead of any
+    // response, where 20s produced this code's own error). A phase plus its
+    // retry has to stay under that, or a reportable failure becomes an
+    // unreadable one.
     const slowestPhase = Math.max(...completeText.mock.calls.map(([args]) => args.timeoutMs));
-    expect(slowestPhase).toBeLessThan(40_000);
-    expect(slowestPhase + 10_000).toBeLessThanOrEqual(40_000);
+    expect(slowestPhase).toBeLessThanOrEqual(16_000);
+    expect(slowestPhase + 6_000).toBeLessThan(25_000);
   });
 
   it("gives each phase an output cap well under the single call's 8000", async () => {
     // Headroom is what keeps the truncation retry off the normal path for a
     // large persona; at 8000 for the combined response it was the normal path.
-    replyBoth(FULL);
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
     for (const [args] of completeText.mock.calls) {
       expect(args.maxOutputTokens).toBeLessThan(8000);
     }
   });
 
-  it("scopes each phase's prompt to its own half", async () => {
-    replyBoth(FULL);
+  it("scopes each phase's prompt to its own slice", async () => {
+    replyAll(FULL);
     await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
-    const [titlesPrompt, prosePrompt] = completeText.mock.calls.map((c) => c[0].systemPrompt);
+    const [includePrompt, excludePrompt, prosePrompt] = completeText.mock.calls.map(
+      (c) => c[0].systemPrompt,
+    );
 
-    // The authoritative-title-list rules belong to the titles phase only;
-    // duplicating them into the prose phase is what made one call too big.
-    expect(titlesPrompt).toContain("Expand a boolean cross product");
-    expect(prosePrompt).not.toContain("Expand a boolean cross product");
+    // Cross-product expansion belongs to the target-titles phase; the long
+    // flattening rules belong to the excluded-titles phase. Carrying both in
+    // one call is what made the title phase time out for every persona.
+    expect(includePrompt).toContain("Expand a boolean cross product");
+    expect(excludePrompt).not.toContain("Expand a boolean cross product");
+    expect(excludePrompt).toContain("avoidTitlesSearch");
+    expect(includePrompt).not.toContain("avoidTitlesSearch");
+    // And neither title phase carries the prose sections.
     expect(prosePrompt).toContain("openingAngles");
-    expect(titlesPrompt).not.toContain("openingAngles");
+    expect(includePrompt).not.toContain("openingAngles");
+    expect(excludePrompt).not.toContain("openingAngles");
   });
 
-  it("keeps one phase's result when the other fails, and names the gap", async () => {
-    // Losing a whole briefing because the prose half timed out would be worse
-    // than shipping the titles half -- generate-sales-nav-search.ts consumes
+  it("tells the model the same list cap the code actually keeps", async () => {
+    // The prompt used to demand an unbounded "be exhaustive" expansion while
+    // cleanList silently discarded everything past MAX_TITLE_ITEMS, so the
+    // model burned its whole budget generating titles that were thrown away.
+    replyAll(FULL);
+    await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
+    const [includePrompt, excludePrompt] = completeText.mock.calls.map((c) => c[0].systemPrompt);
+
+    for (const prompt of [includePrompt, excludePrompt]) {
+      expect(prompt).toContain("AT MOST 30 entries per list");
+      expect(prompt).not.toContain("Be exhaustive");
+    }
+  });
+
+  it("keeps the phases that succeed when one fails, and names the gap", async () => {
+    // Losing a whole briefing because one phase timed out would be worse than
+    // shipping the rest -- generate-sales-nav-search.ts consumes
     // avoidTitlesSearch, so the titles are independently useful.
-    reply({ titles: ["VP Engineering"], avoidTitlesSearch: ["Engineering Manager"] });
+    reply({ titles: ["VP Engineering"] });
+    reply({ avoidTitlesSearch: ["Engineering Manager"] });
     reply("prose came back unparseable");
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
 
@@ -312,32 +346,40 @@ describe("buildPersonaBriefing", () => {
   });
 
   it("survives a phase that throws outright, not just one that returns junk", async () => {
-    // A timeout or provider error rejects rather than resolving; allSettled is
-    // what keeps that from discarding the half that did come back.
-    completeText.mockRejectedValueOnce(new Error("completeText timed out after 20000ms"));
+    // A timeout or provider error rejects rather than resolving; runPhase
+    // catching it is what keeps that from discarding the phases that did come
+    // back. This is the exact live failure: the title phase timed out and the
+    // briefing was stored with its job titles missing.
+    completeText.mockRejectedValueOnce(new Error("completeText timed out after 16000ms"));
+    reply({ avoidTitles: ["Engineering Manager"] });
     reply({ positioning: "Senior engineering leaders.", whyTheyBuy: ["Review latency"] });
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
 
     expect(b.positioning).toBe("Senior engineering leaders.");
+    expect(b.avoidTitles).toEqual(["Engineering Manager"]);
     expect(b.titles).toEqual([]);
     expect(b.coverageGaps.join(" ")).toMatch(/target job titles could not be generated/i);
+    expect(b.coverageGaps.join(" ")).toContain("timed out after 16000ms");
   });
 
-  it("retries a phase that was cut off at the token cap, without redoing the other", async () => {
-    // Queue order is CALL order, and the phases are concurrent: both first
-    // attempts fire before either retry, so the titles retry is call 3, not
-    // call 2.
+  it("retries a phase that was cut off at the token cap, without redoing the others", async () => {
+    // Queue order is CALL order, and the phases are concurrent: ALL three
+    // first attempts fire before any retry, so the retry is call 4.
     completeText.mockResolvedValueOnce({ text: '{"titles": ["VP Eng', stopReason: "max_tokens" });
+    reply({ avoidTitles: ["Engineering Manager"] }); // exclude phase, unaffected
     reply({ positioning: "Senior engineering leaders." }); // prose phase, unaffected
-    reply({ titles: ["VP Engineering"] }); // titles phase, second attempt
+    reply({ titles: ["VP Engineering"] }); // include phase, second attempt
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
 
     expect(b.titles).toEqual(["VP Engineering"]);
+    expect(b.avoidTitles).toEqual(["Engineering Manager"]);
     expect(b.positioning).toBe("Senior engineering leaders.");
-    expect(completeText).toHaveBeenCalledTimes(3);
+    // 3 first attempts + 1 retry: the other two phases are not re-run.
+    expect(completeText).toHaveBeenCalledTimes(4);
     // The retry is the constrained pass, and still bounded.
     const retry = completeText.mock.calls.find(([a]) => a.systemPrompt.includes("cut off"))![0];
     expect(retry.timeoutMs).toBeGreaterThan(0);
+    expect(retry.timeoutMs).toBeLessThanOrEqual(6_000);
   });
 });
 
