@@ -15,8 +15,8 @@
     "package-extension": "node scripts/package-extension.mjs"
   },
   "dependencies": {
-    "@agent-native/core": "0.172.3",
-    "@agent-native/toolkit": "0.16.11",
+    "@agent-native/core": "0.176.4",
+    "@agent-native/toolkit": "0.19.2",
     "@xdr-hub/shared": "workspace:*",
     "@fontsource-variable/inter": "^5.2.8",
     "@libsql/client": "^0.15.8",

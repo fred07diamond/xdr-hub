@@ -13,7 +13,7 @@
     "lint": "pnpm fmt:check"
   },
   "dependencies": {
-    "@agent-native/core": "latest",
+    "@agent-native/core": "0.176.4",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
