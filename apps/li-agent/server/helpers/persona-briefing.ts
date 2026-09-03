@@ -125,8 +125,14 @@ const MAX_ITEM_CHARS = 240;
 // is the slowest phase, not the sum: 16s + a 6s constrained retry = 22s worst
 // case, and the retry only fires when the first attempt already returned at
 // the token cap, which is the fast case.
-const PHASE_TIMEOUT_MS = 16_000;
-const RETRY_ATTEMPT_TIMEOUT_MS = 6_000;
+// 19s, not 16s: a 20s budget was observed still returning this code's own
+// error (the proxy tolerated it), so 19s is the most room available while
+// staying on the safe side of that line. 16s was leaving the messaging phase
+// short -- it needs somewhere between 16s and the 28s that did get proxied
+// away. Overshooting is also much cheaper now that a timed-out phase keeps
+// its prior content and the next run only retries what is still missing.
+const PHASE_TIMEOUT_MS = 19_000;
+const RETRY_ATTEMPT_TIMEOUT_MS = 5_000;
 
 /**
  * Bump when a change to the prompt or the briefing shape means previously
@@ -174,6 +180,15 @@ export function hashIcpText(icpText: string): string {
 
 function cleanLine(value: unknown): string {
   return stripEmDashes(String(value ?? "").trim()).slice(0, MAX_ITEM_CHARS);
+}
+
+// Identifies a coverageGaps entry this code wrote about its OWN failure (see
+// phaseGaps below), as opposed to a real finding about the ICP documents.
+// Only the former is discarded when re-merging a prior briefing.
+const PHASE_FAILURE_GAP = /could not be generated this run/i;
+
+function isPhaseFailureGap(gap: string): boolean {
+  return PHASE_FAILURE_GAP.test(gap);
 }
 
 function cleanList(value: unknown, max = MAX_ITEMS): string[] {
@@ -243,13 +258,43 @@ const PROSE_SHAPE = `{
 export async function buildPersonaBriefing({
   personaName,
   icpText,
+  existing,
 }: {
   personaName: string;
   icpText: string | null;
+  /**
+   * The briefing already stored for this persona, when it was generated from
+   * this same ICP text (the caller checks briefingSourceHash). Passing it
+   * turns this into a GAP FILL: phases whose content is already present are
+   * skipped entirely, and a phase that fails keeps what was there before.
+   *
+   * Without this, "Regenerate to fill them in" was not true -- a regenerate
+   * re-ran all three phases and overwrote the stored briefing with the new
+   * partial, so a run that recovered messaging but lost titles traded one
+   * gap for another and could churn indefinitely. Skipping satisfied phases
+   * also means fewer concurrent model calls per run, which is what lets the
+   * remaining ones finish.
+   */
+  existing?: PersonaBriefing | null;
 }): Promise<PersonaBriefing | null> {
   if (!icpText?.trim()) return null;
 
   const ownerCtx = await getOwnerCtx();
+
+  // What the stored briefing already has, per phase. A phase counts as
+  // satisfied only if it produced real content -- an empty list is what a
+  // failed phase leaves behind, so treating "present but empty" as done
+  // would make a gap permanent.
+  const havePrior = {
+    titlesInclude: !!existing && (existing.titles.length > 0 || existing.fallbackTitles.length > 0),
+    titlesExclude:
+      !!existing && (existing.avoidTitles.length > 0 || existing.avoidTitlesSearch.length > 0),
+    prose:
+      !!existing &&
+      (existing.positioning.length > 0 ||
+        existing.whyTheyBuy.length > 0 ||
+        existing.orgPriorities.length > 0),
+  };
 
   // Shared by both phases below, so neither can drift from the other on the
   // ground rules (no invention, name the gap instead of guessing, one short
@@ -456,33 +501,55 @@ export async function buildPersonaBriefing({
   // sum -- the whole point of the split (see PHASE_TIMEOUT_MS above).
   // runPhase never rejects, so Promise.all is safe here and one slow phase
   // does not hide another's failure reason.
+  // A phase already satisfied by the stored briefing is not re-run at all.
+  const SKIPPED = { ok: false, reason: "skipped", skipped: true } as const;
   const [titlesIncludeResult, titlesExcludeResult, proseResult] = await Promise.all([
-    runPhase(
-      "target titles",
-      titlesIncludeSystemPrompt,
-      "This time, return at most 15 entries per list and keep every entry to just the job title.",
-    ),
-    runPhase(
-      "excluded titles",
-      titlesExcludeSystemPrompt,
-      "This time, return at most 15 entries per list and keep every entry to just the job title.",
-    ),
-    runPhase(
-      "messaging",
-      proseSystemPrompt,
-      "This time, cap every list at 5 items and keep every line to one short sentence.",
-    ),
+    havePrior.titlesInclude
+      ? Promise.resolve(SKIPPED)
+      : runPhase(
+          "target titles",
+          titlesIncludeSystemPrompt,
+          "This time, return at most 15 entries per list and keep every entry to just the job title.",
+        ),
+    havePrior.titlesExclude
+      ? Promise.resolve(SKIPPED)
+      : runPhase(
+          "excluded titles",
+          titlesExcludeSystemPrompt,
+          "This time, return at most 15 entries per list and keep every entry to just the job title.",
+        ),
+    havePrior.prose
+      ? Promise.resolve(SKIPPED)
+      : runPhase(
+          "messaging",
+          proseSystemPrompt,
+          "This time, cap every list at 5 items and keep every line to one short sentence.",
+        ),
   ]);
 
-  // Every phase failed -- there is no briefing here, so don't overwrite
-  // whatever the persona already had. Surface ALL the real reasons: this used
-  // to be a fixed "did not return a usable briefing" string, which told the
-  // user (and anyone debugging) nothing about whether it was a timeout, an
-  // exhausted quota, a bad key, or a malformed response.
-  const allResults = [titlesIncludeResult, titlesExcludeResult, proseResult];
-  if (allResults.every((r) => !r.ok)) {
-    const reasons = allResults.map((r) => (r.ok ? "" : r.reason)).filter(Boolean);
+  // Nothing usable came back AND there was nothing to fall back on -- don't
+  // overwrite whatever the persona already had. Surface ALL the real reasons:
+  // this used to be a fixed "did not return a usable briefing" string, which
+  // told the user (and anyone debugging) nothing about whether it was a
+  // timeout, an exhausted quota, a bad key, or a malformed response.
+  const attempted = [titlesIncludeResult, titlesExcludeResult, proseResult].filter(
+    (r) => !("skipped" in r && r.skipped),
+  );
+  const nothingNew = attempted.length > 0 && attempted.every((r) => !r.ok);
+  if (nothingNew && !existing) {
+    const reasons = attempted.map((r) => (r.ok ? "" : r.reason)).filter(Boolean);
     throw new Error(`Could not generate the briefing. ${reasons.join(". ")}.`);
+  }
+  // Every remaining phase failed but a prior briefing exists: returning it
+  // unchanged is better than throwing (the caller would discard this run and
+  // show an error over a briefing that is still perfectly good), but the
+  // caller needs to know nothing advanced so it does not report success.
+  if (nothingNew && existing) {
+    const reasons = attempted.map((r) => (r.ok ? "" : r.reason)).filter(Boolean);
+    throw Object.assign(
+      new Error(`Could not fill in the rest of the briefing. ${reasons.join(". ")}.`),
+      { partial: true },
+    );
   }
 
   const titlesInclude = titlesIncludeResult.ok ? titlesIncludeResult.value : {};
@@ -496,39 +563,66 @@ export async function buildPersonaBriefing({
   // empty section on its own reads as "the documents didn't say". The real
   // reason rides along, so a repeatable failure is diagnosable from the
   // briefing sheet itself.
+  // A phase that was skipped already has its content in `existing`; a phase
+  // that FAILED gets whatever `existing` had rather than being blanked out,
+  // so a gap-fill run can only ever add. Only a phase with neither gets a
+  // named gap.
+  const keptInclude = !titlesIncludeResult.ok && !!existing;
+  const keptExclude = !titlesExcludeResult.ok && !!existing;
+  const keptProse = !proseResult.ok && !!existing;
+
   const phaseGaps: string[] = [];
-  if (!titlesIncludeResult.ok) {
+  if (!titlesIncludeResult.ok && !havePrior.titlesInclude) {
     phaseGaps.push(`Target job titles could not be generated this run (${titlesIncludeResult.reason}). Regenerate to fill them in.`);
   }
-  if (!titlesExcludeResult.ok) {
+  if (!titlesExcludeResult.ok && !havePrior.titlesExclude) {
     phaseGaps.push(`Excluded job titles could not be generated this run (${titlesExcludeResult.reason}). Regenerate to fill them in.`);
   }
-  if (!proseResult.ok) {
+  if (!proseResult.ok && !havePrior.prose) {
     phaseGaps.push(`Messaging guidance could not be generated this run (${proseResult.reason}). Regenerate to fill it in.`);
   }
 
   const briefing: PersonaBriefing = {
-    positioning: cleanLine(prose.positioning).slice(0, 600),
-    titles: cleanList(titlesInclude.titles, MAX_TITLE_ITEMS),
-    fallbackTitles: cleanList(titlesInclude.fallbackTitles, MAX_TITLE_ITEMS),
-    avoidTitles: cleanList(titlesExclude.avoidTitles, MAX_TITLE_ITEMS),
-    avoidTitlesSearch: cleanList(titlesExclude.avoidTitlesSearch, MAX_TITLE_ITEMS),
-    orgPriorities: cleanList(prose.orgPriorities),
-    whyTheyBuy: cleanList(prose.whyTheyBuy),
-    painPoints: cleanList(prose.painPoints),
-    voice: {
-      tone: cleanLine(voice.tone),
-      dos: cleanList(voice.dos),
-      donts: cleanList(voice.donts),
-    },
-    openingAngles: cleanList(prose.openingAngles),
+    positioning: keptProse
+      ? existing!.positioning
+      : cleanLine(prose.positioning).slice(0, 600),
+    titles: keptInclude ? existing!.titles : cleanList(titlesInclude.titles, MAX_TITLE_ITEMS),
+    fallbackTitles: keptInclude
+      ? existing!.fallbackTitles
+      : cleanList(titlesInclude.fallbackTitles, MAX_TITLE_ITEMS),
+    avoidTitles: keptExclude
+      ? existing!.avoidTitles
+      : cleanList(titlesExclude.avoidTitles, MAX_TITLE_ITEMS),
+    avoidTitlesSearch: keptExclude
+      ? existing!.avoidTitlesSearch
+      : cleanList(titlesExclude.avoidTitlesSearch, MAX_TITLE_ITEMS),
+    orgPriorities: keptProse ? existing!.orgPriorities : cleanList(prose.orgPriorities),
+    whyTheyBuy: keptProse ? existing!.whyTheyBuy : cleanList(prose.whyTheyBuy),
+    painPoints: keptProse ? existing!.painPoints : cleanList(prose.painPoints),
+    voice: keptProse
+      ? existing!.voice
+      : {
+          tone: cleanLine(voice.tone),
+          dos: cleanList(voice.dos),
+          donts: cleanList(voice.donts),
+        },
+    openingAngles: keptProse ? existing!.openingAngles : cleanList(prose.openingAngles),
     // All three shapes carry coverageGaps (each scoped to its own phase), so
     // this unions them -- cleanList already dedupes case-insensitively.
     // phaseGaps come first so a real failure is never the entry that gets
     // dropped when the list is capped.
+    //
+    // On a gap fill, the prior briefing's OWN gaps (the real "your documents
+    // don't cover pricing" findings) have to survive, because the phases that
+    // produced them were skipped and will not restate them. Its stale
+    // phase-failure notes must NOT survive: they are regenerated fresh above
+    // for whatever is still missing, so carrying the old ones forward would
+    // leave "target job titles could not be generated" on a briefing that now
+    // has its titles.
     coverageGaps: cleanList(
       [
         ...phaseGaps,
+        ...(existing ? existing.coverageGaps.filter((gap) => !isPhaseFailureGap(gap)) : []),
         ...[titlesInclude, titlesExclude, prose].flatMap((phase) =>
           Array.isArray(phase.coverageGaps) ? phase.coverageGaps : [],
         ),
