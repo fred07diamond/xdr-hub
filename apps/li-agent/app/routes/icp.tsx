@@ -779,16 +779,31 @@ function PersonaCard({
 
   async function handleGenerateBriefing({ open }: { open?: boolean } = {}) {
     setBriefingError(null);
-    const result = (await generateBriefing.mutateAsync({ personaId: persona.id })) as {
-      ok?: boolean;
-      error?: string;
-    };
-    if (result?.ok === false) {
-      setBriefingError(result.error ?? "Could not generate the briefing.");
-      return;
+    // try/catch is load-bearing: this used to only handle the action's own
+    // { ok: false } response shape, so a REJECTED mutation surfaced as
+    // nothing at all -- the spinner stopped and no error ever rendered,
+    // which is exactly what "the button did nothing" looked like. A request
+    // killed upstream (a proxy/gateway inactivity timeout returns an HTML
+    // error page, not JSON) rejects rather than resolving, so it took that
+    // silent path every time.
+    try {
+      const result = (await generateBriefing.mutateAsync({ personaId: persona.id })) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (result?.ok === false) {
+        setBriefingError(result.error ?? "Could not generate the briefing.");
+        return;
+      }
+      onRefetch();
+      if (open) setBriefingOpen(true);
+    } catch (err) {
+      setBriefingError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Could not generate the briefing. Try again.",
+      );
     }
-    onRefetch();
-    if (open) setBriefingOpen(true);
   }
 
   async function handleDelete() {
