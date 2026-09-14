@@ -10,7 +10,9 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+
+import { applyShiftClickSelection } from "@/lib/selection";
 
 import { APP_TITLE } from "@/lib/app-config";
 
@@ -274,6 +276,9 @@ type DialogState =
 export default function EngagementRoute() {
   const [selectedPostUrl, setSelectedPostUrl] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Anchor for shift-click ranges. A ref, not state: it must not trigger a
+  // re-render, and it is only ever read at click time.
+  const lastCheckedIdRef = useRef<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
 
   const { data, isLoading, refetch } = useActionQuery("list-post-engagements", {}, {
@@ -305,12 +310,18 @@ export default function EngagementRoute() {
   const allFilteredSelected = filtered.length > 0 && filtered.every(e => selectedIds.has(e.id));
   const someSelected = selectedIds.size > 0;
 
-  function toggleOne(id: string) {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  /**
+   * Toggles one engager, with shift-click range select.
+   *
+   * Uses the shared helper the Prospects and Lead Lists tables already use, so
+   * the gesture behaves the same everywhere instead of working on one table
+   * and silently doing nothing on the others. The anchor is tracked by ROW ID
+   * (not index) because this list refetches on an interval -- see
+   * app/lib/selection.ts.
+   */
+  function toggleOne(id: string, index: number, shiftKey = false) {
+    setSelectedIds((prev) => applyShiftClickSelection(filtered, index, shiftKey, lastCheckedIdRef.current, prev));
+    lastCheckedIdRef.current = id;
   }
 
   function toggleAll() {
@@ -483,7 +494,7 @@ export default function EngagementRoute() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(e => {
+                {filtered.map((e, rowIndex) => {
                   const isChecked = selectedIds.has(e.id);
                   return (
                     <tr
@@ -494,7 +505,11 @@ export default function EngagementRoute() {
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          onChange={() => toggleOne(e.id)}
+                          // onClick, not onChange: onChange's event carries no
+                          // shiftKey. Same reason the other two tables do it
+                          // this way.
+                          onClick={(ev) => toggleOne(e.id, rowIndex, ev.shiftKey)}
+                          onChange={() => {}}
                           className="rounded border-border"
                         />
                       </td>

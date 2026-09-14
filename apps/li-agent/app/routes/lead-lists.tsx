@@ -430,6 +430,7 @@ export default function LeadListsPage() {
   const [selectedListIds, setSelectedListIds] = useState<Set<string>>(new Set());
   const [confirmDeleteLists, setConfirmDeleteLists] = useState(false);
   const [isDeletingLists, setIsDeletingLists] = useState(false);
+  const lastCheckedListIdRef = useRef<string | null>(null);
   const [isDeletingItems, setIsDeletingItems] = useState(false);
   // Rows staged for the export preview. Null means the modal is closed; the
   // rows are snapshotted so a background refetch cannot change what is being
@@ -611,13 +612,13 @@ export default function LeadListsPage() {
   // button, so the backfill is one click rather than a selection exercise.
   const unscoredItems = allItems.filter((i) => !i.fitVerdict);
 
-  function toggleListSelected(listId: string) {
-    setSelectedListIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(listId)) next.delete(listId);
-      else next.add(listId);
-      return next;
-    });
+  function toggleListSelected(listId: string, index: number, shiftKey = false) {
+    // Same shared helper the items table and both other tables use, so the
+    // gesture is not "works on Prospects only".
+    setSelectedListIds((prev) =>
+      applyShiftClickSelection(lists, index, shiftKey, lastCheckedListIdRef.current, prev),
+    );
+    lastCheckedListIdRef.current = listId;
     // Any change invalidates a pending confirmation -- the count it named is
     // no longer the count that would be deleted.
     setConfirmDeleteLists(false);
@@ -817,61 +818,71 @@ export default function LeadListsPage() {
       <div className="w-72 shrink-0 flex flex-col border-e border-border bg-muted/20">
         <div className="border-b border-border px-4 py-3">
           {selectedListIds.size > 0 ? (
-            // Bulk bar replaces the title while a selection is active, the
-            // same pattern the items table already uses.
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold">{selectedListIds.size} selected</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedListIds(new Set())}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Clear
-                </button>
-              </div>
+            // One row, not a stack.
+            //
+            // The first version put "N selected" on one line and a full-width
+            // tinted destructive button on the next, so a routine selection
+            // looked like a warning state and the button outweighed everything
+            // around it. Delete is now a quiet icon button that only turns red
+            // on hover, and the confirmation takes over the row rather than
+            // adding a third line.
+            <div className="flex h-7 items-center justify-between gap-2">
               {confirmDeleteLists ? (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] leading-4 text-destructive">
-                    Delete {selectedListIds.size} {selectedListIds.size === 1 ? "list" : "lists"} and every
-                    lead in {selectedListIds.size === 1 ? "it" : "them"}? This cannot be undone.
-                  </p>
-                  <div className="flex items-center gap-1.5">
+                <>
+                  <span className="min-w-0 truncate text-xs text-foreground">
+                    Delete {selectedListIds.size} {selectedListIds.size === 1 ? "list" : "lists"}?
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
                       onClick={() => void handleBulkDeleteLists()}
                       disabled={isDeletingLists}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-2.5 py-1.5 text-xs font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded-md bg-destructive px-2 py-1 text-[11px] font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
                     >
-                      {isDeletingLists ? (
-                        <IconLoader2 size={12} className="animate-spin" />
-                      ) : (
-                        <IconTrash size={12} />
-                      )}
+                      {isDeletingLists && <IconLoader2 size={11} className="animate-spin" />}
                       Delete
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteLists(false)}
-                      className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted"
+                      className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                       Cancel
                     </button>
-                  </div>
-                </div>
+                  </span>
+                </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteLists(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
-                >
-                  <IconTrash size={12} />
-                  Delete {selectedListIds.size} {selectedListIds.size === 1 ? "list" : "lists"}
-                </button>
+                <>
+                  <span className="text-sm font-semibold">
+                    {selectedListIds.size} selected
+                  </span>
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteLists(true)}
+                      title={`Delete ${selectedListIds.size} ${selectedListIds.size === 1 ? "list" : "lists"}`}
+                      aria-label={`Delete ${selectedListIds.size} ${selectedListIds.size === 1 ? "list" : "lists"}`}
+                      className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <IconTrash size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedListIds(new Set())}
+                      title="Clear selection"
+                      aria-label="Clear selection"
+                      className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <IconX size={14} />
+                    </button>
+                  </span>
+                </>
               )}
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-2">
+            // Fixed height matching the bulk row above, so the sidebar header
+            // does not jump as a selection starts and ends.
+            <div className="flex h-7 items-center justify-between gap-2">
               <span className="flex items-center gap-2">
                 <IconUsers size={15} className="text-[#0a66c2]" />
                 <span className="text-sm font-semibold">Lead Lists</span>
@@ -879,8 +890,11 @@ export default function LeadListsPage() {
               {lists.length > 1 && (
                 <button
                   type="button"
-                  onClick={() => setSelectedListIds(new Set(lists.map((l) => l.id)))}
-                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setSelectedListIds(new Set(lists.map((l) => l.id)));
+                    lastCheckedListIdRef.current = null;
+                  }}
+                  className="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
                   Select all
                 </button>
@@ -907,7 +921,7 @@ export default function LeadListsPage() {
             </div>
           ) : (
             <ul className="divide-y divide-border">
-              {lists.map((l) => (
+              {lists.map((l, listIndex) => (
                 <li key={l.id}>
                   {renamingListId === l.id ? (
                     <div className="px-4 py-3">
@@ -963,9 +977,12 @@ export default function LeadListsPage() {
                       <input
                         type="checkbox"
                         checked={selectedListIds.has(l.id)}
-                        onChange={() => toggleListSelected(l.id)}
+                        // onClick rather than onChange: onChange's event has
+                        // no shiftKey.
+                        onClick={(ev) => toggleListSelected(l.id, listIndex, ev.shiftKey)}
+                        onChange={() => {}}
                         aria-label={`Select ${l.name}`}
-                        title="Select for bulk actions"
+                        title="Select — shift-click to select a range"
                         className="mt-1 shrink-0 rounded border-border"
                       />
                       <button
