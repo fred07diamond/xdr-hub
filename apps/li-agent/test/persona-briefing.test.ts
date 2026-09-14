@@ -39,6 +39,35 @@ function reply(payload: unknown, wrap?: "fence") {
   completeText.mockResolvedValueOnce({ text: wrap === "fence" ? "```json\n" + json + "\n```" : json });
 }
 
+/**
+ * Routes responses BY PHASE rather than by queue position.
+ *
+ * A timeout now triggers a retry (runPhase's `faster` mode), so the
+ * one-mock-per-phase queueing these tests used no longer lines up: the titles
+ * retry consumes the response meant for the prose phase.
+ *
+ * Phases are identified by the IDENTITY of their system prompt, not by
+ * matching words in it -- all three prompts mention "title", so keyword
+ * matching put every phase in the same bucket. A retry appends an IMPORTANT
+ * suffix to the same base prompt, so that is stripped first, leaving the three
+ * base prompts as three stable keys assigned in first-seen order (target
+ * titles, excluded titles, messaging -- the array order documented above).
+ */
+function byPhase(handlers: [unknown, unknown, unknown]) {
+  const order: string[] = [];
+  completeText.mockImplementation((args: { systemPrompt?: string }) => {
+    const base = (args?.systemPrompt ?? "").split("\n\nIMPORTANT:")[0];
+    let index = order.indexOf(base);
+    if (index === -1) {
+      order.push(base);
+      index = order.length - 1;
+    }
+    const handler = handlers[Math.min(index, 2)];
+    if (handler instanceof Error) return Promise.reject(handler);
+    return Promise.resolve({ text: typeof handler === "string" ? handler : JSON.stringify(handler) });
+  });
+}
+
 function replyAll(payload: Record<string, unknown>, wrap?: "fence") {
   const include: Record<string, unknown> = {};
   const exclude: Record<string, unknown> = {};
@@ -191,14 +220,60 @@ describe("buildPersonaBriefing", () => {
     ).rejects.toThrow(/Could not generate the briefing/);
   });
 
+  it("RETRIES a phase that timed out, rather than giving up", async () => {
+    // The reported failure: "target titles: completeText timed out after
+    // 19000ms" with no second attempt, because the old code only retried on a
+    // max_tokens stop. Three phases timing out meant three dead ends.
+    let titlesAttempts = 0;
+    const order: string[] = [];
+    completeText.mockImplementation((args: { systemPrompt?: string }) => {
+      const base = (args?.systemPrompt ?? "").split("\n\nIMPORTANT:")[0];
+      let index = order.indexOf(base);
+      if (index === -1) {
+        order.push(base);
+        index = order.length - 1;
+      }
+      if (index === 0) {
+        titlesAttempts += 1;
+        // Times out once, then succeeds on the retry.
+        if (titlesAttempts === 1) {
+          return Promise.reject(new Error("completeText timed out after 12000ms"));
+        }
+        return Promise.resolve({ text: JSON.stringify({ titles: ["VP Engineering"] }) });
+      }
+      return Promise.resolve({ text: "{}" });
+    });
+
+    const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
+    expect(titlesAttempts).toBe(2);
+    expect(b.titles).toEqual(["VP Engineering"]);
+  });
+
+  it("does NOT retry a non-timeout provider error", async () => {
+    // A bad key or an exhausted quota cannot be fixed by asking again, and a
+    // retry would burn budget the other phases still need.
+    let attempts = 0;
+    completeText.mockImplementation(() => {
+      attempts += 1;
+      return Promise.reject(new Error("insufficient credits for this workspace"));
+    });
+    await expect(
+      buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }),
+    ).rejects.toThrow(/insufficient credits/);
+    // Three phases, one attempt each.
+    expect(attempts).toBe(3);
+  });
+
   it("reports WHY both phases failed, not just that they did", async () => {
     // This message is the user's only signal. A fixed "try again" string sent
     // a real provider failure (exhausted quota, bad key, timeout) back as
     // something indistinguishable from a transient blip, and cost a full
     // deploy-and-retry cycle to learn what had actually gone wrong.
-    completeText.mockRejectedValueOnce(new Error("insufficient credits for this workspace"));
-    completeText.mockRejectedValueOnce(new Error("model overloaded"));
-    completeText.mockRejectedValueOnce(new Error("completeText timed out after 16000ms"));
+    byPhase([
+      new Error("insufficient credits for this workspace"),
+      new Error("model overloaded"),
+      new Error("completeText timed out after 16000ms"),
+    ]);
 
     await expect(
       buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }),
@@ -353,9 +428,14 @@ describe("buildPersonaBriefing", () => {
     // catching it is what keeps that from discarding the phases that did come
     // back. This is the exact live failure: the title phase timed out and the
     // briefing was stored with its job titles missing.
-    completeText.mockRejectedValueOnce(new Error("completeText timed out after 16000ms"));
-    reply({ avoidTitles: ["Engineering Manager"] });
-    reply({ positioning: "Senior engineering leaders.", whyTheyBuy: ["Review latency"] });
+    // By phase, not queued: the titles phase times out, retries, and times
+    // out again, so a queued mock would have been consumed by the retry and
+    // the excluded phase would have received nothing.
+    byPhase([
+      new Error("completeText timed out after 16000ms"),
+      { avoidTitles: ["Engineering Manager"] },
+      { positioning: "Senior engineering leaders.", whyTheyBuy: ["Review latency"] },
+    ]);
     const b = (await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" }))!;
 
     expect(b.positioning).toBe("Senior engineering leaders.");

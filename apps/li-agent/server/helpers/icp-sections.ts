@@ -145,9 +145,17 @@ export function selectTitleSections(
   const all = splitIcpSections(text);
   const full = { text, usedSections: all.length, totalSections: all.length, narrowed: false };
 
-  // No structure to exploit, or already small enough that narrowing buys
-  // nothing.
-  if (all.length < 2 || text.length <= 4_000) return full;
+  // Already small enough that narrowing buys nothing.
+  if (text.length <= 4_000) return full;
+
+  // No headings to exploit. Falls through to PARAGRAPH selection rather than
+  // giving up: a call-notes export ("p calls ....md") is often one long
+  // heading-less wall, and returning the whole thing is what kept the titles
+  // phase timing out even after section selection shipped.
+  if (all.length < 2) {
+    const byParagraph = selectTitleParagraphs(text, { maxChars, terms, antiTerms });
+    return byParagraph ?? full;
+  }
 
   const ranked = all
     .map((section, index) => ({ section, index, score: scoreSection(section, terms, antiTerms) }))
@@ -178,6 +186,58 @@ export function selectTitleSections(
     text: narrowedText,
     usedSections: chosen.length,
     totalSections: all.length,
+    narrowed: true,
+  };
+}
+
+/**
+ * Paragraph-level fallback for documents with no headings.
+ *
+ * Coarser than section selection and used only when there is no structure to
+ * work with. Scores blank-line-separated blocks on the same terms, keeps the
+ * best ones in document order, and returns null when it cannot do better --
+ * the caller then uses the full text, so this can only narrow, never blind.
+ */
+function selectTitleParagraphs(
+  text: string,
+  { maxChars, terms, antiTerms }: { maxChars: number; terms: string[]; antiTerms: string[] },
+): { text: string; usedSections: number; totalSections: number; narrowed: boolean } | null {
+  const paras = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paras.length < 4) return null;
+
+  const ranked = paras
+    .map((body, index) => ({
+      body,
+      index,
+      // No heading to weight, so this is body hits only -- hence a lower bar
+      // than the section path's minScore of 10, which a single heading hit
+      // clears on its own.
+      score: scoreSection({ heading: "", level: 0, body, raw: body }, terms, antiTerms),
+    }))
+    .filter((r) => r.score >= 2)
+    .sort((a, b) => b.score - a.score);
+
+  if (ranked.length === 0) return null;
+
+  const chosen: typeof ranked = [];
+  let chars = 0;
+  for (const r of ranked) {
+    if (chars + r.body.length > maxChars && chosen.length > 0) break;
+    chosen.push(r);
+    chars += r.body.length;
+  }
+  chosen.sort((a, b) => a.index - b.index);
+
+  const narrowedText = chosen.map((r) => r.body).join("\n\n");
+  if (narrowedText.length >= text.length * 0.9) return null;
+
+  return {
+    text: narrowedText,
+    usedSections: chosen.length,
+    totalSections: paras.length,
     narrowed: true,
   };
 }

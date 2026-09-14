@@ -131,3 +131,41 @@ describe("selectTitleSections", () => {
     }
   });
 });
+
+describe("heading-less documents (the paragraph fallback)", () => {
+  // "p calls ....md" style exports are often one long wall with no ATX
+  // headings. Section selection gave up on those and returned the full text,
+  // which is why the titles phase kept timing out even after section
+  // selection shipped.
+  const HEADING_LESS = [
+    "We sell to product leaders who own the roadmap.",
+    `Unrelated call transcript. ${"Discussion of scheduling. ".repeat(200)}`,
+    "Target job titles: VP of Product, Director of Product Management, Head of Product.",
+    `More unrelated notes. ${"Follow up next quarter. ".repeat(200)}`,
+    "Exclude titles: recruiter, student, intern, consultant.",
+    `Closing chatter. ${"Thanks for your time. ".repeat(200)}`,
+  ].join("\n\n");
+
+  it("narrows a document with no headings at all", () => {
+    const out = selectTitleSections(HEADING_LESS);
+    expect(out.narrowed).toBe(true);
+    expect(out.text).toContain("Target job titles");
+    expect(out.text).toContain("Exclude titles");
+    expect(out.text).not.toContain("Discussion of scheduling");
+  });
+
+  it("still emits in document order", () => {
+    const out = selectTitleSections(HEADING_LESS);
+    expect(out.text.indexOf("Target job titles")).toBeLessThan(out.text.indexOf("Exclude titles"));
+  });
+
+  it("gives up on too few paragraphs rather than guessing", () => {
+    const short = `Titles we target. ${"x ".repeat(3000)}`;
+    expect(selectTitleSections(short).narrowed).toBe(false);
+  });
+
+  it("gives up when no paragraph is relevant", () => {
+    const irrelevant = Array.from({ length: 8 }, () => "Weather chatter. ".repeat(200)).join("\n\n");
+    expect(selectTitleSections(irrelevant).narrowed).toBe(false);
+  });
+});

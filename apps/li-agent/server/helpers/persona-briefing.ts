@@ -75,6 +75,22 @@ export interface PersonaBriefing {
 // actually specifies.
 const MAX_ICP_CHARS = 60_000;
 
+/**
+ * Much smaller cap for the PROSE phase.
+ *
+ * MAX_ICP_CHARS was raised to 60k for one reason, recorded in its own comment:
+ * a real persona's Job Title Include/Exclude blocks sit near the end of the
+ * documents and were being truncated away before the model saw them. The title
+ * phases now receive section-selected input (see icp-sections.ts), so that
+ * reason no longer applies to prose -- and handing the prose phase 30k+
+ * characters to read AND summarise into eight sections is what made it time
+ * out alongside the title phases rather than instead of them.
+ *
+ * A briefing built from a trimmed document admits the gap under
+ * coverageGaps, which is the honest outcome and already wired.
+ */
+const MAX_ICP_CHARS_PROSE = 14_000;
+
 // Prose sections stay tight; title lists do not. A boolean include block of
 // (5 seniority terms) AND (13 function terms) expands well past 8 real
 // titles, and truncating it silently drops targets a rep is supposed to be
@@ -132,8 +148,12 @@ const MAX_ITEM_CHARS = 240;
 // short -- it needs somewhere between 16s and the 28s that did get proxied
 // away. Overshooting is also much cheaper now that a timed-out phase keeps
 // its prior content and the next run only retries what is still missing.
-const PHASE_TIMEOUT_MS = 19_000;
-const RETRY_ATTEMPT_TIMEOUT_MS = 5_000;
+// 12s + 5.5s = 17.5s, inside the ~20s wall the corporate proxy enforces on
+// the inbound request. The previous 19s consumed the entire budget, so a
+// timeout had nowhere to retry into -- which is exactly what "target titles:
+// completeText timed out after 19000ms" was, three times over.
+const PHASE_TIMEOUT_MS = 12_000;
+const RETRY_ATTEMPT_TIMEOUT_MS = 5_500;
 
 /**
  * Bump when a change to the prompt or the briefing shape means previously
@@ -170,7 +190,7 @@ const RETRY_ATTEMPT_TIMEOUT_MS = 5_000;
 // the same input. Bumping marks existing briefings stale in the UI; it does
 // NOT regenerate anything automatically -- briefingStale only drives a badge,
 // so no LLM spend happens until someone clicks Generate.
-const BRIEFING_PROMPT_VERSION = "v6";
+const BRIEFING_PROMPT_VERSION = "v7";
 
 /**
  * Fingerprint of the ICP text a briefing was generated from, stored alongside
@@ -418,6 +438,15 @@ export async function buildPersonaBriefing({
 
   const input = `Persona name: ${personaName}\n\nICP documents:\n${documentBlock}`;
 
+  // The prose phase reads far less. See MAX_ICP_CHARS_PROSE.
+  const proseTrimmed = documentBlock.length > MAX_ICP_CHARS_PROSE;
+  const proseInput =
+    `Persona name: ${personaName}\n\nICP documents:\n` +
+    (proseTrimmed
+      ? `${documentBlock.slice(0, MAX_ICP_CHARS_PROSE)}\n\n[Trimmed for length. Note under coverageGaps ` +
+        `that the briefing may not cover everything in the documents.]`
+      : documentBlock);
+
   /**
    * The TITLE phases get only the sections that are about who to target.
    *
@@ -482,26 +511,63 @@ export async function buildPersonaBriefing({
     retryHint: string,
     phaseInput: string = input,
   ): Promise<PhaseResult> {
-    async function attempt(constrained: boolean) {
+    /**
+     * `mode` distinguishes the three reasons for a second attempt, because
+     * they need opposite corrections:
+     *
+     * - `first`  : full input, full budget.
+     * - `shorter`: the response was CUT OFF, so ask for less output.
+     * - `faster` : the call TIMED OUT, so give it less to read. Previously
+     *              there was no retry at all in this case -- attempt(true)
+     *              only ran on a max_tokens stop -- so a timeout was terminal
+     *              and the user saw "timed out after 19000ms" with no second
+     *              try. That was the reported failure.
+     */
+    async function attempt(mode: "first" | "shorter" | "faster") {
+      const trimmedInput =
+        mode === "faster"
+          ? // Half the text and a note, rather than the same input again: a
+            // retry that reads exactly as much will take exactly as long.
+            `${phaseInput.slice(0, Math.max(3_000, Math.floor(phaseInput.length / 2)))}\n\n` +
+            `[Trimmed for length. Note under coverageGaps that the briefing may be incomplete.]`
+          : phaseInput;
       const call = () =>
         completeText({
-          systemPrompt: constrained
-            ? `${phaseSystemPrompt}\n\nIMPORTANT: your previous response was cut off for being too long. ` +
-              `${retryHint} A shorter complete response is far more useful than a longer one that gets cut off.`
-            : phaseSystemPrompt,
-          input: phaseInput,
-          maxOutputTokens: PHASE_MAX_OUTPUT_TOKENS,
-          timeoutMs: constrained ? RETRY_ATTEMPT_TIMEOUT_MS : PHASE_TIMEOUT_MS,
+          systemPrompt:
+            mode === "shorter"
+              ? `${phaseSystemPrompt}\n\nIMPORTANT: your previous response was cut off for being too long. ` +
+                `${retryHint} A shorter complete response is far more useful than a longer one that gets cut off.`
+              : mode === "faster"
+                ? `${phaseSystemPrompt}\n\nIMPORTANT: be concise and answer quickly. ${retryHint}`
+                : phaseSystemPrompt,
+          input: trimmedInput,
+          maxOutputTokens: mode === "first" ? PHASE_MAX_OUTPUT_TOKENS : Math.floor(PHASE_MAX_OUTPUT_TOKENS / 2),
+          timeoutMs: mode === "first" ? PHASE_TIMEOUT_MS : RETRY_ATTEMPT_TIMEOUT_MS,
         });
       return ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
     }
 
     const startedAt = Date.now();
     try {
-      let result = await attempt(false);
+      let result: Awaited<ReturnType<typeof attempt>>;
+      try {
+        result = await attempt("first");
+      } catch (err) {
+        // A TIMEOUT now gets a second try on half the text instead of being
+        // terminal. Any other error (bad key, no credits) is re-thrown: a
+        // retry cannot fix it and would only burn the remaining budget.
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/timed? ?out/i.test(message)) throw err;
+        console.warn(`[persona-briefing] ${label}: timed out, retrying on half the input`);
+        result = await attempt("faster");
+      }
+
       let parsed = parseJsonResponse(result.text);
-      if (!parsed && result.stopReason === "max_tokens") {
-        result = await attempt(true);
+      if (!parsed) {
+        // Cut off, or answered with something unusable. Both get one more
+        // attempt -- the empty-briefing failure on Engineering was this case
+        // with no retry behind it.
+        result = await attempt(result.stopReason === "max_tokens" ? "shorter" : "faster");
         parsed = parseJsonResponse(result.text);
       }
       if (parsed) return { ok: true, value: parsed };
@@ -558,6 +624,7 @@ export async function buildPersonaBriefing({
           "messaging",
           proseSystemPrompt,
           "This time, cap every list at 5 items and keep every line to one short sentence.",
+          proseInput,
         ),
   ]);
 
