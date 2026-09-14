@@ -5,7 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { APP_TITLE } from "@/lib/app-config";
+import { StellarMark, VerdictBadge } from "@/components/badges";
+import { EnrichCostConfirm } from "@/components/EnrichCostConfirm";
+import { RevealPhoneButton } from "@/components/RevealPhoneButton";
 import { useApolloEnrichment } from "@/lib/apollo-enrichment";
+import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
+import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { buildMasterCsv } from "@/lib/prospects-csv";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -37,6 +42,10 @@ type LeadListItem = {
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
   phoneRevealRequestedAt: string | null;
   promotedProspectId: string | null;
+  // Score-first: a lead carries its own verdict before (and possibly
+  // without ever) being promoted into a prospects row.
+  fitVerdict: "strong" | "possible" | "weak" | "inconclusive" | null;
+  fitReason: string | null;
 };
 
 // Apollo doesn't always send a phone-reveal webhook back for a genuine
@@ -237,6 +246,7 @@ function LeadListItemRow({
   onToggle,
   onOpen,
   onEnrich,
+  onRevealed,
 }: {
   item: LeadListItem;
   index: number;
@@ -245,10 +255,24 @@ function LeadListItemRow({
   onToggle: (id: string, index: number, shiftKey: boolean) => void;
   onOpen: (item: LeadListItem) => void;
   onEnrich: (item: LeadListItem) => void;
+  onRevealed: () => void;
 }) {
+  const quality = leadQuality(item);
+  const isStellar = quality === "stellar";
   return (
-    <tr className={cn("border-b border-border last:border-b-0 transition-colors hover:bg-muted/40", isChecked && "bg-muted/60")}>
-      <td className="py-3 pl-4 pr-1 w-8">
+    <tr
+      className={cn(
+        "border-b border-border last:border-b-0 transition-colors hover:bg-muted/40",
+        // Selection styling still wins, so a checked stellar row reads as
+        // checked rather than as two competing tints.
+        isStellar && !isChecked && "bg-amber-500/[0.04] hover:bg-amber-500/[0.08]",
+        isChecked && "bg-muted/60",
+      )}
+    >
+      {/* The accent goes on the first CELL, not the row: a border on a <tr>
+          does not render under border-collapse: collapse, which is the
+          browser default and what this table uses. */}
+      <td className={cn("py-3 pl-4 pr-1 w-8", isStellar && "border-l-2 border-l-amber-500/60")}>
         <input
           type="checkbox"
           checked={isChecked}
@@ -259,6 +283,9 @@ function LeadListItemRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
+          {/* First in the row, so the leads worth spending credits on are the
+              ones the eye lands on. */}
+          {quality === "stellar" && <StellarMark personaName={item.personaName} />}
           <p className="text-sm font-medium">{item.name ?? "—"}</p>
           {item.personaName && item.personaColor && (
             <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
@@ -266,6 +293,9 @@ function LeadListItemRow({
               {item.personaName}
             </span>
           )}
+          {/* The first fit signal this page has ever shown. Before score-first
+              the verdict only existed on the promoted prospects row. */}
+          <VerdictBadge verdict={item.fitVerdict} fallback={null} title={item.fitReason ?? undefined} />
           {item.promotedProspectId && (
             <a
               href="/"
@@ -296,17 +326,34 @@ function LeadListItemRow({
         />
       </td>
       <td className="px-4 py-3">
-        <EnrichedField
-          value={item.enrichedPhone}
-          status={item.enrichmentStatus}
-          kind="phone"
-          phoneRevealStatus={item.phoneRevealStatus}
-          phoneRevealRequestedAt={item.phoneRevealRequestedAt}
-          enrichmentSource={item.enrichmentSource}
-          enrichedAt={item.enrichedAt}
-          isEnriching={isEnriching}
-          onEnrich={() => onEnrich(item)}
-        />
+        {/* NO onEnrich. The empty phone cell used to be a dotted-underline
+            click target that fired an 8-credit reveal with no confirmation --
+            the most expensive action in the app was its least deliberate one.
+            The empty state is now inert text, and RevealPhoneButton owns the
+            spend. Email keeps its one-click affordance: 1 credit, recoverable,
+            and a long-established habit. */}
+        <div className="flex items-center gap-2">
+          <EnrichedField
+            value={item.enrichedPhone}
+            status={item.enrichmentStatus}
+            kind="phone"
+            phoneRevealStatus={item.phoneRevealStatus}
+            phoneRevealRequestedAt={item.phoneRevealRequestedAt}
+            enrichmentSource={item.enrichmentSource}
+            enrichedAt={item.enrichedAt}
+            isEnriching={isEnriching}
+          />
+          {!item.enrichedPhone && item.phoneRevealStatus !== "requested" && (
+            <RevealPhoneButton
+              source="lead_list_item"
+              id={item.id}
+              fitVerdict={item.fitVerdict}
+              fitReason={item.fitReason}
+              noNumberKnown={item.phoneRevealStatus === "no_match"}
+              onRevealed={onRevealed}
+            />
+          )}
+        </div>
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
@@ -356,6 +403,9 @@ export default function LeadListsPage() {
   }
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
+  // Persistent, not a toast: a bulk run takes ~100 seconds, so a toast
+  // would be gone before anyone read why it stopped.
+  const [bulkHalt, setBulkHalt] = useState<BulkHaltState | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [isExportingItems, setIsExportingItems] = useState(false);
   const [renamingListId, setRenamingListId] = useState<string | null>(null);
@@ -405,9 +455,15 @@ export default function LeadListsPage() {
   const renameList = useActionMutation("rename-lead-list");
   const enrichItem = useActionMutation("enrich-lead-list-item");
 
+  // Status eligibility AND quality. This previously filtered on status
+  // alone, so "Enrich all" happily spent credits on leads the ICP had already
+  // scored weak.
   const enrichEligibleItems = allItems.filter(
-    (i) => i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found",
+    (i) =>
+      (i.enrichmentStatus === "idle" || i.enrichmentStatus === "failed" || i.enrichmentStatus === "not_found") &&
+      isBulkEligibleQuality(i),
   );
+  const stellarEligibleItems = enrichEligibleItems.filter((i) => leadQuality(i) === "stellar");
 
   function handleOpenLinkedIn(item: LeadListItem) {
     window.open(linkedInUrl(item), "_blank", "noopener,noreferrer");
@@ -465,16 +521,40 @@ export default function LeadListsPage() {
 
   // Sequential, not parallel -- keeps this well under the per-hour Apollo
   // rate limit and avoids hammering Apollo with a burst of concurrent calls.
-  async function runBulkEnrich(targets: LeadListItem[]) {
+  async function runBulkEnrich(targets: LeadListItem[], limit = MAX_BULK_ENRICH) {
     if (targets.length === 0) return;
-    setBulkEnrichProgress({ done: 0, total: targets.length });
-    for (const item of targets) {
+    setBulkHalt(null);
+    // Best-first, then truncate: if the cap discards most of a selection the
+    // survivors should be the best leads, not whichever sat at the top of the
+    // Sales Nav order.
+    const queue = sortByQuality(targets).slice(0, limit);
+    setBulkEnrichProgress({ done: 0, total: queue.length });
+    let consecutiveFailures = 0;
+
+    for (const [index, item] of queue.entries()) {
       setEnrichingIds((prev) => new Set(prev).add(item.id));
       try {
-        await enrichItem.mutateAsync({ itemId: item.id });
+        const res = (await enrichItem.mutateAsync({ itemId: item.id })) as
+          | { ok?: boolean; code?: string; error?: string }
+          | undefined;
+        // A budget/allowance refusal means STOP. Continuing would fire the
+        // remaining calls against a closed budget and swallow every rejection,
+        // which is what the old catch-and-continue did.
+        if (res?.ok === false && res.code && BULK_HALT_CODES.has(res.code)) {
+          setBulkHalt({
+            code: res.code,
+            message: describeHalt(res.code, res.error),
+            done: index,
+            total: queue.length,
+          });
+          break;
+        }
+        if (res?.ok === false) consecutiveFailures++;
+        else consecutiveFailures = 0;
       } catch {
         // Per-item failures are surfaced via enrichmentError on that row --
         // keep going so one bad lead doesn't stop the rest of the batch.
+        consecutiveFailures++;
       } finally {
         setEnrichingIds((prev) => {
           const next = new Set(prev);
@@ -482,6 +562,18 @@ export default function LeadListsPage() {
           return next;
         });
         setBulkEnrichProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+      }
+
+      // A systemic failure (Apollo down, key revoked) should not hammer
+      // through the whole selection.
+      if (consecutiveFailures >= BULK_MAX_CONSECUTIVE_FAILURES) {
+        setBulkHalt({
+          code: "repeated_failure",
+          message: describeHalt("repeated_failure"),
+          done: index + 1,
+          total: queue.length,
+        });
+        break;
       }
     }
     setBulkEnrichProgress(null);
@@ -667,6 +759,31 @@ export default function LeadListsPage() {
           </div>
         ) : (
           <>
+            {/* Persistent, not a toast: a bulk run can take ~100 seconds, so a
+                toast would be gone before anyone read why it stopped. Before
+                this, a budget refusal produced N silent no-ops and the user
+                was told nothing at all. */}
+            {bulkHalt && (
+              <div className="flex items-start justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2.5">
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  <strong>
+                    Stopped at {bulkHalt.done} of {bulkHalt.total}.
+                  </strong>{" "}
+                  {bulkHalt.message}{" "}
+                  {bulkHalt.total - bulkHalt.done > 0 && (
+                    <>{bulkHalt.total - bulkHalt.done} leads were not enriched.</>
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setBulkHalt(null)}
+                  className="shrink-0 text-xs text-amber-800/70 hover:text-amber-900 dark:text-amber-300/70"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {/* Header */}
             <div className="border-b border-border px-6 py-3 flex items-center justify-between">
               {selectedItemIds.size > 0 ? (
@@ -696,24 +813,39 @@ export default function LeadListsPage() {
                     Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
                   </span>
                 ) : !apolloGate.enabled ? null : selectedItemIds.size > 0 ? (
-                  <button
-                    type="button"
-                    onClick={handleBulkEnrichSelected}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
-                  >
-                    <IconSparkles size={12} />
-                    Enrich selected ({selectedItemIds.size})
-                  </button>
-                ) : enrichEligibleItems.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={handleBulkEnrichAllEligible}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
-                  >
-                    <IconSparkles size={12} />
-                    Enrich all ({enrichEligibleItems.length})
-                  </button>
-                ) : null}
+                  <EnrichCostConfirm
+                    selectedCount={selectedItemIds.size}
+                    label={`Enrich selected (${selectedItemIds.size})`}
+                    onConfirm={(limit) =>
+                      runBulkEnrich(allItems.filter((i) => selectedItemIds.has(i.id)), limit)
+                    }
+                  />
+                ) : (
+                  <>
+                    {/* The stellar run is PRIMARY when there is one to make.
+                        This is the single highest-leverage nudge here: the
+                        default action becomes "spend on the good leads"
+                        rather than "spend on everything eligible". */}
+                    {stellarEligibleItems.length > 0 && (
+                      <EnrichCostConfirm
+                        selectedCount={stellarEligibleItems.length}
+                        label={`✨ Enrich stellar (${stellarEligibleItems.length})`}
+                        onConfirm={(limit) => runBulkEnrich(stellarEligibleItems, limit)}
+                      />
+                    )}
+                    {enrichEligibleItems.length > 0 && (
+                      <EnrichCostConfirm
+                        selectedCount={enrichEligibleItems.length}
+                        label={
+                          stellarEligibleItems.length > 0
+                            ? `Enrich all eligible (${enrichEligibleItems.length})`
+                            : `Enrich all (${enrichEligibleItems.length})`
+                        }
+                        onConfirm={(limit) => runBulkEnrich(enrichEligibleItems, limit)}
+                      />
+                    )}
+                  </>
+                )}
                 {selectedItemIds.size > 0 ? (
                   <button
                     type="button"
@@ -781,6 +913,10 @@ export default function LeadListsPage() {
                         onToggle={toggleSelectItem}
                         onOpen={handleOpenLinkedIn}
                         onEnrich={handleEnrich}
+                        onRevealed={() => {
+                          itemsQuery.refetch();
+                          allItemsQuery.refetch();
+                        }}
                       />
                     ))}
                   </tbody>

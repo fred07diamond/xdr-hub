@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
+import { isEnrichmentFresh } from "../server/helpers/enrich-apollo-record.js";
 import { leadLists, leadListItems, prospects, prospectTags, prospectTagLinks } from "../server/db/schema.js";
 
 // One combined, deduped view across everything this owner has ever
@@ -175,6 +176,12 @@ export default defineAction({
         enrichedAt: p.enrichedAt,
         enrichmentError: p.enrichmentError,
         enrichmentSource: p.enrichmentSource,
+        // Computed SERVER-side: the 30-day freshness window lives in a
+        // server helper the client cannot import, and duplicating the
+        // constant in the UI is exactly how the two drift apart. The
+        // bulk-enrich loop uses it to skip rows that would be a
+        // server-side no-op anyway.
+        enrichmentFresh: isEnrichmentFresh(p),
         enrichedEmailStatus: p.enrichedEmailStatus,
         phoneRevealStatus: p.phoneRevealStatus,
         phoneRevealRequestedAt: p.phoneRevealRequestedAt,
@@ -225,6 +232,7 @@ export default defineAction({
           enrichedAt: li.enrichedAt,
           enrichmentError: li.enrichmentError,
           enrichmentSource: li.enrichmentSource,
+          enrichmentFresh: isEnrichmentFresh(li),
           enrichedEmailStatus: li.enrichedEmailStatus,
           phoneRevealStatus: li.phoneRevealStatus as string | null,
           phoneRevealRequestedAt: li.phoneRevealRequestedAt as string | null,

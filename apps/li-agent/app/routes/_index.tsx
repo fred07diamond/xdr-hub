@@ -70,7 +70,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Pagination } from "@/components/Pagination";
 import { APP_TITLE } from "@/lib/app-config";
+import { PersonaBadge, StellarMark, VerdictBadge } from "@/components/badges";
+import { EnrichCostConfirm } from "@/components/EnrichCostConfirm";
+import { RevealPhoneButton } from "@/components/RevealPhoneButton";
 import { useApolloEnrichment } from "@/lib/apollo-enrichment";
+import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
+import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { cn } from "@/lib/utils";
 
 export function meta() {
@@ -80,7 +85,10 @@ export function meta() {
   ];
 }
 
-type Verdict = "strong" | "possible" | "weak" | null;
+// Widened to include "inconclusive", which draftProfile writes whenever a
+// workspace has no ICP document. The old 3-value type meant such a row
+// indexed VERDICT_STYLES as undefined and rendered unstyled.
+type Verdict = "strong" | "possible" | "weak" | "inconclusive" | null;
 type Status = "captured" | "drafted" | "sent";
 
 interface Tag {
@@ -135,6 +143,9 @@ interface Prospect {
   // matched email ("verified" | "guessed" | "unavailable", straight from
   // Apollo's person.email_status).
   enrichmentSource: string | null;
+  // Server-computed 30-day freshness (see list-all-prospects.ts): the
+  // window lives in a server helper the client cannot import.
+  enrichmentFresh?: boolean;
   enrichedEmailStatus: string | null;
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
   phoneRevealRequestedAt: string | null;
@@ -184,6 +195,7 @@ const VERDICT_STYLES: Record<NonNullable<Verdict>, string> = {
   strong: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
   possible: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
   weak: "bg-rose-500/15 text-rose-500 dark:text-rose-400",
+  inconclusive: "bg-muted text-muted-foreground",
 };
 
 // Same swatch set as ICP Personas (app/routes/icp.tsx) for visual consistency
@@ -327,15 +339,6 @@ function CompanyCell({ company, companyDomain }: { company: string | null; compa
         <CompanyHoverCardBody data={query.data as HubSpotCompanyData | undefined} isLoading={query.isLoading} />
       </HoverCardContent>
     </HoverCard>
-  );
-}
-
-function VerdictBadge({ verdict }: { verdict: Verdict }) {
-  if (!verdict) return <span className="text-xs text-muted-foreground">—</span>;
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${VERDICT_STYLES[verdict]}`}>
-      {verdict}
-    </span>
   );
 }
 
@@ -1117,7 +1120,10 @@ export default function ProspectsRoute() {
   // first render (e.g. a shared link), then kept in sync by the effect below.
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
-  const [verdictFilter, setVerdictFilter] = useState<NonNullable<Verdict> | "all">(
+  // "stellar" is not a verdict -- it is the two-signal quality tier from
+  // lead-quality.ts -- but it belongs in this pill group because that is
+  // where a user looks to narrow by lead worth.
+  const [verdictFilter, setVerdictFilter] = useState<NonNullable<Verdict> | "all" | "stellar">(
     () => (searchParams.get("fit") as NonNullable<Verdict> | "all") ?? "all",
   );
   const [tagFilterIds, setTagFilterIds] = useState<Set<string>>(
@@ -1182,6 +1188,7 @@ export default function ProspectsRoute() {
 
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkHalt, setBulkHalt] = useState<BulkHaltState | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
@@ -1249,7 +1256,11 @@ export default function ProspectsRoute() {
   ).values()], [allProspects]);
 
   function matchesCurrentFilters(p: Prospect): boolean {
-    if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) return false;
+    if (verdictFilter === "stellar") {
+      if (leadQuality(p) !== "stellar") return false;
+    } else if (verdictFilter !== "all" && p.fitVerdict !== verdictFilter) {
+      return false;
+    }
     if (tagFilterIds.size > 0) {
       const prospectTagIds = new Set(p.tags.map((t) => t.id));
       const matches = tagFilterMode === "any"
@@ -1419,9 +1430,12 @@ export default function ProspectsRoute() {
     refetch();
   }
 
-  async function enrichOne(prospect: Prospect) {
-    if (prospect.source === "prospect") await enrichProspect.mutateAsync({ id: prospect.rawId });
-    else await enrichLeadListItem.mutateAsync({ itemId: prospect.rawId });
+  // Returns the action result so a bulk loop can inspect a refusal code --
+  // previously it discarded it, which is why a budget block was invisible.
+  async function enrichOne(prospect: Prospect): Promise<{ ok?: boolean; code?: string; error?: string } | undefined> {
+    if (prospect.source === "prospect")
+      return (await enrichProspect.mutateAsync({ id: prospect.rawId })) as never;
+    return (await enrichLeadListItem.mutateAsync({ itemId: prospect.rawId })) as never;
   }
 
   async function handleEnrich(prospect: Prospect) {
@@ -1466,17 +1480,41 @@ export default function ProspectsRoute() {
 
   // Sequential, not parallel -- keeps this well under the per-hour Apollo
   // rate limit and avoids hammering Apollo with a burst of concurrent calls.
-  async function handleBulkEnrich() {
-    const targets = allProspects.filter((p) => selectedIds.has(p.id));
-    if (targets.length === 0) return;
-    setBulkEnrichProgress({ done: 0, total: targets.length });
-    for (const p of targets) {
+  async function handleBulkEnrich(limit = MAX_BULK_ENRICH) {
+    // This page had NO eligibility filter at all (unlike Lead Lists), so
+    // "select all 5000 matching" plus one click attempted five thousand calls,
+    // most of them server-side no-ops on already-fresh rows, and some of them
+    // real spend on leads the ICP had scored weak.
+    const eligible = allProspects.filter(
+      (p) => selectedIds.has(p.id) && !p.enrichmentFresh && isBulkEligibleQuality(p),
+    );
+    // Best-first, then truncate, so a capped run keeps the best leads.
+    const queue = sortByQuality(eligible).slice(0, limit);
+    if (queue.length === 0) return;
+
+    setBulkHalt(null);
+    setBulkEnrichProgress({ done: 0, total: queue.length });
+    let consecutiveFailures = 0;
+
+    for (const [index, p] of queue.entries()) {
       setEnrichingIds((prev) => new Set(prev).add(p.id));
       try {
-        await enrichOne(p);
+        const res = await enrichOne(p);
+        if (res?.ok === false && res.code && BULK_HALT_CODES.has(res.code)) {
+          setBulkHalt({
+            code: res.code,
+            message: describeHalt(res.code, res.error),
+            done: index,
+            total: queue.length,
+          });
+          break;
+        }
+        if (res?.ok === false) consecutiveFailures++;
+        else consecutiveFailures = 0;
       } catch {
         // Per-item failures are surfaced via enrichmentError on that row --
         // keep going so one bad prospect doesn't stop the rest of the batch.
+        consecutiveFailures++;
       } finally {
         setEnrichingIds((prev) => {
           const next = new Set(prev);
@@ -1484,6 +1522,16 @@ export default function ProspectsRoute() {
           return next;
         });
         setBulkEnrichProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+      }
+
+      if (consecutiveFailures >= BULK_MAX_CONSECUTIVE_FAILURES) {
+        setBulkHalt({
+          code: "repeated_failure",
+          message: describeHalt("repeated_failure"),
+          done: index + 1,
+          total: queue.length,
+        });
+        break;
       }
     }
     setBulkEnrichProgress(null);
@@ -1614,11 +1662,19 @@ export default function ProspectsRoute() {
                     Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
                   </span>
                 ) : (
-                  <button type="button" onClick={handleBulkEnrich} disabled={!pageApollo.enabled}
-                    title={pageApollo.enabled ? undefined : pageApollo.message}
-                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
-                    <IconSparkles size={13} /> Enrich selected
-                  </button>
+                  <EnrichCostConfirm
+                    selectedCount={
+                      // Count what would ACTUALLY be enriched, so the estimate
+                      // is not inflated by already-fresh or weak-fit rows the
+                      // loop is going to skip.
+                      allProspects.filter(
+                        (p) => selectedIds.has(p.id) && !p.enrichmentFresh && isBulkEligibleQuality(p),
+                      ).length
+                    }
+                    label="Enrich selected"
+                    disabled={!pageApollo.enabled}
+                    onConfirm={(limit) => handleBulkEnrich(limit)}
+                  />
                 )}
                 {bulkScoreDraftProgress ? (
                   <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -1719,6 +1775,30 @@ export default function ProspectsRoute() {
       )}
       </div>
 
+      {/* Persistent, not a toast: a bulk run can take ~100 seconds, so a
+          toast would be gone before anyone read why it stopped. Previously a
+          budget refusal produced N silent no-ops with no feedback at all. */}
+      {bulkHalt && (
+        <div className="flex items-start justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            <strong>
+              Stopped at {bulkHalt.done} of {bulkHalt.total}.
+            </strong>{" "}
+            {bulkHalt.message}{" "}
+            {bulkHalt.total - bulkHalt.done > 0 && (
+              <>{bulkHalt.total - bulkHalt.done} leads were not enriched.</>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => setBulkHalt(null)}
+            className="shrink-0 text-xs text-amber-800/70 hover:text-amber-900 dark:text-amber-300/70"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
         {/* Search */}
@@ -1742,9 +1822,14 @@ export default function ProspectsRoute() {
         {/* Verdict */}
         <div className="flex items-center gap-1">
           <FilterPill active={verdictFilter === "all"} onClick={() => setVerdictFilter("all")}>All fits</FilterPill>
+          <FilterPill active={verdictFilter === "stellar"} onClick={() => setVerdictFilter(verdictFilter === "stellar" ? "all" : "stellar")}>✨ Stellar</FilterPill>
           <FilterPill active={verdictFilter === "strong"} onClick={() => setVerdictFilter(verdictFilter === "strong" ? "all" : "strong")}>Strong</FilterPill>
           <FilterPill active={verdictFilter === "possible"} onClick={() => setVerdictFilter(verdictFilter === "possible" ? "all" : "possible")}>Possible</FilterPill>
           <FilterPill active={verdictFilter === "weak"} onClick={() => setVerdictFilter(verdictFilter === "weak" ? "all" : "weak")}>Weak</FilterPill>
+          {/* Added because rows CARRY this value (draftProfile writes it when a
+              workspace has no ICP document) and there was previously no way to
+              filter for them. */}
+          <FilterPill active={verdictFilter === "inconclusive"} onClick={() => setVerdictFilter(verdictFilter === "inconclusive" ? "all" : "inconclusive")}>Inconclusive</FilterPill>
         </div>
 
         <div className="h-4 w-px bg-border" />
@@ -1863,14 +1948,28 @@ export default function ProspectsRoute() {
                 const isChecked = selectedIds.has(p.id);
                 const note = p.draftNote ?? "";
                 const displayName = p.name ?? p.profileUrl ?? "Unknown";
+                const isStellar = leadQuality(p) === "stellar";
                 return (
                   <tr
                     key={p.id}
-                    className={`group border-b border-border last:border-0 transition-colors cursor-pointer ${isChecked ? "bg-muted/60" : "hover:bg-muted/40"}`}
+                    // Converted from a template literal to cn() so the stellar
+                    // tint can compose without the classes fighting. Selection
+                    // still wins, so a checked stellar row reads as checked.
+                    className={cn(
+                      "group border-b border-border last:border-0 transition-colors cursor-pointer",
+                      isStellar && !isChecked && "bg-amber-500/[0.04] hover:bg-amber-500/[0.08]",
+                      isChecked ? "bg-muted/60" : "hover:bg-muted/40",
+                    )}
                     onClick={() => setSelectedId(p.id)}
                   >
-                    {/* Checkbox -- shift-click selects the whole range since the last clicked row */}
-                    <td className="py-3 pl-3 pr-1 w-8" onClick={(e) => e.stopPropagation()}>
+                    {/* Checkbox -- shift-click selects the whole range since the last clicked row.
+                        The stellar accent goes on this CELL, not the <tr>: a
+                        border on a row does not render under
+                        border-collapse: collapse. */}
+                    <td
+                      className={cn("py-3 pl-3 pr-1 w-8", isStellar && "border-l-2 border-l-amber-500/60")}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -1883,6 +1982,9 @@ export default function ProspectsRoute() {
                     {/* Person */}
                     <td className="py-3 pl-2 pr-3">
                       <div className="flex items-center gap-1.5">
+                        {/* First in the row so the leads worth spending on
+                            are the ones the eye lands on. */}
+                        {isStellar && <StellarMark personaName={p.personaName} />}
                         <IconBrandLinkedin size={13} className="shrink-0 text-[#0a66c2]" />
                         <span className="font-medium text-foreground group-hover:text-primary truncate max-w-[180px]">{displayName}</span>
                         {p.source === "lead_list" && (
@@ -1998,17 +2100,33 @@ export default function ProspectsRoute() {
                     {/* Phone */}
                     {!hiddenColumns.has("phone") && (
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        <EnrichedField
-                          value={p.enrichedPhone}
-                          status={p.enrichmentStatus}
-                          kind="phone"
-                          phoneRevealStatus={p.phoneRevealStatus}
-                          phoneRevealRequestedAt={p.phoneRevealRequestedAt}
-                          enrichmentSource={p.enrichmentSource}
-                          enrichedAt={p.enrichedAt}
-                          isEnriching={enrichingIds.has(p.id)}
-                          onEnrich={() => handleEnrich(p)}
-                        />
+                        {/* NO onEnrich: the empty phone cell used to be a
+                            one-click 8-credit reveal with no confirmation.
+                            RevealPhoneButton owns that spend now. Email keeps
+                            its one-click affordance -- 1 credit, recoverable,
+                            and a long-established habit. */}
+                        <div className="flex items-center gap-2">
+                          <EnrichedField
+                            value={p.enrichedPhone}
+                            status={p.enrichmentStatus}
+                            kind="phone"
+                            phoneRevealStatus={p.phoneRevealStatus}
+                            phoneRevealRequestedAt={p.phoneRevealRequestedAt}
+                            enrichmentSource={p.enrichmentSource}
+                            enrichedAt={p.enrichedAt}
+                            isEnriching={enrichingIds.has(p.id)}
+                          />
+                          {!p.enrichedPhone && p.phoneRevealStatus !== "requested" && (
+                            <RevealPhoneButton
+                              source={p.source === "prospect" ? "prospect" : "lead_list_item"}
+                              id={p.rawId}
+                              fitVerdict={p.fitVerdict}
+                              fitReason={p.fitReason}
+                              noNumberKnown={p.phoneRevealStatus === "no_match"}
+                              onRevealed={refetch}
+                            />
+                          )}
+                        </div>
                       </td>
                     )}
 
