@@ -260,7 +260,14 @@ export function unassessableNote(flags: AssessableFlags): string {
       .map((d) => DIMENSION_LABELS[d])
       .join(" or ")}. Score ${missing.length === 1 ? "it" : "them"} 0 and do NOT let that absence ` +
     `reduce the others. ${missing.length === 1 ? "That dimension is" : "Those dimensions are"} EXCLUDED ` +
-    `from the total rather than counted as a failure, so the lead is judged only on what is actually here.\n`
+    `from the total rather than counted as a failure, so the lead is judged only on what is actually here.\n` +
+    // Without this the model reports OUR data gaps back to the rep. A real
+    // reason came back as "...though no company-fit or intent evidence is
+    // provided", which tells a salesperson nothing about the lead and reads
+    // as a caveat on the score. fitReason is about the person, not about our
+    // capture coverage.
+    `Do NOT mention the missing evidence, the scoring dimensions, or the scoring process in fitReason. ` +
+    `State only what the available material shows about this person. If there is little to go on, be brief.\n`
   );
 }
 

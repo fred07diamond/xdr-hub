@@ -258,7 +258,6 @@ export function HotLeadsSection<T extends HotLead>({
               <HotLeadCard
                 key={lead.id}
                 lead={lead}
-                settings={settings}
                 scoring={scoringIds.has(lead.id) || !!scoringAll}
                 onGenerate={onGenerate ? () => onGenerate(lead) : undefined}
                 onOpen={onOpen ? () => onOpen(lead) : undefined}
@@ -284,20 +283,17 @@ export function HotLeadsSection<T extends HotLead>({
 
 function HotLeadCard<T extends HotLead>({
   lead,
-  settings,
   scoring,
   onGenerate,
   onOpen,
   onScore,
 }: {
   lead: T;
-  settings: HotLeadSettings;
   scoring?: boolean;
   onGenerate?: () => void;
   onOpen?: () => void;
   onScore?: () => void;
 }) {
-  const assessment = assessHotLead(lead, settings);
   const link = lead.profileUrl || lead.salesNavLeadUrl || null;
   const scored = typeof lead.fitScore === "number";
 
@@ -330,13 +326,6 @@ function HotLeadCard<T extends HotLead>({
             />
           )}
         </div>
-        {/* Corroborators as a compact chip, not a sentence. The SENTENCE slot
-            below belongs to the model's actual reasoning. */}
-        {scored && assessment.reasons.length > 0 && (
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-            {assessment.reasons.includes("intent") ? "live intent" : "decision-level"}
-          </span>
-        )}
       </div>
 
       <p className="truncate text-xs text-muted-foreground">
@@ -348,7 +337,12 @@ function HotLeadCard<T extends HotLead>({
           the card was showing a generic "decision-level in a matched persona"
           instead — which restates the rule rather than explaining the lead. */}
       {lead.fitReason && (
-        <p className="mt-1.5 text-xs leading-5 text-foreground">{lead.fitReason}</p>
+        <p
+          className="mt-1.5 line-clamp-2 text-xs leading-5 text-foreground"
+          title={lead.fitReason}
+        >
+          {lead.fitReason}
+        </p>
       )}
       {lead.intentSignal && (
         <p className="mt-1.5 border-s-2 border-amber-400 ps-2 text-xs italic text-muted-foreground">
@@ -356,9 +350,9 @@ function HotLeadCard<T extends HotLead>({
         </p>
       )}
 
-      {/* Under the reason rather than beside it. Side by side, the bars
-          competed with the sentence for the same eye and squeezed both. */}
-      {scored && <ScoreBreakdown lead={lead} className="mt-2" />}
+      {/* One line, not five bars. The full breakdown is in the detail sheet;
+          a card is for scanning. */}
+      {scored && <ScoreChips lead={lead} />}
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2.5">
         {onGenerate && (
@@ -407,6 +401,57 @@ function HotLeadCard<T extends HotLead>({
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * One-line dimension summary for a CARD.
+ *
+ * Full-width bars were a mistake: three of them turned a lead you are meant to
+ * scan into the loudest block on the page, and a 30/30 bar a thousand pixels
+ * wide says nothing a hundred-pixel one does not. The breakdown is detail, and
+ * detail belongs in the sheet that opens when you click the lead -- which is
+ * where the bars now live.
+ *
+ * So the card gets the same numbers on one scannable line, coloured only where
+ * a dimension is actually weak, since that is the part worth noticing.
+ */
+export function ScoreChips({ lead }: { lead: HotLead }) {
+  const values: Record<ScoreDimension, number | null> = {
+    roleFit: lead.scoreRoleFit ?? null,
+    seniority: lead.scoreSeniority ?? null,
+    companyFit: lead.scoreCompanyFit ?? null,
+    intent: lead.scoreIntent ?? null,
+  };
+  const assessed = DIMENSION_ORDER.filter((d) => values[d] !== null);
+  if (assessed.length === 0) return null;
+
+  const SHORT: Record<ScoreDimension, string> = {
+    roleFit: "Role",
+    seniority: "Seniority",
+    companyFit: "Company",
+    intent: "Intent",
+  };
+
+  return (
+    <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+      {assessed.map((d) => {
+        const max = SCORE_WEIGHTS[d];
+        const value = Math.min(max, values[d] ?? 0);
+        const pct = max > 0 ? value / max : 0;
+        return (
+          <span key={d}>
+            {SHORT[d]}{" "}
+            <b
+              className={`font-semibold tabular-nums ${pct < 0.6 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
+            >
+              {value}
+            </b>
+            <span className="text-muted-foreground/60">/{max}</span>
+          </span>
+        );
+      })}
+    </p>
   );
 }
 

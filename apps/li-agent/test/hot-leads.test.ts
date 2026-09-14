@@ -265,9 +265,23 @@ describe("the breakdown must not draw an unassessed dimension", () => {
     expect(SRC).toContain("values[d] !== null");
   });
 
-  it("states the real denominator", () => {
-    // An 87 from three signals must not read as an 87 from four.
+  it("states the real denominator in the DETAIL view", () => {
+    // An 87 from three signals must not read as an 87 from four. This belongs
+    // in the sheet, not on the card, where it read as debug output.
     expect(SRC).toMatch(/of \{DIMENSION_ORDER\.length\} signals/);
+  });
+
+  it("the CARD uses one compact line, not full-width bars", () => {
+    // Three full-width bars made the lead you are meant to scan the loudest
+    // block on the page, and a 30/30 bar a thousand pixels wide says nothing
+    // a hundred-pixel one does not.
+    expect(SRC).toContain("export function ScoreChips");
+    expect(SRC).toContain("<ScoreChips lead={lead} />");
+    expect(SRC).not.toContain('<ScoreBreakdown lead={lead} className="mt-2" />');
+  });
+
+  it("clamps a verbose reason so it cannot set the card height", () => {
+    expect(SRC).toContain("line-clamp-2");
   });
 
   it("explains WHY intent can be unassessable", () => {
@@ -313,5 +327,17 @@ describe("clicking a lead breaks the score down", () => {
     for (const field of ["fitScore", "scoreRoleFit", "scoreIntent", "intentSignal"]) {
       expect(SRC, field).toMatch(new RegExp(`\\n  ${field}: `));
     }
+  });
+});
+
+describe("fitReason is about the lead, not about our data", () => {
+  it("forbids meta-commentary in the reason", () => {
+    // A real reason came back as "...though no company-fit or intent evidence
+    // is provided" — a caveat on OUR capture coverage, which tells a
+    // salesperson nothing about the person. Telling the model which
+    // dimensions to skip is what invited it.
+    const SRC = readFileSync(new URL("../server/helpers/fit-score.ts", import.meta.url), "utf8");
+    expect(SRC).toMatch(/Do NOT mention the missing evidence/);
+    expect(SRC).toMatch(/scoring process in fitReason/);
   });
 });
