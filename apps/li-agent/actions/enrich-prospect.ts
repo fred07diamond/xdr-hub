@@ -3,8 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
-import { matchApolloPerson, enrichApolloOrganization, extractApolloPhone } from "../server/helpers/apollo-client.js";
-import { isEnrichmentFresh } from "../server/helpers/enrich-lead-list-item.js";
+import { enrichApolloRecord } from "../server/helpers/enrich-apollo-record.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 export default defineAction({
@@ -39,117 +38,15 @@ export default defineAction({
       return { ok: false, error: "Prospect has no name to match against Apollo." };
     }
 
-    // Same rule as enrich-lead-list-item.ts: a complete, recent Apollo
-    // result is left alone instead of spending credits to re-fetch data
-    // that hasn't gone stale -- this is what makes clicking "Enrich" again
-    // on an already-enriched prospect (or re-running a bulk enrich) a
-    // no-op instead of a second real Apollo call.
-    if (isEnrichmentFresh(prospect)) {
-      return {
-        ok: true,
-        enrichmentStatus: prospect.enrichmentStatus,
-        enrichedEmail: prospect.enrichedEmail,
-        enrichedTitle: prospect.enrichedTitle,
-        enrichedPhone: prospect.enrichedPhone,
-        enrichedLinkedinUrl: prospect.enrichedLinkedinUrl,
-        enrichedCompanyIndustry: prospect.enrichedCompanyIndustry,
-        enrichedCompanySize: prospect.enrichedCompanySize,
-        companyDomain: prospect.companyDomain,
-        enrichmentError: prospect.enrichmentError,
-        phoneRevealStatus: prospect.phoneRevealStatus,
-      };
-    }
+    // The Apollo call, the freshness short-circuit, the phone-reveal
+    // bookkeeping and the row write all live in enrichApolloRecord, shared
+    // with the lead-list path and the background sweep. This action used to
+    // inline a verbatim copy of ~70 lines of that, differing only in which
+    // table it wrote to; the two copies had already drifted once, and credit
+    // metering has to sit at a single choke point or a call site can spend
+    // without being counted.
+    const result = await enrichApolloRecord(db, { kind: "prospect", row: prospect });
 
-    const now = new Date().toISOString();
-    await db.update(prospects).set({ enrichmentStatus: "enriching", updatedAt: now }).where(eq(prospects.id, id));
-
-    // Person Match and Organization Enrich are independent Apollo endpoints
-    // with independently-scoped API-key permissions — each is wrapped
-    // separately so a scope problem on one doesn't block whichever data the
-    // other still gets. Mirrors apps/prospecting-hub/actions/enrich-contact-
-    // with-apollo.ts and enrich-lead-list-item.ts.
-    const warnings: string[] = [];
-
-    // Only request Apollo's paid phone reveal when we don't already have a
-    // personal number on file -- re-enriching someone already revealed
-    // shouldn't spend credits again.
-    const revealPhone = !prospect.enrichedPhone;
-
-    let person = null;
-    try {
-      person = await matchApolloPerson({ name: prospect.name, companyName: prospect.company, revealPhone });
-    } catch (err) {
-      warnings.push(`Person lookup: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    let organization = null;
-    try {
-      organization = await enrichApolloOrganization({
-        domain: person?.organization?.primary_domain ?? null,
-        email: person?.email ?? null,
-      });
-    } catch (err) {
-      warnings.push(`Organization lookup: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    const enrichedAt = new Date().toISOString();
-    const status = person || organization ? "done" : warnings.length > 0 ? "failed" : "not_found";
-    const enrichmentError = warnings.length > 0 ? warnings.join(" | ") : null;
-    // Live-confirmed bug: Apollo's synchronous /people/match response only
-    // carries contact.phone_numbers on the SAME call that requests a fresh
-    // reveal -- a number delivered earlier via the async webhook is NOT
-    // echoed back on a later plain re-enrich. Falling back to the
-    // already-stored value here is required, or a routine re-enrich wipes
-    // out a real number to null.
-    const phone = extractApolloPhone(person) ?? prospect.enrichedPhone;
-
-    // Reveal bookkeeping only applies when this call actually requested
-    // one. A phone found synchronously means nothing async is pending, and
-    // when revealPhone was false to begin with, leave existing reveal
-    // fields untouched rather than overwriting them with this call's
-    // (irrelevant) outcome. Matching key is Apollo's own person.id --
-    // live-confirmed the webhook payload has no request_id, only a
-    // `people[].id` identifying which person each result is for.
-    const phoneRevealUpdate = !revealPhone
-      ? {}
-      : phone
-        ? { phoneRevealStatus: "done" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null }
-        : person?.id
-          ? { phoneRevealStatus: "requested" as const, phoneRevealRequestId: person.id, phoneRevealRequestedAt: enrichedAt }
-          : { phoneRevealStatus: "failed" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null };
-
-    await db
-      .update(prospects)
-      .set({
-        enrichmentStatus: status,
-        enrichedEmail: person?.email ?? null,
-        enrichedTitle: person?.title ?? null,
-        enrichedPhone: phone,
-        enrichedLinkedinUrl: person?.linkedin_url ?? null,
-        enrichedCompanyIndustry: organization?.industry ?? null,
-        enrichedCompanySize: organization?.estimated_num_employees ?? null,
-        companyDomain: person?.organization?.primary_domain ?? prospect.companyDomain,
-        enrichedAt,
-        enrichmentError,
-        enrichmentSource: person || organization ? "apollo" : prospect.enrichmentSource,
-        enrichedEmailStatus: person?.email_status ?? null,
-        updatedAt: enrichedAt,
-        ...phoneRevealUpdate,
-      })
-      .where(eq(prospects.id, id));
-
-    return {
-      ok: true,
-      enrichmentStatus: status,
-      enrichedEmail: person?.email ?? null,
-      enrichedTitle: person?.title ?? null,
-      enrichedPhone: phone,
-      enrichedLinkedinUrl: person?.linkedin_url ?? null,
-      enrichedCompanyIndustry: organization?.industry ?? null,
-      enrichedCompanySize: organization?.estimated_num_employees ?? null,
-      companyDomain: person?.organization?.primary_domain ?? prospect.companyDomain,
-      enrichmentError,
-      phoneRevealStatus: "phoneRevealStatus" in phoneRevealUpdate ? phoneRevealUpdate.phoneRevealStatus : (prospect.phoneRevealStatus ?? null),
-    };
+    return { ok: true, ...result };
   },
 });

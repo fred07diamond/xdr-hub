@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems } from "../server/db/schema.js";
-import { enrichLeadListItem } from "../server/helpers/enrich-lead-list-item.js";
+import { enrichApolloRecord } from "../server/helpers/enrich-apollo-record.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 export default defineAction({
@@ -35,10 +35,10 @@ export default defineAction({
       return { ok: false, error: "Lead has no name to match against Apollo." };
     }
 
-    const now = new Date().toISOString();
-    await db.update(leadListItems).set({ enrichmentStatus: "enriching", updatedAt: now }).where(eq(leadListItems.id, itemId));
-
-    const result = await enrichLeadListItem(db, item);
+    // enrichApolloRecord claims the row itself (sets "enriching") once it has
+    // decided to actually call Apollo -- doing it here instead stranded a
+    // fresh row at "enriching" when the freshness check short-circuited.
+    const result = await enrichApolloRecord(db, { kind: "lead_list_item", row: item });
 
     return { ok: true, ...result };
   },

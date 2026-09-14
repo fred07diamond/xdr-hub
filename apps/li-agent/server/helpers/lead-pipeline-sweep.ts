@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { leadLists, leadListItems } from "../db/schema.js";
-import { enrichLeadListItem } from "./enrich-lead-list-item.js";
+import { enrichApolloRecord } from "./enrich-apollo-record.js";
 import { scoreLeadListItem } from "./score-lead-list-item.js";
 
 type Db = ReturnType<typeof getDb>;
@@ -122,8 +122,8 @@ export async function runLeadPipelineSweepTick(): Promise<void> {
     for (const item of batch) {
       if (Date.now() - startedAt > TICK_BUDGET_MS) break;
       try {
-        await enrichLeadListItem(db, item);
-        // Re-select: enrichLeadListItem already wrote the enrichment
+        await enrichApolloRecord(db, { kind: "lead_list_item", row: item });
+        // Re-select: enrichApolloRecord already wrote the enrichment
         // columns to the row -- scoreLeadListItem needs those fresh values
         // (e.g. enrichedLinkedinUrl), not the pre-enrichment snapshot.
         const [freshItem] = await db.select().from(leadListItems).where(eq(leadListItems.id, item.id));
