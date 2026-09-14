@@ -47,6 +47,9 @@ export interface CreditUsage {
   emptyCalls: number;
   phoneStopAt: number;
   phoneStopPct: number;
+  /** Fit bars, exposed to every member so the UI can explain a skip. */
+  enrichMinVerdict?: string;
+  phoneMinVerdict?: string;
   thresholds: number[];
   topSpenders?: {
     actorEmail: string;

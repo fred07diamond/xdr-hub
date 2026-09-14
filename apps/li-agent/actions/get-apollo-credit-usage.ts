@@ -77,6 +77,12 @@ export default defineAction({
 
       phoneStopAt: state.phoneStopAt,
       phoneStopPct: state.settings.phoneStopPct,
+      // The fit bars are POLICY, not configuration secrets, and the UI needs
+      // them to explain why a lead was skipped rather than silently dropping
+      // it from a batch. Readable by every member, unlike the admin-only
+      // get-apollo-credit-settings.
+      enrichMinVerdict: state.settings.enrichMinVerdict,
+      phoneMinVerdict: state.settings.phoneMinVerdict,
       thresholds: state.settings.thresholds,
 
       // Per-user rows are needed either way: an admin sees everyone, and a

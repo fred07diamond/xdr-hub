@@ -79,7 +79,7 @@ import {
   describePhoneRevealState,
   TONE_CLASS,
 } from "@/lib/enrichment-vocabulary";
-import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
+import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { cn } from "@/lib/utils";
 
@@ -1216,6 +1216,7 @@ export default function ProspectsRoute() {
   const markSent = useActionMutation("mark-sent");
   const enrichProspect = useActionMutation("enrich-prospect");
   const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
+  const revealPhone = useActionMutation("reveal-phone");
   const scoreLeadListItem = useActionMutation("score-lead-list-item");
 
   const tagsQuery = useActionQuery("list-prospect-tags", {});
@@ -1637,6 +1638,36 @@ export default function ProspectsRoute() {
       const res = await enrichOne(row);
       // Stop on a budget or policy refusal instead of grinding through the
       // rest: the same HALT rule the table's own bulk loops follow.
+      if (res?.code && BULK_HALT_CODES.has(res.code)) {
+        throw new Error(describeHalt(res.code, res.error));
+      }
+    }
+    const refreshed = await refetch();
+    const fresh = ((refreshed.data as { prospects?: Prospect[] } | undefined)?.prospects ?? []).filter((p) =>
+      ids.has(p.id),
+    );
+    const byId = new Map(fresh.map((f) => [f.id, f]));
+    const merged = (exportRequest?.rows ?? rows).map((r) => byId.get(r.id) ?? r);
+    setExportRequest((prev) => (prev ? { ...prev, rows: merged } : prev));
+    return merged;
+  }
+
+  /**
+   * Reveals phones for the rows the export modal selected.
+   *
+   * Same reveal-phone action a single row uses, with `override: false` -- the
+   * modal only passes rows already clearing the fit bar, so a batch can never
+   * be the thing that bypasses it.
+   */
+  async function revealPhonesForExport(rows: Prospect[]): Promise<Prospect[]> {
+    const ids = new Set(rows.map((r) => r.id));
+    for (const row of rows.slice(0, MAX_BULK_ENRICH)) {
+      const res = (await revealPhone.mutateAsync({
+        source: row.source === "prospect" ? "prospect" : "lead_list_item",
+        id: row.rawId,
+        confirmCredits: CREDITS_PER_PHONE_REVEAL,
+        override: false,
+      })) as { ok?: boolean; code?: string; error?: string } | undefined;
       if (res?.code && BULK_HALT_CODES.has(res.code)) {
         throw new Error(describeHalt(res.code, res.error));
       }
@@ -2210,6 +2241,7 @@ export default function ProspectsRoute() {
         rows={exportRequest?.rows ?? []}
         filenamePrefix={exportRequest?.prefix ?? "prospects"}
         onEnrich={enrichForExport}
+        onRevealPhones={revealPhonesForExport}
         title={
           exportRequest?.prefix === "selected-prospects"
             ? `Export ${exportRequest.rows.length} selected`

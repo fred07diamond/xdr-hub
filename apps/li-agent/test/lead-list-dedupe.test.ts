@@ -129,3 +129,80 @@ describe("CSV export header", () => {
     }
   });
 });
+
+describe("CSV name cleaning", () => {
+  it("strips emoji before splitting a name", async () => {
+    // Reported: First Name rendered "👋" with the whole real name in Last
+    // Name. apollo-client.ts already stripped emoji before calling Apollo;
+    // the CSV path did not, so it only surfaced on export.
+    const { csvRowCells } = await import("../app/lib/prospects-csv.js");
+    const cells = csvRowCells({
+      name: "👋 Liam Bolton",
+      company: "Ramp 🚀",
+      headline: "Principal Product Designer",
+      location: null,
+      profileUrl: null,
+      salesNavLeadUrl: null,
+      enrichedTitle: null,
+      enrichedEmail: null,
+      enrichedPhone: null,
+      enrichedLinkedinUrl: null,
+    });
+    expect(cells[0]).toBe("Liam");
+    expect(cells[1]).toBe("Bolton");
+    expect(cells[2]).toBe("Ramp");
+  });
+
+  it("leaves an abbreviated surname alone", async () => {
+    // "Adriana R." is real LinkedIn data, not corruption.
+    const { csvRowCells } = await import("../app/lib/prospects-csv.js");
+    const cells = csvRowCells({
+      name: "Adriana R.", company: null, headline: null, location: null,
+      profileUrl: null, salesNavLeadUrl: null, enrichedTitle: null,
+      enrichedEmail: null, enrichedPhone: null, enrichedLinkedinUrl: null,
+    });
+    expect(cells[0]).toBe("Adriana");
+    expect(cells[1]).toBe("R.");
+  });
+
+  it("keeps the preview and the file byte-identical", async () => {
+    // The preview renders csvRowCells directly; the file escapes the same
+    // cells. Parsing CSV text back apart (the first version) shifted columns
+    // on any field containing a comma -- and this data is full of them.
+    const { csvRowCells, buildMasterCsv } = await import("../app/lib/prospects-csv.js");
+    const row = {
+      name: "Catherine Wang", company: "Ramp", headline: "Director, Product Design",
+      location: "NYC", profileUrl: null, salesNavLeadUrl: null, enrichedTitle: null,
+      enrichedEmail: null, enrichedPhone: null, enrichedLinkedinUrl: null,
+    };
+    const cells = csvRowCells(row);
+    expect(cells[3]).toBe("Director, Product Design");
+    // The file quotes it; the preview shows it unquoted but whole.
+    expect(buildMasterCsv([row])).toContain('"Director, Product Design"');
+  });
+});
+
+describe("verdictClearsBar — client mirror", () => {
+  it("matches the server for every bar", async () => {
+    const { verdictClearsBar } = await import("../app/lib/verdict-bar.js");
+    expect(verdictClearsBar("strong", "strong")).toBe(true);
+    expect(verdictClearsBar("possible", "strong")).toBe(false);
+    expect(verdictClearsBar("possible", "strong_or_possible")).toBe(true);
+    expect(verdictClearsBar("weak", "not_weak")).toBe(false);
+    expect(verdictClearsBar("inconclusive", "not_weak")).toBe(true);
+    expect(verdictClearsBar("weak", "any")).toBe(true);
+  });
+
+  it("treats an unscored lead as not clearing anything but 'any'", async () => {
+    // "We have not looked" is not "we looked and it was acceptable".
+    const { verdictClearsBar } = await import("../app/lib/verdict-bar.js");
+    expect(verdictClearsBar(null, "not_weak")).toBe(false);
+    expect(verdictClearsBar(null, "any")).toBe(true);
+  });
+
+  it("fails closed on an unrecognised bar", async () => {
+    // A typo in a setting must not quietly authorise every lead.
+    const { verdictClearsBar } = await import("../app/lib/verdict-bar.js");
+    expect(verdictClearsBar("strong", "garbage")).toBe(false);
+  });
+});

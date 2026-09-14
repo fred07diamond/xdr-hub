@@ -22,9 +22,36 @@ export function csvEscape(value: string | number | null | undefined): string {
   return s;
 }
 
+/**
+ * Mirrors EMOJI_PATTERN in server/helpers/apollo-client.ts.
+ *
+ * Duplicated rather than imported because that module is server-only (it
+ * carries the Apollo key handling), and a client bundle must not pull it in.
+ * Kept byte-identical so the two cannot disagree about what an emoji is.
+ */
+const EMOJI_PATTERN = new RegExp(
+  "\\p{Extended_Pictographic}|\\u{FE0F}|\\u{200D}|[\\u{1F1E6}-\\u{1F1FF}]",
+  "gu",
+);
+
+/**
+ * Strips emoji and collapses the whitespace they leave behind.
+ *
+ * LinkedIn names routinely carry them ("👋 Liam Bolton", "Jane Doe 🚀"), and
+ * without this the split put the emoji in First Name and the entire real name
+ * in Last Name -- so the export looked corrupt and Apollo would match on a
+ * first name of "👋". apollo-client.ts already does this before calling
+ * Apollo; the CSV path did not, which is why it only showed up on export.
+ */
+function cleanName(name: string | null): string {
+  if (!name) return "";
+  return name.replace(EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+}
+
 function splitName(name: string | null): { first: string; last: string } {
-  if (!name) return { first: "", last: "" };
-  const parts = name.trim().split(/\s+/);
+  const cleaned = cleanName(name);
+  if (!cleaned) return { first: "", last: "" };
+  const parts = cleaned.split(/\s+/);
   if (parts.length === 1) return { first: parts[0], last: "" };
   return { first: parts[0], last: parts.slice(1).join(" ") };
 }
@@ -62,8 +89,8 @@ export function csvRowCells(row: CsvRow): string[] {
   return [
     first,
     last,
-    row.company || "",
-    row.enrichedTitle || row.headline || "",
+    cleanName(row.company),
+    cleanName(row.enrichedTitle || row.headline),
     row.enrichedEmail || "",
     row.enrichedPhone || "",
     row.enrichedLinkedinUrl || row.profileUrl || row.salesNavLeadUrl || "",

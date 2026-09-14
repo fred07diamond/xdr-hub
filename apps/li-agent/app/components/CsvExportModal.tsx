@@ -3,8 +3,13 @@ import { useMemo, useState } from "react";
 
 import { useCreditUsage, type CreditUsage } from "@/components/ApolloCreditGauge";
 import { useApolloEnrichment } from "@/lib/apollo-enrichment";
-import { MAX_BULK_ENRICH } from "@/lib/apollo-limits";
+import {
+  CREDITS_PER_EMAIL,
+  CREDITS_PER_PHONE_REVEAL,
+  MAX_BULK_ENRICH,
+} from "@/lib/apollo-limits";
 import { buildMasterCsv, CSV_HEADER, csvRowCells, type CsvRow } from "@/lib/prospects-csv";
+import { describeBar, verdictClearsBar } from "@/lib/verdict-bar";
 
 /**
  * Preview-and-confirm step before a CSV leaves the app.
@@ -31,7 +36,13 @@ import { buildMasterCsv, CSV_HEADER, csvRowCells, type CsvRow } from "@/lib/pros
  * them -- it would have to accept a bare CsvRow it cannot enrich. Keeping the
  * caller's own type means no cast at either end.
  */
-export interface CsvExportModalProps<T extends CsvRow> {
+/** Extra fields the batch decisions read, present on both row types. */
+export interface ExportableRow extends CsvRow {
+  fitVerdict?: string | null;
+  phoneRevealStatus?: string | null;
+}
+
+export interface CsvExportModalProps<T extends ExportableRow> {
   open: boolean;
   onClose: () => void;
   /** Every row that would go into the file. */
@@ -43,41 +54,85 @@ export interface CsvExportModalProps<T extends CsvRow> {
    * the enrichment option entirely (e.g. a surface with no enrich action).
    */
   onEnrich?: (rows: T[]) => Promise<T[]>;
+  /**
+   * Reveals phone numbers for the given rows and resolves with the updated
+   * set. Omit to hide the phone toggle.
+   */
+  onRevealPhones?: (rows: T[]) => Promise<T[]>;
   title?: string;
 }
 
 const PREVIEW_ROWS = 5;
 
-export function CsvExportModal<T extends CsvRow>({
+export function CsvExportModal<T extends ExportableRow>({
   open,
   onClose,
   rows,
   filenamePrefix,
   onEnrich,
+  onRevealPhones,
   title = "Export CSV",
 }: CsvExportModalProps<T>) {
   const apollo = useApolloEnrichment();
   const { data: usageRaw } = useCreditUsage();
   const usage = usageRaw as CreditUsage | undefined;
 
-  const [enrichFirst, setEnrichFirst] = useState(false);
+  const [enrichEmails, setEnrichEmails] = useState(false);
+  const [revealPhones, setRevealPhones] = useState(false);
   const [busy, setBusy] = useState<null | "enriching" | "writing">(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
 
+  const phoneBar = usage?.phoneMinVerdict ?? "strong";
+  const phonesPaused = (usage?.spentPct ?? 0) >= (usage?.phoneStopPct ?? 100);
+
   const missingEmail = useMemo(() => rows.filter((r) => !r.enrichedEmail), [rows]);
+
+  /**
+   * Rows that could get a phone, split by whether they clear the fit bar.
+   *
+   * The bar still applies in bulk. A per-lead reveal can be overridden with a
+   * deliberate two-step confirmation; a batch cannot -- 50 leads is 400
+   * credits and there is no checkbox that makes that considered. So low-fit
+   * leads are COUNTED AND NAMED here rather than silently dropped, and reveal
+   * them one at a time if you really want them.
+   */
+  const phoneCandidates = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          !r.enrichedPhone &&
+          // Already asked and answered: re-asking buys the same nothing.
+          r.phoneRevealStatus !== "requested" &&
+          r.phoneRevealStatus !== "no_match",
+      ),
+    [rows],
+  );
+  const phoneEligible = useMemo(
+    () => phoneCandidates.filter((r) => verdictClearsBar(r.fitVerdict, phoneBar)),
+    [phoneCandidates, phoneBar],
+  );
+  const phoneSkipped = phoneCandidates.length - phoneEligible.length;
 
   // The batch cap applies here too. Without it, "export 400 leads and enrich
   // the missing ones" would be a single click authorizing 400 Apollo calls.
-  const enrichable = Math.min(missingEmail.length, MAX_BULK_ENRICH);
-  const creditCost = enrichable; // one credit per email
+  const emailCount = Math.min(missingEmail.length, MAX_BULK_ENRICH);
+  const phoneCount = Math.min(phoneEligible.length, MAX_BULK_ENRICH);
+
+  const emailCredits = enrichEmails ? emailCount * CREDITS_PER_EMAIL : 0;
+  const phoneCredits = revealPhones ? phoneCount * CREDITS_PER_PHONE_REVEAL : 0;
+  const creditCost = emailCredits + phoneCredits;
+
   const remaining = usage?.remaining ?? null;
   const personalRemaining = usage?.mine?.remaining ?? null;
   // Fail closed in the display: if either ceiling cannot cover it, say so
   // rather than letting the run stop halfway.
   const overWorkspace = remaining != null && creditCost > remaining;
   const overPersonal = personalRemaining != null && creditCost > personalRemaining;
-  const canEnrich = !!onEnrich && apollo.enabled && enrichable > 0 && !overWorkspace && !overPersonal;
+  const overBudget = overWorkspace || overPersonal;
+
+  const canEnrichEmails = !!onEnrich && apollo.enabled && emailCount > 0;
+  const canRevealPhones = !!onRevealPhones && apollo.enabled && phoneCount > 0 && !phonesPaused;
 
   if (!open) return null;
 
@@ -98,23 +153,37 @@ export function CsvExportModal<T extends CsvRow>({
     setError(null);
     let finalRows: T[] = rows;
 
-    if (enrichFirst && onEnrich && canEnrich) {
+    // Emails first, then phones. Order matters: a match can surface a phone
+    // synchronously, so enriching first means some reveals turn out to be
+    // unnecessary and those 8 credits are never spent.
+    if (enrichEmails && onEnrich && canEnrichEmails) {
       setBusy("enriching");
-      setProgress(`Enriching ${enrichable} ${enrichable === 1 ? "record" : "records"}…`);
+      setProgress(`Finding ${emailCount} ${emailCount === 1 ? "email" : "emails"}…`);
       try {
         finalRows = await onEnrich(missingEmail.slice(0, MAX_BULK_ENRICH));
       } catch (err) {
-        // Deliberately does NOT fall through to the download. Someone who
-        // asked for an enriched file should not silently receive the
-        // unenriched one -- they would send it and never know.
-        setError(
-          err instanceof Error
-            ? `${err.message} Nothing was exported — uncheck enrichment to export what you already have.`
-            : "Enrichment failed. Nothing was exported.",
+        return failRun(err, "Enrichment");
+      }
+    }
+
+    if (revealPhones && onRevealPhones && canRevealPhones) {
+      setBusy("enriching");
+      setProgress(`Revealing ${phoneCount} phone ${phoneCount === 1 ? "number" : "numbers"}…`);
+      try {
+        // Re-derive from the post-enrichment rows: anything that just picked
+        // up a phone no longer needs an 8-credit reveal.
+        const stillMissing = finalRows.filter(
+          (r) =>
+            !r.enrichedPhone &&
+            r.phoneRevealStatus !== "requested" &&
+            r.phoneRevealStatus !== "no_match" &&
+            verdictClearsBar(r.fitVerdict, phoneBar),
         );
-        setBusy(null);
-        setProgress(null);
-        return;
+        if (stillMissing.length > 0) {
+          finalRows = await onRevealPhones(stillMissing.slice(0, MAX_BULK_ENRICH));
+        }
+      } catch (err) {
+        return failRun(err, "Phone reveal");
       }
     }
 
@@ -123,6 +192,23 @@ export function CsvExportModal<T extends CsvRow>({
     download(finalRows);
     setBusy(null);
     onClose();
+  }
+
+  /**
+   * Aborts without downloading.
+   *
+   * Deliberately does NOT fall through to the file: someone who asked for an
+   * enriched export must not silently receive the unenriched one, because they
+   * would send it and never know.
+   */
+  function failRun(err: unknown, what: string) {
+    setError(
+      err instanceof Error
+        ? `${what} failed: ${err.message} Nothing was exported — turn the toggles off to export what you already have.`
+        : `${what} failed. Nothing was exported.`,
+    );
+    setBusy(null);
+    setProgress(null);
   }
 
   const preview = rows.slice(0, PREVIEW_ROWS);
@@ -194,93 +280,118 @@ export function CsvExportModal<T extends CsvRow>({
               </tbody>
             </table>
           </div>
-          {rows.length > PREVIEW_ROWS && (
-            <p className="text-[11px] text-muted-foreground">
-              Showing {PREVIEW_ROWS} of {rows.length.toLocaleString()} rows.
-            </p>
-          )}
+          {/* Left: what is in the file. Right: the Summary panel, laid out
+              the way Apollo's own import dialog does it -- record count on
+              top, a toggle per enrichment with its record count, then the
+              credit total under a divider. Two columns because the summary is
+              a decision surface and should not be buried under the table. */}
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="space-y-2 text-xs text-muted-foreground">
+              {rows.length > PREVIEW_ROWS && (
+                <p>
+                  Showing {PREVIEW_ROWS} of{" "}
+                  <span className="font-medium text-foreground">{rows.length.toLocaleString()}</span> rows.
+                </p>
+              )}
+              <p className="leading-4">
+                Apollo only charges when it actually has the data, so records it cannot find cost nothing.
+              </p>
+              {phoneSkipped > 0 && (
+                <p className="leading-4">
+                  {phoneSkipped.toLocaleString()} {phoneSkipped === 1 ? "lead is" : "leads are"} missing a phone
+                  but {phoneSkipped === 1 ? "does" : "do"} not clear the{" "}
+                  <span className="text-foreground">{describeBar(phoneBar)}</span> bar, so{" "}
+                  {phoneSkipped === 1 ? "it is" : "they are"} not included above. Reveal those individually if
+                  you want them — at 8 credits each, a batch is not the place to override the bar.
+                </p>
+              )}
+              {phonesPaused && (
+                <p className="leading-4 text-amber-600 dark:text-amber-400">
+                  Phone reveals are paused workspace-wide past {usage?.phoneStopPct}% of the budget. Emails
+                  still work.
+                </p>
+              )}
+            </div>
 
-          {/* Summary panel, Apollo's layout: records, the enrichment toggle,
-              and the credit total together. */}
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-2xl font-semibold tabular-nums text-foreground">
-              {rows.length.toLocaleString()}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {rows.length === 1 ? "record to export" : "records to export"} ·{" "}
-              {(rows.length - missingEmail.length).toLocaleString()} already have an email
-            </p>
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs font-medium text-foreground">Summary</p>
 
-            {onEnrich && (
-              <div className="mt-3 border-t border-border/60 pt-3">
-                {missingEmail.length === 0 ? (
-                  <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-                    <IconCheck size={13} /> Every record already has an email. No credits needed.
+              <div className="mt-2 rounded-md bg-muted/50 py-3 text-center">
+                <p className="text-2xl font-semibold tabular-nums text-foreground">
+                  {rows.length.toLocaleString()}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {rows.length === 1 ? "record to export" : "records to export"}
+                </p>
+              </div>
+
+              <div className="mt-3 space-y-2.5">
+                <ToggleRow
+                  on={enrichEmails}
+                  disabled={!canEnrichEmails || !!busy}
+                  onChange={setEnrichEmails}
+                  label="Enrich emails"
+                  count={emailCount}
+                  detail={
+                    missingEmail.length === 0
+                      ? "every record already has one"
+                      : !apollo.enabled
+                        ? "enrichment is off"
+                        : `1 credit each${missingEmail.length > MAX_BULK_ENRICH ? ` · capped at ${MAX_BULK_ENRICH}` : ""}`
+                  }
+                />
+                <ToggleRow
+                  on={revealPhones}
+                  disabled={!canRevealPhones || !!busy}
+                  onChange={setRevealPhones}
+                  label="Enrich phone numbers"
+                  count={phoneCount}
+                  detail={
+                    phonesPaused
+                      ? "paused workspace-wide"
+                      : phoneCandidates.length === 0
+                        ? "every record already has one"
+                        : phoneEligible.length === 0
+                          ? `none clear the ${describeBar(phoneBar)} bar`
+                          : `8 credits each${phoneSkipped > 0 ? ` · ${phoneSkipped} below the fit bar` : ""}`
+                  }
+                />
+              </div>
+
+              <div className="mt-3 border-t border-dashed border-border pt-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-foreground">Credit total</span>
+                  <span
+                    className={`text-sm font-semibold tabular-nums ${overBudget ? "text-destructive" : "text-foreground"}`}
+                  >
+                    {creditCost.toLocaleString()}
+                  </span>
+                </div>
+                {creditCost > 0 && (
+                  <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                    {emailCredits > 0 && <>{emailCount} × 1 for emails</>}
+                    {emailCredits > 0 && phoneCredits > 0 && " · "}
+                    {phoneCredits > 0 && <>{phoneCount} × 8 for phones</>}
                   </p>
-                ) : !apollo.enabled ? (
-                  <p className="text-xs text-muted-foreground">
-                    {missingEmail.length.toLocaleString()} {missingEmail.length === 1 ? "record has" : "records have"}{" "}
-                    no email. Enrichment is currently off, so they will export blank.
+                )}
+                {remaining != null && (
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                    {remaining.toLocaleString()} credits left this period
+                    {personalRemaining != null && <> · {personalRemaining.toLocaleString()} of yours</>}
                   </p>
-                ) : (
-                  <>
-                    <label className="flex cursor-pointer items-start gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={enrichFirst}
-                        disabled={!canEnrich || !!busy}
-                        onChange={(e) => setEnrichFirst(e.target.checked)}
-                        className="mt-0.5 shrink-0"
-                      />
-                      <span>
-                        <span className="font-medium text-foreground">
-                          Find the missing {enrichable === 1 ? "email" : "emails"} first
-                        </span>
-                        <span className="block text-muted-foreground">
-                          {missingEmail.length.toLocaleString()}{" "}
-                          {missingEmail.length === 1 ? "record has" : "records have"} no email
-                          {missingEmail.length > MAX_BULK_ENRICH && (
-                            <> — capped at {MAX_BULK_ENRICH} per run, so {enrichable} would be attempted</>
-                          )}
-                          .
-                        </span>
-                      </span>
-                    </label>
-
-                    <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
-                      <span className="text-muted-foreground">Credit total</span>
-                      <span className="font-semibold tabular-nums text-foreground">
-                        {enrichFirst ? creditCost.toLocaleString() : 0}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                      1 credit per email. Apollo only charges when it actually has one, so records it cannot
-                      find cost nothing.
-                      {remaining != null && <> {remaining.toLocaleString()} credits left this period.</>}
-                    </p>
-                    {/* No phone option here, and that is deliberate -- see the
-                        note at the top of this file. */}
-                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                      Phone numbers are not filled in from here. A reveal costs 8 credits and stays a
-                      per-lead decision.
-                    </p>
-
-                    {overWorkspace && (
-                      <p className="mt-1.5 text-[11px] text-destructive">
-                        That would need {creditCost.toLocaleString()} credits and the workspace has{" "}
-                        {remaining?.toLocaleString()} left.
-                      </p>
-                    )}
-                    {!overWorkspace && overPersonal && (
-                      <p className="mt-1.5 text-[11px] text-destructive">
-                        That would need {creditCost.toLocaleString()} credits and your own allowance has{" "}
-                        {personalRemaining?.toLocaleString()} left.
-                      </p>
-                    )}
-                  </>
+                )}
+                {overWorkspace && (
+                  <p className="mt-1 text-[11px] leading-4 text-destructive">
+                    More than the workspace has left.
+                  </p>
+                )}
+                {!overWorkspace && overPersonal && (
+                  <p className="mt-1 text-[11px] leading-4 text-destructive">
+                    More than your own allowance has left.
+                  </p>
                 )}
               </div>
-            )}
+            </div>
           </div>
 
           {error && (
@@ -308,15 +419,66 @@ export function CsvExportModal<T extends CsvRow>({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!!busy || rows.length === 0}
+            disabled={!!busy || rows.length === 0 || overBudget}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {busy ? <IconLoader2 size={13} className="animate-spin" /> : <IconDownload size={13} />}
-            {enrichFirst && creditCost > 0
-              ? `Enrich ${enrichable} and export · ${creditCost} credits`
+            {creditCost > 0
+              ? `Enrich and export · ${creditCost.toLocaleString()} credits`
               : `Export ${rows.length.toLocaleString()} ${rows.length === 1 ? "record" : "records"}`}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Apollo-style pill switch with a trailing record count.
+ *
+ * A switch rather than a checkbox because each one authorises spending, and a
+ * switch reads as a mode being turned on rather than a box incidentally
+ * ticked. Disabled state still shows its count and reason, so "0" is
+ * explained rather than just unavailable.
+ */
+function ToggleRow({
+  on,
+  disabled,
+  onChange,
+  label,
+  count,
+  detail,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  count: number;
+  detail: string;
+}) {
+  return (
+    <div className={`flex items-start gap-2.5 ${disabled ? "opacity-60" : ""}`}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => onChange(!on)}
+        className={`mt-0.5 flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+          on ? "bg-foreground" : "bg-muted-foreground/30"
+        } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+      >
+        <span
+          className={`h-3 w-3 rounded-full bg-background transition-transform ${on ? "translate-x-3.5" : "translate-x-0.5"}`}
+        />
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-foreground">{label}</span>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{count}</span>
+        </div>
+        <p className="text-[11px] leading-4 text-muted-foreground">{detail}</p>
       </div>
     </div>
   );

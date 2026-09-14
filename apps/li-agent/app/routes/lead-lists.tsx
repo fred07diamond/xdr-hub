@@ -14,7 +14,7 @@ import {
   describePhoneRevealState,
   TONE_CLASS,
 } from "@/lib/enrichment-vocabulary";
-import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
+import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { CsvExportModal } from "@/components/CsvExportModal";
 import { applyShiftClickSelection } from "@/lib/selection";
@@ -422,6 +422,12 @@ export default function LeadListsPage() {
   const [renamingListId, setRenamingListId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  // Selected LISTS (distinct from selectedItemIds, which is leads within one
+  // list). Deleting a list takes its leads with it, so these are deliberately
+  // separate selections that cannot be confused for one another.
+  const [selectedListIds, setSelectedListIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteLists, setConfirmDeleteLists] = useState(false);
+  const [isDeletingLists, setIsDeletingLists] = useState(false);
   const [isDeletingItems, setIsDeletingItems] = useState(false);
   // Rows staged for the export preview. Null means the modal is closed; the
   // rows are snapshotted so a background refetch cannot change what is being
@@ -473,6 +479,7 @@ export default function LeadListsPage() {
   const deleteList = useActionMutation("delete-lead-list");
   const renameList = useActionMutation("rename-lead-list");
   const bulkDeleteItems = useActionMutation("bulk-delete-lead-list-items");
+  const revealPhone = useActionMutation("reveal-phone");
   const enrichItem = useActionMutation("enrich-lead-list-item");
 
   // Status eligibility AND quality. This previously filtered on status
@@ -515,6 +522,80 @@ export default function LeadListsPage() {
     const merged = (exportRequest?.rows ?? rows).map((r) => byId.get(r.id) ?? r);
     setExportRequest((prev) => (prev ? { ...prev, rows: merged } : prev));
     return merged;
+  }
+
+  /**
+   * Reveals phone numbers for the rows the export modal selected.
+   *
+   * Goes through the same reveal-phone action a single row uses, including its
+   * confirmCredits echo, so the 8-credit price and the ledger attribution are
+   * identical whether one number is revealed or forty. `override` stays FALSE:
+   * the modal only ever passes rows that already clear the fit bar.
+   */
+  async function revealPhonesForExport(rows: LeadListItem[]): Promise<LeadListItem[]> {
+    const ids = new Set(rows.map((r) => r.id));
+    for (const row of rows.slice(0, MAX_BULK_ENRICH)) {
+      const res = (await revealPhone.mutateAsync({
+        source: "lead_list_item",
+        id: row.id,
+        confirmCredits: CREDITS_PER_PHONE_REVEAL,
+        override: false,
+      })) as { ok?: boolean; code?: string; error?: string } | undefined;
+      if (res?.code && BULK_HALT_CODES.has(res.code)) {
+        throw new Error(describeHalt(res.code, res.error));
+      }
+    }
+    const refreshed = await itemsQuery.refetch();
+    const fresh = ((refreshed.data as { items?: LeadListItem[] } | undefined)?.items ?? []).filter((i) =>
+      ids.has(i.id),
+    );
+    const byId = new Map(fresh.map((f) => [f.id, f]));
+    const merged = (exportRequest?.rows ?? rows).map((r) => byId.get(r.id) ?? r);
+    setExportRequest((prev) => (prev ? { ...prev, rows: merged } : prev));
+    return merged;
+  }
+
+  function toggleListSelected(listId: string) {
+    setSelectedListIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(listId)) next.delete(listId);
+      else next.add(listId);
+      return next;
+    });
+    // Any change invalidates a pending confirmation -- the count it named is
+    // no longer the count that would be deleted.
+    setConfirmDeleteLists(false);
+  }
+
+  /**
+   * Deletes the selected lists.
+   *
+   * Loops the existing delete-lead-list action rather than adding a bulk one:
+   * that action already re-checks ownership per list and cascades to its
+   * items, and a new bulk endpoint would have to reimplement both. A handful
+   * of sequential calls is the right trade for not duplicating a
+   * destructive path.
+   */
+  async function handleBulkDeleteLists() {
+    const ids = [...selectedListIds];
+    if (ids.length === 0) return;
+    setIsDeletingLists(true);
+    try {
+      for (const listId of ids) {
+        await deleteList.mutateAsync({ listId });
+      }
+      // If the open list was among them, close the detail pane rather than
+      // leaving it querying a list that no longer exists.
+      if (selectedListId && ids.includes(selectedListId)) {
+        setSelectedListId(null);
+        setSelectedItemIds(new Set());
+      }
+      setSelectedListIds(new Set());
+      setConfirmDeleteLists(false);
+      await listsQuery.refetch();
+    } finally {
+      setIsDeletingLists(false);
+    }
   }
 
   async function handleBulkDeleteItems() {
@@ -678,9 +759,78 @@ export default function LeadListsPage() {
     <div className="flex h-full min-h-0">
       {/* Left panel — lead list list */}
       <div className="w-72 shrink-0 flex flex-col border-e border-border bg-muted/20">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <IconUsers size={15} className="text-[#0a66c2]" />
-          <span className="text-sm font-semibold">Lead Lists</span>
+        <div className="border-b border-border px-4 py-3">
+          {selectedListIds.size > 0 ? (
+            // Bulk bar replaces the title while a selection is active, the
+            // same pattern the items table already uses.
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold">{selectedListIds.size} selected</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedListIds(new Set())}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear
+                </button>
+              </div>
+              {confirmDeleteLists ? (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] leading-4 text-destructive">
+                    Delete {selectedListIds.size} {selectedListIds.size === 1 ? "list" : "lists"} and every
+                    lead in {selectedListIds.size === 1 ? "it" : "them"}? This cannot be undone.
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void handleBulkDeleteLists()}
+                      disabled={isDeletingLists}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-2.5 py-1.5 text-xs font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+                    >
+                      {isDeletingLists ? (
+                        <IconLoader2 size={12} className="animate-spin" />
+                      ) : (
+                        <IconTrash size={12} />
+                      )}
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteLists(false)}
+                      className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteLists(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+                >
+                  <IconTrash size={12} />
+                  Delete {selectedListIds.size} {selectedListIds.size === 1 ? "list" : "lists"}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <IconUsers size={15} className="text-[#0a66c2]" />
+                <span className="text-sm font-semibold">Lead Lists</span>
+              </span>
+              {lists.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedListIds(new Set(lists.map((l) => l.id)))}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Select all
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -744,46 +894,58 @@ export default function LeadListsPage() {
                       </p>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectList(l.id)}
-                      onDoubleClick={() => startRenameList(l)}
+                    // A div, not a button: the row now contains a checkbox,
+                    // and a button inside a button is invalid HTML with
+                    // ambiguous click targets.
+                    <div
                       className={cn(
-                        "group w-full text-left px-4 py-3 transition-colors hover:bg-muted/50",
+                        "group flex items-start gap-2 px-4 py-3 transition-colors hover:bg-muted/50",
                         selectedListId === l.id && "bg-muted",
+                        selectedListIds.has(l.id) && "bg-primary/5",
                       )}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">{l.name}</p>
-                          {l.description ? (
-                            <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{l.description}</p>
-                          ) : null}
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
-                            {l.totalCount} leads
-                            {formatListCreatedAt(l.createdAt) && ` · Created ${formatListCreatedAt(l.createdAt)}`}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); startRenameList(l); }}
-                            className="mt-0.5 rounded p-1 text-muted-foreground/60 opacity-100 hover:bg-muted hover:text-foreground"
-                            title="Rename list"
-                          >
-                            <IconPencil size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteList(l.id); }}
-                            className="mt-0.5 rounded p-1 text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
-                            title="Delete list"
-                          >
-                            <IconTrash size={13} />
-                          </button>
-                        </div>
+                      <input
+                        type="checkbox"
+                        checked={selectedListIds.has(l.id)}
+                        onChange={() => toggleListSelected(l.id)}
+                        aria-label={`Select ${l.name}`}
+                        title="Select for bulk actions"
+                        className="mt-1 shrink-0 rounded border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSelectList(l.id)}
+                        onDoubleClick={() => startRenameList(l)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="text-sm font-medium truncate">{l.name}</p>
+                        {l.description ? (
+                          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{l.description}</p>
+                        ) : null}
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {l.totalCount} leads
+                          {formatListCreatedAt(l.createdAt) && ` · Created ${formatListCreatedAt(l.createdAt)}`}
+                        </p>
+                      </button>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => startRenameList(l)}
+                          className="mt-0.5 rounded p-1 text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+                          title="Rename list"
+                        >
+                          <IconPencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteList(l.id)}
+                          className="mt-0.5 rounded p-1 text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                          title="Delete list"
+                        >
+                          <IconTrash size={13} />
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   )}
                 </li>
               ))}
@@ -1065,6 +1227,7 @@ export default function LeadListsPage() {
         rows={exportRequest?.rows ?? []}
         filenamePrefix={exportRequest?.prefix ?? "lead-list"}
         onEnrich={apolloGate.enabled ? enrichForExport : undefined}
+        onRevealPhones={apolloGate.enabled ? revealPhonesForExport : undefined}
         title={
           exportRequest?.prefix === "selected-leads"
             ? `Export ${exportRequest.rows.length} selected leads`
