@@ -21,13 +21,6 @@ export async function getApolloToken(): Promise<string | null> {
 
 const DEFAULT_APOLLO_TIMEOUT_MS = 20_000;
 
-// TEMPORARY kill switch (2026-08-26, at Fred's request) -- every Apollo call
-// in this app, automatic (lead-pipeline-sweep.ts) and manual (the "Enrich"
-// buttons), goes through this one function, so gating here disables all of
-// it in one place instead of touching each call site. Flip back to false to
-// re-enable.
-const APOLLO_ENRICHMENT_DISABLED = true;
-
 /**
  * Which credit unit an endpoint spends. Derived from the path so that a future
  * endpoint added without thinking about credits fails loudly (unmapped path =>
@@ -54,9 +47,17 @@ async function apolloFetch(
   auth: CreditAuthorization,
   timeoutMs: number = DEFAULT_APOLLO_TIMEOUT_MS,
 ): Promise<unknown> {
-  if (APOLLO_ENRICHMENT_DISABLED) {
-    throw new Error("Apollo enrichment is temporarily disabled.");
-  }
+  // The on/off switch is now the `apollo_enrichment_enabled` workspace
+  // setting, checked inside reserveEnrichment -- which every caller must pass
+  // through to obtain the authorization this function requires. So the gate
+  // lives at the authorization boundary rather than being re-read here: a
+  // request that reaches this point has, by construction, already been
+  // authorized against the live setting.
+  //
+  // This replaced a compile-time `APOLLO_ENRICHMENT_DISABLED = true` constant
+  // that needed a code change and a redeploy to flip, and which had to be kept
+  // manually in sync with a duplicate in app/lib/feature-flags.ts.
+  //
   // Consume the leg funding THIS call. Throws if the authorization has no
   // unconsumed leg for this unit, so a replayed authorization cannot pay for a
   // second request. Claimed before the fetch so that a failed request still

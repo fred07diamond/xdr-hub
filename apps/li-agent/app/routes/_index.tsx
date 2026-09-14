@@ -70,7 +70,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Pagination } from "@/components/Pagination";
 import { APP_TITLE } from "@/lib/app-config";
-import { APOLLO_ENRICHMENT_DISABLED, APOLLO_ENRICHMENT_DISABLED_MESSAGE } from "@/lib/feature-flags";
+import { useApolloEnrichment } from "@/lib/apollo-enrichment";
 import { cn } from "@/lib/utils";
 
 export function meta() {
@@ -362,6 +362,10 @@ function EnrichedField({
   isEnriching?: boolean;
   onEnrich?: () => void;
 }) {
+  // Unconditional, before any early return -- a hook cannot sit behind a
+  // conditional. react-query dedupes, so every row shares one request.
+  const apollo = useApolloEnrichment();
+
   if (value) {
     const provenance = describeEnrichmentProvenance(kind, enrichmentSource ?? null, enrichedEmailStatus ?? null, enrichedAt ?? null);
     return (
@@ -392,7 +396,7 @@ function EnrichedField({
     status === "failed" ? "text-xs italic text-destructive/70"
     : status === "idle" || !status ? "text-xs text-muted-foreground/50"
     : "text-xs italic text-muted-foreground/70";
-  if (!onEnrich || APOLLO_ENRICHMENT_DISABLED) return <span className={emptyClass}>{emptyLabel}</span>;
+  if (!onEnrich || !apollo.enabled) return <span className={emptyClass}>{emptyLabel}</span>;
   return (
     <button
       type="button"
@@ -414,6 +418,7 @@ function EnrichButton({
   isEnriching: boolean;
   onEnrich: (prospect: Prospect) => void;
 }) {
+  const apollo = useApolloEnrichment();
   if (isEnriching || prospect.enrichmentStatus === "enriching") {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -423,10 +428,12 @@ function EnrichButton({
     );
   }
 
-  if (APOLLO_ENRICHMENT_DISABLED) {
+  // Pending renders NEUTRAL, not disabled: treating the in-flight status as
+  // false would flash "paused" on every page load before it settles.
+  if (apollo.isLoading || !apollo.enabled) {
     return (
       <span
-        title={APOLLO_ENRICHMENT_DISABLED_MESSAGE}
+        title={apollo.isLoading ? undefined : apollo.message}
         className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground/40"
       >
         <IconSparkles size={11} />
@@ -550,6 +557,7 @@ function ProspectSheet({
   onUpdated: () => void;
   onDeleted: () => void;
 }) {
+  const sheetApollo = useApolloEnrichment();
   const isProspect = prospect.source === "prospect";
   const markSent = useActionMutation("mark-sent");
   const updateNote = useActionMutation("update-prospect-note");
@@ -857,9 +865,9 @@ function ProspectSheet({
             <div className="mb-2 flex items-center justify-between">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Apollo enrichment</p>
               {!isEnriching && prospect.enrichmentStatus !== "enriching" && (
-                APOLLO_ENRICHMENT_DISABLED ? (
+                !sheetApollo.enabled ? (
                   <span
-                    title={APOLLO_ENRICHMENT_DISABLED_MESSAGE}
+                    title={sheetApollo.message}
                     className="inline-flex items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground/40"
                   >
                     <IconSparkles size={11} />
@@ -1098,6 +1106,7 @@ function ProspectSheet({
 // ── Route ────────────────────────────────────────────────────────────────────
 
 export default function ProspectsRoute() {
+  const pageApollo = useApolloEnrichment();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
@@ -1605,8 +1614,8 @@ export default function ProspectsRoute() {
                     Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
                   </span>
                 ) : (
-                  <button type="button" onClick={handleBulkEnrich} disabled={APOLLO_ENRICHMENT_DISABLED}
-                    title={APOLLO_ENRICHMENT_DISABLED ? APOLLO_ENRICHMENT_DISABLED_MESSAGE : undefined}
+                  <button type="button" onClick={handleBulkEnrich} disabled={!pageApollo.enabled}
+                    title={pageApollo.enabled ? undefined : pageApollo.message}
                     className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
                     <IconSparkles size={13} /> Enrich selected
                   </button>

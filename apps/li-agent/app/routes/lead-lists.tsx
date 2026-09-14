@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { APP_TITLE } from "@/lib/app-config";
-import { APOLLO_ENRICHMENT_DISABLED, APOLLO_ENRICHMENT_DISABLED_MESSAGE } from "@/lib/feature-flags";
+import { useApolloEnrichment } from "@/lib/apollo-enrichment";
 import { buildMasterCsv } from "@/lib/prospects-csv";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -122,6 +122,11 @@ function EnrichedField({
   isEnriching?: boolean;
   onEnrich?: () => void;
 }) {
+  // Called unconditionally, before any early return -- hooks cannot sit behind
+  // a conditional. Each row calls it rather than threading a prop through the
+  // whole table; react-query dedupes, so 25 rows issue one request.
+  const apollo = useApolloEnrichment();
+
   if (value) {
     const provenance = describeEnrichmentProvenance(kind, enrichmentSource ?? null, enrichedEmailStatus ?? null, enrichedAt ?? null);
     return (
@@ -151,7 +156,7 @@ function EnrichedField({
     status === "failed" ? "text-xs italic text-destructive/70"
     : status === "idle" || !status ? "text-xs text-muted-foreground/50"
     : "text-xs italic text-muted-foreground/70";
-  if (!onEnrich || APOLLO_ENRICHMENT_DISABLED) return <span className={emptyClass}>{emptyLabel}</span>;
+  if (!onEnrich || !apollo.enabled) return <span className={emptyClass}>{emptyLabel}</span>;
   return (
     <button
       type="button"
@@ -173,6 +178,7 @@ function EnrichButton({
   isEnriching: boolean;
   onEnrich: (item: LeadListItem) => void;
 }) {
+  const apollo = useApolloEnrichment();
   if (isEnriching || item.enrichmentStatus === "enriching") {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -182,10 +188,22 @@ function EnrichButton({
     );
   }
 
-  if (APOLLO_ENRICHMENT_DISABLED) {
+  // isLoading is rendered as a NEUTRAL pending state, not as "disabled":
+  // treating the in-flight status as false would flash "paused" on every
+  // page load before it settles.
+  if (apollo.isLoading) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground/40">
+        <IconSparkles size={11} />
+        Enrich
+      </span>
+    );
+  }
+
+  if (!apollo.enabled) {
     return (
       <span
-        title={APOLLO_ENRICHMENT_DISABLED_MESSAGE}
+        title={apollo.message}
         className="inline-flex items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground/40"
       >
         <IconSparkles size={11} />
@@ -312,6 +330,9 @@ export function meta() {
 }
 
 export default function LeadListsPage() {
+  // One shared read for the page-level bulk controls; rows call the hook
+  // themselves and react-query dedupes to a single request.
+  const apolloGate = useApolloEnrichment();
   useSetPageTitle("Lead Lists");
 
   // Selected list lives in the URL (?listId=), not just component state --
@@ -674,7 +695,7 @@ export default function LeadListsPage() {
                     <IconLoader2 size={12} className="animate-spin" />
                     Enriching {bulkEnrichProgress.done}/{bulkEnrichProgress.total}…
                   </span>
-                ) : APOLLO_ENRICHMENT_DISABLED ? null : selectedItemIds.size > 0 ? (
+                ) : !apolloGate.enabled ? null : selectedItemIds.size > 0 ? (
                   <button
                     type="button"
                     onClick={handleBulkEnrichSelected}
