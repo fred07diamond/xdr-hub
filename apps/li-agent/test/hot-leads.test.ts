@@ -168,3 +168,71 @@ describe("thresholds are derived from the weights, not hard-coded", () => {
     expect(MIN_SENIORITY_FOR_HOT).toBeLessThanOrEqual(20);
   });
 });
+
+describe("legacy stellar fallback", () => {
+  // The first version required the new fitScore, which no existing lead has.
+  // On a page of 257 already-scored-the-old-way prospects it therefore showed
+  // nothing but "score these first" — a feature that only works after 257 LLM
+  // calls does not work.
+
+  it("promotes an UNSCORED lead that is stellar by the old signal", () => {
+    // strong verdict + a persona matched in a separate earlier pass. Same
+    // two-independent-signals idea the score-based rule uses, and what the
+    // existing Stellar filter pill already runs on.
+    const a = assessHotLead(
+      { fitScore: null, fitVerdict: "strong", personaName: "Product" },
+      HOT_LEAD_DEFAULTS,
+      NOW,
+    );
+    expect(a.hot).toBe(true);
+    expect(a.reasons).toEqual(["stellar"]);
+    expect(a.score).toBeNull();
+  });
+
+  it("does not promote a strong verdict with no persona", () => {
+    expect(
+      isHotLead({ fitScore: null, fitVerdict: "strong", personaName: null }, HOT_LEAD_DEFAULTS, NOW),
+    ).toBe(false);
+  });
+
+  it("promotes a human thumbs-up", () => {
+    // leadQuality treats rating === 1 as stellar outright: if someone looked
+    // at the lead and said yes, the model does not get to demote it.
+    expect(
+      isHotLead({ fitScore: null, fitVerdict: "weak", rating: 1 }, HOT_LEAD_DEFAULTS, NOW),
+    ).toBe(true);
+  });
+
+  it("does not promote possible, weak or inconclusive", () => {
+    for (const v of ["possible", "weak", "inconclusive"]) {
+      expect(isHotLead({ fitScore: null, fitVerdict: v }, HOT_LEAD_DEFAULTS, NOW), v).toBe(false);
+    }
+  });
+
+  it("does NOT fall back once a lead has a real score", () => {
+    // A 30 must not sneak in on an old `strong` verdict. Otherwise the section
+    // would get WORSE as scoring rolled out, which is backwards.
+    const a = assessHotLead(
+      { fitScore: 30, fitVerdict: "strong", personaName: "Product" },
+      HOT_LEAD_DEFAULTS,
+      NOW,
+    );
+    expect(a.hot).toBe(false);
+    expect(a.reasons).toEqual([]);
+  });
+
+  it("ranks a scored lead above an unscored stellar one", () => {
+    // The score is evidence; the legacy signal is an estimate.
+    const out = sortHotLeads([
+      { fitScore: null, fitVerdict: "strong", personaName: "P" },
+      { fitScore: 88 },
+    ]);
+    expect(out[0].fitScore).toBe(88);
+  });
+
+  it("names the estimate as an estimate", () => {
+    // Saying so is what makes rescoring an obvious next step rather than a
+    // mystery.
+    expect(describeHotReasons(["stellar"])).toMatch(/rescore/i);
+  });
+});

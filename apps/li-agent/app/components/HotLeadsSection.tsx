@@ -1,10 +1,5 @@
 import { useActionQuery } from "@agent-native/core/client/hooks";
-import {
-  IconChevronDown,
-  IconChevronRight,
-  IconFlame,
-  IconInfoCircle,
-} from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconFlame } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
@@ -112,23 +107,17 @@ export function HotLeadsSection<T extends HotLead>({
     );
   }, [leads, settings]);
 
-  const anyScored = leads.some((l) => typeof l.fitScore === "number");
+  // Nothing qualifies: render nothing at all rather than an empty header. No
+  // "score these first" hint any more -- the legacy stellar fallback means a
+  // page of old leads surfaces its best ones without being rescored, so a
+  // genuinely empty section means genuinely nothing exceptional, which needs
+  // no explanation.
+  if (hot.length === 0) return null;
 
-  // Nothing qualifies: render nothing at all rather than an empty header.
-  if (hot.length === 0) {
-    // The one exception worth a word: leads exist but NONE are scored, so the
-    // section cannot work yet and the reason is fixable in one click. Said
-    // once, quietly, not as a banner.
-    if (!anyScored && leads.length > 0) {
-      return (
-        <p className={`px-4 py-2 text-xs text-muted-foreground ${className ?? ""}`}>
-          <IconInfoCircle size={12} className="mr-1 inline align-[-2px]" />
-          Score these leads to surface the best ones here.
-        </p>
-      );
-    }
-    return null;
-  }
+  // How many are running on the legacy signal rather than a real score. Worth
+  // stating once in the header: it is the difference between "these are the
+  // best three" and "these are the best three we can tell so far".
+  const estimated = hot.filter((l) => typeof l.fitScore !== "number").length;
 
   const shown = showAll ? hot : hot.slice(0, MAX_SHOWN);
 
@@ -156,7 +145,11 @@ export function HotLeadsSection<T extends HotLead>({
           </span>
         </span>
         <span className="ms-auto text-[11px] text-muted-foreground">
-          {settings.scoreThreshold}+ score, with live intent or decision-level authority
+          {estimated === hot.length
+            ? "Strong fit in a matched persona · rescore for detailed scores"
+            : estimated > 0
+              ? `${settings.scoreThreshold}+ score, or strong fit in a matched persona`
+              : `${settings.scoreThreshold}+ score, with live intent or decision-level authority`}
         </span>
       </button>
 
@@ -219,9 +212,18 @@ function HotLeadCard<T extends HotLead>({
                 {lead.name ?? "Unnamed lead"}
               </span>
             )}
-            <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-700 dark:text-amber-300">
-              {lead.fitScore}
-            </span>
+            {typeof lead.fitScore === "number" ? (
+              <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+                {lead.fitScore}
+              </span>
+            ) : (
+              // No number to show. A placeholder "0" or "—" in the same
+              // position would read as a score of zero, which is the opposite
+              // of what this lead is.
+              <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                Stellar
+              </span>
+            )}
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {[lead.enrichedTitle || lead.headline, lead.company].filter(Boolean).join(" · ") || "—"}

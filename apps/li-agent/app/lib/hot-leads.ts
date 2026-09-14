@@ -21,6 +21,7 @@
  */
 
 import { MAX_FIT_SCORE, SCORE_WEIGHTS } from "@/lib/fit-score-shared";
+import { leadQuality } from "@/lib/lead-quality";
 
 export interface HotLeadSettings {
   /** Minimum total score. */
@@ -46,6 +47,8 @@ export const MIN_SENIORITY_FOR_HOT = Math.round(SCORE_WEIGHTS.seniority * 0.8);
 
 export interface ScorableLead {
   fitScore?: number | null;
+  /** Read only by the legacy fallback, when fitScore is absent. */
+  fitVerdict?: string | null;
   scoreRoleFit?: number | null;
   scoreCompanyFit?: number | null;
   scoreIntent?: number | null;
@@ -57,7 +60,24 @@ export interface ScorableLead {
   rating?: number | null;
 }
 
-export type HotReason = "intent" | "authority";
+/**
+ * `stellar` is the LEGACY path and exists because of a real design mistake.
+ *
+ * The first version of this section required the new 0-100 fitScore, which no
+ * existing lead has. On a page of 257 already-scored-the-old-way prospects it
+ * therefore showed nothing but "score these leads first" -- a feature that
+ * only works after 257 LLM calls is a feature that does not work.
+ *
+ * But the app ALREADY knows which of those are exceptional: `leadQuality()`
+ * calls a lead "stellar" on a strong verdict plus a persona matched in a
+ * separate earlier pass, which is the same two-independent-signals idea the
+ * score-based rule uses. That is the signal the existing "Stellar" filter pill
+ * runs on.
+ *
+ * So an unscored lead falls back to it. The granular score takes over per-lead
+ * as scoring happens, with no migration and no empty state.
+ */
+export type HotReason = "intent" | "authority" | "stellar";
 
 export interface HotAssessment {
   hot: boolean;
@@ -84,9 +104,19 @@ export function assessHotLead(
   now = Date.now(),
 ): HotAssessment {
   const score = typeof lead.fitScore === "number" ? lead.fitScore : null;
-  // Unscored is NOT hot, and is not the same as low. A lead nobody has scored
-  // has no claim on the top of the page.
-  if (score == null || score < settings.scoreThreshold) {
+
+  // No granular score yet: fall back to the existing stellar signal so the
+  // section works on today's data. See the note on HotReason.
+  if (score == null) {
+    const stellar = leadQuality(lead) === "stellar";
+    return { hot: stellar, reasons: stellar ? ["stellar"] : [], score: null };
+  }
+
+  // Scored, but below the bar. Genuinely not hot -- and note this does NOT
+  // fall back to the legacy signal. Once a lead has a real score, that score
+  // is the better answer, and letting a 30 sneak in on an old `strong` verdict
+  // would make the section worse as scoring rolled out rather than better.
+  if (score < settings.scoreThreshold) {
     return { hot: false, reasons: [], score };
   }
 
@@ -118,6 +148,10 @@ export function describeHotReasons(reasons: HotReason[]): string {
   const parts: string[] = [];
   if (reasons.includes("intent")) parts.push("engaged with your space recently");
   if (reasons.includes("authority")) parts.push("decision-level in a matched persona");
+  // Named as an estimate, because it is one: a verdict plus a persona, not a
+  // measured score. Saying so is what makes "Score for detail" an obvious
+  // next step rather than a mystery.
+  if (reasons.includes("stellar")) parts.push("strong fit in a matched persona · rescore for a detailed score");
   return parts.join(" · ");
 }
 
@@ -132,7 +166,9 @@ export function describeHotReasons(reasons: HotReason[]): string {
 export function sortHotLeads<T extends ScorableLead>(leads: T[]): T[] {
   return [...leads].sort(
     (a, b) =>
-      (b.fitScore ?? 0) - (a.fitScore ?? 0) ||
+      // A scored lead outranks an unscored one at equal footing: the score is
+      // evidence, the legacy signal is an estimate.
+      (b.fitScore ?? -1) - (a.fitScore ?? -1) ||
       (b.scoreIntent ?? 0) - (a.scoreIntent ?? 0) ||
       (b.scoreSeniority ?? 0) - (a.scoreSeniority ?? 0),
   );
