@@ -887,6 +887,49 @@ export default runMigrations(
         apollo_person_ids TEXT
       )`,
     },
+    // Score-first pipeline: the fit verdict has to exist BEFORE Apollo is
+    // called, or the sweep can't tell whether a lead is worth a credit. It
+    // used to live only on the promoted prospects row.
+    {
+      version: 118,
+      name: "lead-list-items-score-first-columns",
+      sql: [
+        `ALTER TABLE lead_list_items ADD COLUMN fit_verdict TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN fit_reason TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN draft_note TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN draft_follow_up TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN scored_at TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN pipeline_stage TEXT NOT NULL DEFAULT 'queued'`,
+        `ALTER TABLE lead_list_items ADD COLUMN pipeline_blocked_reason TEXT`,
+      ].join(";\n"),
+    },
+    {
+      version: 119,
+      name: "phone-reveal-attribution-columns",
+      sql: [
+        `ALTER TABLE lead_list_items ADD COLUMN phone_reveal_requested_by TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN phone_reveal_override INTEGER NOT NULL DEFAULT 0`,
+        `ALTER TABLE lead_list_items ADD COLUMN phone_reveal_override_at TEXT`,
+        `ALTER TABLE prospects ADD COLUMN phone_reveal_requested_by TEXT`,
+        `ALTER TABLE prospects ADD COLUMN phone_reveal_override INTEGER NOT NULL DEFAULT 0`,
+        `ALTER TABLE prospects ADD COLUMN phone_reveal_override_at TEXT`,
+      ].join(";\n"),
+    },
+    {
+      version: 120,
+      name: "index-lead-list-items-pipeline-stage",
+      sql: `CREATE INDEX IF NOT EXISTS idx_lead_list_items_pipeline_stage ON lead_list_items (pipeline_stage, auto_enrich)`,
+    },
+    {
+      // Terminal rows must not be resurrected by the new claim predicate,
+      // which selects on pipeline_stage rather than enrichment_status.
+      version: 121,
+      name: "backfill-lead-list-items-pipeline-stage",
+      sql: [
+        `UPDATE lead_list_items SET pipeline_stage = 'done' WHERE promoted_prospect_id IS NOT NULL`,
+        `UPDATE lead_list_items SET pipeline_stage = 'failed' WHERE pipeline_attempts >= 3 AND enrichment_status = 'failed'`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );

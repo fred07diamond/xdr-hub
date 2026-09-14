@@ -1,9 +1,11 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { leadLists, leadListItems, prospects } from "../db/schema.js";
+import { AvoidTitleFilter } from "./apollo-credits/avoid-title-filter.js";
 import { voidStaleReservations } from "./apollo-credits/ledger.js";
+import { getApolloCreditSettings, verdictClearsBar } from "./apollo-credits/settings.js";
 import { enrichApolloRecord } from "./enrich-apollo-record.js";
-import { scoreLeadListItem } from "./score-lead-list-item.js";
+import { promoteLeadListItem, scoreLeadListItem } from "./score-lead-list-item.js";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -43,7 +45,12 @@ async function unclaimRetryableStale(db: Db): Promise<void> {
   const stale = await db
     .select({ id: leadListItems.id, pipelineAttempts: leadListItems.pipelineAttempts })
     .from(leadListItems)
-    .where(and(eq(leadListItems.enrichmentStatus, "enriching"), lt(leadListItems.updatedAt, staleCutoff)));
+    // Any mid-pipeline stage can be abandoned by a recycled process, not just
+    // the Apollo call -- scoring is an LLM call that can hang just as easily.
+    .where(and(
+      inArray(leadListItems.pipelineStage, ["scoring", "enriching", "promoting"]),
+      lt(leadListItems.updatedAt, staleCutoff),
+    ));
 
   const retryable = stale.filter((r) => r.pipelineAttempts < MAX_ATTEMPTS).map((r) => r.id);
   const exhausted = stale.filter((r) => r.pipelineAttempts >= MAX_ATTEMPTS).map((r) => r.id);
@@ -51,13 +58,17 @@ async function unclaimRetryableStale(db: Db): Promise<void> {
   if (retryable.length > 0) {
     await db
       .update(leadListItems)
-      .set({ enrichmentStatus: "idle", updatedAt: now })
+      .set({ pipelineStage: "queued", updatedAt: now })
       .where(inArray(leadListItems.id, retryable));
   }
   if (exhausted.length > 0) {
     await db
       .update(leadListItems)
-      .set({ enrichmentStatus: "failed", enrichmentError: "Auto-pipeline gave up after 3 attempts.", updatedAt: now })
+      .set({
+        pipelineStage: "failed",
+        enrichmentError: "Auto-pipeline gave up after 3 attempts.",
+        updatedAt: now,
+      })
       .where(inArray(leadListItems.id, exhausted));
   }
 }
@@ -86,7 +97,13 @@ async function claimBatch(db: Db) {
     .from(leadListItems)
     .where(and(
       eq(leadListItems.autoEnrich, 1),
-      eq(leadListItems.enrichmentStatus, "idle"),
+      // Claim on pipelineStage, not enrichmentStatus: a lead now gets SCORED
+      // before it is enriched, so "has Apollo run" is no longer the same
+      // question as "is this lead waiting for the pipeline". The attempts
+      // guard moves into the predicate too, replacing what the old
+      // enrichmentStatus='idle' filter implicitly provided.
+      eq(leadListItems.pipelineStage, "queued"),
+      lt(leadListItems.pipelineAttempts, MAX_ATTEMPTS),
       isNull(leadListItems.promotedProspectId),
     ))
     .orderBy(leadListItems.createdAt)
@@ -98,7 +115,7 @@ async function claimBatch(db: Db) {
   const ids = candidates.map((c) => c.id);
   await db
     .update(leadListItems)
-    .set({ enrichmentStatus: "enriching", updatedAt: now })
+    .set({ pipelineStage: "scoring", updatedAt: now })
     .where(inArray(leadListItems.id, ids));
   // Increment attempts one row at a time -- drizzle has no portable
   // "SET pipeline_attempts = pipeline_attempts + 1" across both dialects
@@ -133,43 +150,37 @@ export async function runLeadPipelineSweepTick(): Promise<void> {
     // reliable cron (see server/middleware/lead-pipeline-sweep.ts).
     await voidStaleReservations();
 
+    const settings = await getApolloCreditSettings();
+    const avoidFilter = new AvoidTitleFilter();
     const batch = await claimBatch(db);
     const ownerEmailByListId = new Map<string, string | null>();
+
     for (const item of batch) {
       if (Date.now() - startedAt > TICK_BUDGET_MS) break;
       try {
-        // trigger: "sweep" charges the workspace rather than a person (so no
-        // personal allowance applies) and is capped at the sweep's own share
-        // of the period budget, leaving credits for interactive work.
-        // revealPhone stays false: an unattended pass must never spend 8
-        // credits on a phone number nobody asked for.
-        const enriched = await enrichApolloRecord(
-          db,
-          { kind: "lead_list_item", row: item },
-          { trigger: "sweep", actorEmail: null, revealPhone: false },
-        );
+        const stamp = () => new Date().toISOString();
 
-        // A refused spend is not a lead failure. Return the row to idle
-        // WITHOUT burning a pipeline attempt and stop the tick: otherwise a
-        // multi-day budget pause would march every queued lead through
-        // MAX_ATTEMPTS and mark hundreds of them permanently failed.
-        if (enriched.blockedReason) {
+        // ── 1. FREE prefilter ────────────────────────────────────────────
+        // The persona briefing's avoidTitlesSearch is a list of literal job
+        // titles the ICP explicitly excludes. Matching a headline against it
+        // costs neither an Apollo call nor an LLM call, so it runs before
+        // anything billable.
+        const avoided = await avoidFilter.matchedAvoidTitle(
+          item.personaId,
+          item.headline,
+          item.enrichedTitle,
+        );
+        if (avoided) {
           await db
             .update(leadListItems)
             .set({
-              enrichmentStatus: "idle",
-              pipelineAttempts: Math.max(0, item.pipelineAttempts - 1),
-              updatedAt: new Date().toISOString(),
+              pipelineStage: "blocked",
+              pipelineBlockedReason: `avoid_title:${avoided}`,
+              updatedAt: stamp(),
             })
             .where(eq(leadListItems.id, item.id));
-          break;
+          continue;
         }
-
-        // Re-select: enrichApolloRecord already wrote the enrichment
-        // columns to the row -- scoreLeadListItem needs those fresh values
-        // (e.g. enrichedLinkedinUrl), not the pre-enrichment snapshot.
-        const [freshItem] = await db.select().from(leadListItems).where(eq(leadListItems.id, item.id));
-        if (!freshItem) continue;
 
         if (!ownerEmailByListId.has(item.listId)) {
           const [list] = await db.select({ ownerEmail: leadLists.ownerEmail }).from(leadLists).where(eq(leadLists.id, item.listId));
@@ -177,18 +188,106 @@ export async function runLeadPipelineSweepTick(): Promise<void> {
         }
         const ownerEmail = ownerEmailByListId.get(item.listId) ?? null;
 
-        const scored = await scoreLeadListItem(db, freshItem, ownerEmail);
-        if (scored.ok && scored.prospectId) {
+        // ── 2. SCORE (LLM only, zero Apollo credits) ─────────────────────
+        // This is the whole point of the reorder: find out whether a lead is
+        // worth a credit BEFORE spending one.
+        await scoreLeadListItem(db, item, ownerEmail);
+        await db
+          .update(leadListItems)
+          .set({ pipelineStage: "scored", updatedAt: stamp() })
+          .where(eq(leadListItems.id, item.id));
+
+        const [scoredItem] = await db.select().from(leadListItems).where(eq(leadListItems.id, item.id));
+        if (!scoredItem) continue;
+
+        // ── 3. GATE, then enrich ─────────────────────────────────────────
+        // A lead below the bar is still scored, drafted and promoted -- it is
+        // only never AUTO-enriched. The Apollo credit buys contact data, which
+        // this app's primary LinkedIn-connection motion doesn't need, and
+        // silently dropping such leads would contradict the documented policy
+        // that every imported lead is expected to be reached out to. It keeps
+        // its per-row Enrich button for explicit user action.
+        let enrichBlocked: string | null = null;
+        if (verdictClearsBar(scoredItem.fitVerdict, settings.enrichMinVerdict)) {
           await db
             .update(leadListItems)
-            .set({ promotedProspectId: scored.prospectId, updatedAt: new Date().toISOString() })
+            .set({ pipelineStage: "enriching", updatedAt: stamp() })
+            .where(eq(leadListItems.id, item.id));
+
+          // trigger "sweep" charges the workspace rather than a person and is
+          // capped at the sweep's own share of the budget, leaving credits for
+          // interactive work. revealPhone stays false: an unattended pass must
+          // never spend 8 credits on a number nobody asked for.
+          const enriched = await enrichApolloRecord(
+            db,
+            { kind: "lead_list_item", row: scoredItem },
+            { trigger: "sweep", actorEmail: null, revealPhone: false },
+          );
+          enrichBlocked = enriched.blockedReason ?? null;
+        } else {
+          enrichBlocked = null;
+          await db
+            .update(leadListItems)
+            .set({ pipelineBlockedReason: `below_quality_bar:${scoredItem.fitVerdict ?? "unscored"}`, updatedAt: stamp() })
             .where(eq(leadListItems.id, item.id));
         }
+
+        // A refused spend is not a lead failure. Return the row to `queued`
+        // WITHOUT burning a pipeline attempt, and stop the tick: otherwise a
+        // multi-day budget pause would march every queued lead through
+        // MAX_ATTEMPTS and mark hundreds of them permanently failed. The
+        // scoring work already done is preserved on the row.
+        if (enrichBlocked) {
+          await db
+            .update(leadListItems)
+            .set({
+              pipelineStage: "queued",
+              pipelineBlockedReason: `budget:${enrichBlocked}`,
+              pipelineAttempts: Math.max(0, item.pipelineAttempts - 1),
+              updatedAt: stamp(),
+            })
+            .where(eq(leadListItems.id, item.id));
+          break;
+        }
+
+        // ── 4. PROMOTE ───────────────────────────────────────────────────
+        // Re-select so promotion sees the enrichment columns (notably
+        // enrichedLinkedinUrl, which is what supplies a real profile URL).
+        const [freshItem] = await db.select().from(leadListItems).where(eq(leadListItems.id, item.id));
+        if (!freshItem) continue;
+
+        await db
+          .update(leadListItems)
+          .set({ pipelineStage: "promoting", updatedAt: stamp() })
+          .where(eq(leadListItems.id, item.id));
+
+        const promoted = await promoteLeadListItem(db, freshItem, ownerEmail);
+        await db
+          .update(leadListItems)
+          .set({
+            // `no_profile_url` is a normal outcome, not a failure: the lead
+            // keeps its verdict and draft and waits for a real URL rather
+            // than being promoted under a synthetic Sales Nav key that
+            // capture-profile.ts could never reconcile.
+            pipelineStage: "done",
+            ...(promoted.ok && promoted.prospectId ? { promotedProspectId: promoted.prospectId } : {}),
+            ...(promoted.code === "no_profile_url"
+              ? { pipelineBlockedReason: "awaiting_profile_url" }
+              : {}),
+            updatedAt: stamp(),
+          })
+          .where(eq(leadListItems.id, item.id));
       } catch (err) {
         await db
           .update(leadListItems)
           .set({
-            enrichmentStatus: "failed",
+            // pipelineStage records that the PIPELINE gave up.
+            // enrichmentStatus is left alone unless Apollo itself was the
+            // thing that failed -- enrichApolloRecord owns that column, and
+            // marking it "failed" for, say, a scoring error would put a
+            // phantom row in the enrichment audit export for a lead Apollo
+            // was never called on.
+            pipelineStage: "failed",
             enrichmentError: `Auto-pipeline: ${err instanceof Error ? err.message : String(err)}`,
             updatedAt: new Date().toISOString(),
           })

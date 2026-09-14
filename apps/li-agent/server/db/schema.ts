@@ -106,6 +106,10 @@ export const prospects = table("prospects", {
   phoneRevealStatus: text("phone_reveal_status", { enum: ["requested", "done", "no_match", "failed"] }),
   phoneRevealRequestId: text("phone_reveal_request_id"),
   phoneRevealRequestedAt: text("phone_reveal_requested_at"),
+  // Who spent the 8 credits, and whether they overrode the fit gate to do it.
+  phoneRevealRequestedBy: text("phone_reveal_requested_by"),
+  phoneRevealOverride: integer("phone_reveal_override").notNull().default(0),
+  phoneRevealOverrideAt: text("phone_reveal_override_at"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });
@@ -369,6 +373,31 @@ export const leadLists = table("lead_lists", {
 // lead's profile and the existing capture flow runs. salesNavLeadUrl (the
 // /sales/lead/... link) is always present at import time and is what "Open
 // LinkedIn" falls back to until profileUrl is resolved.
+// SCORE-FIRST PIPELINE
+//
+// fitVerdict/fitReason/draftNote/draftFollowUp/scoredAt used to exist only on
+// the promoted prospects row, which meant the sweep had to spend an Apollo
+// credit before it could know whether a lead deserved one. Scoring is LLM-only
+// and costs zero Apollo credits, so it now runs first and lands here -- which
+// is also the first time the Lead Lists page has any fit signal to show.
+//
+// pipelineStage is deliberately separate from enrichmentStatus. That column
+// keeps meaning exactly what it means today: the outcome of an Apollo lookup.
+// Overloading it with a "skipped" value would put phantom rows in the
+// enrichment audit export for leads Apollo was never called on, and would
+// change the meaning of both the ne(enrichmentStatus, "idle") filter in
+// list-enrichment-audit-log.ts and the Analytics funnel.
+//
+// HOUSEKEEPING, learned the hard way: keep comments INSIDE this table body
+// short, and prefer no apostrophes. The framework db-tool-scoping guard locates
+// a table body by brace-matching, and it tracks string literals while NOT
+// skipping comments -- so an apostrophe in a body comment flips it into
+// "inside a string" state. Depending on where that lands relative to the
+// nested { enum: [...] } braces below, the brace count desynchronizes, the
+// body is read as extending into a later table that does have owner_email,
+// and this table gets reported as a stale dbToolScopingDenylist entry, which
+// FAILS THE PRODUCTION BUILD with a message that points nowhere near the real
+// cause. Long prose belongs here, above the table, where it cannot interfere.
 export const leadListItems = table("lead_list_items", {
   id: text("id").primaryKey(),
   listId: text("list_id").notNull(),
@@ -435,6 +464,24 @@ export const leadListItems = table("lead_list_items", {
   // Set once this lead has been scored, drafted, and upserted into
   // `prospects` by the automatic pipeline. Lets the sweep skip already-done
   // rows and lets the UI show "in Prospects" instead of the enrich badges.
+  // ── Score-first pipeline (see the note above the table) ─────────────────
+  fitVerdict: text("fit_verdict", { enum: ["strong", "possible", "weak", "inconclusive"] }),
+  fitReason: text("fit_reason"),
+  draftNote: text("draft_note"),
+  draftFollowUp: text("draft_follow_up"),
+  scoredAt: text("scored_at"),
+  // Separate from enrichmentStatus on purpose -- see the note above the table.
+  pipelineStage: text("pipeline_stage", {
+    enum: ["queued", "scoring", "scored", "enriching", "promoting", "done", "blocked", "failed"],
+  })
+    .notNull()
+    .default("queued"),
+  // avoid_title / below_quality_bar / budget. Not terminal.
+  pipelineBlockedReason: text("pipeline_blocked_reason"),
+  // Who spent the 8 credits, and whether the fit gate was overridden.
+  phoneRevealRequestedBy: text("phone_reveal_requested_by"),
+  phoneRevealOverride: integer("phone_reveal_override").notNull().default(0),
+  phoneRevealOverrideAt: text("phone_reveal_override_at"),
   promotedProspectId: text("promoted_prospect_id"),
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems } from "../server/db/schema.js";
-import { scoreLeadListItem } from "../server/helpers/score-lead-list-item.js";
+import { scoreAndPromoteLeadListItem } from "../server/helpers/score-lead-list-item.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
 
 // Generates a real ICP fit score + draft connection note for a Sales Nav
@@ -48,6 +48,8 @@ export default defineAction({
     // a freshly-imported list, defeating the point of a bulk-drafting
     // feature -- live-confirmed this exact failure mode on real usage.
 
-    return scoreLeadListItem(db, item, userEmail);
+    // Composed form: score, then promote if a real profile URL exists --
+    // so the manual "Score & Draft" button behaves exactly as before.
+    return scoreAndPromoteLeadListItem(db, item, userEmail);
   },
 });

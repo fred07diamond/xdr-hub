@@ -105,6 +105,14 @@ export default defineAction({
           enrichmentError: leadListItems.enrichmentError,
           enrichmentSource: leadListItems.enrichmentSource,
           enrichedEmailStatus: leadListItems.enrichedEmailStatus,
+          // Score-first means a lead carries its own verdict and draft before
+          // (and possibly without ever) being promoted into a prospects row.
+          fitVerdict: leadListItems.fitVerdict,
+          fitReason: leadListItems.fitReason,
+          draftNote: leadListItems.draftNote,
+          draftFollowUp: leadListItems.draftFollowUp,
+          phoneRevealStatus: leadListItems.phoneRevealStatus,
+          phoneRevealRequestedAt: leadListItems.phoneRevealRequestedAt,
           createdAt: leadListItems.createdAt,
           listName: leadLists.name,
         })
@@ -187,10 +195,18 @@ export default defineAction({
           profileUrl: li.profileUrl,
           salesNavLeadUrl: li.salesNavLeadUrl,
           listName: li.listName,
-          fitVerdict: null as string | null,
-          fitReason: null as string | null,
-          draftNote: null as string | null,
-          draftFollowUp: null as string | null,
+          // Previously hard-coded null, because a lead list item had no
+          // verdict of its own -- it only got one on promotion. Score-first
+          // changes that, and promotion is now DEFERRED until a real profile
+          // URL exists (see promoteLeadListItem), so without this an
+          // un-promoted lead would show a blank Fit column despite having
+          // been scored.
+          fitVerdict: li.fitVerdict as string | null,
+          fitReason: li.fitReason as string | null,
+          draftNote: li.draftNote as string | null,
+          draftFollowUp: li.draftFollowUp as string | null,
+          // Still null: `status` is the prospects-only captured/drafted/sent
+          // lifecycle, and a lead list item has no place in it until promoted.
           status: null as string | null,
           tags: [] as { id: string; name: string; color: string }[],
           rating: null as number | null,
@@ -210,8 +226,8 @@ export default defineAction({
           enrichmentError: li.enrichmentError,
           enrichmentSource: li.enrichmentSource,
           enrichedEmailStatus: li.enrichedEmailStatus,
-          phoneRevealStatus: null as string | null,
-          phoneRevealRequestedAt: null as string | null,
+          phoneRevealStatus: li.phoneRevealStatus as string | null,
+          phoneRevealRequestedAt: li.phoneRevealRequestedAt as string | null,
           createdAt: li.createdAt,
           updatedAt: li.createdAt,
         })),
