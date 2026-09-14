@@ -67,6 +67,13 @@ export default defineAction({
       overrideCount: state.breakdown.overrideCount,
       overrideCredits: state.breakdown.overrideCredits,
 
+      // The waste picture. `emptyCalls` is reported even though it is free,
+      // because a column of "No email on file" reads as money burned unless
+      // the page says outright that it was not charged.
+      wastedCredits: state.breakdown.wastedCredits,
+      lowFitCredits: state.breakdown.lowFitCredits,
+      emptyCalls: state.breakdown.emptyCalls,
+
       phoneStopAt: state.phoneStopAt,
       phoneStopPct: state.settings.phoneStopPct,
       thresholds: state.settings.thresholds,

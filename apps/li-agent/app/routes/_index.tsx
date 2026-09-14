@@ -74,6 +74,11 @@ import { PersonaBadge, StellarMark, VerdictBadge } from "@/components/badges";
 import { EnrichCostConfirm } from "@/components/EnrichCostConfirm";
 import { RevealPhoneButton } from "@/components/RevealPhoneButton";
 import { useApolloEnrichment } from "@/lib/apollo-enrichment";
+import {
+  describeEnrichmentState,
+  describePhoneRevealState,
+  TONE_CLASS,
+} from "@/lib/enrichment-vocabulary";
 import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { cn } from "@/lib/utils";
@@ -377,37 +382,43 @@ function EnrichedField({
       </span>
     );
   }
-  // Apollo's phone reveal is async (webhook-delivered) -- "requested" means
-  // enrichment itself is done, but the personal number hasn't arrived yet.
-  // Past PHONE_REVEAL_STALE_AFTER_MS, stop waiting and fall through to the
-  // normal "no phone found" treatment below.
-  if (kind === "phone" && phoneRevealStatus === "requested" && !isPhoneRevealStale(phoneRevealRequestedAt ?? null)) {
-    return <span className="text-xs italic text-muted-foreground/70">Revealing…</span>;
-  }
   if (isEnriching || status === "enriching") {
-    return <span className="text-xs italic text-muted-foreground/70">Enriching…</span>;
+    return <span className="text-xs italic text-muted-foreground/70">Looking up…</span>;
   }
-  // Every empty state below is also its own "run enrichment" affordance, not
-  // just a dead end -- clicking it calls the same enrich action as the
-  // Actions-column button, so the empty cell doubles as the click target.
-  const emptyLabel =
-    status === "not_found" ? "No contact info found"
-    : status === "failed" ? "Enrichment failed"
-    : status === "done" ? `No ${kind} found`
-    : "—";
-  const emptyClass =
-    status === "failed" ? "text-xs italic text-destructive/70"
-    : status === "idle" || !status ? "text-xs text-muted-foreground/50"
-    : "text-xs italic text-muted-foreground/70";
-  if (!onEnrich || !apollo.enabled) return <span className={emptyClass}>{emptyLabel}</span>;
+
+  // Wording, tone and the free/charged distinction all come from
+  // app/lib/enrichment-vocabulary.ts, so the two tables cannot drift apart and
+  // "not found" vs "failed" vs "never looked up" means one thing app-wide.
+  const state =
+    kind === "phone"
+      ? describePhoneRevealState(
+          phoneRevealStatus ?? null,
+          false,
+          status ?? null,
+          isPhoneRevealStale(phoneRevealRequestedAt ?? null),
+        )
+      : describeEnrichmentState(status ?? null, false, kind);
+
+  const cls = `text-xs ${TONE_CLASS[state.tone]}`;
+
+  // Only offer the click-to-retry affordance where retrying can actually
+  // change the answer. Making "Not in Apollo" clickable invited people to
+  // spend a credit re-asking a question Apollo had already answered.
+  if (!onEnrich || !apollo.enabled || !state.retryable) {
+    return (
+      <span className={cls} title={state.detail}>
+        {state.label}
+      </span>
+    );
+  }
   return (
     <button
       type="button"
       onClick={onEnrich}
-      title="Click to enrich"
-      className={`${emptyClass} underline decoration-dotted underline-offset-2 hover:text-foreground`}
+      title={state.detail}
+      className={`${cls} underline decoration-dotted underline-offset-2 hover:text-foreground`}
     >
-      {emptyLabel}
+      {state.label}
     </button>
   );
 }

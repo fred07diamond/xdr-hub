@@ -930,6 +930,37 @@ export default runMigrations(
         `UPDATE lead_list_items SET pipeline_stage = 'failed' WHERE pipeline_attempts >= 3 AND enrichment_status = 'failed'`,
       ].join(";\n"),
     },
+    {
+      // Apollo bills for data it delivers, not for being asked -- confirmed
+      // against the real account. The ledger was built on the conservative
+      // opposite assumption (charge on attempt), so rows already written for
+      // lookups that came back empty are overstating spend and need
+      // correcting, or the gauge stays permanently pessimistic.
+      //
+      // Only touches rows where actual_credits IS NULL: anything the webhook
+      // already reconciled carries Apollo's own number and must not be
+      // overwritten by an inference.
+      version: 122,
+      name: "reprice-empty-apollo-lookups-to-zero",
+      sql: [
+        `UPDATE apollo_credit_ledger
+            SET actual_credits = 0,
+                status = 'reconciled',
+                note = COALESCE(note || ' | ', '') || 'repriced: nothing delivered'
+          WHERE actual_credits IS NULL
+            AND status IN ('committed', 'pending_webhook')
+            AND outcome IN ('no_match', 'match_no_email', 'reveal_no_number', 'reveal_no_match')`,
+        // Historical rows recorded plain 'match' before the outcome was split
+        // into match_email / match_no_email. A match that stored no email on
+        // its subject row delivered nothing, so it is the same case -- but
+        // there is no join back to the subject here, so these are left ALONE
+        // rather than guessed at. `reprice-apollo-credit-ledger` can correct
+        // them by class once an invoice is available.
+        `UPDATE apollo_credit_ledger
+            SET outcome = 'match_email'
+          WHERE outcome = 'match' AND unit = 'person_match'`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );

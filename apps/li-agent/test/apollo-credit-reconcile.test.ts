@@ -72,6 +72,16 @@ describe("reconcileRevealCredits", () => {
     expect(updates[0]).toMatchObject({ actualCredits: 0, outcome: "reveal_no_match" });
   });
 
+  it("charges 0 for a no-number webhook even when it omits the cost", async () => {
+    // Apollo bills for data delivered. Falling back to the reserved 8 here
+    // would leave the budget permanently short by 8 for every person Apollo
+    // has no number for, which across a list is the difference between the
+    // gauge being trustworthy and not.
+    await reconcileRevealCredits("apollo_1", null, "reveal_no_match");
+    expect(updates[0]).toMatchObject({ actualCredits: 0, outcome: "reveal_no_match" });
+    expect(String(updates[0].note)).toContain("charged 0");
+  });
+
   it("leaves the estimate standing when the payload carries no cost", async () => {
     // Null keeps COALESCE falling back to the reserved 8 -- the conservative
     // direction when Apollo tells us nothing.

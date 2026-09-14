@@ -318,8 +318,25 @@ export function findLeg(auth: CreditAuthorization, unit: ApolloSpendUnit): Autho
 }
 
 export interface SettleInput {
-  personMatch?: { outcome: "match" | "no_match" | "http_error" | "timeout"; apolloPersonId?: string | null };
-  phoneReveal?: { outcome: "requested" | "resolved_sync" | "not_requested" | "http_error" | "timeout"; apolloPersonId?: string | null };
+  personMatch?: {
+    outcome: "match" | "no_match" | "http_error" | "timeout";
+    apolloPersonId?: string | null;
+    /**
+     * Did Apollo actually hand over an email address?
+     *
+     * Separate from `outcome` because "matched the person" and "gave us an
+     * email" are different events: Apollo routinely identifies someone it has
+     * no email for. Apollo bills for data delivered, so this -- not the match
+     * -- is what decides whether the credit is charged.
+     */
+    revealedEmail?: boolean;
+  };
+  phoneReveal?: {
+    outcome: "requested" | "resolved_sync" | "not_requested" | "http_error" | "timeout";
+    apolloPersonId?: string | null;
+    /** Did a number actually come back on the synchronous response? */
+    revealedPhone?: boolean;
+  };
   orgEnrich?: { outcome: "match" | "no_match" | "http_error" | "timeout" };
 }
 
@@ -327,18 +344,35 @@ export interface SettleInput {
  * Closes out every leg. MUST run in a `finally` -- an unsettled reservation
  * keeps consuming budget until the orphan reaper voids it.
  *
- * Failure-mode choices, stated explicitly because they are assumptions about
- * Apollo's billing we cannot verify from code:
+ * THE BILLING RULE: Apollo charges for data it actually delivers, not for
+ * being asked. So every leg that came back empty settles at ZERO credits, and
+ * the only states that cost anything are the ones that produced a real email
+ * or a real phone number.
  *
- * - `http_error` VOIDS the leg. Apollo is assumed not to bill a rejected
- *   request.
- * - `timeout` KEEPS the leg charged. The request may well have been processed
- *   server-side, and over-counting is safer than over-spending.
- * - `no_match` KEEPS the leg charged -- a match attempt is assumed billable
- *   even when it finds nobody. Tagged so it can be repriced in bulk later if
- *   an invoice says otherwise.
- * - A requested reveal goes to `pending_webhook`, holding all 8 credits until
- *   Apollo's webhook reports the real `credits_consumed`.
+ * Note the two-step shape this relies on, which is why nothing needed
+ * restructuring to support it: the guard RESERVES the full estimate before the
+ * call (so the budget is protected while it is in flight and concurrent
+ * requests see it), then settles the truth afterwards. `actualCredits: 0` on a
+ * miss releases the reservation, because every budget sum reads
+ * COALESCE(actual, estimated).
+ *
+ * Case by case:
+ *
+ * - Data returned            → CHARGED (1 for an email, 8 for a phone).
+ * - `no_match`               → 0. Apollo had no such person, so it delivered
+ *                              nothing.
+ * - matched but no email     → 0. It identified the person and had no email.
+ * - `http_error`             → VOIDED. A rejected request delivers nothing.
+ * - `timeout`                → KEPT CHARGED, and the one deliberate exception.
+ *                              The request may have been processed on Apollo's
+ *                              side and we genuinely cannot tell, so we
+ *                              over-count our own budget rather than risk
+ *                              overspending the real one. Tagged
+ *                              `*_timeout` so `reprice-apollo-credit-ledger`
+ *                              can zero the class once an invoice settles it.
+ * - reveal awaiting webhook  → `pending_webhook`, holding all 8 until Apollo's
+ *                              callback reports the real `credits_consumed`
+ *                              (which is 0 when it found no number).
  */
 export async function settleEnrichment(auth: CreditAuthorization, result: SettleInput): Promise<void> {
   // Threshold notifications run AFTER the ledger writes below, inline rather
@@ -354,10 +388,30 @@ export async function settleEnrichment(auth: CreditAuthorization, result: Settle
           await finalizeLedgerRow(leg.ledgerId, { status: "voided", outcome: "not_called" });
         } else if (r.outcome === "http_error") {
           await finalizeLedgerRow(leg.ledgerId, { status: "voided", outcome: "http_error" });
+        } else if (r.outcome === "no_match") {
+          // Apollo delivered no person, so it delivered no data.
+          await finalizeLedgerRow(leg.ledgerId, {
+            status: "reconciled",
+            outcome: "no_match",
+            actualCredits: 0,
+            note: "no person matched, nothing delivered",
+          });
+        } else if (r.outcome === "match" && r.revealedEmail === false) {
+          // Identified the person, had no email for them. A complete answer
+          // that cost nothing -- and the state users most often mistook for a
+          // failure, which is why it is tagged distinctly rather than lumped
+          // in with `match`.
+          await finalizeLedgerRow(leg.ledgerId, {
+            status: "reconciled",
+            outcome: "match_no_email",
+            actualCredits: 0,
+            apolloPersonId: r.apolloPersonId ?? null,
+            note: "person matched, no email delivered",
+          });
         } else {
           await finalizeLedgerRow(leg.ledgerId, {
             status: "committed",
-            outcome: r.outcome,
+            outcome: r.outcome === "timeout" ? "match_timeout" : "match_email",
             apolloPersonId: r.apolloPersonId ?? null,
           });
         }
@@ -371,10 +425,14 @@ export async function settleEnrichment(auth: CreditAuthorization, result: Settle
         } else if (r.outcome === "http_error") {
           await finalizeLedgerRow(leg.ledgerId, { status: "voided", outcome: "http_error" });
         } else if (r.outcome === "resolved_sync") {
+          // Resolved on the synchronous response. Charged only if a number
+          // actually came back with it.
+          const gotNumber = r.revealedPhone !== false;
           await finalizeLedgerRow(leg.ledgerId, {
-            status: "committed",
-            outcome: "revealed_sync",
+            status: gotNumber ? "committed" : "reconciled",
+            outcome: gotNumber ? "revealed_sync" : "reveal_no_number",
             apolloPersonId: r.apolloPersonId ?? null,
+            ...(gotNumber ? {} : { actualCredits: 0, note: "reveal returned no number" }),
           });
         } else {
           // "requested" or "timeout": hold the 8 credits and wait for the

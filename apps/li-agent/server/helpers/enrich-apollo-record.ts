@@ -228,7 +228,14 @@ export async function enrichApolloRecord(
   let person = null;
   try {
     person = await matchApolloPerson({ name: row.name ?? "", companyName: row.company, revealPhone }, auth);
-    settle.personMatch = { outcome: person ? "match" : "no_match", apolloPersonId: person?.id ?? null };
+    settle.personMatch = {
+      outcome: person ? "match" : "no_match",
+      apolloPersonId: person?.id ?? null,
+      // Apollo bills for data delivered, not for being asked, so the credit
+      // turns on whether an email actually came back -- matching a person
+      // Apollo has no email for costs nothing.
+      revealedEmail: !!person?.email,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     warnings.push(`Person lookup: ${message}`);
@@ -237,12 +244,32 @@ export async function enrichApolloRecord(
     settle.personMatch = { outcome: /timed? ?out|abort/i.test(message) ? "timeout" : "http_error" };
   }
 
+  // Whether a number arrived on the synchronous response, as opposed to being
+  // promised by webhook later. Computed here rather than after the org lookup
+  // because the reveal's BILLING depends on it: a reveal that delivered a
+  // number is charged, one that resolved with nothing is not.
+  const syncPhone = extractApolloPhone(person);
+
   // The reveal rides on the same /people/match call, so its fate is decided by
   // that call's outcome rather than a separate request.
   if (revealPhone) {
-    settle.phoneReveal = settle.personMatch?.outcome === "match"
-      ? { outcome: "requested", apolloPersonId: person?.id ?? null }
-      : { outcome: settle.personMatch?.outcome === "timeout" ? "timeout" : "http_error" };
+    if (settle.personMatch?.outcome !== "match") {
+      settle.phoneReveal = {
+        outcome: settle.personMatch?.outcome === "timeout" ? "timeout" : "http_error",
+      };
+    } else if (syncPhone) {
+      // Already answered, so no webhook is coming. Settling it as resolved
+      // here rather than leaving it `pending_webhook` matters: otherwise these
+      // 8 credits sit un-reconciled until the stale-reveal reaper times them
+      // out, which reads on the gauge as an unresolved charge.
+      settle.phoneReveal = {
+        outcome: "resolved_sync",
+        apolloPersonId: person?.id ?? null,
+        revealedPhone: true,
+      };
+    } else {
+      settle.phoneReveal = { outcome: "requested", apolloPersonId: person?.id ?? null };
+    }
   } else {
     settle.phoneReveal = { outcome: "not_requested" };
   }
@@ -278,7 +305,7 @@ export async function enrichApolloRecord(
   // echoed back on a later plain re-enrich. Falling back to the
   // already-stored value here is required, or a routine re-enrich wipes
   // out a real number to null.
-  const phone = extractApolloPhone(person) ?? row.enrichedPhone;
+  const phone = syncPhone ?? row.enrichedPhone;
 
   // Reveal bookkeeping only applies when this call actually requested
   // one. A phone found synchronously means nothing async is pending, and
@@ -291,9 +318,13 @@ export async function enrichApolloRecord(
   // object: the update now also carries attribution columns, so an
   // `"phoneRevealStatus" in update` check no longer narrows the type and the
   // resulting `{} | null` silently widened the return value.
+  // Keyed on syncPhone, NOT on `phone` -- `phone` falls back to the number
+  // already stored on the row, so using it here would report a reveal as
+  // freshly "done" on the strength of a number a previous call had fetched,
+  // and disagree with what the ledger recorded for this call.
   const revealStatus: EnrichableRow["phoneRevealStatus"] = !revealPhone
     ? row.phoneRevealStatus
-    : phone
+    : syncPhone
       ? "done"
       : person?.id
         ? "requested"

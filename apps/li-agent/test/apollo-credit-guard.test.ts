@@ -357,20 +357,46 @@ describe("settleEnrichment", () => {
     return r.auth;
   }
 
-  it("commits a successful match", async () => {
+  it("commits a match that delivered an email", async () => {
     const auth = await authFor();
     claimLeg(auth, "person_match");
-    await settleEnrichment(auth, { personMatch: { outcome: "match", apolloPersonId: "apollo_1" } });
-    expect(finalized[0].patch).toMatchObject({ status: "committed", outcome: "match", apolloPersonId: "apollo_1" });
+    await settleEnrichment(auth, {
+      personMatch: { outcome: "match", apolloPersonId: "apollo_1", revealedEmail: true },
+    });
+    expect(finalized[0].patch).toMatchObject({
+      status: "committed",
+      outcome: "match_email",
+      apolloPersonId: "apollo_1",
+    });
   });
 
-  it("KEEPS a no-match charged", async () => {
-    // Assumption: Apollo bills an attempt even when it finds nobody. Tagged so
-    // it can be repriced in bulk if an invoice says otherwise.
+  it("charges NOTHING for a no-match", async () => {
+    // Corrected against the real Apollo account: it bills for data delivered,
+    // not for being asked. This test previously asserted the opposite, which
+    // was the conservative guess made before anyone could check.
     const auth = await authFor();
     claimLeg(auth, "person_match");
     await settleEnrichment(auth, { personMatch: { outcome: "no_match" } });
-    expect(finalized[0].patch).toMatchObject({ status: "committed", outcome: "no_match" });
+    expect(finalized[0].patch).toMatchObject({
+      status: "reconciled",
+      outcome: "no_match",
+      actualCredits: 0,
+    });
+  });
+
+  it("charges NOTHING for a match with no email on file", async () => {
+    // Apollo identified the person and had no email for them. A complete
+    // answer, and free -- and the state users read as a failure.
+    const auth = await authFor();
+    claimLeg(auth, "person_match");
+    await settleEnrichment(auth, {
+      personMatch: { outcome: "match", apolloPersonId: "apollo_1", revealedEmail: false },
+    });
+    expect(finalized[0].patch).toMatchObject({
+      status: "reconciled",
+      outcome: "match_no_email",
+      actualCredits: 0,
+    });
   });
 
   it("VOIDS an HTTP error, refunding the budget", async () => {
@@ -381,10 +407,15 @@ describe("settleEnrichment", () => {
   });
 
   it("KEEPS a timeout charged, because the request may have been processed", async () => {
+    // The one empty outcome still charged, and deliberately so: unlike a
+    // no-match, a timeout leaves us unable to tell whether Apollo delivered
+    // anything, so we over-count our own budget rather than overspend the
+    // real one. Tagged `match_timeout` so reprice can zero the class.
     const auth = await authFor();
     claimLeg(auth, "person_match");
     await settleEnrichment(auth, { personMatch: { outcome: "timeout" } });
-    expect(finalized[0].patch).toMatchObject({ status: "committed", outcome: "timeout" });
+    expect(finalized[0].patch).toMatchObject({ status: "committed", outcome: "match_timeout" });
+    expect(finalized[0].patch.actualCredits).toBeUndefined();
   });
 
   it("holds a requested reveal as pending_webhook with its person id", async () => {
@@ -392,7 +423,7 @@ describe("settleEnrichment", () => {
     claimLeg(auth, "person_match");
     claimLeg(auth, "phone_reveal");
     await settleEnrichment(auth, {
-      personMatch: { outcome: "match", apolloPersonId: "apollo_1" },
+      personMatch: { outcome: "match", apolloPersonId: "apollo_1", revealedEmail: true },
       phoneReveal: { outcome: "requested", apolloPersonId: "apollo_1" },
     });
     const reveal = finalized.find((f) => f.ledgerId === "ledger_2");
@@ -405,7 +436,7 @@ describe("settleEnrichment", () => {
     // reservation must not keep consuming budget.
     const auth = await authFor({ wantPhoneReveal: true });
     claimLeg(auth, "person_match");
-    await settleEnrichment(auth, { personMatch: { outcome: "match" } });
+    await settleEnrichment(auth, { personMatch: { outcome: "match", revealedEmail: true } });
     const reveal = finalized.find((f) => f.ledgerId === "ledger_2");
     expect(reveal?.patch).toMatchObject({ status: "voided" });
   });
@@ -422,7 +453,7 @@ describe("settleEnrichment", () => {
     });
     await expect(
       settleEnrichment(auth, {
-        personMatch: { outcome: "match" },
+        personMatch: { outcome: "match", revealedEmail: true },
         phoneReveal: { outcome: "requested" },
       }),
     ).resolves.toBeUndefined();

@@ -52,6 +52,41 @@ export const COUNTED_STATUSES: readonly LedgerStatus[] = [
  */
 const CREDITS = sql<number>`COALESCE(SUM(COALESCE(${apolloCreditLedger.actualCredits}, ${apolloCreditLedger.estimatedCredits})), 0)`;
 
+/**
+ * Outcomes where we were charged and got nothing usable back.
+ *
+ * Under the "charged only for data delivered" rule most empty outcomes settle
+ * at zero credits, so this list is deliberately short: it is the outcomes that
+ * stay CHARGED despite delivering nothing, which is exactly what "wasted"
+ * should mean. A `no_match` costs nothing, so calling it waste would be
+ * misleading; a timed-out reveal cost 8 and produced no number, so it is.
+ */
+export const WASTED_OUTCOMES: readonly string[] = [
+  "reveal_timeout",
+  "match_timeout",
+  "timeout",
+];
+
+/** 1 when this row was charged but delivered nothing, else 0. */
+const WASTED_CREDITS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.outcome} IN ('reveal_timeout','match_timeout','timeout') THEN COALESCE(${apolloCreditLedger.actualCredits}, ${apolloCreditLedger.estimatedCredits}) ELSE 0 END), 0)`;
+
+/**
+ * Credits spent on a lead the ICP had scored WEAK, or spent by explicitly
+ * overriding the fit gate.
+ *
+ * This is the other, larger sense of "wasted" -- the money did buy real data,
+ * it just bought it for somebody not worth calling. Kept separate from
+ * WASTED_CREDITS because the two have different fixes: one is a reliability
+ * problem, the other is a discipline problem.
+ */
+const LOW_FIT_CREDITS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.isOverride} = 1 OR ${apolloCreditLedger.fitVerdict} = 'weak' THEN COALESCE(${apolloCreditLedger.actualCredits}, ${apolloCreditLedger.estimatedCredits}) ELSE 0 END), 0)`;
+
+/** Credits that actually bought a usable email or phone number. */
+const DELIVERED_CREDITS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.outcome} IN ('match_email','revealed_sync','revealed') THEN COALESCE(${apolloCreditLedger.actualCredits}, ${apolloCreditLedger.estimatedCredits}) ELSE 0 END), 0)`;
+
+/** Calls that returned nothing usable, charged or not. */
+const EMPTY_CALLS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.outcome} IN ('no_match','match_no_email','reveal_no_number','reveal_no_match','reveal_timeout') THEN 1 ELSE 0 END), 0)`;
+
 export interface SpendBreakdown {
   /** Total credits charged this period. */
   total: number;
@@ -64,6 +99,18 @@ export interface SpendBreakdown {
   /** Credits spent via an explicit fit-gate override, and how many. */
   overrideCredits: number;
   overrideCount: number;
+  /**
+   * Credits charged where nothing usable came back.
+   *
+   * Under "charged only for data delivered" this should stay near zero, and
+   * that is precisely why it is worth surfacing: a number climbing here means
+   * reveals are timing out, not that Apollo is short of data.
+   */
+  wastedCredits: number;
+  /** Credits spent on weak-fit leads or via a fit-gate override. */
+  lowFitCredits: number;
+  /** Lookups that returned nothing. Free, but people assume otherwise. */
+  emptyCalls: number;
 }
 
 function emptyBreakdown(): SpendBreakdown {
@@ -74,6 +121,9 @@ function emptyBreakdown(): SpendBreakdown {
     byTrigger: { manual: 0, sweep: 0, agent: 0 },
     overrideCredits: 0,
     overrideCount: 0,
+    wastedCredits: 0,
+    lowFitCredits: 0,
+    emptyCalls: 0,
   };
 }
 
@@ -89,6 +139,9 @@ export async function getPeriodSpend(periodKey: string): Promise<SpendBreakdown>
       isOverride: apolloCreditLedger.isOverride,
       credits: CREDITS,
       calls: sql<number>`COUNT(*)`,
+      wasted: WASTED_CREDITS,
+      lowFit: LOW_FIT_CREDITS,
+      empty: EMPTY_CALLS,
     })
     .from(apolloCreditLedger)
     .where(
@@ -117,6 +170,9 @@ export async function getPeriodSpend(periodKey: string): Promise<SpendBreakdown>
       out.overrideCredits += credits;
       out.overrideCount += calls;
     }
+    out.wastedCredits += Number(r.wasted ?? 0);
+    out.lowFitCredits += Number(r.lowFit ?? 0);
+    out.emptyCalls += Number(r.empty ?? 0);
   }
   return out;
 }
@@ -142,15 +198,32 @@ export async function getUserPeriodSpend(periodKey: string, actorEmail: string):
   return Number(row?.credits ?? 0);
 }
 
-/** Per-user totals for the admin allocation table. */
-export async function getSpendByUser(
-  periodKey: string,
-): Promise<Array<{ actorEmail: string; credits: number; calls: number }>> {
+export interface UserSpend {
+  actorEmail: string;
+  /** Total credits charged. */
+  credits: number;
+  /** Apollo calls made, charged or not. */
+  calls: number;
+  /** Credits that bought a real email or phone number. */
+  delivered: number;
+  /** Credits charged that returned nothing usable. */
+  wasted: number;
+  /** Credits spent on weak-fit leads or via a fit-gate override. */
+  lowFit: number;
+  /** Calls that returned nothing -- mostly free, but worth seeing. */
+  emptyCalls: number;
+}
+
+export async function getSpendByUser(periodKey: string): Promise<UserSpend[]> {
   const rows = await getDb()
     .select({
       actorEmail: apolloCreditLedger.actorEmail,
       credits: CREDITS,
       calls: sql<number>`COUNT(*)`,
+      delivered: DELIVERED_CREDITS,
+      wasted: WASTED_CREDITS,
+      lowFit: LOW_FIT_CREDITS,
+      emptyCalls: EMPTY_CALLS,
     })
     .from(apolloCreditLedger)
     .where(
@@ -167,6 +240,10 @@ export async function getSpendByUser(
       actorEmail: r.actorEmail,
       credits: Number(r.credits ?? 0),
       calls: Number(r.calls ?? 0),
+      delivered: Number(r.delivered ?? 0),
+      wasted: Number(r.wasted ?? 0),
+      lowFit: Number(r.lowFit ?? 0),
+      emptyCalls: Number(r.emptyCalls ?? 0),
     }))
     .sort((a, b) => b.credits - a.credits);
 }
@@ -345,19 +422,27 @@ export async function reconcileRevealCredits(
   let actual: number | null = null;
   if (creditsConsumed != null && Number.isFinite(creditsConsumed)) {
     actual = Math.min(MAX_RECONCILED_REVEAL_CREDITS, Math.max(0, Math.trunc(creditsConsumed)));
+  } else if (outcome === "reveal_no_match") {
+    // Apollo delivered no number, and Apollo bills for data delivered. Falling
+    // back to the reserved 8 here would leave the budget permanently short by
+    // 8 for every person it has no number for -- which, across a list, is the
+    // difference between the gauge being trustworthy and not.
+    actual = 0;
   }
 
   await finalizeLedgerRow(open.id, {
     status: "reconciled",
     outcome,
     // Null leaves COALESCE(actual, estimated) falling back to the 8 we
-    // reserved, which is the conservative direction when Apollo tells us
-    // nothing.
+    // reserved, which is the conservative direction when Apollo delivered a
+    // number but did not say what it charged.
     actualCredits: actual,
     note:
-      creditsConsumed == null
-        ? "webhook carried no credits_consumed; estimate stands"
-        : `apollo credits_consumed=${creditsConsumed}`,
+      creditsConsumed != null
+        ? `apollo credits_consumed=${creditsConsumed}`
+        : outcome === "reveal_no_match"
+          ? "no number delivered; charged 0"
+          : "webhook carried no credits_consumed; estimate stands",
   });
   return "reconciled";
 }

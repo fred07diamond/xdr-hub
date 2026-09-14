@@ -217,11 +217,34 @@ judgment, and must not influence scoring or draft notes.
 - Automatic enrichment happens for `autoEnrich` leads that clear the fit bar
   (see the Lead Lists section). Everything else is user-triggered: one row, or
   a capped bulk run. Never call it at capture/import time.
-- Email/Phone columns distinguish "never enriched" (—) from "enriched but
-  Apollo had no email/phone" (done, field empty) from "no match at all"
-  (not_found) from a real API error (failed, with the message in
-  `enrichmentError` / the Retry button's tooltip) — don't collapse these back
-  into one generic blank state.
+- **The vocabulary for these states lives in ONE place:
+  `app/lib/enrichment-vocabulary.ts`.** Do not re-phrase a status inline in a
+  route file. Both tables used to do that and the wording drifted until
+  "not found", "failed" and "never enriched" all read as the same thing.
+  `describeEnrichmentState()` and `describePhoneRevealState()` return the
+  label, a full-sentence tooltip, a tone, and whether the state was `charged`
+  and is `retryable`.
+
+  The three questions that separate every state:
+
+  | | Meaning | Status | Charged | Retry? |
+  |---|---|---|---|---|
+  | Never asked | Nobody ran enrichment | `idle` | No | Yes |
+  | No answer | Request never completed | `failed` | No | **Yes** |
+  | Apollo said no | No record of this person | `not_found` | No | No |
+  | Apollo said no | Has the person, no email | `done` + empty | No | No |
+  | Got data | | `done` + value | **Yes** | No |
+
+  **`failed` vs `not_found` is the distinction to preserve: `failed` means we
+  never got an answer, so retrying can work. `not_found` means Apollo answered
+  and the answer was no, so retrying only wastes time.** Same shape for
+  phones: `no_match` is Apollo saying it has no number; `failed` is Apollo
+  never answering. Only `failed` is retryable, and neither is charged.
+
+  Two consequences encoded in the UI: an Apollo "no" is styled muted rather
+  than destructive (colouring a correct answer red is what made it read as
+  broken), and a non-retryable state is not a click target (offering "retry"
+  on `not_found` invited people to re-buy an answer they already had).
 - `cleanForApolloMatch()` in `apollo-client.ts` strips emoji from names/company
   names before sending them to Apollo (LinkedIn-captured names/titles/companies
   sometimes carry emoji that hurt Apollo's fuzzy matching). Keep this centralized
@@ -295,12 +318,59 @@ Per-User Credit Limits), so one person's bulk run can't drain the pool.
   channels and they activate off `NOTIFICATIONS_*` env vars, so omitting it
   would silently fan credit warnings out to Slack the moment one is set.
 
-Several Apollo billing behaviours **cannot be verified from code** (whether a
-no-match still bills, whether a combined match+reveal is 9 or 8, whether
-org-enrich bills at all, Apollo's reset timezone). Each is recorded in the
-ledger so it stays correctable rather than baked in. **Run a low-budget pilot
-before trusting the real number**: set the budget to ~200, enrich ~20 leads,
-then compare the ledger against Apollo's real balance.
+### The billing rule
+
+**Apollo charges for data it actually delivers, not for being asked.**
+Confirmed against the real account. So every lookup that comes back empty
+settles at **zero credits**, and the only states that cost anything are the
+ones that produced a real email or a real phone number.
+
+This rides on the two-step design already in the guard, so nothing special is
+needed to support it: `reserveEnrichment` reserves the full estimate *before*
+the call (protecting the budget while it is in flight, and visible to
+concurrent authorizations), then `settleEnrichment` records the truth
+afterwards. `actualCredits: 0` on a miss releases the reservation, because
+every budget sum reads `COALESCE(actual, estimated)`.
+
+| Outcome | Charged |
+|---|---|
+| Email or phone delivered | 1 / 8 |
+| `no_match` — no such person | 0 |
+| `match_no_email` — has the person, no email | 0 |
+| `reveal_no_number` / `reveal_no_match` | 0 |
+| `http_error` | voided |
+| `*_timeout` | **kept charged** (see below) |
+
+A **timeout is the one deliberate exception.** Apollo may have processed the
+request and we genuinely cannot tell, so we over-count our own budget rather
+than risk overspending the real allocation. Those rows are tagged `*_timeout`
+so `reprice-apollo-credit-ledger` can zero the class once an invoice settles
+it — and they are the only thing the gauge counts as "paid for nothing", which
+is why that number should stay near zero.
+
+Do not "fix" an empty outcome back to charged. Migration v122 corrected the
+rows written under the old assumption.
+
+Still unverified: whether a combined match+reveal bills 9 or 8, whether
+org-enrich bills at all, and Apollo's reset timezone. Each is recorded in the
+ledger so it stays correctable. **Run a low-budget pilot before trusting the
+real number**: set the budget to ~200, enrich ~20 leads, export the ledger
+from the Analytics gauge, and compare against Apollo's real balance.
+
+### Reading the gauge
+
+Every number on the credit gauge carries its unit, because credits and record
+counts are not interchangeable at 8:1 — "8 emails = 8 credits" and "1 phone
+reveal = 8 credits" are the same 8 meaning different things. Per person the
+gauge separates:
+
+- **Got data** — credits that bought a real email or phone number.
+- **Low fit** — credits that bought real data for a lead the ICP scored weak,
+  or spent by overriding the fit gate. Money spent on the wrong person.
+- **Wasted** — credits charged that returned nothing. Only timeouts land here.
+
+Those last two are kept apart on purpose: one is a discipline problem, the
+other is a reliability problem, and they have different fixes.
 
 ## Prospect tags
 
