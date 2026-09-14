@@ -26,7 +26,7 @@ import {
 } from "@tabler/icons-react";
 
 import { CsvExportModal } from "@/components/CsvExportModal";
-import { HotLeadsSection } from "@/components/HotLeadsSection";
+import { HotLeadsSection, ScoreBreakdown } from "@/components/HotLeadsSection";
 import { OutreachPanel } from "@/components/OutreachPanel";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { CompanyLogo } from "@/components/company-logo";
@@ -122,6 +122,19 @@ interface Prospect {
   role: string | null;
   company: string | null;
   fitVerdict: Verdict;
+  // Granular score, returned by list-all-prospects for both halves of the
+  // union. Declared here because the type was silently lying: the fields were
+  // present at runtime but absent from the interface, so the Hot Leads
+  // section type-checked only because its own props are optional.
+  //
+  // NULL on a dimension means "no evidence, not assessed" -- distinct from 0,
+  // which means judged and scored zero. The UI must not collapse them.
+  fitScore: number | null;
+  scoreRoleFit: number | null;
+  scoreSeniority: number | null;
+  scoreCompanyFit: number | null;
+  scoreIntent: number | null;
+  intentSignal: string | null;
   fitReason: string | null;
   draftNote: string | null;
   draftFollowUp: string | null;
@@ -802,10 +815,36 @@ function ProspectSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {prospect.fitReason && (
+          {/* Fit, with the SCORE BREAKDOWN. Opening a lead used to show the
+              rationale sentence and nothing else, so there was no way to see
+              which dimension the score came from -- the exact question a
+              score invites. ScoreBreakdown renders only the dimensions that
+              were actually assessed, so an unscoreable Intent is named as
+              unassessed rather than drawn as a zero. */}
+          {(prospect.fitReason || typeof prospect.fitScore === "number") && (
             <div>
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Fit rationale</p>
-              <p className="text-sm text-foreground leading-relaxed">{prospect.fitReason}</p>
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Fit rationale
+                </p>
+                {typeof prospect.fitScore === "number" && (
+                  <span className="text-sm font-semibold tabular-nums text-foreground">
+                    {prospect.fitScore}
+                    <span className="text-xs font-normal text-muted-foreground">/100</span>
+                  </span>
+                )}
+              </div>
+              {prospect.fitReason && (
+                <p className="text-sm text-foreground leading-relaxed">{prospect.fitReason}</p>
+              )}
+              {prospect.intentSignal && (
+                <p className="mt-2 border-s-2 border-amber-400 ps-2.5 text-sm italic text-muted-foreground">
+                  {prospect.intentSignal}
+                </p>
+              )}
+              {typeof prospect.fitScore === "number" && (
+                <ScoreBreakdown lead={prospect} className="mt-3 max-w-sm" />
+              )}
             </div>
           )}
           {isProspect && (

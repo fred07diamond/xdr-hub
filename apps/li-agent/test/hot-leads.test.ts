@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -234,5 +235,83 @@ describe("legacy stellar fallback", () => {
     // Saying so is what makes rescoring an obvious next step rather than a
     // mystery.
     expect(describeHotReasons(["stellar"])).toMatch(/rescore/i);
+  });
+});
+
+describe("the breakdown must not draw an unassessed dimension", () => {
+  // Reported, and correct: the card showed "Intent signals 0/25" for a
+  // lead-list lead that has no activity data at all. The scoring fix excluded
+  // intent from the ARITHMETIC (87 of 75, not 65 of 100) but the UI still read
+  // `scoreIntent ?? 0` and drew an empty bar — putting the "penalised for data
+  // we never captured" message straight back, and worse: the number beside it
+  // claimed the lead lost 25 points it never had a chance at.
+  const SRC = readFileSync(
+    new URL("../app/components/HotLeadsSection.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("preserves null instead of coercing to zero", () => {
+    // Matched as CODE, not prose: `?? 0` appears in the comment explaining
+    // why it is wrong, so a bare substring check fails on the explanation.
+    const code = SRC.split("\n")
+      .filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l))
+      .join("\n");
+    expect(code).toMatch(/roleFit: lead\.scoreRoleFit \?\? null/);
+    expect(code).toMatch(/intent: lead\.scoreIntent \?\? null/);
+    expect(code).not.toMatch(/lead\.score\w+ \?\? 0/);
+  });
+
+  it("omits unassessed dimensions rather than rendering them", () => {
+    expect(SRC).toContain("values[d] !== null");
+  });
+
+  it("states the real denominator", () => {
+    // An 87 from three signals must not read as an 87 from four.
+    expect(SRC).toMatch(/of \{DIMENSION_ORDER\.length\} signals/);
+  });
+
+  it("explains WHY intent can be unassessable", () => {
+    // Nothing in the app supplies activity for a Sales Nav list row:
+    // recentActivity is only ever set by capture-profile, from the extension
+    // reading a real profile page. Saying so is the honest version.
+    expect(SRC).toContain("MISSING_HINT");
+    expect(SRC).toMatch(/Sales Navigator list row carries no activity/);
+  });
+});
+
+describe("the card explains the lead, not the rule", () => {
+  const SRC = readFileSync(
+    new URL("../app/components/HotLeadsSection.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("shows fitReason, the model's actual evidence", () => {
+    // The card was showing "decision-level in a matched persona", which
+    // restates the promotion rule rather than explaining the lead.
+    expect(SRC).toContain("{lead.fitReason}");
+  });
+
+  it("demotes the generic corroborator to a chip", () => {
+    expect(SRC).not.toContain("{describeHotReasons(assessment.reasons)}");
+  });
+});
+
+describe("clicking a lead breaks the score down", () => {
+  it("the detail sheet renders the breakdown", () => {
+    // Opening a lead used to show the rationale sentence and nothing else, so
+    // there was no way to see which dimension the score came from — the exact
+    // question a score invites.
+    const SRC = readFileSync(new URL("../app/routes/_index.tsx", import.meta.url), "utf8");
+    expect(SRC).toContain("<ScoreBreakdown lead={prospect}");
+  });
+
+  it("Prospect declares the score fields it actually receives", () => {
+    // The interface was lying: the fields were present at runtime but absent
+    // from the type, so the Hot Leads section type-checked only because its
+    // own props are optional.
+    const SRC = readFileSync(new URL("../app/routes/_index.tsx", import.meta.url), "utf8");
+    for (const field of ["fitScore", "scoreRoleFit", "scoreIntent", "intentSignal"]) {
+      expect(SRC, field).toMatch(new RegExp(`\\n  ${field}: `));
+    }
   });
 });

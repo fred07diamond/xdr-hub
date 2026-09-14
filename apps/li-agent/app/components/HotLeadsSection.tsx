@@ -18,7 +18,6 @@ import {
 } from "@/lib/fit-score-shared";
 import {
   assessHotLead,
-  describeHotReasons,
   HOT_LEAD_DEFAULTS,
   sortHotLeads,
   type HotLeadSettings,
@@ -304,61 +303,64 @@ function HotLeadCard<T extends HotLead>({
 
   return (
     <div className="rounded-lg border border-border bg-card p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            {onOpen ? (
-              <button
-                type="button"
-                onClick={onOpen}
-                className="truncate text-sm font-semibold text-foreground hover:underline"
-              >
-                {lead.name ?? "Unnamed lead"}
-              </button>
-            ) : (
-              <span className="truncate text-sm font-semibold text-foreground">
-                {lead.name ?? "Unnamed lead"}
-              </span>
-            )}
-            {scored ? (
-              <span className="shrink-0 text-sm font-semibold tabular-nums text-amber-600 dark:text-amber-400">
-                {lead.fitScore}
-              </span>
-            ) : (
-              // A small flame instead of a "STELLAR" pill. The pill repeated
-              // down six cards was the loudest thing on the page while saying
-              // the same thing the section header already said.
-              <IconFlame
-                size={12}
-                className="shrink-0 text-amber-500"
-                title="Strong fit in a matched persona"
-              />
-            )}
-          </div>
-          <p className="truncate text-xs text-muted-foreground">
-            {[lead.enrichedTitle || lead.headline, lead.company].filter(Boolean).join(" · ") || "—"}
-          </p>
-
-          {lead.intentSignal && (
-            <p className="mt-1.5 border-s-2 border-amber-400 ps-2 text-xs italic text-foreground">
-              {lead.intentSignal}
-            </p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              className="truncate text-sm font-semibold text-foreground hover:underline"
+            >
+              {lead.name ?? "Unnamed lead"}
+            </button>
+          ) : (
+            <span className="truncate text-sm font-semibold text-foreground">
+              {lead.name ?? "Unnamed lead"}
+            </span>
           )}
-          {/* Only shown for a SCORED lead, where it says something specific.
-              For a legacy lead the reason is identical on every card and is
-              already in the section header, so repeating it per card was pure
-              noise. */}
-          {scored && assessment.reasons.length > 0 && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {describeHotReasons(assessment.reasons)}
-            </p>
+          {scored ? (
+            <span className="shrink-0 text-sm font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+              {lead.fitScore}
+            </span>
+          ) : (
+            <IconFlame
+              size={12}
+              className="shrink-0 text-amber-500"
+              title="Strong fit in a matched persona"
+            />
           )}
         </div>
-
-        {scored && <ScoreBreakdown lead={lead} />}
+        {/* Corroborators as a compact chip, not a sentence. The SENTENCE slot
+            below belongs to the model's actual reasoning. */}
+        {scored && assessment.reasons.length > 0 && (
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+            {assessment.reasons.includes("intent") ? "live intent" : "decision-level"}
+          </span>
+        )}
       </div>
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      <p className="truncate text-xs text-muted-foreground">
+        {[lead.enrichedTitle || lead.headline, lead.company].filter(Boolean).join(" · ") || "—"}
+      </p>
+
+      {/* THE REASONING. This is what the card was missing: fitReason is the
+          model's one sentence citing the specific evidence it scored on, and
+          the card was showing a generic "decision-level in a matched persona"
+          instead — which restates the rule rather than explaining the lead. */}
+      {lead.fitReason && (
+        <p className="mt-1.5 text-xs leading-5 text-foreground">{lead.fitReason}</p>
+      )}
+      {lead.intentSignal && (
+        <p className="mt-1.5 border-s-2 border-amber-400 ps-2 text-xs italic text-muted-foreground">
+          {lead.intentSignal}
+        </p>
+      )}
+
+      {/* Under the reason rather than beside it. Side by side, the bars
+          competed with the sentence for the same eye and squeezed both. */}
+      {scored && <ScoreBreakdown lead={lead} className="mt-2" />}
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2.5">
         {onGenerate && (
           <button
             type="button"
@@ -368,8 +370,6 @@ function HotLeadCard<T extends HotLead>({
             Write outreach
           </button>
         )}
-        {/* The action the copy was asking for. Present for a scored lead too,
-            since criteria change and a rescore is how you refresh it. */}
         {onScore && (
           <button
             type="button"
@@ -396,8 +396,6 @@ function HotLeadCard<T extends HotLead>({
             LinkedIn
           </a>
         )}
-        {/* Beside the actions rather than pinned to the far edge, where it
-            floated unattached to anything. */}
         <span className="ms-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className={lead.enrichedEmail ? "text-foreground" : ""}>
             {lead.enrichedEmail ? "email" : "no email"}
@@ -412,45 +410,102 @@ function HotLeadCard<T extends HotLead>({
   );
 }
 
-function ScoreBreakdown({ lead }: { lead: HotLead }) {
-  const values: Record<ScoreDimension, number> = {
-    roleFit: lead.scoreRoleFit ?? 0,
-    seniority: lead.scoreSeniority ?? 0,
-    companyFit: lead.scoreCompanyFit ?? 0,
-    intent: lead.scoreIntent ?? 0,
+/**
+ * Per-dimension bars for the dimensions that were ACTUALLY assessed.
+ *
+ * The previous version read `lead.scoreIntent ?? 0`, which collapsed NULL
+ * ("no evidence, not judged") into 0 ("judged and scored zero") and then drew
+ * an empty "Intent signals 0/25" bar. That is the same "penalised for data we
+ * never captured" message the scoring fix removed from the arithmetic, put
+ * straight back in visually — and it is worse than the arithmetic version,
+ * because the number beside it says the lead lost 25 points it never had a
+ * chance at.
+ *
+ * Nulls are now preserved and unassessed dimensions are omitted, with the
+ * denominator stated so an 87 out of three signals is not mistaken for an 87
+ * out of four.
+ */
+export function ScoreBreakdown({
+  lead,
+  className,
+}: {
+  lead: HotLead;
+  className?: string;
+}) {
+  // Null stays null. That distinction is the whole point.
+  const values: Record<ScoreDimension, number | null> = {
+    roleFit: lead.scoreRoleFit ?? null,
+    seniority: lead.scoreSeniority ?? null,
+    companyFit: lead.scoreCompanyFit ?? null,
+    intent: lead.scoreIntent ?? null,
   };
 
-  // No breakdown stored (scored by an older version) -- show the total alone
-  // rather than four empty bars implying every dimension scored zero.
-  const hasBreakdown = DIMENSION_ORDER.some((d) => values[d] > 0);
-  if (!hasBreakdown) return null;
+  const assessed = DIMENSION_ORDER.filter((d) => values[d] !== null);
+  const missing = DIMENSION_ORDER.filter((d) => values[d] === null);
+
+  // Scored by an older version with no breakdown stored: show the total alone
+  // rather than four bars implying every dimension scored zero.
+  if (assessed.length === 0) return null;
+
+  const assessedMax = assessed.reduce((sum, d) => sum + SCORE_WEIGHTS[d], 0);
+  const earned = assessed.reduce((sum, d) => sum + (values[d] ?? 0), 0);
 
   return (
-    <dl className="w-[190px] shrink-0 space-y-1">
-      {DIMENSION_ORDER.map((d) => {
-        const max = SCORE_WEIGHTS[d];
-        const value = Math.min(max, values[d]);
-        const pct = max > 0 ? (value / max) * 100 : 0;
-        return (
-          <div key={d} className="flex items-center gap-2">
-            <dt className="w-[74px] shrink-0 text-[10px] text-muted-foreground">{DIMENSION_LABELS[d]}</dt>
-            <dd className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
-                <span
-                  className="block h-full rounded-full bg-amber-500"
-                  style={{ width: `${pct}%` }}
-                />
-              </span>
-              <span className="w-9 shrink-0 text-end text-[10px] tabular-nums text-muted-foreground">
-                {value}/{max}
-              </span>
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
+    <div className={className}>
+      <dl className="space-y-1">
+        {assessed.map((d) => {
+          const max = SCORE_WEIGHTS[d];
+          const value = Math.min(max, values[d] ?? 0);
+          const pct = max > 0 ? (value / max) * 100 : 0;
+          return (
+            <div key={d} className="flex items-center gap-2">
+              <dt className="w-[76px] shrink-0 text-[10px] text-muted-foreground">{DIMENSION_LABELS[d]}</dt>
+              <dd className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                  <span
+                    className={`block h-full rounded-full ${pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-500" : "bg-muted-foreground/40"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </span>
+                <span className="w-10 shrink-0 text-end text-[10px] tabular-nums text-muted-foreground">
+                  {value}/{max}
+                </span>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+
+      {/* States the denominator, and names what could not be judged and why.
+          "Not assessed" is a fact about our data, not a mark against the
+          lead. */}
+      <p className="mt-1.5 text-[10px] leading-4 text-muted-foreground">
+        {earned}/{assessedMax} across {assessed.length} of {DIMENSION_ORDER.length} signals
+        {missing.length > 0 && (
+          <>
+            {" · "}
+            <span title={MISSING_HINT}>
+              {missing.map((d) => DIMENSION_LABELS[d]).join(", ")} not assessed
+            </span>
+          </>
+        )}
+      </p>
+    </div>
   );
 }
+
+/**
+ * Why a dimension can be unassessable, said once.
+ *
+ * Intent is the usual one and it is worth being straight about: nothing in the
+ * app supplies activity data for a Sales Nav lead list. `recentActivity` is
+ * only ever populated by capture-profile, from the extension reading a real
+ * profile page, so a lead-list row can never be scored on intent until someone
+ * opens that profile.
+ */
+const MISSING_HINT =
+  "Intent needs recent activity, which only exists once the extension has read the person's actual profile page. " +
+  "A Sales Navigator list row carries no activity, so intent is excluded from the score rather than counted as zero.";
 
 /** Small inline score chip for use inside a normal table row. */
 export function ScoreChip({
