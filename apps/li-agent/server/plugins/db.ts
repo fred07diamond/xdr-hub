@@ -79,12 +79,22 @@ export default runMigrations(
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
         )`,
+        // De-dupe with NOT EXISTS rather than `ON CONFLICT DO NOTHING`.
+        // SQLite rejects a bare ON CONFLICT clause on INSERT...SELECT (it
+        // requires an explicit conflict target), so this statement raised
+        // `near "DO": syntax error` and, because a failed migration halts the
+        // run, EVERY later migration was skipped on SQLite -- local DBs were
+        // stranded at v7 while production (Postgres, where the syntax is
+        // valid) was at v112. Rewritten to a form both dialects accept.
+        //
+        // Safe to amend in place: v8 is already recorded as applied in
+        // production, so this only ever runs against a fresh or local DB.
         `INSERT INTO prospects_v2
           SELECT id, NULL as owner_email, profile_url, name, headline, role, company, about,
                  recent_activity, fit_verdict, fit_reason, draft_note, draft_follow_up,
                  persona_id, persona_name, persona_color, status, created_at, updated_at
           FROM prospects
-          ON CONFLICT DO NOTHING`,
+          WHERE NOT EXISTS (SELECT 1 FROM prospects_v2 WHERE prospects_v2.id = prospects.id)`,
         `DROP TABLE IF EXISTS prospects`,
         `ALTER TABLE prospects_v2 RENAME TO prospects`,
         `CREATE UNIQUE INDEX IF NOT EXISTS prospects_url_owner ON prospects(profile_url, COALESCE(owner_email, ''))`,
@@ -804,6 +814,78 @@ export default runMigrations(
         `ALTER TABLE shared_personas ADD COLUMN org_include_list TEXT`,
         `ALTER TABLE shared_personas ADD COLUMN org_exclude_list TEXT`,
       ].join(";\n"),
+    },
+    // Apollo credit accounting (server/helpers/apollo-credits/). Apollo bills
+    // 1 credit per person match and 8 per phone reveal, and this app shares an
+    // allocation with two other tools, so spend has to be metered against a
+    // self-imposed cap rather than trusted to stay reasonable.
+    {
+      version: 113,
+      name: "apollo-credit-ledger-table",
+      sql: `CREATE TABLE IF NOT EXISTS apollo_credit_ledger (
+        id TEXT PRIMARY KEY,
+        unit TEXT NOT NULL,
+        estimated_credits INTEGER NOT NULL,
+        actual_credits INTEGER,
+        status TEXT NOT NULL,
+        period_start TEXT NOT NULL,
+        subject_table TEXT,
+        subject_id TEXT,
+        actor_email TEXT,
+        trigger TEXT NOT NULL,
+        fit_verdict TEXT,
+        is_override INTEGER NOT NULL DEFAULT 0,
+        apollo_person_id TEXT,
+        outcome TEXT,
+        note TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      )`,
+    },
+    {
+      version: 114,
+      name: "apollo-credit-ledger-indexes",
+      sql: [
+        // The period sum, read on every spend authorization.
+        `CREATE INDEX IF NOT EXISTS idx_apollo_ledger_period_status ON apollo_credit_ledger (period_start, status)`,
+        // Per-user spend for the personal cap and the admin allocation table.
+        `CREATE INDEX IF NOT EXISTS idx_apollo_ledger_period_actor ON apollo_credit_ledger (period_start, actor_email)`,
+        // Sweep-vs-manual split for the sweep reserve and the Analytics gauge.
+        `CREATE INDEX IF NOT EXISTS idx_apollo_ledger_period_trigger ON apollo_credit_ledger (period_start, trigger)`,
+        // The async reveal webhook's reconciliation lookup.
+        `CREATE INDEX IF NOT EXISTS idx_apollo_ledger_person ON apollo_credit_ledger (apollo_person_id)`,
+      ].join(";\n"),
+    },
+    {
+      version: 115,
+      name: "apollo-user-credit-limits-table",
+      sql: `CREATE TABLE IF NOT EXISTS apollo_user_credit_limits (
+        user_email TEXT PRIMARY KEY,
+        credit_limit INTEGER NOT NULL,
+        updated_at TEXT
+      )`,
+    },
+    {
+      version: 116,
+      name: "apollo-credit-threshold-notices-table",
+      sql: `CREATE TABLE IF NOT EXISTS apollo_credit_threshold_notices (
+        id TEXT PRIMARY KEY,
+        period_start TEXT NOT NULL,
+        threshold INTEGER NOT NULL,
+        fired_at TEXT,
+        spent_at_fire INTEGER,
+        notice_run_id TEXT
+      )`,
+    },
+    {
+      version: 117,
+      name: "apollo-webhook-deliveries-table",
+      sql: `CREATE TABLE IF NOT EXISTS apollo_webhook_deliveries (
+        id TEXT PRIMARY KEY,
+        received_at TEXT,
+        credits_consumed INTEGER,
+        apollo_person_ids TEXT
+      )`,
     },
   ],
   { table: "outreach_migrations" },

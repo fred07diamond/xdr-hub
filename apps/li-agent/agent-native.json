@@ -9,7 +9,11 @@
       "hubspot_queue_items": "Scoped indirectly via queue_id -> hubspot_queues.owner_email; no direct owner column of its own.",
       "lead_list_items": "Scoped indirectly via list_id -> lead_lists.owner_email; no direct owner column of its own.",
       "icp_sources": "Legacy singleton fallback table (single 'singleton' row) for a workspace with no personas at all -- not per-user data.",
-      "rate_limit_counters": "Infra rate-limit bucket keyed by \"<ownerEmail>|<action>\" composite id (see server/helpers/rate-limit.ts) -- already owner-scoped via the id itself, not a separate column."
+      "rate_limit_counters": "Infra rate-limit bucket keyed by \"<ownerEmail>|<action>\" composite id (see server/helpers/rate-limit.ts) -- already owner-scoped via the id itself, not a separate column.",
+      "apollo_credit_ledger": "Workspace-wide Apollo spend log. Has an actor_email column (not owner_email) that attributes each spend to the user who triggered it -- naming convention mismatch, not an unscoped table. Sweep-triggered rows are deliberately actor_email NULL: automatic spend belongs to the workspace, not to a person.",
+      "apollo_user_credit_limits": "Per-user Apollo credit allowance, keyed by user_email (not owner_email) -- naming convention mismatch, not an unscoped table. Admin-managed allocation, so a user must NOT be able to scope-read/write their own limit.",
+      "apollo_credit_threshold_notices": "Workspace-wide bookkeeping of which low-credit thresholds have already been announced this period. Not per-user data.",
+      "apollo_webhook_deliveries": "Infra dedupe table keyed by a hash of Apollo's raw webhook payload, so an at-least-once redelivery cannot double-count a credit. Not per-user data."
     }
   }
 }

@@ -159,6 +159,113 @@ export const workspaceSettings = table("workspace_settings", {
   updatedAt: text("updated_at").default(now()),
 });
 
+// ── Apollo credit accounting ────────────────────────────────────────────────
+// Apollo bills per unit of data: 1 credit for a person match (which is what
+// yields an email) and 8 for a phone reveal. This app is one of three tools
+// drawing on a shared allocation, so it enforces a self-imposed cap on its own
+// share -- see server/helpers/apollo-credits/.
+
+// Append-only log, ONE ROW PER CREDIT-BEARING UNIT (a match that also requests
+// a reveal writes two rows: 1 credit + 8 credits).
+//
+// Why this exists rather than deriving spend from the enrichment columns the
+// way actions/list-enrichment-audit-log.ts does: that report reads CURRENT ROW
+// STATE, so it cannot see a second or third re-enrich of the same lead
+// (enrichedAt is overwritten each time), cannot see calls that errored or were
+// voided, has no record of whether a human or the background sweep triggered
+// the spend, and -- per its own comment -- shows one Apollo call twice when a
+// lead has been promoted into prospects. All four are disqualifying for a
+// budget. That action stays as the "who has contact data" report; this table is
+// the "what did we actually pay" record.
+export const apolloCreditLedger = table("apollo_credit_ledger", {
+  id: text("id").primaryKey(),
+  unit: text("unit", { enum: ["person_match", "phone_reveal", "org_enrich"] }).notNull(),
+  // What we charge against the budget at call time. Authoritative until (and
+  // unless) the webhook tells us otherwise.
+  estimatedCredits: integer("estimated_credits").notNull(),
+  // Apollo's own number, from the phone-reveal webhook's `credits_consumed`.
+  // Null until reconciled -- every budget sum reads
+  // COALESCE(actual, estimated), so a webhook reporting 0 refunds the budget
+  // with no separate refund code path.
+  actualCredits: integer("actual_credits"),
+  status: text("status", {
+    enum: ["reserved", "committed", "pending_webhook", "reconciled", "voided"],
+  }).notNull(),
+  // Canonical period key (YYYY-MM-DD of the anchor date), denormalized rather
+  // than recomputed at query time for two reasons: the period sum becomes one
+  // indexed equality scan, and it FREEZES attribution -- if an admin later
+  // changes the anchor day, historical rows keep the period they were charged
+  // in instead of silently migrating between buckets.
+  periodStart: text("period_start").notNull(),
+  subjectTable: text("subject_table", { enum: ["lead_list_items", "prospects"] }),
+  subjectId: text("subject_id"),
+  // Null for the background sweep, which spends on nobody's personal budget.
+  actorEmail: text("actor_email"),
+  trigger: text("trigger", { enum: ["manual", "sweep", "agent"] }).notNull(),
+  // The lead's fit verdict AT SPEND TIME. This is what makes "how many credits
+  // did we burn on weak leads" answerable, which is the whole point of gating.
+  // Recorded here rather than joined at read time because the lead's verdict
+  // can be regenerated later, and that must not rewrite history.
+  fitVerdict: text("fit_verdict", { enum: ["strong", "possible", "weak", "inconclusive"] }),
+  // 1 when a user explicitly overrode the fit gate to spend 8 credits on a
+  // lead that did not qualify. The number an admin watches to tell whether the
+  // gate is working.
+  isOverride: integer("is_override").notNull().default(0),
+  // Apollo's own person id -- the join key the async reveal webhook matches on.
+  // Deliberately matched against THIS table rather than against the lead row,
+  // because score-lead-list-item.ts copies phoneRevealRequestId onto the
+  // promoted prospects row, so one Apollo person id legitimately exists on two
+  // records.
+  apolloPersonId: text("apollo_person_id"),
+  outcome: text("outcome"),
+  note: text("note"),
+  createdAt: text("created_at").default(now()),
+  updatedAt: text("updated_at").default(now()),
+});
+
+// Per-user credit allowance. An ABSENT row means "inherit the workspace
+// default" (apollo_user_default_credit_limit) -- storing the default per user
+// would mean a later change to it silently skipped everyone already listed.
+export const apolloUserCreditLimits = table("apollo_user_credit_limits", {
+  userEmail: text("user_email").primaryKey(),
+  creditLimit: integer("credit_limit").notNull(),
+  updatedAt: text("updated_at").default(now()),
+});
+
+// One row per (period, threshold) that has already been announced, so an
+// admin is told once per period that credits are running low rather than on
+// every subsequent spend.
+//
+// The composite natural key IS the primary key on purpose: that makes
+// `insert(...).onConflictDoNothing()` the entire dedupe mechanism, with no
+// read-then-write race between concurrent serverless instances. And because
+// periodStart is part of the key, a new period re-arms every threshold with no
+// reset job -- which matters because this app has no reliable scheduler.
+export const apolloCreditThresholdNotices = table("apollo_credit_threshold_notices", {
+  // `${periodStart}|${threshold}`
+  id: text("id").primaryKey(),
+  periodStart: text("period_start").notNull(),
+  threshold: integer("threshold").notNull(),
+  firedAt: text("fired_at").default(now()),
+  spentAtFire: integer("spent_at_fire"),
+  // Claim token: whichever process wrote the row wins and sends the notice.
+  // Compared after insert instead of relying on affected-row counts, which are
+  // not portable across SQLite and Postgres.
+  noticeRunId: text("notice_run_id"),
+});
+
+// Seen phone-reveal webhook payloads, keyed by a hash of the raw body, so an
+// at-least-once redelivery cannot double-reconcile a credit. The existing
+// phone-number write happens to be idempotent by accident; credit
+// reconciliation would not be.
+export const apolloWebhookDeliveries = table("apollo_webhook_deliveries", {
+  // sha256 hex of the raw request body
+  id: text("id").primaryKey(),
+  receivedAt: text("received_at").default(now()),
+  creditsConsumed: integer("credits_consumed"),
+  apolloPersonIds: text("apollo_person_ids"),
+});
+
 // Canvas nodes for the Messaging tab.
 // type='persona' nodes are shared (owner_email=null); all other types are per-user.
 export const messagingNodes = table("messaging_nodes", {
