@@ -1,6 +1,7 @@
 import { completeText, runWithRequestContext } from "@agent-native/core/server";
 import { createHash } from "node:crypto";
 import { getOwnerCtx } from "./get-owner-ctx.js";
+import { selectTitleSections } from "./icp-sections.js";
 import { NO_EM_DASH_RULE, stripEmDashes } from "./style-rules.js";
 
 /**
@@ -164,7 +165,12 @@ const RETRY_ATTEMPT_TIMEOUT_MS = 5_000;
  * timing out outright for real personas, so they were stored with their job
  * titles missing entirely and only the prose sections filled in.
  */
-const BRIEFING_PROMPT_VERSION = "v5";
+// v6: the title phases now receive only the targeting sections rather than
+// the whole document set (see icp-sections.ts), so their output can change for
+// the same input. Bumping marks existing briefings stale in the UI; it does
+// NOT regenerate anything automatically -- briefingStale only drives a badge,
+// so no LLM spend happens until someone clicks Generate.
+const BRIEFING_PROMPT_VERSION = "v6";
 
 /**
  * Fingerprint of the ICP text a briefing was generated from, stored alongside
@@ -412,6 +418,27 @@ export async function buildPersonaBriefing({
 
   const input = `Persona name: ${personaName}\n\nICP documents:\n${documentBlock}`;
 
+  /**
+   * The TITLE phases get only the sections that are about who to target.
+   *
+   * All three phases used to receive this same full `input` -- up to 60k
+   * characters. For a real persona (four documents, 5,600 words) the titles
+   * phase therefore had to read every word of positioning prose and call notes
+   * to find the two blocks that actually list job titles, and routinely did
+   * not finish inside PHASE_TIMEOUT_MS. That is the "target titles:
+   * completeText timed out after 19000ms" failure.
+   *
+   * The prose phase still gets everything, because it is summarising the whole
+   * document. selectTitleSections falls back to the full text whenever it
+   * cannot do better, so this can only ever narrow, never blind, the phase.
+   */
+  const titleSelection = selectTitleSections(documentBlock);
+  const titlesInput = titleSelection.narrowed
+    ? `Persona name: ${personaName}\n\n` +
+      `ICP documents (the sections about targeting, extracted from a longer document set):\n` +
+      `${titleSelection.text}`
+    : input;
+
   // Per-phase output cap, sized to what each phase can actually return now
   // that the prompts state the same MAX_TITLE_ITEMS limit the code enforces:
   // two title lists of at most 30 short entries, or eight prose sections, are
@@ -449,7 +476,12 @@ export async function buildPersonaBriefing({
     | { ok: true; value: Record<string, any> }
     | { ok: false; reason: string };
 
-  async function runPhase(label: string, phaseSystemPrompt: string, retryHint: string): Promise<PhaseResult> {
+  async function runPhase(
+    label: string,
+    phaseSystemPrompt: string,
+    retryHint: string,
+    phaseInput: string = input,
+  ): Promise<PhaseResult> {
     async function attempt(constrained: boolean) {
       const call = () =>
         completeText({
@@ -457,7 +489,7 @@ export async function buildPersonaBriefing({
             ? `${phaseSystemPrompt}\n\nIMPORTANT: your previous response was cut off for being too long. ` +
               `${retryHint} A shorter complete response is far more useful than a longer one that gets cut off.`
             : phaseSystemPrompt,
-          input,
+          input: phaseInput,
           maxOutputTokens: PHASE_MAX_OUTPUT_TOKENS,
           timeoutMs: constrained ? RETRY_ATTEMPT_TIMEOUT_MS : PHASE_TIMEOUT_MS,
         });
@@ -510,6 +542,7 @@ export async function buildPersonaBriefing({
           "target titles",
           titlesIncludeSystemPrompt,
           "This time, return at most 15 entries per list and keep every entry to just the job title.",
+          titlesInput,
         ),
     havePrior.titlesExclude
       ? Promise.resolve(SKIPPED)
@@ -517,6 +550,7 @@ export async function buildPersonaBriefing({
           "excluded titles",
           titlesExcludeSystemPrompt,
           "This time, return at most 15 entries per list and keep every entry to just the job title.",
+          titlesInput,
         ),
     havePrior.prose
       ? Promise.resolve(SKIPPED)
