@@ -1,7 +1,9 @@
-import { useActionQuery } from "@agent-native/core/client/hooks";
-import { IconAlertTriangle, IconCoins, IconPhoneOff, IconX } from "@tabler/icons-react";
+import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
+import { IconAlertTriangle, IconCoins, IconDownload, IconPhoneOff, IconX } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+
+import { csvEscape } from "@/lib/prospects-csv";
 
 // Read-side credit surfaces: the Analytics gauge and the app-wide low-credit
 // banner.
@@ -137,23 +139,115 @@ export function CreditGaugeCard({ className }: { className?: string }) {
         </p>
       )}
 
-      {d.topSpenders && d.topSpenders.length > 0 && (
-        <div className="mt-3 border-t border-border pt-3">
-          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Top spenders this period
-          </p>
-          <ul className="space-y-1">
-            {d.topSpenders.slice(0, 5).map((s) => (
-              <li key={s.actorEmail} className="flex items-center justify-between text-xs">
-                <span className="truncate text-foreground">{s.actorEmail}</span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  {s.credits.toLocaleString()} · {s.calls} calls
-                </span>
-              </li>
-            ))}
-          </ul>
+      {/* topSpenders is present only for admins (omitted server-side), so it
+          doubles as the admin gate for the ledger export beside it. */}
+      {d.topSpenders && (
+        <div className="mt-3 flex flex-wrap items-start justify-between gap-3 border-t border-border pt-3">
+          <div className="min-w-[180px] flex-1">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Top spenders this period
+            </p>
+            {d.topSpenders.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No credits spent yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {d.topSpenders.slice(0, 5).map((s) => (
+                  <li key={s.actorEmail} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="truncate text-foreground">{s.actorEmail}</span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {s.credits.toLocaleString()} · {s.calls} calls
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <LedgerExportButton periodStart={d.periodStart} />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Downloads the credit ledger for a period.
+ *
+ * This is the artifact the credit pilot runs on: several Apollo billing
+ * behaviours cannot be determined from the API (whether a no-match still
+ * bills, whether a combined match+reveal is 9 or 8), so the only way to
+ * resolve them is to export a period and compare the total against Apollo's
+ * real balance. `reprice-apollo-credit-ledger` then applies the correction.
+ */
+function LedgerExportButton({ periodStart }: { periodStart: string }) {
+  const exportLedger = useActionMutation("list-apollo-credit-ledger");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleExport() {
+    setError(null);
+    try {
+      const result = (await exportLedger.mutateAsync({ periodStart })) as {
+        rows?: Record<string, unknown>[];
+        truncated?: boolean;
+      };
+      const rows = result.rows ?? [];
+      if (rows.length === 0) {
+        setError("No credits spent this period yet.");
+        return;
+      }
+      const cols = [
+        "createdAt",
+        "unit",
+        "creditsCharged",
+        "estimatedCredits",
+        "actualCredits",
+        "reconciled",
+        "status",
+        "trigger",
+        "actorEmail",
+        "fitVerdict",
+        "isOverride",
+        "outcome",
+        "subjectTable",
+        "subjectId",
+        "apolloPersonId",
+        "note",
+      ];
+      const csv = [
+        cols.join(","),
+        ...rows.map((r) => cols.map((c) => csvEscape(r[c] as string | number | null)).join(",")),
+      ].join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `apollo-credit-ledger-${periodStart}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (result.truncated) {
+        setError("Hit the row cap — this export is partial.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export the ledger.");
+    }
+  }
+
+  return (
+    <div className="flex shrink-0 flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={handleExport}
+        disabled={exportLedger.isPending}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+      >
+        <IconDownload size={13} />
+        {exportLedger.isPending ? "Exporting…" : "Export ledger"}
+      </button>
+      <p className="max-w-[180px] text-right text-[10px] leading-3 text-muted-foreground">
+        Every charged call, for reconciling against an Apollo invoice.
+      </p>
+      {error && <p className="max-w-[180px] text-right text-[10px] text-destructive">{error}</p>}
     </div>
   );
 }

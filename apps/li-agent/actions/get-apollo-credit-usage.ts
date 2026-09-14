@@ -28,7 +28,13 @@ export default defineAction({
     // never allowed to fail the read.
     void maybeNotifyCreditThresholds(state).catch(() => {});
 
-    const isAdmin = (await getWorkspaceRole(ctx?.userEmail).catch(() => "none")) === "admin";
+    // requiresAuth guarantees an email, but the type does not -- and an absent
+    // one must read as "not admin" rather than throw, since the gauge itself is
+    // readable by every member.
+    const email = ctx?.userEmail;
+    const isAdmin = email
+      ? (await getWorkspaceRole(email).catch(() => "none")) === "admin"
+      : false;
 
     return {
       enabled: state.enabled,

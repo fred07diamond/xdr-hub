@@ -15,7 +15,8 @@ interface CsvRow {
   enrichedLinkedinUrl: string | null;
 }
 
-function csvEscape(value: string | number | null | undefined): string {
+/** Exported so new CSV exports reuse it rather than adding a fourth copy. */
+export function csvEscape(value: string | number | null | undefined): string {
   const s = value == null ? "" : String(value);
   if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
