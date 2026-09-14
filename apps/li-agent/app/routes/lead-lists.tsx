@@ -1,7 +1,7 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { IconCheck, IconDownload, IconExternalLink, IconListCheck, IconLoader2, IconPencil, IconSparkles, IconTrash, IconUsers, IconX } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { APP_TITLE } from "@/lib/app-config";
@@ -17,6 +17,12 @@ import {
 import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, MAX_BULK_SCORE, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { CsvExportModal } from "@/components/CsvExportModal";
+import {
+  LIST_SORT_STORAGE_KEY,
+  LIST_SORTS,
+  sortLeadLists,
+  type ListSort,
+} from "@/lib/lead-list-sort";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/Pagination";
@@ -431,6 +437,29 @@ export default function LeadListsPage() {
   const [confirmDeleteLists, setConfirmDeleteLists] = useState(false);
   const [isDeletingLists, setIsDeletingLists] = useState(false);
   const lastCheckedListIdRef = useRef<string | null>(null);
+  // Persisted, because a sort preference that resets on every page load is
+  // worse than not having one. Read lazily so SSR does not touch localStorage.
+  const [listSort, setListSort] = useState<ListSort>(() => {
+    try {
+      const stored = localStorage.getItem(LIST_SORT_STORAGE_KEY);
+      if (stored && LIST_SORTS.some((o) => o.value === stored)) return stored as ListSort;
+    } catch {
+      // Private mode or blocked storage -- the default is fine.
+    }
+    return "newest";
+  });
+
+  function changeListSort(next: ListSort) {
+    setListSort(next);
+    // A reorder invalidates the shift-click anchor: the row it pointed at is
+    // somewhere else now, and a range from it would select the wrong block.
+    lastCheckedListIdRef.current = null;
+    try {
+      localStorage.setItem(LIST_SORT_STORAGE_KEY, next);
+    } catch {
+      // Not persisting is a minor annoyance, not an error worth surfacing.
+    }
+  }
   const [isDeletingItems, setIsDeletingItems] = useState(false);
   // Rows staged for the export preview. Null means the modal is closed; the
   // rows are snapshotted so a background refetch cannot change what is being
@@ -441,7 +470,8 @@ export default function LeadListsPage() {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const listsQuery = useActionQuery("list-lead-lists", {}, { refetchInterval: 30_000 });
-  const lists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
+  const rawLists = ((listsQuery.data as { lists?: LeadList[] } | undefined)?.lists ?? []);
+  const lists: LeadList[] = useMemo(() => sortLeadLists(rawLists, listSort), [rawLists, listSort]);
 
   // Paginated -- a list can hold up to 500 items and this used to fetch
   // every one of them on every selection/poll. Page-number navigation,
@@ -888,16 +918,37 @@ export default function LeadListsPage() {
                 <span className="text-sm font-semibold">Lead Lists</span>
               </span>
               {lists.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedListIds(new Set(lists.map((l) => l.id)));
-                    lastCheckedListIdRef.current = null;
-                  }}
-                  className="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  Select all
-                </button>
+                <span className="flex items-center gap-1">
+                  {/* A bare select rather than a popover: four options, no
+                      state worth a custom control, and it stays keyboard- and
+                      screen-reader-native for free. */}
+                  <label className="sr-only" htmlFor="lead-list-sort">
+                    Sort lists
+                  </label>
+                  <select
+                    id="lead-list-sort"
+                    value={listSort}
+                    onChange={(e) => changeListSort(e.target.value as ListSort)}
+                    title="Sort lists"
+                    className="cursor-pointer rounded border border-transparent bg-transparent py-0.5 pe-1 text-xs text-muted-foreground hover:border-border hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    {LIST_SORTS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedListIds(new Set(lists.map((l) => l.id)));
+                      lastCheckedListIdRef.current = null;
+                    }}
+                    className="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    Select all
+                  </button>
+                </span>
               )}
             </div>
           )}

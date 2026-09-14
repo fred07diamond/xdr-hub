@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core";
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadListItems, leadLists } from "../server/db/schema.js";
@@ -48,7 +48,16 @@ export default defineAction({
       // than an inaccurate count.
       .leftJoin(leadListItems, eq(leadListItems.listId, leadLists.id))
       .where(eq(leadLists.ownerEmail, userEmail))
-      .groupBy(leadLists.id);
+      .groupBy(leadLists.id)
+      // Newest first. There was no ORDER BY at all, so the sidebar showed
+      // whatever order the database happened to return -- which read as
+      // random (Aug 19, Sep 14, Aug 21, Aug 19...) and buried the list someone
+      // had just imported.
+      //
+      // Ordered on the server as well as the client so the FIRST paint is
+      // already right, rather than settling into place after hydration. The
+      // client can still re-sort; this is the sane default underneath it.
+      .orderBy(desc(leadLists.createdAt));
 
     return {
       lists: lists.map((l) => ({
