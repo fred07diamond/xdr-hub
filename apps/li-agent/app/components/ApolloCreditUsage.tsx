@@ -80,9 +80,18 @@ export function CreditUsageView() {
   if (!d) return null;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+    // Summary ACROSS THE TOP, not in a side rail.
+    //
+    // Apollo can afford a 300px right rail because it has ~1500px to play
+    // with. This page is max-w-4xl (848px of content), so a rail left the
+    // tabbed area ~490px -- and a table inside that wrapped to one word per
+    // line. Moving the three summary panels into a row gives the tab content
+    // the full width, which is what the tables and charts actually need.
+    <div className="space-y-4">
+      <SummaryPanels d={d} />
+
       <div className="min-w-0 rounded-xl border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 pt-3">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4">
           <div className="flex gap-1">
             <Tab active={tab === "breakdown"} onClick={() => setTab("breakdown")}>
               Breakdown
@@ -94,9 +103,14 @@ export function CreditUsageView() {
               Quality
             </Tab>
           </div>
-          <div className="pb-2">
-            {d.topSpenders && <LedgerExportButton periodStart={d.periodStart} />}
-          </div>
+          {/* No caption beside the button any more -- it was two lines of grey
+              text wedged into the tab row, fighting the tabs for the same
+              horizontal space. It is the button's tooltip instead. */}
+          {d.topSpenders && (
+            <div className="shrink-0 py-2">
+              <LedgerExportButton periodStart={d.periodStart} />
+            </div>
+          )}
         </div>
 
         <div className="p-4">
@@ -105,8 +119,6 @@ export function CreditUsageView() {
           {tab === "quality" && <QualityTab d={d} />}
         </div>
       </div>
-
-      <OverviewRail d={d} />
     </div>
   );
 }
@@ -183,7 +195,7 @@ function BreakdownTab({ d }: { d: CreditUsage }) {
   }, [mode, d]);
 
   return (
-    <div className="grid items-center gap-6 sm:grid-cols-[200px_minmax(0,1fr)]">
+    <div className="grid items-center gap-5 sm:grid-cols-[176px_minmax(0,1fr)]">
       <Donut segments={segments} spent={d.spent} budget={d.budget} />
 
       <div className="min-w-0 space-y-2">
@@ -256,43 +268,67 @@ function ToggleBtn({
  */
 function Donut({ segments, spent, budget }: { segments: Segment[]; spent: number; budget: number }) {
   const total = segments.reduce((sum, s) => sum + s.credits, 0) || 1;
-  const R = 70;
+  const R = 62;
   const CIRC = 2 * Math.PI * R;
+  const pct = budget > 0 ? (spent / budget) * 100 : 0;
 
+  const spending = segments.filter((s) => s.key !== "available" && s.credits > 0);
+
+  /**
+   * Every non-zero segment gets a visible minimum arc.
+   *
+   * Apollo's donut works because they are at ~6% used. We are routinely at a
+   * fraction of one percent -- 16 credits of 27,996 is 0.2 of a pixel of
+   * stroke, so a truthfully-scaled ring is indistinguishable from an empty
+   * one, and the chart silently shows nothing at exactly the moment someone
+   * is checking whether anything was spent.
+   *
+   * Tiny slices are therefore drawn at a floor of 2% of the circumference.
+   * Defensible here specifically because the exact credit figure for every
+   * segment sits immediately to the right, so the ring is a locator, not the
+   * source of the number. Above the floor, proportions are exact.
+   */
+  const MIN_FRAC = 0.02;
   let offset = 0;
-  const arcs = segments
-    .filter((s) => s.credits > 0)
-    .map((s) => {
-      const frac = s.credits / total;
-      const arc = { ...s, dash: frac * CIRC, offset };
-      offset += frac * CIRC;
-      return arc;
-    });
+  const arcs = spending.map((s) => {
+    const frac = Math.max(MIN_FRAC, s.credits / total);
+    const arc = { ...s, dash: frac * CIRC, offset };
+    offset += frac * CIRC;
+    return arc;
+  });
 
   return (
-    <div className="relative mx-auto h-[180px] w-[180px] shrink-0">
-      <svg viewBox="0 0 180 180" className="h-full w-full -rotate-90">
-        {/* Always paint a full ring underneath: with zero spend there are no
-            arcs, and an empty box reads as a broken chart. */}
-        <circle cx="90" cy="90" r={R} fill="none" stroke={COLORS.available} strokeWidth="22" />
+    <div className="relative mx-auto h-[160px] w-[160px] shrink-0">
+      <svg viewBox="0 0 160 160" className="h-full w-full -rotate-90">
+        {/* The full ring is painted first and the spent arcs drawn over it, so
+            zero spend reads as an untouched budget rather than a broken
+            chart. */}
+        <circle cx="80" cy="80" r={R} fill="none" stroke={COLORS.available} strokeWidth="18" />
         {arcs.map((a) => (
           <circle
             key={a.key}
-            cx="90"
-            cy="90"
+            cx="80"
+            cy="80"
             r={R}
             fill="none"
             stroke={a.color}
-            strokeWidth="22"
+            strokeWidth="18"
             strokeDasharray={`${a.dash} ${CIRC - a.dash}`}
             strokeDashoffset={-a.offset}
           />
         ))}
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <p className="text-lg font-semibold tabular-nums text-foreground">{spent.toLocaleString()}</p>
-        <p className="px-6 text-[11px] leading-4 text-muted-foreground">
-          of {budget.toLocaleString()} credits used
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
+        <p className="text-xl font-semibold leading-tight tabular-nums text-foreground">
+          {spent.toLocaleString()}
+        </p>
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          {spent === 1 ? "credit" : "credits"} used
+        </p>
+        <p className="mt-0.5 text-[10px] leading-3 text-muted-foreground/70">
+          {/* "0%" for a real 16-credit spend looks like a bug, so anything
+              non-zero rounds up to "<1%" instead of down to nothing. */}
+          {spent === 0 ? "none yet" : pct < 1 ? "<1% of budget" : `${Math.round(pct)}% of budget`}
         </p>
       </div>
     </div>
@@ -499,14 +535,14 @@ function QualityTab({ d }: { d: CreditUsage }) {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <QualityCard
-          label="Bought real data"
+          label="Got data"
           value={delivered}
           total={d.spent}
           tone="good"
           detail={`${d.emptyCalls.toLocaleString()} ${d.emptyCalls === 1 ? "lookup" : "lookups"} came back empty and cost nothing`}
         />
         <QualityCard
-          label="Spent on low-fit leads"
+          label="Low fit"
           value={d.lowFitCredits}
           total={d.spent}
           tone={d.lowFitCredits > 0 ? "warn" : "neutral"}
@@ -517,7 +553,7 @@ function QualityTab({ d }: { d: CreditUsage }) {
           }
         />
         <QualityCard
-          label="Paid for nothing"
+          label="Wasted"
           value={d.wastedCredits}
           total={d.spent}
           tone={d.wastedCredits > 0 ? "bad" : "neutral"}
@@ -529,19 +565,21 @@ function QualityTab({ d }: { d: CreditUsage }) {
         />
       </div>
 
-      {/* Both kinds of definition together: what a spend column counts, and
-          what a table cell is telling you. They were previously split between
-          a footnote and a disclosure on opposite ends of a card. */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Both definition blocks now run FULL WIDTH, stacked.
+          Side by side they each got ~240px, which turned the three-column
+          state table into one word per line and truncated "1 credit for an
+          email" mid-phrase. Stacking costs vertical space, which this tab has,
+          and buys legibility, which it did not. */}
+      <div className="space-y-4 border-t border-border pt-4">
         <div>
           <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             What these figures count
           </h4>
-          <dl className="space-y-2 text-xs">
+          <dl className="grid gap-x-5 gap-y-2 text-xs sm:grid-cols-3">
             {CREDIT_TERMS.map((t) => (
               <div key={t.term}>
                 <dt className="font-medium text-foreground">{t.term}</dt>
-                <dd className="leading-4 text-muted-foreground">{t.meaning}</dd>
+                <dd className="mt-0.5 leading-4 text-muted-foreground">{t.meaning}</dd>
               </div>
             ))}
           </dl>
@@ -555,9 +593,9 @@ function QualityTab({ d }: { d: CreditUsage }) {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border bg-muted/40 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                  <th className="px-3 py-2 font-medium">State</th>
+                  <th className="w-[160px] px-3 py-2 font-medium">State</th>
                   <th className="px-3 py-2 font-medium">Meaning</th>
-                  <th className="px-3 py-2 font-medium">Cost</th>
+                  <th className="w-[140px] px-3 py-2 font-medium">Cost</th>
                 </tr>
               </thead>
               <tbody>
@@ -566,7 +604,7 @@ function QualityTab({ d }: { d: CreditUsage }) {
                     <td className="px-3 py-2 font-medium text-foreground">{row.label}</td>
                     <td className="px-3 py-2 text-muted-foreground">{row.meaning}</td>
                     <td
-                      className={`whitespace-nowrap px-3 py-2 ${row.cost === "Free" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"}`}
+                      className={`px-3 py-2 ${row.cost === "Free" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"}`}
                     >
                       {row.cost}
                     </td>
@@ -620,103 +658,127 @@ function QualityCard({
   );
 }
 
-// ── Right rail ──────────────────────────────────────────────────────────
+// ── Summary panels ─────────────────────────────────────────────────────
 
-function OverviewRail({ d }: { d: CreditUsage }) {
+function SummaryPanels({ d }: { d: CreditUsage }) {
   const phonesPaused = d.spentPct >= d.phoneStopPct;
   const atLimit = d.spentPct >= 100;
   const mine = d.mine;
 
   return (
-    <div className="space-y-3 lg:sticky lg:top-4 lg:self-start">
-      <h3 className="text-sm font-semibold text-foreground">Overview</h3>
-
+    <div className="grid gap-3 sm:grid-cols-3">
       {/* Available first, phrased as Apollo phrases it. People arrive asking
           "can I spend?", which is a question about what is left. */}
-      <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-        <p className="text-xs text-muted-foreground">Workspace budget</p>
-        <p className="mt-1 flex flex-wrap items-baseline gap-1.5">
-          <span
-            className={`text-3xl font-semibold tabular-nums ${atLimit ? "text-destructive" : phonesPaused ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
-          >
-            {d.remaining.toLocaleString()}
-          </span>
-          <span className="text-sm text-muted-foreground">/ {d.budget.toLocaleString()} available</span>
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Credits renew on <span className="font-medium text-foreground">{d.resetLabel}</span>
+      <Panel label="Workspace budget">
+        <Big
+          value={d.remaining}
+          suffix={`/ ${d.budget.toLocaleString()} available`}
+          tone={atLimit ? "bad" : phonesPaused ? "warn" : "normal"}
+        />
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Renews <span className="font-medium text-foreground">{d.resetLabel}</span>
         </p>
         {/* Provenance for the budget. Without this, 27,996 looks like what
             Apollo gave us -- it is not; it is the third we agreed to take. */}
-        <p className="mt-2 border-t border-border/60 pt-2 text-[11px] leading-4 text-muted-foreground">
-          This is li-agent&rsquo;s own share of the Apollo account, not the account balance. Two other tools draw
-          on the same pool.
+        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+          li-agent&rsquo;s own share of the account, not the balance. Two other tools use the same pool.
         </p>
-      </div>
+      </Panel>
 
-      {mine && (
-        <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-          <p className="text-xs text-muted-foreground">Your usage</p>
-          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-            {mine.isDefaultLimit
-              ? "You have the workspace default limit. It caps how much of the shared pool you can use."
-              : "You have a personal limit set. It caps how much of the shared pool you can use."}
-          </p>
-          <p className="mt-2 flex flex-wrap items-baseline gap-1.5">
-            <span
-              className={`text-2xl font-semibold tabular-nums ${mine.remaining === 0 ? "text-destructive" : "text-foreground"}`}
-            >
-              {mine.remaining.toLocaleString()}
-            </span>
-            <span className="text-sm text-muted-foreground">/ {mine.limit.toLocaleString()} available</span>
-          </p>
-          {mine.credits > 0 && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              You have used {mine.credits.toLocaleString()} — {mine.emailCredits.toLocaleString()} on emails,{" "}
-              {mine.phoneCredits.toLocaleString()} on phone reveals
+      <Panel label="Your usage">
+        {mine ? (
+          <>
+            <Big
+              value={mine.remaining}
+              suffix={`/ ${mine.limit.toLocaleString()} available`}
+              tone={mine.remaining === 0 ? "bad" : "normal"}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {mine.credits > 0 ? (
+                <>
+                  You have used <span className="font-medium text-foreground">{mine.credits.toLocaleString()}</span>
+                  {" "}&mdash; {mine.emailCredits.toLocaleString()} on emails, {mine.phoneCredits.toLocaleString()} on
+                  phones
+                </>
+              ) : (
+                "You have not spent anything this period."
+              )}
             </p>
-          )}
-        </div>
-      )}
+            <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+              {mine.isDefaultLimit
+                ? "The workspace default limit. It caps how much of the shared pool you can use."
+                : "A personal limit set for you. It caps how much of the shared pool you can use."}
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">Sign in to see your own allowance.</p>
+        )}
+      </Panel>
 
-      {/* Our tiered degradation has no Apollo equivalent and is the thing most
-          likely to surprise someone mid-task, so it gets its own panel rather
-          than a footnote. */}
-      <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-        <p className="text-xs text-muted-foreground">Phone reveals</p>
-        <p className="mt-1 flex items-center gap-1.5 text-sm font-medium">
+      {/* Tiered degradation has no Apollo equivalent and is the thing most
+          likely to surprise someone mid-task, so it gets equal billing. */}
+      <Panel label="Phone reveals">
+        <p className="mt-0.5 flex items-center gap-1.5 text-xl font-semibold">
           {phonesPaused ? (
             <>
-              <IconPhoneOff size={14} className="shrink-0 text-amber-600 dark:text-amber-400" />
+              <IconPhoneOff size={18} className="shrink-0 text-amber-600 dark:text-amber-400" />
               <span className="text-amber-600 dark:text-amber-400">Paused</span>
             </>
           ) : (
             <>
-              <IconCheck size={14} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <IconCheck size={18} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
               <span className="text-emerald-600 dark:text-emerald-400">Available</span>
             </>
           )}
         </p>
-        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+        <p className="mt-1.5 text-xs leading-4 text-muted-foreground">
           {atLimit
             ? `All enrichment is paused until ${d.resetLabel}.`
             : phonesPaused
               ? `Past ${d.phoneStopPct}% of the budget, reveals stop so the rest goes on emails. Resumes ${d.resetLabel}.`
-              : `Reveals cost 8 credits and pause automatically at ${d.phoneStopPct}% of the budget (${d.phoneStopAt.toLocaleString()} credits).`}
+              : `8 credits each. They pause automatically at ${d.phoneStopPct}% of the budget, or ${d.phoneStopAt.toLocaleString()} credits.`}
         </p>
-      </div>
-
-      {!d.enabled && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          <p className="font-medium">Enrichment is off</p>
-          <p className="mt-1 leading-4">
-            No Apollo calls are being made by anyone.{" "}
+        {!d.enabled && (
+          <p className="mt-1.5 border-t border-border/60 pt-1.5 text-[11px] leading-4 text-amber-700 dark:text-amber-400">
+            Enrichment is off workspace-wide.{" "}
             <Link to="/settings#apollo-credits" className="underline underline-offset-2">
               Turn it on
             </Link>
           </p>
-        </div>
-      )}
+        )}
+      </Panel>
     </div>
+  );
+}
+
+function Panel({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-3.5">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+function Big({
+  value,
+  suffix,
+  tone,
+}: {
+  value: number;
+  suffix: string;
+  tone: "normal" | "warn" | "bad";
+}) {
+  const cls =
+    tone === "bad"
+      ? "text-destructive"
+      : tone === "warn"
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-foreground";
+  return (
+    <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
+      <span className={`text-2xl font-semibold tabular-nums ${cls}`}>{value.toLocaleString()}</span>
+      <span className="text-xs text-muted-foreground">{suffix}</span>
+    </p>
   );
 }
