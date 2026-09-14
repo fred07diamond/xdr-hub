@@ -568,3 +568,30 @@ export const leadCounters = table("lead_counters", {
   createdAt: text("created_at").default(now()),
   updatedAt: text("updated_at").default(now()),
 });
+
+// Generated outreach for a lead: cold emails, InMails, extra connection-note
+// variants, and phone openers.
+//
+// Its own table rather than more columns on prospects/leadListItems, for three
+// reasons. One lead can hold SEVERAL drafts of the same kind (the note-variants
+// generator produces three at once, and the point is choosing between them).
+// The bodies are long, and widening two hot row-shapes with long text would
+// slow every list read that selects *. And a draft belongs to whoever
+// generated it, which a column on a shared lead row cannot express.
+//
+// `subjectTable` + `subjectId` rather than two nullable foreign keys: the same
+// person legitimately exists as a lead_list_items row and later as a prospects
+// row, and this keeps one shape for both.
+export const outreachDrafts = table("outreach_drafts", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email"),
+  subjectTable: text("subject_table", { enum: ["lead_list_items", "prospects"] }).notNull(),
+  subjectId: text("subject_id").notNull(),
+  kind: text("kind", { enum: ["email", "inmail", "note", "call_opener"] }).notNull(),
+  subject: text("subject"),
+  body: text("body").notNull(),
+  angle: text("angle"),
+  variantIndex: integer("variant_index").notNull().default(0),
+  fitScoreAtGeneration: integer("fit_score_at_generation"),
+  createdAt: text("created_at").default(now()),
+});

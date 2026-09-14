@@ -1014,6 +1014,35 @@ export default runMigrations(
         `ALTER TABLE lead_list_items ADD COLUMN scored_at_version TEXT`,
       ].join(";\n"),
     },
+    {
+      // Generated outreach (cold email, InMail, extra note variants, call
+      // openers) for high-scoring leads. A table rather than columns: one
+      // lead holds several drafts of the same kind, the bodies are long, and
+      // a draft belongs to whoever generated it.
+      version: 125,
+      name: "create-outreach-drafts",
+      sql: [
+        `CREATE TABLE IF NOT EXISTS outreach_drafts (
+          id TEXT PRIMARY KEY,
+          owner_email TEXT,
+          subject_table TEXT NOT NULL,
+          subject_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          subject TEXT,
+          body TEXT NOT NULL,
+          angle TEXT,
+          variant_index INTEGER NOT NULL DEFAULT 0,
+          fit_score_at_generation INTEGER,
+          created_at TEXT DEFAULT (datetime('now'))
+        )`,
+        // Every read is "this lead's drafts of this kind", so the index
+        // matches that exactly rather than being a generic single-column one.
+        `CREATE INDEX IF NOT EXISTS idx_outreach_drafts_subject
+           ON outreach_drafts (subject_table, subject_id, kind)`,
+        `CREATE INDEX IF NOT EXISTS idx_outreach_drafts_owner
+           ON outreach_drafts (owner_email, created_at)`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );

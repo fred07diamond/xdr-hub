@@ -3,6 +3,7 @@ import {
   IconAlertTriangle,
   IconCheck,
   IconCoins,
+  IconFlame,
   IconLoader2,
   IconUsers,
 } from "@tabler/icons-react";
@@ -645,6 +646,135 @@ export function ApolloUserLimitsCard() {
         )}
 
         {rowError && <p className="text-xs text-destructive">{rowError}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+interface LeadScoringData {
+  scoreThreshold?: number;
+  intentWindowDays?: number;
+}
+
+/**
+ * Thresholds for the highlighted (hot) leads section.
+ *
+ * Its own card rather than more fields on the Apollo one: these govern
+ * PRESENTATION (which leads surface at the top of a list), while the Apollo
+ * card governs SPEND. Putting a display preference next to the enrichment kill
+ * switch would invite changing one while meaning the other.
+ */
+export function LeadScoringCard() {
+  const { data, isLoading, refetch } = useActionQuery("get-lead-scoring-settings", {});
+  const settings = data as LeadScoringData | undefined;
+  const save = useActionMutation("set-lead-scoring-settings");
+
+  const [threshold, setThreshold] = useState("");
+  const [window, setWindow] = useState("");
+  const [seeded, setSeeded] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!settings || seeded) return;
+    setThreshold(String(settings.scoreThreshold ?? 85));
+    setWindow(String(settings.intentWindowDays ?? 30));
+    setSeeded(true);
+  }, [settings, seeded]);
+
+  const dirty =
+    !!settings &&
+    (num(threshold, settings.scoreThreshold ?? 85) !== (settings.scoreThreshold ?? 85) ||
+      num(window, settings.intentWindowDays ?? 30) !== (settings.intentWindowDays ?? 30));
+
+  async function handleSave() {
+    if (!settings) return;
+    setError(null);
+    try {
+      // Seeds from the server's read-back, same as the Apollo card -- that is
+      // what stopped "saved but the fields snapped back" there.
+      const res = (await save.mutateAsync({
+        scoreThreshold: num(threshold, settings.scoreThreshold ?? 85),
+        intentWindowDays: num(window, settings.intentWindowDays ?? 30),
+      })) as { ok?: boolean; error?: string; settings?: LeadScoringData };
+      if (res?.ok === false) {
+        setError(res.error ?? "The server declined that change.");
+        return;
+      }
+      if (res?.settings) {
+        setThreshold(String(res.settings.scoreThreshold ?? 85));
+        setWindow(String(res.settings.intentWindowDays ?? 30));
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    }
+  }
+
+  return (
+    <Card id="lead-scoring" className="scroll-mt-16">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <IconFlame size={16} />
+          Hot Leads
+        </CardTitle>
+        <CardDescription>
+          Every lead is scored 0-100 across role fit, seniority, company fit and intent signals. A lead is
+          highlighted at the top of a list when it clears the score below <em>and</em> has either a recent
+          intent signal or decision-level authority in a matched persona.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <IconLoader2 size={14} className="animate-spin" /> Loading…
+          </p>
+        )}
+        {settings && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <NumberField
+                label="Minimum score to highlight"
+                hint="Out of 100. Higher keeps the section short, which is the point of it."
+                value={threshold}
+                onChange={setThreshold}
+                min={1}
+                max={100}
+              />
+              <NumberField
+                label="Intent signal counts for (days)"
+                hint="A post from last week predicts a reply. The same post from four months ago does not."
+                value={window}
+                onChange={setWindow}
+                min={1}
+                max={365}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={save.isPending || !dirty}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {save.isPending ? (
+                  <IconLoader2 size={13} className="animate-spin" />
+                ) : saved ? (
+                  <IconCheck size={13} />
+                ) : null}
+                {saved ? "Saved!" : "Save"}
+              </button>
+              {dirty && !save.isPending && (
+                <span className="text-xs text-muted-foreground">Unsaved changes</span>
+              )}
+            </div>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </>
+        )}
       </CardContent>
     </Card>
   );

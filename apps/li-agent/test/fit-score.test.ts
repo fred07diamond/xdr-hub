@@ -146,3 +146,22 @@ describe("draft-profile wiring", () => {
     expect(SRC).toMatch(/toLowerCase\(\) !== "null"/);
   });
 });
+
+describe("client mirror does not drift from the server", () => {
+  it("has identical weights", async () => {
+    // app/ and server/ are kept strictly separate in this app, so the weights
+    // are duplicated on the client. This test is what makes that safe: a
+    // change to one side without the other fails here rather than silently
+    // rendering progress bars against the wrong maximum.
+    const client = await import("../app/lib/fit-score-shared.js");
+    expect(client.SCORE_WEIGHTS).toEqual(SCORE_WEIGHTS);
+    expect(client.MAX_FIT_SCORE).toBe(MAX_FIT_SCORE);
+    expect(client.VERDICT_THRESHOLDS).toEqual(VERDICT_THRESHOLDS);
+  });
+
+  it("renders every dimension exactly once", async () => {
+    const { DIMENSION_ORDER, DIMENSION_LABELS } = await import("../app/lib/fit-score-shared.js");
+    expect([...DIMENSION_ORDER].sort()).toEqual(Object.keys(SCORE_WEIGHTS).sort());
+    for (const d of DIMENSION_ORDER) expect(DIMENSION_LABELS[d]).toBeTruthy();
+  });
+});

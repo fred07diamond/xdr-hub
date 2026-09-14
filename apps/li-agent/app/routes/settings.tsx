@@ -24,7 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { ApolloCreditsCard, ApolloUserLimitsCard } from "@/components/ApolloCreditsCard";
+import { ApolloCreditsCard, ApolloUserLimitsCard, LeadScoringCard } from "@/components/ApolloCreditsCard";
 import { APP_TITLE } from "@/lib/app-config";
 
 import changelog from "../../CHANGELOG.md?raw";
@@ -638,6 +638,12 @@ export default function SettingsRoute() {
       ...(isWorkspaceAdmin
         ? [
             {
+              id: "lead-scoring",
+              label: "Hot Leads",
+              keywords: "hot leads score scoring threshold intent highlight fit",
+              hash: "lead-scoring",
+            },
+            {
               id: "apollo-credits",
               label: "Apollo Credits",
               keywords: "apollo credits budget enrichment enrich phone reveal spend limit toggle disable",
@@ -714,6 +720,7 @@ export default function SettingsRoute() {
             <div className="space-y-6">
               <HubSpotCard />
               {isWorkspaceAdmin && <DailyLimitCard />}
+              {isWorkspaceAdmin && <LeadScoringCard />}
               {isWorkspaceAdmin && <ApolloCreditsCard />}
               {isWorkspaceAdmin && <ApolloUserLimitsCard />}
               {isWorkspaceAdmin && <AgentWorkspaceCard />}

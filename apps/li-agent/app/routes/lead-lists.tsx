@@ -17,6 +17,8 @@ import {
 import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, MAX_BULK_SCORE, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { CsvExportModal } from "@/components/CsvExportModal";
+import { HotLeadsSection } from "@/components/HotLeadsSection";
+import { OutreachPanel } from "@/components/OutreachPanel";
 import {
   LIST_SORT_STORAGE_KEY,
   LIST_SORTS,
@@ -430,6 +432,7 @@ export default function LeadListsPage() {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [scoreProgress, setScoreProgress] = useState<{ done: number; total: number } | null>(null);
   const [scoreError, setScoreError] = useState<string | null>(null);
+  const [outreachLead, setOutreachLead] = useState<LeadListItem | null>(null);
   // Selected LISTS (distinct from selectedItemIds, which is leads within one
   // list). Deleting a list takes its leads with it, so these are deliberately
   // separate selections that cannot be confused for one another.
@@ -1093,6 +1096,15 @@ export default function LeadListsPage() {
                 toast would be gone before anyone read why it stopped. Before
                 this, a budget refusal produced N silent no-ops and the user
                 was told nothing at all. */}
+            {/* Hot leads above the table, not inside it. Renders nothing
+                when none qualify, so it costs no vertical space on a page of
+                ordinary leads. */}
+            <HotLeadsSection
+              leads={allItems}
+              scopeLabel="in this list"
+              onGenerate={(lead) => setOutreachLead(lead)}
+            />
+
             {scoreError && (
               <div className="flex items-start justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2.5">
                 <p className="text-xs text-amber-800 dark:text-amber-300">{scoreError}</p>
@@ -1392,6 +1404,13 @@ export default function LeadListsPage() {
 
       {/* Preview before the file is written, rather than after it is opened
           and found half-empty. */}
+      <OutreachPanel
+        open={!!outreachLead}
+        onClose={() => setOutreachLead(null)}
+        lead={outreachLead}
+        source="lead_list_item"
+      />
+
       <CsvExportModal
         open={!!exportRequest}
         onClose={() => setExportRequest(null)}

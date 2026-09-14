@@ -26,6 +26,8 @@ import {
 } from "@tabler/icons-react";
 
 import { CsvExportModal } from "@/components/CsvExportModal";
+import { HotLeadsSection } from "@/components/HotLeadsSection";
+import { OutreachPanel } from "@/components/OutreachPanel";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { CompanyLogo } from "@/components/company-logo";
 import {
@@ -1205,6 +1207,7 @@ export default function ProspectsRoute() {
   const [exportRequest, setExportRequest] = useState<
     { rows: Prospect[]; prefix: string } | null
   >(null);
+  const [outreachLead, setOutreachLead] = useState<Prospect | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
   const [scoringErrors, setScoringErrors] = useState<Map<string, string>>(new Map());
@@ -1971,6 +1974,15 @@ export default function ProspectsRoute() {
         )}
       </div>
 
+      {/* Hot leads above the table. Fed from the FILTERED rows rather than
+          everything, so it reflects what is actually on screen -- a "hot"
+          section contradicting an active filter would be worse than none. */}
+      <HotLeadsSection
+        leads={pageRows}
+        onGenerate={(lead) => setOutreachLead(lead)}
+        onOpen={(lead) => setSelectedId(lead.id)}
+      />
+
       {/* Table */}
       <div className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
@@ -2253,6 +2265,16 @@ export default function ProspectsRoute() {
           />
         </div>
       )}
+
+      <OutreachPanel
+        open={!!outreachLead}
+        onClose={() => setOutreachLead(null)}
+        lead={outreachLead}
+        // Routed by the row's own source: a lead-list row and a promoted
+        // prospects row are different tables and the action needs to know
+        // which one it is looking at.
+        source={outreachLead?.source === "prospect" ? "prospect" : "lead_list_item"}
+      />
 
       {selected && (
         <ProspectSheet

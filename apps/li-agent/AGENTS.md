@@ -17,9 +17,25 @@ and docs/DECISIONS.md.
      "strong", "possible", or "weak" without a real ICP document.
      Still draft a generic connection note in step 4.
    - If icpText has content: score fit against it (step 3).
-3. Score fit against the ICP document. Return a short verdict
-   (strong / possible / weak) with one sentence of reasoning that
-   references specific criteria from the ICP.
+3. Score fit against the ICP document. Scoring is GRANULAR: four dimensions
+   totalling 100 (role fit 30, company fit 25, intent signals 25, seniority
+   20), and the strong/possible/weak verdict is DERIVED from the total at
+   70/40 rather than chosen directly. See `server/helpers/fit-score.ts`.
+
+   Do not reintroduce a single-label rubric. The old one asked only for a
+   label and told the model to "score it strong" whenever evidence pointed
+   that way, so every decent lead collapsed into `strong` and an outstanding
+   lead was indistinguishable from an adequate one.
+
+   `fitVerdict` is kept and still means what it always did, because it is
+   load-bearing: `verdictClearsBar()` gates enrichment and phone-reveal spend,
+   the Prospects filter pills and Analytics counts read it, and admins have
+   tuned `enrichMinVerdict` / `phoneMinVerdict` against its meanings. Changing
+   its vocabulary changes what the workspace may spend money on.
+
+   Intent must never award points for a strong title — that is already counted
+   under Role fit. Double-counting it makes every senior person look hot,
+   which is the exact failure the granular score exists to fix.
 4. Draft one connection note that references something specific
    and true from the profile, in the voice and targeting defined
    in the ICP doc. Respect LinkedIn's note limit: 300 chars on
@@ -422,6 +438,17 @@ count) — only its dedicated UI column and filter were removed.
 - packages/shared/src/server/persona-docs.ts: getPersonaCriteriaText /
   rebuildPersonaCriteriaText — computes a shared persona's criteria text
   from its documents; the only thing that should write sharedPersonas.summary
+- server/helpers/fit-score.ts: the 0-100 scoring weights, rubric, and the
+  verdict derivation. app/lib/fit-score-shared.ts mirrors the constants for
+  the client (the two trees never import from each other); test/fit-score.test.ts
+  asserts they do not drift.
+- app/lib/hot-leads.ts: what makes a lead "hot" — score threshold AND at least
+  one corroborator (fresh intent signal, or persona match plus decision-level
+  seniority). Score alone is deliberately not enough.
+- server/helpers/generate-outreach.ts + actions/generate-outreach.ts: the cold
+  email / InMail / note-variant / call-opener generators, gated on fit score.
+- server/helpers/icp-sections.ts: splits ICP markdown so the briefing's title
+  phases read only the targeting sections instead of the whole corpus.
 - server/helpers/apollo-credits/: credit governance (guard, ledger, period,
   settings, per-user limits, threshold notifications). `guard.ts` is the only
   thing that may authorize an Apollo call.
