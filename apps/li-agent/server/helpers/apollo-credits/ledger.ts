@@ -84,6 +84,10 @@ const LOW_FIT_CREDITS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.
 /** Credits that actually bought a usable email or phone number. */
 const DELIVERED_CREDITS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.outcome} IN ('match_email','revealed_sync','revealed') THEN COALESCE(${apolloCreditLedger.actualCredits}, ${apolloCreditLedger.estimatedCredits}) ELSE 0 END), 0)`;
 
+/** Credits by unit, for the per-person composition bars. */
+const EMAIL_CREDITS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.unit} = 'person_match' THEN COALESCE(${apolloCreditLedger.actualCredits}, ${apolloCreditLedger.estimatedCredits}) ELSE 0 END), 0)`;
+const PHONE_CREDITS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.unit} = 'phone_reveal' THEN COALESCE(${apolloCreditLedger.actualCredits}, ${apolloCreditLedger.estimatedCredits}) ELSE 0 END), 0)`;
+
 /** Calls that returned nothing usable, charged or not. */
 const EMPTY_CALLS = sql<number>`COALESCE(SUM(CASE WHEN ${apolloCreditLedger.outcome} IN ('no_match','match_no_email','reveal_no_number','reveal_no_match','reveal_timeout') THEN 1 ELSE 0 END), 0)`;
 
@@ -212,6 +216,15 @@ export interface UserSpend {
   lowFit: number;
   /** Calls that returned nothing -- mostly free, but worth seeing. */
   emptyCalls: number;
+  /**
+   * Credits by unit.
+   *
+   * What makes a stacked per-person bar readable rather than just a total: at
+   * 8:1, two people with the same spend can have spent it on 8 emails or on
+   * one phone reveal, and those are different behaviours.
+   */
+  emailCredits: number;
+  phoneCredits: number;
 }
 
 export async function getSpendByUser(periodKey: string): Promise<UserSpend[]> {
@@ -224,6 +237,8 @@ export async function getSpendByUser(periodKey: string): Promise<UserSpend[]> {
       wasted: WASTED_CREDITS,
       lowFit: LOW_FIT_CREDITS,
       emptyCalls: EMPTY_CALLS,
+      emailCredits: EMAIL_CREDITS,
+      phoneCredits: PHONE_CREDITS,
     })
     .from(apolloCreditLedger)
     .where(
@@ -244,6 +259,8 @@ export async function getSpendByUser(periodKey: string): Promise<UserSpend[]> {
       wasted: Number(r.wasted ?? 0),
       lowFit: Number(r.lowFit ?? 0),
       emptyCalls: Number(r.emptyCalls ?? 0),
+      emailCredits: Number(r.emailCredits ?? 0),
+      phoneCredits: Number(r.phoneCredits ?? 0),
     }))
     .sort((a, b) => b.credits - a.credits);
 }

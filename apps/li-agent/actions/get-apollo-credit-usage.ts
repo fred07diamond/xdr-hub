@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getEnrichmentBudgetState } from "../server/helpers/apollo-credits/guard.js";
 import { getSpendByUser } from "../server/helpers/apollo-credits/ledger.js";
+import { getUserCreditLimit } from "../server/helpers/apollo-credits/user-limits.js";
 import { maybeNotifyCreditThresholds } from "../server/helpers/apollo-credits/notify-thresholds.js";
 
 // Full spend picture for the Analytics gauge and the admin banner.
@@ -78,8 +79,57 @@ export default defineAction({
       phoneStopPct: state.settings.phoneStopPct,
       thresholds: state.settings.thresholds,
 
-      // Admin-only, omitted from the response entirely for everyone else.
-      ...(isAdmin ? { topSpenders: await getSpendByUser(state.period.key) } : {}),
+      // Per-user rows are needed either way: an admin sees everyone, and a
+      // non-admin still needs their OWN figures for the "Your usage" panel.
+      // One query serves both; the difference is what gets returned.
+      ...(await perUser(state, email, isAdmin)),
     };
   },
 });
+
+/**
+ * Splits the per-user spend into the caller's own row and (for admins) the
+ * whole list.
+ *
+ * `mine` is deliberately available to every signed-in member. An xDR deciding
+ * whether to burn a reveal needs to know their own remaining allowance, and
+ * making that admin-only would mean the cap silently stops them with no way to
+ * see it coming.
+ */
+async function perUser(
+  state: Awaited<ReturnType<typeof getEnrichmentBudgetState>>,
+  email: string | undefined,
+  isAdmin: boolean,
+) {
+  const rows = await getSpendByUser(state.period.key).catch(() => []);
+  const lower = email?.toLowerCase() ?? null;
+  const own = lower ? rows.find((r) => r.actorEmail.toLowerCase() === lower) : undefined;
+
+  const limit = lower
+    ? await getUserCreditLimit(lower, state.settings.userDefaultLimit).catch(
+        () => state.settings.userDefaultLimit,
+      )
+    : state.settings.userDefaultLimit;
+
+  const spent = own?.credits ?? 0;
+
+  return {
+    mine: {
+      email: lower,
+      credits: spent,
+      emailCredits: own?.emailCredits ?? 0,
+      phoneCredits: own?.phoneCredits ?? 0,
+      delivered: own?.delivered ?? 0,
+      wasted: own?.wasted ?? 0,
+      lowFit: own?.lowFit ?? 0,
+      limit,
+      remaining: Math.max(0, limit - spent),
+      // Whether this allowance is the workspace default or one an admin set
+      // for this person specifically -- Apollo words its own panel as "you
+      // have a credit limit set", and which kind it is matters if you want it
+      // changed.
+      isDefaultLimit: limit === state.settings.userDefaultLimit,
+    },
+    ...(isAdmin ? { topSpenders: rows } : {}),
+  };
+}

@@ -30,6 +30,7 @@ import {
 } from "recharts";
 
 import { CreditGaugeCard } from "@/components/ApolloCreditGauge";
+import { CreditUsageView } from "@/components/ApolloCreditUsage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { APP_TITLE } from "@/lib/app-config";
@@ -242,6 +243,10 @@ export default function AnalyticsRoute() {
   useSetPageTitle("Analytics");
   const { data, isLoading, error } = useActionQuery("get-analytics", {});
   const { data: feedbackData, refetch: refetchFeedback } = useActionQuery("list-feedback", {});
+  // Controlled rather than defaultValue, so the Overview credit strip can hand
+  // off to the Credits tab. Declared before the early returns below -- a hook
+  // cannot sit behind a conditional.
+  const [tab, setTab] = useState("overview");
 
   if (isLoading) {
     return (
@@ -293,19 +298,23 @@ export default function AnalyticsRoute() {
         <EnrichmentAuditLogExport />
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="prospects">Prospects</TabsTrigger>
           <TabsTrigger value="engagement">Engagement</TabsTrigger>
           <TabsTrigger value="lists">Lead Lists</TabsTrigger>
+          <TabsTrigger value="credits">Credits</TabsTrigger>
           <TabsTrigger value="feedback">
             Feedback{activeFeedbackCount > 0 ? ` (${activeFeedbackCount})` : ""}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <OverviewTab d={d} />
+          <OverviewTab d={d} onOpenCredits={() => setTab("credits")} />
+        </TabsContent>
+        <TabsContent value="credits" className="mt-4">
+          <CreditUsageView />
         </TabsContent>
         <TabsContent value="prospects" className="mt-4">
           <ProspectsTab d={d} />
@@ -328,7 +337,9 @@ export default function AnalyticsRoute() {
 
 function OverviewTab({
   d,
+  onOpenCredits,
 }: {
+  onOpenCredits?: () => void;
   d: {
     totalProspects: number;
     totalSent: number;
@@ -373,7 +384,7 @@ function OverviewTab({
       {/* Credits first: it is the only tile on this page that reports a budget
           someone can exhaust, and it renders nothing at all when enrichment has
           never been switched on. */}
-      <CreditGaugeCard className="col-span-2 sm:col-span-4" />
+      <CreditGaugeCard className="col-span-2 sm:col-span-4" onOpenDetails={onOpenCredits} />
 
       <KpiCard
         label="Prospects"

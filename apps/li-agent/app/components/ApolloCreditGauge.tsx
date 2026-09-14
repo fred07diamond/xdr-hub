@@ -1,9 +1,8 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
-import { IconAlertTriangle, IconCoins, IconDownload, IconHelpCircle, IconPhoneOff, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCoins, IconDownload, IconX } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { ENRICHMENT_LEGEND } from "@/lib/enrichment-vocabulary";
 import { csvEscape } from "@/lib/prospects-csv";
 
 // Read-side credit surfaces: the Analytics gauge and the app-wide low-credit
@@ -13,30 +12,6 @@ import { csvEscape } from "@/lib/prospects-csv";
 // so mounting the banner on every route costs one shared poll rather than one
 // per consumer -- the cost popovers on Prospects and Lead Lists ride the same
 // query.
-
-/**
- * What the spend columns mean.
- *
- * Lives in the help disclosure rather than as small print under the table:
- * every definition on this card is in one place, and the card itself carries
- * no explanatory paragraphs.
- */
-const CREDIT_TERMS: Array<{ term: string; meaning: string }> = [
-  {
-    term: "Got data",
-    meaning: "Credits that bought a real email address or phone number.",
-  },
-  {
-    term: "Low fit",
-    meaning:
-      "Credits that bought real data for a lead the ICP scored weak, or spent by overriding the fit gate. The money was spent on the wrong person.",
-  },
-  {
-    term: "Wasted",
-    meaning:
-      "Credits charged where nothing usable came back. Only a timed-out reveal lands here, so this should stay near zero — an empty lookup is free.",
-  },
-];
 
 /** Poll settings shared by every consumer, so they collapse into one query. */
 const USAGE_QUERY_OPTIONS = {
@@ -81,7 +56,25 @@ export interface CreditUsage {
     wasted: number;
     lowFit: number;
     emptyCalls: number;
+    emailCredits: number;
+    phoneCredits: number;
   }[];
+  /**
+   * The caller's own figures. Present for every signed-in member, unlike
+   * topSpenders -- an xDR needs to see their own cap coming.
+   */
+  mine?: {
+    email: string | null;
+    credits: number;
+    emailCredits: number;
+    phoneCredits: number;
+    delivered: number;
+    wasted: number;
+    lowFit: number;
+    limit: number;
+    remaining: number;
+    isDefaultLimit: boolean;
+  };
 }
 
 export function useCreditUsage() {
@@ -90,7 +83,22 @@ export function useCreditUsage() {
 
 // ── Analytics gauge ─────────────────────────────────────────────────────
 
-export function CreditGaugeCard({ className }: { className?: string }) {
+/**
+ * Compact credit strip for the Analytics Overview tab.
+ *
+ * Deliberately small. The full breakdown now lives on its own Credits tab (see
+ * ApolloCreditUsage.tsx), the way Apollo gives credit usage a whole screen --
+ * this one had grown into the largest thing on Overview while still not
+ * answering much. What survives is the question Overview should answer at a
+ * glance: how much is left, and is anything paused.
+ */
+export function CreditGaugeCard({
+  className,
+  onOpenDetails,
+}: {
+  className?: string;
+  onOpenDetails?: () => void;
+}) {
   const { data, isLoading } = useCreditUsage();
   const d = data as CreditUsage | undefined;
 
@@ -107,269 +115,64 @@ export function CreditGaugeCard({ className }: { className?: string }) {
       id="apollo-credits"
       className={`scroll-mt-16 rounded-xl border border-border bg-card p-4 ${className ?? ""}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
             <IconCoins size={15} />
             Apollo Credits
           </h3>
-          <p className="text-xs text-muted-foreground">
-            {d.enabled
-              ? `Resets ${d.resetLabel} · 1 per email, 8 per phone`
-              : "Enrichment is turned off — no credits are being spent."}
-          </p>
-        </div>
-        <div className="text-right">
-          <p
-            className={`text-2xl font-semibold tabular-nums ${overBar ? "text-destructive" : phonesPaused ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
-          >
-            {d.remaining.toLocaleString()}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            left of {d.budget.toLocaleString()}
-          </p>
-        </div>
-      </div>
-
-      {/* Stacked email/phone/remaining bar with the phone-pause point marked as
-          a tick. Splitting the spend by unit matters because the two are 8:1 --
-          "70% spent" reads very differently if it is mostly reveals. */}
-      <div className="mt-3">
-        <div className="relative flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
-          <div className="h-full bg-sky-500" style={{ width: `${emailPct}%` }} title="Emails" />
-          <div className="h-full bg-violet-500" style={{ width: `${phonePct}%` }} title="Phone reveals" />
-          {/* The threshold tick sits ON the bar so it reads as a position
-              rather than a separate legend item. */}
-          <div
-            className="absolute top-0 h-full w-0.5 bg-foreground/50"
-            style={{ left: `${Math.min(99.5, d.phoneStopPct)}%` }}
-            title={`Phone reveals pause at ${d.phoneStopPct}%`}
-          />
-        </div>
-        {/* The leading figure is CREDITS and says so. Dropping the word to
-            save space is what produced the original unreadable "8 on 8
-            emails", where the same 8 meant credits on one side and records on
-            the other -- so the unit stays, twice, and is cut everywhere else
-            on the card instead. */}
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-          <span className="flex items-baseline gap-1.5">
-            <span className="mb-px h-2 w-2 shrink-0 self-center rounded-full bg-sky-500" />
-            <span className="text-muted-foreground">
-              <b className="font-semibold tabular-nums text-foreground">{d.emailCredits.toLocaleString()}</b>{" "}
-              {d.emailCredits === 1 ? "credit" : "credits"} on {d.emailCalls.toLocaleString()}{" "}
-              {d.emailCalls === 1 ? "email" : "emails"}
-            </span>
-          </span>
-          <span className="flex items-baseline gap-1.5">
-            <span className="mb-px h-2 w-2 shrink-0 self-center rounded-full bg-violet-500" />
-            <span className="text-muted-foreground">
-              <b className="font-semibold tabular-nums text-foreground">{d.phoneCredits.toLocaleString()}</b>{" "}
-              {d.phoneCredits === 1 ? "credit" : "credits"} on {d.phoneCalls.toLocaleString()} phone{" "}
-              {d.phoneCalls === 1 ? "reveal" : "reveals"}
-            </span>
-          </span>
-          <span className="ml-auto text-muted-foreground">{Math.round(pct)}% used</span>
-        </div>
-      </div>
-
-      {/* An inset panel rather than four free-standing tiles.
-          Two reasons, both structural:
-          - It groups "where the money went" into one visual object instead of
-            leaving it as four siblings competing with the header.
-          - The tiles implied the four figures SUM to the total. They do not:
-            by-hand plus automatic is the total, while low-fit and wasted are
-            subsets of it. "Of that" makes the nesting readable. */}
-      <dl className="mt-4 space-y-1.5 rounded-lg bg-muted/40 px-3 py-2.5 text-xs">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <dt className="w-[52px] shrink-0 text-muted-foreground">Credits</dt>
-          <dd className="flex flex-wrap items-baseline gap-x-1.5 text-muted-foreground">
-            <b className="font-semibold tabular-nums text-foreground">{d.manualCredits.toLocaleString()}</b>
-            by hand
-            <span className="text-muted-foreground/50">·</span>
-            <b className="font-semibold tabular-nums text-foreground">{d.sweepCredits.toLocaleString()}</b>
-            automatically
-            <span className="text-[11px] text-muted-foreground/70">
-              (sweep cap {d.sweepCap.toLocaleString()})
-            </span>
-          </dd>
-        </div>
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <dt className="w-[52px] shrink-0 text-muted-foreground">Of those</dt>
-          <dd className="flex flex-wrap items-baseline gap-x-1.5 text-muted-foreground">
-            <b
-              className={`font-semibold tabular-nums ${d.lowFitCredits > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
+          <p className="mt-0.5 flex flex-wrap items-baseline gap-1.5">
+            <span
+              className={`text-2xl font-semibold tabular-nums ${overBar ? "text-destructive" : phonesPaused ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
             >
-              {d.lowFitCredits.toLocaleString()}
-            </b>
-            on low-fit leads
-            {d.overrideCount > 0 && (
-              <span className="text-[11px] text-muted-foreground/70">
-                ({d.overrideCount} {d.overrideCount === 1 ? "override" : "overrides"})
+              {d.remaining.toLocaleString()}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              / {d.budget.toLocaleString()} available
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {d.enabled ? `Renews ${d.resetLabel}` : "Enrichment is off — nothing is being spent"}
+          </p>
+        </div>
+
+        <div className="min-w-[180px] flex-1">
+          <div className="relative flex h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full bg-sky-500" style={{ width: `${emailPct}%` }} title="Emails" />
+            <div className="h-full bg-violet-500" style={{ width: `${phonePct}%` }} title="Phone reveals" />
+            <div
+              className="absolute top-0 h-full w-0.5 bg-foreground/50"
+              style={{ left: `${Math.min(99.5, d.phoneStopPct)}%` }}
+              title={`Phone reveals pause at ${d.phoneStopPct}%`}
+            />
+          </div>
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+            <span>
+              <b className="font-semibold tabular-nums text-foreground">{d.spent.toLocaleString()}</b> used
+              ({Math.round(pct)}%)
+            </span>
+            {d.wastedCredits > 0 && (
+              <span className="text-destructive">{d.wastedCredits.toLocaleString()} wasted</span>
+            )}
+            {d.lowFitCredits > 0 && (
+              <span className="text-amber-600 dark:text-amber-400">
+                {d.lowFitCredits.toLocaleString()} on low-fit leads
               </span>
             )}
-            <span className="text-muted-foreground/50">·</span>
-            <b
-              className={`font-semibold tabular-nums ${d.wastedCredits > 0 ? "text-destructive" : "text-foreground"}`}
-            >
-              {d.wastedCredits.toLocaleString()}
-            </b>
-            wasted
-          </dd>
+            {phonesPaused && <span className="text-amber-600 dark:text-amber-400">phone reveals paused</span>}
+          </p>
         </div>
-        {/* Free outcomes belong in this panel rather than as a loose paragraph:
-            the worry on seeing a column of "No email on file" is that each one
-            cost a credit, and this is where someone looks to check. */}
-        {d.emptyCalls > 0 && (
-          <div className="flex flex-wrap items-baseline gap-x-2 border-t border-border/60 pt-1.5">
-            <dt className="w-[52px] shrink-0 text-muted-foreground">Free</dt>
-            <dd className="text-muted-foreground">
-              <b className="font-semibold tabular-nums text-foreground">{d.emptyCalls.toLocaleString()}</b>{" "}
-              {d.emptyCalls === 1 ? "lookup" : "lookups"} came back empty — Apollo only charges when it has the
-              data
-            </dd>
-          </div>
+
+        {onOpenDetails && (
+          <button
+            type="button"
+            onClick={onOpenDetails}
+            className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            Credit details
+          </button>
         )}
-      </dl>
-
-      {phonesPaused && d.enabled && (
-        <p className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          <IconPhoneOff size={13} className="shrink-0" />
-          {overBar
-            ? `All enrichment is paused until ${d.resetLabel}.`
-            : `Phone reveals are paused past ${d.phoneStopPct}%. Email enrichment still works.`}
-        </p>
-      )}
-
-      {/* Per-person spend, then the help disclosure as a quiet footer.
-          Help text belongs AFTER the data it explains, not between the summary
-          and the table. */}
-      {d.topSpenders && (
-        <div className="mt-4 border-t border-border pt-3">
-          {/* Title and export on ONE aligned row. Previously the button sat in
-              a flex row beside the table, which pushed the table into a narrow
-              column and left the button floating against nothing. */}
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h4 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Spend by person <span className="font-normal normal-case tracking-normal">(credits)</span>
-            </h4>
-            <LedgerExportButton periodStart={d.periodStart} />
-          </div>
-
-          {d.topSpenders.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No credits spent yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              {/* A table rather than "16 · 14 calls", which gave two unlabeled
-                  numbers and no answer to the actual question: how much of what
-                  this person spent was worth spending. Column meanings live in
-                  header tooltips and the footer disclosure, not in a paragraph
-                  of small print under the table. */}
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                    <th className="pb-1.5 pr-3 font-medium">Person</th>
-                    <th className="pb-1.5 pl-3 text-right font-medium">Spent</th>
-                    <th
-                      className="pb-1.5 pl-3 text-right font-medium"
-                      title="Credits that bought a real email or phone number"
-                    >
-                      Got data
-                    </th>
-                    <th
-                      className="pb-1.5 pl-3 text-right font-medium"
-                      title="Credits spent on a lead the ICP scored weak, or by overriding the fit gate"
-                    >
-                      Low fit
-                    </th>
-                    <th
-                      className="pb-1.5 pl-3 text-right font-medium"
-                      title="Credits charged where nothing usable came back"
-                    >
-                      Wasted
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.topSpenders.slice(0, 6).map((s) => (
-                    <tr key={s.actorEmail} className="border-t border-border/50">
-                      <td className="py-1.5 pr-3">
-                        <span className="block max-w-[180px] truncate text-foreground" title={s.actorEmail}>
-                          {s.actorEmail.split("@")[0]}
-                        </span>
-                      </td>
-                      <td className="py-1.5 pl-3 text-right font-semibold tabular-nums text-foreground">
-                        {s.credits.toLocaleString()}
-                      </td>
-                      <td className="py-1.5 pl-3 text-right tabular-nums text-muted-foreground">
-                        {s.delivered.toLocaleString()}
-                      </td>
-                      <td
-                        className={`py-1.5 pl-3 text-right tabular-nums ${s.lowFit > 0 ? "font-medium text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
-                      >
-                        {s.lowFit.toLocaleString()}
-                      </td>
-                      <td
-                        className={`py-1.5 pl-3 text-right tabular-nums ${s.wasted > 0 ? "font-medium text-destructive" : "text-muted-foreground"}`}
-                      >
-                        {s.wasted.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* One disclosure holding every definition on the card, so the card
-          itself carries no explanatory paragraphs. Generated from the same
-          module the table cells read, so it cannot describe states the tables
-          no longer show. */}
-      <details className="mt-3 border-t border-border pt-2.5">
-        <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-          <IconHelpCircle size={13} className="shrink-0" />
-          What these states mean, and which ones cost credits
-        </summary>
-
-        <div className="mt-2.5 space-y-3">
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border bg-muted/40 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                  <th className="px-2.5 py-1.5 font-medium">Email / phone state</th>
-                  <th className="px-2.5 py-1.5 font-medium">What it means</th>
-                  <th className="px-2.5 py-1.5 font-medium">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ENRICHMENT_LEGEND.map((row) => (
-                  <tr key={row.label} className="border-b border-border/50 align-top last:border-0">
-                    <td className="whitespace-nowrap px-2.5 py-1.5 font-medium text-foreground">{row.label}</td>
-                    <td className="px-2.5 py-1.5 text-muted-foreground">{row.meaning}</td>
-                    <td
-                      className={`whitespace-nowrap px-2.5 py-1.5 ${row.cost === "Free" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"}`}
-                    >
-                      {row.cost}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* The column definitions the table footnote used to carry. */}
-          <dl className="space-y-1 text-xs">
-            {CREDIT_TERMS.map((t) => (
-              <div key={t.term} className="flex flex-wrap gap-x-2">
-                <dt className="w-[70px] shrink-0 font-medium text-foreground">{t.term}</dt>
-                <dd className="flex-1 text-muted-foreground">{t.meaning}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </details>
-
+      </div>
     </div>
   );
 }
@@ -383,7 +186,7 @@ export function CreditGaugeCard({ className }: { className?: string }) {
  * resolve them is to export a period and compare the total against Apollo's
  * real balance. `reprice-apollo-credit-ledger` then applies the correction.
  */
-function LedgerExportButton({ periodStart }: { periodStart: string }) {
+export function LedgerExportButton({ periodStart }: { periodStart: string }) {
   const exportLedger = useActionMutation("list-apollo-credit-ledger");
   const [error, setError] = useState<string | null>(null);
 
