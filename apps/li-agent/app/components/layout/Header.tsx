@@ -1,5 +1,6 @@
 import { AgentToggleButton } from "@agent-native/core/client/agent-chat";
 import { useT } from "@agent-native/core/client/i18n";
+import { NotificationsBell } from "@agent-native/core/client/notifications";
 import {
   useHeaderTitle,
   useHeaderActions,
@@ -53,6 +54,13 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {actions}
+        {/* The notification routes are already mounted by core's routes plugin;
+            this is the only missing piece. Apollo credit-threshold notices are
+            in-app only, so without a bell they would have nowhere to land. */}
+        <NotificationsBell
+          emptyTitle="Nothing new"
+          emptyDescription="Credit warnings and workspace notices show up here."
+        />
         <AgentToggleButton />
       </div>
     </header>

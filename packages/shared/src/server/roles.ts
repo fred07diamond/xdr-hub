@@ -46,3 +46,27 @@ export async function requireWorkspaceAdmin(
     });
   }
 }
+
+/**
+ * Every workspace admin, for fan-out notifications.
+ *
+ * The framework's notify() takes a SINGLE owner, so anything that needs to
+ * reach "all admins" has to resolve the list itself. The workspace owner is
+ * unioned in because getWorkspaceRole treats them as admin with no row (the
+ * bootstrap path for a fresh database) -- omitting them here would mean a
+ * brand-new workspace notified nobody at all.
+ */
+export async function listWorkspaceAdmins(): Promise<string[]> {
+  const db = getSharedDb();
+  const rows = await db
+    .select({ email: workspaceUserRoles.email, role: workspaceUserRoles.role })
+    .from(workspaceUserRoles);
+
+  const admins = new Set<string>();
+  for (const r of rows) {
+    if (r.role === "admin" && r.email) admins.add(r.email.toLowerCase());
+  }
+  const owner = process.env.WORKSPACE_OWNER_EMAIL;
+  if (owner) admins.add(owner.toLowerCase());
+  return [...admins];
+}

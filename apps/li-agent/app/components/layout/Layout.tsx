@@ -16,6 +16,7 @@ import {
 import { APP_TITLE } from "@/lib/app-config";
 import { TAB_ID } from "@/lib/tab-id";
 
+import { ApolloCreditBanner } from "@/components/ApolloCreditGauge";
 import { FeedbackWidget } from "@/components/ui/FeedbackWidget";
 
 import { Header } from "./Header";
@@ -131,6 +132,10 @@ export function Layout({ children }: LayoutProps) {
       )}
       <main className="agent-native-app-main min-w-0 flex-1 overflow-y-auto overscroll-contain">
         <InvitationBanner />
+        {/* Inside <main>, beside InvitationBanner: the established slot, and it
+            renders on every route including the ones that bypass <Header> --
+            which includes "/", where credits actually get spent. */}
+        <ApolloCreditBanner />
         {children}
       </main>
     </div>

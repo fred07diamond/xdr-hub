@@ -29,6 +29,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { CreditGaugeCard } from "@/components/ApolloCreditGauge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { APP_TITLE } from "@/lib/app-config";
@@ -369,6 +370,11 @@ function OverviewTab({
 
   return (
     <div className="grid items-start grid-cols-2 gap-3 sm:grid-cols-4 sm:auto-rows-min">
+      {/* Credits first: it is the only tile on this page that reports a budget
+          someone can exhaust, and it renders nothing at all when enrichment has
+          never been switched on. */}
+      <CreditGaugeCard className="col-span-2 sm:col-span-4" />
+
       <KpiCard
         label="Prospects"
         value={d.totalProspects}
@@ -668,7 +674,11 @@ function LeadListsTab({ data, trend }: { data: LeadListsData; trend: TrendPoint[
           <TrendChart data={[...trend]} series={[{ key: "leads", ...PIPELINE.leads }]} height={160} />
         </BentoTile>
 
-        <BentoTile className="col-span-2" title="Apollo Enrichment" sub="Enrichment is per-lead and on-demand, so most leads sit unenriched until someone clicks Enrich.">
+        <BentoTile
+          className="col-span-2"
+          title="Apollo Enrichment"
+          sub="Auto-enriched leads get an email only, and only if they clear the fit bar. Phone reveals are always a deliberate, one-at-a-time action."
+        >
           <DonutBreakdown
             segments={[
               { label: "Enriched", value: data.enrichmentStatusCounts.done, color: "#10b981" },

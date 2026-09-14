@@ -341,6 +341,11 @@ export interface SettleInput {
  *   Apollo's webhook reports the real `credits_consumed`.
  */
 export async function settleEnrichment(auth: CreditAuthorization, result: SettleInput): Promise<void> {
+  // Threshold notifications run AFTER the ledger writes below, inline rather
+  // than on a schedule: this is the only place guaranteed to execute exactly
+  // when spend changes, and this deployment has no reliable cron (see
+  // server/middleware/lead-pipeline-sweep.ts). Cheap because it is gated by a
+  // once-per-threshold-per-period claim.
   for (const leg of auth.legs) {
     try {
       if (leg.unit === "person_match") {
@@ -397,6 +402,16 @@ export async function settleEnrichment(auth: CreditAuthorization, result: Settle
       // is about to return. The orphan reaper will void anything left
       // `reserved`.
     }
+  }
+
+  // Deliberately not awaited into the caller's critical path beyond its own
+  // try/catch: a notification must never fail, slow, or break the enrichment
+  // that triggered it.
+  try {
+    const { maybeNotifyCreditThresholds } = await import("./notify-thresholds.js");
+    await maybeNotifyCreditThresholds(await getEnrichmentBudgetState());
+  } catch {
+    // ignored on purpose
   }
 }
 

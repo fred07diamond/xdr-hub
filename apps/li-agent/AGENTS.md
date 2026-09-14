@@ -118,12 +118,12 @@ then.
 
 **Every newly-imported lead is also opted into an automatic background
 pipeline** (`autoEnrich: true`, enforced by `server/helpers/lead-pipeline-
-sweep.ts`) that enriches (Apollo), scores ICP fit, drafts a connection note,
-and promotes the lead into a real `prospects` row — with no further action
-from the xDR and no dependency on the browser/extension staying open. This
-is a deliberate policy change from the old "on-demand only" rule: every
-imported lead is expected to be reached out to, so there's no "decide
-later" step to gate on anymore. Concretely:
+sweep.ts`) that scores ICP fit, drafts a connection note, enriches (Apollo)
+if the lead clears the fit bar, and promotes the lead into a real `prospects`
+row — with no further action from the xDR and no dependency on the
+browser/extension staying open. This is a deliberate policy change from the
+old "on-demand only" rule: every imported lead is expected to be reached out
+to, so there's no "decide later" step to gate on anymore. Concretely:
 
 - The sweep runs as a debounced tick inside `server/middleware/lead-
   pipeline-sweep.ts`, triggered by the framework's own Netlify Scheduled
@@ -131,30 +131,52 @@ later" step to gate on anymore. Concretely:
   visitor — li-agent has no cron primitive of its own, so this is the real
   trigger, not a metaphor. It only ever runs on that health-check request,
   never a real page load, so it can never slow down an xDR.
-- A lead moves `enrichmentStatus: idle → enriching → done/not_found/failed`
-  (reusing `server/helpers/enrich-lead-list-item.ts`), then immediately
-  gets scored + drafted + upserted into `prospects` via `server/helpers/
-  score-lead-list-item.ts` (status: `drafted`), and `promotedProspectId`
-  gets set once that lands — shown in the Lead Lists UI as an "In
-  Prospects" badge.
+- **The order is SCORE-FIRST, deliberately**: prefilter (free) → score (LLM,
+  zero Apollo credits) → gate on the verdict → reserve credits → enrich →
+  promote. Do NOT reorder this back to enrich-then-score. Scoring is free and
+  enrichment costs real money, so spending a credit before knowing whether
+  the lead was worth it was the largest credit leak this app had. The stage
+  machine lives on `leadListItems.pipelineStage`
+  (`queued|scoring|scored|enriching|promoting|done|blocked|failed`), kept
+  deliberately SEPARATE from `enrichmentStatus` — the latter still means only
+  "the outcome of an Apollo lookup", which the audit-log export and every
+  `EnrichedField` copy branch depend on.
+- A lead that does not clear the fit bar is still scored, drafted and
+  promoted. It is only never auto-*enriched*: the credit buys contact data,
+  which the primary LinkedIn-connection motion doesn't need. It keeps its
+  per-row Enrich button for explicit user action.
+- The free prefilter matches the persona briefing's `avoidTitlesSearch`
+  against the lead's headline. Do NOT add `titles` / `fallbackTitles` as a
+  *positive* gate — Sales Nav headlines are freeform taglines, so a non-match
+  is not evidence of a bad lead.
+- **The sweep never reveals phone numbers.** `enrichApolloRecord` takes
+  `{ revealPhone }` defaulting to `false`, and only `actions/reveal-phone.ts`
+  ever passes `true`. See the Apollo credits section below.
 - A lead stuck in `enriching` for over 2 minutes is retried, up to 3
-  attempts, then marked `failed` (poison-lead guard).
+  attempts, then marked `failed` (poison-lead guard). A budget refusal is NOT
+  an attempt — it returns the lead to `queued` without incrementing
+  `pipelineAttempts`, so a multi-day spend pause can't mark hundreds of leads
+  permanently failed.
 - An Apollo phone reveal stuck at `requested` for over 5 minutes is
-  dispositioned `failed` — same threshold `lead-lists.tsx`'s
-  `PHONE_REVEAL_STALE_AFTER_MS` already used for display, now persisted for
-  real so it shows correctly in Analytics' Phone Reveal "Failed" bucket
-  instead of silently vanishing.
+  dispositioned `failed` — for `prospects` as well as `leadListItems`.
 - **Scope**: only leads imported through this flow going forward have
   `autoEnrich: true`. Lists imported before this shipped are NOT
   retroactively swept — that would trigger a large, sudden Apollo-credit
   and LLM-call spike for leads nobody decided to act on. They still work
   exactly as before: on-demand "Enrich" + the manual "Score & Draft" button
   on the Prospects page.
-- **Known gap**: a lead promoted via the `salesNavLeadUrl` fallback (Apollo
-  didn't resolve a real `linkedin.com/in/...` URL) can end up as a second,
-  separate `prospects` row if the xDR later visits the real profile page
-  through `capture-profile.ts` — the two rows are keyed by different
-  `profileUrl` values and don't get reconciled.
+- **Promotion requires a real profile URL.** `promoteLeadListItem` does NOT
+  fall back to `salesNavLeadUrl` — a Sales Nav URL carries a member URN, not
+  the public vanity slug, so a row keyed on it could never be reconciled with
+  one `capture-profile.ts` later creates. Without a real `/in/…` URL the lead
+  keeps its verdict and draft on `leadListItems` and gets no `prospects` row;
+  `{ ok: false, code: "no_profile_url" }` is a normal expected outcome, not an
+  error. This removes the old duplicate-`prospects`-row gap rather than
+  building reconciliation around it. Consequence: `promotedProspectId` is set
+  far less often, so the "In Prospects" chip fires rarely — the verdict badge
+  replaced it as the primary signal. `actions/list-all-prospects.ts` returns
+  the real `leadListItems` verdict/reason/note so this stays invisible to
+  users.
 
 There is deliberately no pending/visited/skipped status tracking on these rows
 (removed — it added a filter/skip workflow that wasn't giving the xDR anything
@@ -180,16 +202,21 @@ only bulk/automatic triggering at import time changed.
 
 Both the Prospects table (`/`) and the Lead Lists table (`/lead-lists`) have a
 per-row "Enrich" button that calls Apollo.io on demand: `enrich-prospect` for
-prospects, `enrich-lead-list-item` for lead list items. Both share the same
-`server/helpers/apollo-client.ts` (person match + company search) and the same
-enrichment columns (`enrichmentStatus`, `enrichedEmail`, `enrichedTitle`,
-`enrichedPhone`, `enrichedLinkedinUrl`, `enrichedCompanyIndustry`,
-`enrichedCompanySize`, `enrichedAt`, `enrichmentError`). This is a data lookup,
-not an ICP fit judgment, and must not influence scoring or draft notes.
+prospects, `enrich-lead-list-item` for lead list items. Both go through the one
+shared helper `server/helpers/enrich-apollo-record.ts` (do NOT reintroduce a
+per-table copy — the duplication it replaced is how the 8-credit sweep reveal
+leak got in) onto `server/helpers/apollo-client.ts` and the same enrichment
+columns (`enrichmentStatus`, `enrichedEmail`, `enrichedTitle`, `enrichedPhone`,
+`enrichedLinkedinUrl`, `enrichedCompanyIndustry`, `enrichedCompanySize`,
+`enrichedAt`, `enrichmentError`). This is a data lookup, not an ICP fit
+judgment, and must not influence scoring or draft notes.
 
-- On-demand only — the user always triggers it (one row, "Enrich selected" on
-  Prospects, or "Enrich all" on a Lead List). Never call it automatically at
-  capture/import time.
+- **Every Apollo call costs real money and is governed.** See the credit
+  governance section below; nothing may call Apollo without an authorization
+  from the guard.
+- Automatic enrichment happens for `autoEnrich` leads that clear the fit bar
+  (see the Lead Lists section). Everything else is user-triggered: one row, or
+  a capped bulk run. Never call it at capture/import time.
 - Email/Phone columns distinguish "never enriched" (—) from "enriched but
   Apollo had no email/phone" (done, field empty) from "no match at all"
   (not_found) from a real API error (failed, with the message in
@@ -199,11 +226,81 @@ not an ICP fit judgment, and must not influence scoring or draft notes.
   names before sending them to Apollo (LinkedIn-captured names/titles/companies
   sometimes carry emoji that hurt Apollo's fuzzy matching). Keep this centralized
   there rather than re-implementing per caller.
-- Phone numbers come from Apollo's synchronous `person.contact.phone_numbers`
-  field — only populated when Apollo has already "revealed" that person for
-  this team. A brand-new person Apollo has never seen will show no phone; this
-  does not implement Apollo's separate paid async reveal_phone_number+webhook
-  flow.
+- A phone number arrives one of two ways: Apollo's synchronous
+  `person.contact.phone_numbers` (free, only populated when Apollo has already
+  revealed that person for this team), or the paid async
+  `reveal_phone_number` + webhook flow, which this app now implements and
+  charges for. See below.
+
+## Apollo credit governance
+
+Apollo bills **1 credit** for a person match (email) and **8** for a phone
+reveal. This workspace is **one of three tools** on an 83,990-credit-per-period
+account, so this app budgets its own ~1/3 share (~27,996) rather than Apollo's
+real balance — we cannot see what the other two spend.
+
+Everything lives under `server/helpers/apollo-credits/`:
+
+- `period.ts` — the billing window is a **pure function of the clock**
+  (`billingPeriodContaining(anchorDay)`), anchored to a day-of-month clamped to
+  1–28 and computed in UTC. There is **no reset job and no counter to corrupt**:
+  spend is `WHERE periodStart = <computed>`. This deployment has no reliable
+  cron, so anything requiring a scheduled reset would eventually be wrong.
+- `settings.ts` — every `apollo_*` key in `workspace_settings`, read in one
+  `key LIKE 'apollo_%'` query. **Unset means DISABLED.** A missing or corrupted
+  row must never be the thing that re-enables spending. Deliberately uncached
+  so the kill switch takes effect instantly.
+- `ledger.ts` — `apollo_credit_ledger`, append-only, one row per credit-bearing
+  unit with `periodStart` denormalized and the `fitVerdict` **at spend time**,
+  which is what makes "how many credits went to weak leads" answerable. This is
+  the "what did we pay" record; `list-enrichment-audit-log` remains the "who has
+  data" report and cannot answer cost questions (it derives from current row
+  state, so a re-enrich is invisible to it).
+- `guard.ts` — the single choke point. `CreditAuthorization` is a **branded
+  type that cannot be constructed outside this file**, and `apolloFetch`
+  requires one, so bypassing the budget is a **compile error rather than a
+  convention**. Do not weaken that.
+
+**Every credit decision fails CLOSED**, deliberately the opposite of
+`isOverDailyLimit`'s fail-open behaviour: if the settings or ledger can't be
+read, the spend is denied. A database outage must not become an unmetered
+spending window. The downside here is money, not a blocked capture.
+
+Tiered degradation, applied inside the guard so no call site reimplements it:
+phone reveals stop at **80%** of budget while emails keep working; all
+enrichment stops at **100%**. The background sweep may consume at most **50%**
+of the period, reserving the rest for work people do by hand. Each user also
+has their own ceiling (default 2,000/period, overridable per user in Settings →
+Per-User Credit Limits), so one person's bulk run can't drain the pool.
+
+- **Phone reveals are a separate, explicit action** (`actions/reveal-phone.ts`),
+  never a side effect of enrichment. Its schema requires `confirmCredits: 8`, so
+  a stale client or blind retry structurally cannot spend by accident. The fit
+  gate is overridable with a deliberate two-step confirmation; the 80% pause is
+  **not** overridable, because it is a policy rather than a nag.
+- **There is no bulk reveal, deliberately.** At 8 credits, 50 leads is 400
+  credits from one click and no confirmation design makes that genuinely
+  deliberate.
+- Bulk enrichment is capped at `MAX_BULK_ENRICH = 50` per run
+  (`app/lib/apollo-limits.ts`), and a truncated batch is always sorted
+  stellar-first so the cap steers rather than just limits.
+- A budget refusal **halts** a bulk loop (`BULK_HALT_CODES`) and reports partial
+  progress in a persistent banner. Do not restore the old catch-and-continue:
+  it failed silently 50 times and told the user nothing.
+- The reveal webhook (`actions/apollo-phone-reveal-webhook.ts`) is idempotent
+  (keyed on a payload hash) and reconciles Apollo's reported
+  `credits_consumed`, clamped — a forged large value can't rewrite the ledger.
+- Threshold notifications are **in-app only** (`channels: ["inbox"]`). That is
+  mandatory, not a default: core always registers the webhook/Slack/email
+  channels and they activate off `NOTIFICATIONS_*` env vars, so omitting it
+  would silently fan credit warnings out to Slack the moment one is set.
+
+Several Apollo billing behaviours **cannot be verified from code** (whether a
+no-match still bills, whether a combined match+reveal is 9 or 8, whether
+org-enrich bills at all, Apollo's reset timezone). Each is recorded in the
+ledger so it stays correctable rather than baked in. **Run a low-budget pilot
+before trusting the real number**: set the budget to ~200, enrich ~20 leads,
+then compare the ledger against Apollo's real balance.
 
 ## Prospect tags
 
@@ -255,3 +352,12 @@ count) — only its dedicated UI column and filter were removed.
 - packages/shared/src/server/persona-docs.ts: getPersonaCriteriaText /
   rebuildPersonaCriteriaText — computes a shared persona's criteria text
   from its documents; the only thing that should write sharedPersonas.summary
+- server/helpers/apollo-credits/: credit governance (guard, ledger, period,
+  settings, per-user limits, threshold notifications). `guard.ts` is the only
+  thing that may authorize an Apollo call.
+- server/helpers/enrich-apollo-record.ts: the ONE enrichment path for both
+  prospects and lead list items
+- server/helpers/lead-pipeline-sweep.ts: the score-first background pipeline
+- app/lib/lead-quality.ts: the stellar/good/ok/low/unscored ranking used for
+  badges, sorting and batch truncation
+- app/lib/apollo-limits.ts: batch cap, halt codes, credit costs (client side)

@@ -33,6 +33,7 @@ export {
   isWorkspaceOwner,
   requireWorkspaceAdmin,
   type WorkspaceRole,
+  listWorkspaceAdmins,
 } from "./roles.js";
 export { getWorkspaceOrgId, isWorkspaceMember } from "./workspace-org.js";
 export { getHubSpotToken, hubspotFetch, hubspotFetchIfConnected, hubspotFetchWithTimeout } from "./hubspot-client.js";
