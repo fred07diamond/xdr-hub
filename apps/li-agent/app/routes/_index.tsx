@@ -25,7 +25,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 
-import { buildMasterCsv } from "@/lib/prospects-csv";
+import { CsvExportModal } from "@/components/CsvExportModal";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { CompanyLogo } from "@/components/company-logo";
 import {
@@ -1200,7 +1200,11 @@ export default function ProspectsRoute() {
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
   const [bulkEnrichProgress, setBulkEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const [bulkHalt, setBulkHalt] = useState<BulkHaltState | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
+  // Rows staged for the export preview. Snapshotted so a background refetch
+  // cannot change what is being previewed out from under the reader.
+  const [exportRequest, setExportRequest] = useState<
+    { rows: Prospect[]; prefix: string } | null
+  >(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
   const [scoringErrors, setScoringErrors] = useState<Map<string, string>>(new Map());
@@ -1591,48 +1595,60 @@ export default function ProspectsRoute() {
 
   const hasActiveFilter = verdictFilter !== "all" || tagFilterIds.size > 0 || personaFilter !== "all" || recencyFilter !== "all" || search;
 
-  function exportProspectsCsv(rows: Prospect[], filenamePrefix: string) {
-    if (rows.length === 0) {
+  // Both entry points now open the preview rather than writing the file
+  // straight away -- the file gets checked before it exists, not after it is
+  // opened and found half-empty. The modal owns writing the file, so
+  // there is no second download path here to drift out of sync.
+  function handleExportAll() {
+    setExportError(null);
+    if (allProspects.length === 0) {
       setExportError("Nothing to export yet.");
       return;
     }
-    const csv = buildMasterCsv(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    // allProspects already holds everything (the main query fetches up to
+    // PROSPECTS_FETCH_LIMIT in one shot) -- no need for a separate fetch.
+    setExportRequest({ rows: allProspects, prefix: "all-prospects" });
   }
 
-  async function handleExportAll() {
-    setIsExporting(true);
+  function handleExportSelected() {
     setExportError(null);
-    try {
-      // allProspects already holds everything (the main query fetches up to
-      // PROSPECTS_FETCH_LIMIT in one shot) -- no need for a separate fetch.
-      exportProspectsCsv(allProspects, "all-prospects");
-    } catch {
-      setExportError("Could not export -- try again.");
-    } finally {
-      setIsExporting(false);
+    const rows = allProspects.filter((p) => selectedIds.has(p.id));
+    if (rows.length === 0) {
+      setExportError("Nothing selected to export.");
+      return;
     }
+    setExportRequest({ rows, prefix: "selected-prospects" });
   }
 
-  async function handleExportSelected() {
-    setIsExporting(true);
-    setExportError(null);
-    try {
-      const rows = allProspects.filter((p) => selectedIds.has(p.id));
-      exportProspectsCsv(rows, "selected-prospects");
-    } catch {
-      setExportError("Could not export -- try again.");
-    } finally {
-      setIsExporting(false);
+  /**
+   * Enriches the rows the export modal asked about, then re-reads them.
+   *
+   * Goes through the same per-row enrich action the table's own buttons use,
+   * so the credit guard, the fit gate and the batch cap all apply exactly as
+   * they do everywhere else -- an export is not a side door around them.
+   */
+  async function enrichForExport(rows: Prospect[]): Promise<Prospect[]> {
+    const ids = new Set(rows.map((r) => r.id));
+    for (const row of rows.slice(0, MAX_BULK_ENRICH)) {
+      // enrichOne already routes prospect vs lead-list rows to the right
+      // action and returns the refusal code, so reuse it rather than
+      // reimplementing the dispatch (and getting the id field wrong, which is
+      // exactly what a duplicate here did).
+      const res = await enrichOne(row);
+      // Stop on a budget or policy refusal instead of grinding through the
+      // rest: the same HALT rule the table's own bulk loops follow.
+      if (res?.code && BULK_HALT_CODES.has(res.code)) {
+        throw new Error(describeHalt(res.code, res.error));
+      }
     }
+    const refreshed = await refetch();
+    const fresh = ((refreshed.data as { prospects?: Prospect[] } | undefined)?.prospects ?? []).filter((p) =>
+      ids.has(p.id),
+    );
+    const byId = new Map(fresh.map((f) => [f.id, f]));
+    const merged = (exportRequest?.rows ?? rows).map((r) => byId.get(r.id) ?? r);
+    setExportRequest((prev) => (prev ? { ...prev, rows: merged } : prev));
+    return merged;
   }
 
   return (
@@ -1709,9 +1725,9 @@ export default function ProspectsRoute() {
                   allTags={allTags}
                   onApply={handleBulkTag}
                 />
-                <button type="button" onClick={handleExportSelected} disabled={isExporting}
+                <button type="button" onClick={handleExportSelected}
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
-                  {isExporting ? <IconLoader2 size={13} className="animate-spin" /> : <IconDownload size={13} />}
+                  <IconDownload size={13} />
                   Make CSV of {selectedIds.size} selected
                 </button>
                 {exportError && <span className="text-xs text-destructive">{exportError}</span>}
@@ -1761,10 +1777,10 @@ export default function ProspectsRoute() {
               <button
                 type="button"
                 onClick={handleExportAll}
-                disabled={isExporting || prospectsTotalCount === 0}
+                disabled={prospectsTotalCount === 0}
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
               >
-                {isExporting ? <IconLoader2 size={12} className="animate-spin" /> : <IconDownload size={12} />}
+                <IconDownload size={12} />
                 Export CSV
               </button>
             </div>
@@ -2187,6 +2203,19 @@ export default function ProspectsRoute() {
           onDeleted={() => { setSelectedId(null); refetch(); }}
         />
       )}
+
+      <CsvExportModal
+        open={!!exportRequest}
+        onClose={() => setExportRequest(null)}
+        rows={exportRequest?.rows ?? []}
+        filenamePrefix={exportRequest?.prefix ?? "prospects"}
+        onEnrich={enrichForExport}
+        title={
+          exportRequest?.prefix === "selected-prospects"
+            ? `Export ${exportRequest.rows.length} selected`
+            : "Export all prospects"
+        }
+      />
     </div>
   );
 }

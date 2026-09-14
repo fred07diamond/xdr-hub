@@ -16,7 +16,7 @@ import {
 } from "@/lib/enrichment-vocabulary";
 import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
-import { buildMasterCsv } from "@/lib/prospects-csv";
+import { CsvExportModal } from "@/components/CsvExportModal";
 import { applyShiftClickSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/Pagination";
@@ -419,9 +419,16 @@ export default function LeadListsPage() {
   // would be gone before anyone read why it stopped.
   const [bulkHalt, setBulkHalt] = useState<BulkHaltState | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
-  const [isExportingItems, setIsExportingItems] = useState(false);
   const [renamingListId, setRenamingListId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [isDeletingItems, setIsDeletingItems] = useState(false);
+  // Rows staged for the export preview. Null means the modal is closed; the
+  // rows are snapshotted so a background refetch cannot change what is being
+  // previewed out from under the person reading it.
+  const [exportRequest, setExportRequest] = useState<
+    { rows: LeadListItem[]; prefix: string } | null
+  >(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const listsQuery = useActionQuery("list-lead-lists", {}, { refetchInterval: 30_000 });
@@ -465,6 +472,7 @@ export default function LeadListsPage() {
 
   const deleteList = useActionMutation("delete-lead-list");
   const renameList = useActionMutation("rename-lead-list");
+  const bulkDeleteItems = useActionMutation("bulk-delete-lead-list-items");
   const enrichItem = useActionMutation("enrich-lead-list-item");
 
   // Status eligibility AND quality. This previously filtered on status
@@ -481,22 +489,46 @@ export default function LeadListsPage() {
     window.open(linkedInUrl(item), "_blank", "noopener,noreferrer");
   }
 
-  function handleExportItemsCsv(rows: LeadListItem[], filenamePrefix: string) {
-    setIsExportingItems(true);
+  function openExport(rows: LeadListItem[], prefix: string) {
+    if (rows.length === 0) return;
+    setExportRequest({ rows, prefix });
+  }
+
+  /**
+   * Enriches the rows the export modal asked about, then returns the CURRENT
+   * data for them.
+   *
+   * Re-reads from the refetched query rather than trusting the enrich
+   * responses: the rows handed in are a snapshot, and after enrichment the
+   * authoritative values live on the server.
+   */
+  async function enrichForExport(rows: LeadListItem[]): Promise<LeadListItem[]> {
+    const ids = new Set(rows.map((r) => r.id));
+    await runBulkEnrich(rows, rows.length);
+    const refreshed = await itemsQuery.refetch();
+    const fresh = ((refreshed.data as { items?: LeadListItem[] } | undefined)?.items ?? []).filter((i) =>
+      ids.has(i.id),
+    );
+    // Fall back to the snapshot for anything the refetched page no longer
+    // covers (it is paginated), so the export never silently loses rows.
+    const byId = new Map(fresh.map((f) => [f.id, f]));
+    const merged = (exportRequest?.rows ?? rows).map((r) => byId.get(r.id) ?? r);
+    setExportRequest((prev) => (prev ? { ...prev, rows: merged } : prev));
+    return merged;
+  }
+
+  async function handleBulkDeleteItems() {
+    const ids = [...selectedItemIds];
+    if (ids.length === 0) return;
+    setIsDeletingItems(true);
     try {
-      if (rows.length === 0) return;
-      const csv = buildMasterCsv(rows);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await bulkDeleteItems.mutateAsync({ ids });
+      setSelectedItemIds(new Set());
+      setConfirmBulkDelete(false);
+      // Both queries: the list's own count is shown in the sidebar too.
+      await Promise.all([itemsQuery.refetch(), listsQuery.refetch()]);
     } finally {
-      setIsExportingItems(false);
+      setIsDeletingItems(false);
     }
   }
 
@@ -811,8 +843,48 @@ export default function LeadListsPage() {
                     className="text-xs text-muted-foreground hover:text-foreground">Deselect all</button>
                 </div>
               ) : (
-                <div>
-                  <h2 className="text-sm font-semibold">{activeList?.name ?? "Lead List"}</h2>
+                <div className="min-w-0">
+                  {/* Rename from the header as well as the sidebar. Both drive
+                      the same renamingListId state, so there is one rename
+                      flow rather than two that could disagree. */}
+                  {renamingListId && renamingListId === activeList?.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void commitRenameList();
+                          if (e.key === "Escape") cancelRenameList();
+                        }}
+                        onBlur={() => void commitRenameList()}
+                        className="w-64 rounded-md border border-border bg-background px-2 py-1 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void commitRenameList()}
+                        aria-label="Save name"
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <IconCheck size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="group flex items-center gap-1.5">
+                      <h2 className="truncate text-sm font-semibold">{activeList?.name ?? "Lead List"}</h2>
+                      {activeList && (
+                        <button
+                          type="button"
+                          onClick={() => startRenameList(activeList)}
+                          title="Rename this list"
+                          aria-label="Rename this list"
+                          className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+                        >
+                          <IconPencil size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     {itemsTotalCount} lead{itemsTotalCount === 1 ? "" : "s"}
                   </p>
@@ -859,23 +931,55 @@ export default function LeadListsPage() {
                   </>
                 )}
                 {selectedItemIds.size > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => handleExportItemsCsv(allItems.filter((i) => selectedItemIds.has(i.id)), "selected-leads")}
-                    disabled={isExportingItems}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                  >
-                    {isExportingItems ? <IconLoader2 size={12} className="animate-spin" /> : <IconDownload size={12} />}
-                    Make CSV of {selectedItemIds.size} selected
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openExport(allItems.filter((i) => selectedItemIds.has(i.id)), "selected-leads")}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                    >
+                      <IconDownload size={12} />
+                      Make CSV of {selectedItemIds.size} selected
+                    </button>
+                    {/* Bulk delete, which this page had no path to at all --
+                        the action already existed but only the Prospects page
+                        reached it. Two-step, because it is irreversible. */}
+                    {confirmBulkDelete ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void handleBulkDeleteItems()}
+                          disabled={isDeletingItems}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-2.5 py-1.5 text-xs font-medium text-white hover:bg-destructive/90 disabled:opacity-50"
+                        >
+                          {isDeletingItems ? <IconLoader2 size={12} className="animate-spin" /> : <IconTrash size={12} />}
+                          Delete {selectedItemIds.size} permanently
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmBulkDelete(false)}
+                          className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted"
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmBulkDelete(true)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+                      >
+                        <IconTrash size={12} />
+                        Delete selected
+                      </button>
+                    )}
+                  </>
                 ) : allItems.length > 0 ? (
                   <button
                     type="button"
-                    onClick={() => handleExportItemsCsv(allItems, "lead-list")}
-                    disabled={isExportingItems}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                    onClick={() => openExport(allItems, "lead-list")}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
                   >
-                    {isExportingItems ? <IconLoader2 size={12} className="animate-spin" /> : <IconDownload size={12} />}
+                    <IconDownload size={12} />
                     Export CSV
                   </button>
                 ) : null}
@@ -952,6 +1056,21 @@ export default function LeadListsPage() {
           </>
         )}
       </div>
+
+      {/* Preview before the file is written, rather than after it is opened
+          and found half-empty. */}
+      <CsvExportModal
+        open={!!exportRequest}
+        onClose={() => setExportRequest(null)}
+        rows={exportRequest?.rows ?? []}
+        filenamePrefix={exportRequest?.prefix ?? "lead-list"}
+        onEnrich={apolloGate.enabled ? enrichForExport : undefined}
+        title={
+          exportRequest?.prefix === "selected-leads"
+            ? `Export ${exportRequest.rows.length} selected leads`
+            : `Export ${activeList?.name ?? "lead list"}`
+        }
+      />
     </div>
   );
 }

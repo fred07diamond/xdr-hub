@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems, prospects } from "../server/db/schema.js";
+import { recountLeadLists } from "../server/helpers/lead-list-count.js";
 
 export default defineAction({
   description: "Permanently delete a prospect by ID.",
@@ -34,14 +35,20 @@ export default defineAction({
         .from(leadLists)
         .where(ownerEmail ? eq(leadLists.ownerEmail, ownerEmail) : isNull(leadLists.ownerEmail));
       if (ownerListIds.length) {
-        await db
-          .delete(leadListItems)
-          .where(
-            and(
-              eq(leadListItems.profileUrl, existing[0].profileUrl),
-              inArray(leadListItems.listId, ownerListIds.map((l) => l.id)),
-            ),
-          );
+        const listIds = ownerListIds.map((l) => l.id);
+        const match = and(
+          eq(leadListItems.profileUrl, existing[0].profileUrl),
+          inArray(leadListItems.listId, listIds),
+        );
+        // Which lists are affected has to be read before the delete.
+        const affected = await db
+          .select({ listId: leadListItems.listId })
+          .from(leadListItems)
+          .where(match);
+        await db.delete(leadListItems).where(match);
+        // Same omission as bulk-delete-prospects had: removing the item here
+        // without recounting left the list overstating its size.
+        await recountLeadLists(affected.map((a) => a.listId));
       }
     }
 

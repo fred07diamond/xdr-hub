@@ -961,6 +961,27 @@ export default runMigrations(
           WHERE outcome = 'match' AND unit = 'person_match'`,
       ].join(";\n"),
     },
+    {
+      // Repairs lead_lists.total_count, which had drifted above the real row
+      // count: bulk-delete-prospects and delete-prospect both remove the
+      // underlying lead_list_items rows (so a deleted prospect does not
+      // reappear as a shallow lead) but neither decremented the counter. A
+      // list could therefore read "19 leads" while containing none.
+      //
+      // Both writers now recount, and list-lead-lists counts live, but the
+      // already-wrong stored values still need correcting for the readers that
+      // trust the column (Analytics, the extension list picker).
+      //
+      // Correlated subquery rather than a join-update: UPDATE ... FROM is
+      // spelled differently on SQLite and Postgres, and this form is portable.
+      version: 123,
+      name: "recount-lead-list-total-count",
+      sql: `UPDATE lead_lists
+               SET total_count = (
+                 SELECT COUNT(*) FROM lead_list_items
+                  WHERE lead_list_items.list_id = lead_lists.id
+               )`,
+    },
   ],
   { table: "outreach_migrations" },
 );

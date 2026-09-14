@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { leadLists, leadListItems, prospects } from "../server/db/schema.js";
+import { recountLeadLists } from "../server/helpers/lead-list-count.js";
 
 export default defineAction({
   description: "Permanently delete multiple prospects by ID.",
@@ -29,14 +30,29 @@ export default defineAction({
         .from(leadLists)
         .where(ownerEmail ? eq(leadLists.ownerEmail, ownerEmail) : isNull(leadLists.ownerEmail));
       if (ownerListIds.length) {
+        const listIds = ownerListIds.map((l) => l.id);
+        // Capture which lists are affected BEFORE deleting -- afterwards the
+        // rows are gone and there is nothing left to attribute the change to.
+        const affected = await db
+          .select({ listId: leadListItems.listId })
+          .from(leadListItems)
+          .where(
+            and(
+              inArray(leadListItems.profileUrl, profileUrls),
+              inArray(leadListItems.listId, listIds),
+            ),
+          );
         await db
           .delete(leadListItems)
           .where(
             and(
               inArray(leadListItems.profileUrl, profileUrls),
-              inArray(leadListItems.listId, ownerListIds.map((l) => l.id)),
+              inArray(leadListItems.listId, listIds),
             ),
           );
+        // This path used to skip the counter entirely, so deleting promoted
+        // leads here left their list claiming leads it no longer had.
+        await recountLeadLists(affected.map((a) => a.listId));
       }
     }
 
