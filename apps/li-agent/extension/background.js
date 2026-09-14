@@ -324,6 +324,29 @@ async function importSalesNavList({ listName, listDescription, listUrl, existing
   return await res.json(); // { listId, totalCount, truncated? }
 }
 
+async function getContact({ profileUrl, wantEmail, wantPhone, override }) {
+  const { appUrl, apiToken } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/extension-get-contact`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      profileUrl,
+      wantEmail: !!wantEmail,
+      wantPhone: !!wantPhone,
+      // Echoed cost. The server rejects a phone request without it, so a
+      // stale extension cannot spend 8 credits by accident.
+      confirmCredits: wantPhone ? 8 : null,
+      override: !!override,
+      apiToken: apiToken || null,
+    }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(json?.error || `extension-get-contact failed (${res.status})`);
+  }
+  return json;
+}
+
 async function listLeadLists() {
   const { appUrl, apiToken } = await getSettings();
   const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
@@ -604,6 +627,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === "IMPORT_SALES_NAV_LIST") {
     importSalesNavList(msg)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "GET_CONTACT") {
+    getContact(msg)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

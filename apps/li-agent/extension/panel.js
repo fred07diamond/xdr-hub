@@ -341,6 +341,10 @@ function resetPanel() {
   draftBtn.textContent = "Draft note";
   addToListBtn.disabled = true;
   closeAddToListPanel();
+  // Cleared on every profile change: showing the PREVIOUS person's email next
+  // to this person's name would be worse than showing nothing, and could put
+  // the wrong number in a dialer.
+  resetContactSection();
   setStatus("");
   verdictSection.style.display = "none";
   personaChip.style.display = "none";
@@ -423,14 +427,31 @@ async function init({ navTriggered = false } = {}) {
 
   draftBtn.disabled = false;
   addToListBtn.disabled = false;
+  // Only now: extension-get-contact needs the captured prospects row, which
+  // capture-profile creates as part of this load.
+  showContactSection();
 
   // Check for an existing draft on this profile (fire-and-forget).
   const urlForDraftCheck = currentProfileUrl;
   chrome.runtime.sendMessage({ type: "GET_EXISTING_DRAFT", profileUrl: urlForDraftCheck })
     .then((existing) => {
-      if (currentProfileUrl === urlForDraftCheck && existing?.draft) {
+      if (currentProfileUrl !== urlForDraftCheck) return;
+      if (existing?.draft) {
         showVerdict(existing.draft);
         draftBtn.textContent = "Re-draft";
+      }
+      // Prefill any contact details we ALREADY hold. get-draft returns the
+      // whole prospects row, so this costs nothing extra -- and without it the
+      // panel showed "—" next to a "Find · 1" button for someone whose email
+      // was already on file, which invites a click that looks like it will
+      // spend a credit.
+      const known = existing?.draft ?? existing;
+      if (known && (known.enrichedEmail || known.enrichedPhone)) {
+        renderContact({
+          email: known.enrichedEmail ?? null,
+          phone: known.enrichedPhone ?? null,
+          phoneRevealStatus: known.phoneRevealStatus ?? null,
+        });
       }
     })
     .catch(() => {});
@@ -2605,3 +2626,148 @@ function startUrlPollingWithEngagers() {
 // Note: panel.js calls `startUrlPolling()` in two places (after init() and after token save).
 // We shadow the function name so those calls use the new version.
 startUrlPolling = startUrlPollingWithEngagers;
+
+// ── Contact details (email + phone) ─────────────────────────────────────────
+//
+// For the case the dashboard is bad at: you are on someone's profile and want
+// to call them now. Both buttons call extension-get-contact, which routes
+// through the SAME credit guard and fit gates the app uses -- the workspace
+// budget, the per-user cap, the 80% phone pause and the ledger attribution all
+// apply identically here.
+const contactSection = document.getElementById("contact-section");
+const contactEmailEl = document.getElementById("contact-email");
+const contactPhoneEl = document.getElementById("contact-phone");
+const contactEmailBtn = document.getElementById("contact-email-btn");
+const contactPhoneBtn = document.getElementById("contact-phone-btn");
+const contactEmailCopy = document.getElementById("contact-email-copy");
+const contactPhoneCopy = document.getElementById("contact-phone-copy");
+const contactPhoneCall = document.getElementById("contact-phone-call");
+const contactError = document.getElementById("contact-error");
+const contactCredits = document.getElementById("contact-credits");
+const contactOverride = document.getElementById("contact-override");
+const contactOverrideText = document.getElementById("contact-override-text");
+const contactOverrideAck = document.getElementById("contact-override-ack");
+const contactOverrideGo = document.getElementById("contact-override-go");
+const contactOverrideCancel = document.getElementById("contact-override-cancel");
+
+let contactState = { email: null, phone: null };
+
+function resetContactSection() {
+  contactState = { email: null, phone: null };
+  if (!contactSection) return;
+  contactSection.style.display = "none";
+  renderContact({});
+}
+
+function showContactSection() {
+  if (contactSection) contactSection.style.display = "block";
+}
+
+function renderContact(data) {
+  if (!contactSection) return;
+  const email = data.email ?? contactState.email;
+  const phone = data.phone ?? contactState.phone;
+  contactState = { email, phone };
+
+  contactEmailEl.textContent = email || "—";
+  contactPhoneEl.textContent = phone || (data.phoneRevealStatus === "requested" ? "Revealing…" : "—");
+
+  // A found value swaps the spend button for the actions you actually want:
+  // copy, and a tel: link so a one-off call is one click.
+  contactEmailBtn.style.display = email ? "none" : "";
+  contactEmailCopy.style.display = email ? "" : "none";
+  contactPhoneBtn.style.display = phone ? "none" : "";
+  contactPhoneCopy.style.display = phone ? "" : "none";
+  contactPhoneCall.style.display = phone ? "" : "none";
+  if (phone) contactPhoneCall.href = `tel:${String(phone).replace(/[^+\d]/g, "")}`;
+
+  // A pending reveal must not offer the button again: Apollo delivers by
+  // callback and a second request is another 8 credits for the same answer.
+  if (!phone && data.phoneRevealStatus === "requested") {
+    contactPhoneBtn.disabled = true;
+    contactPhoneBtn.textContent = "Revealing…";
+  }
+
+  if (typeof data.creditsCharged === "number" && data.creditsCharged > 0) {
+    contactCredits.textContent = `${data.creditsCharged} credit${data.creditsCharged === 1 ? "" : "s"} used`;
+  }
+}
+
+function showContactError(message) {
+  if (!contactError) return;
+  contactError.textContent = message || "";
+  contactError.style.display = message ? "block" : "none";
+}
+
+async function fetchContact({ wantEmail, wantPhone, override }) {
+  const profileUrl = currentProfileUrl;
+  if (!profileUrl) return;
+  showContactError("");
+  const btn = wantPhone ? contactPhoneBtn : contactEmailBtn;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: "GET_CONTACT",
+      profileUrl,
+      wantEmail,
+      wantPhone,
+      override,
+    });
+    if (!res?.ok) {
+      showContactError(res?.error || "Could not fetch contact details.");
+      return;
+    }
+    renderContact(res);
+
+    // Per-leg errors, so a failed phone does not hide a found email.
+    const problem = wantPhone ? res.phoneError : res.emailError;
+    if (problem) showContactError(problem);
+
+    // The fit gate is the ONE overridable refusal. The budget tier is policy,
+    // so offering an override for it would be a lie.
+    if (res.canOverride) {
+      contactOverrideText.textContent = res.fitVerdict
+        ? `This lead scored ${res.fitVerdict}. ${res.fitReason || ""}`.trim()
+        : "This lead has not been scored yet.";
+      contactOverride.style.display = "block";
+      contactOverrideAck.checked = false;
+      contactOverrideGo.disabled = true;
+    }
+  } catch (err) {
+    showContactError(err?.message || "Could not fetch contact details.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+contactEmailBtn?.addEventListener("click", () => fetchContact({ wantEmail: true, wantPhone: false }));
+contactPhoneBtn?.addEventListener("click", () => fetchContact({ wantEmail: false, wantPhone: true }));
+
+contactOverrideAck?.addEventListener("change", () => {
+  contactOverrideGo.disabled = !contactOverrideAck.checked;
+});
+contactOverrideCancel?.addEventListener("click", () => {
+  contactOverride.style.display = "none";
+  showContactError("");
+});
+contactOverrideGo?.addEventListener("click", async () => {
+  contactOverride.style.display = "none";
+  await fetchContact({ wantEmail: false, wantPhone: true, override: true });
+});
+
+async function copyToClipboard(value, btn) {
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(String(value));
+    const original = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = original; }, 1200);
+  } catch {
+    showContactError("Could not copy. Select the text and copy manually.");
+  }
+}
+contactEmailCopy?.addEventListener("click", () => copyToClipboard(contactState.email, contactEmailCopy));
+contactPhoneCopy?.addEventListener("click", () => copyToClipboard(contactState.phone, contactPhoneCopy));

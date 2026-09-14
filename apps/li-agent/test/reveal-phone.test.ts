@@ -8,7 +8,18 @@ import { readFileSync } from "node:fs";
 //
 // Asserted against the source because the action's imports pull in the whole
 // DB/secret stack, which is not worth standing up to check a policy ordering.
-const SRC = readFileSync(new URL("../actions/reveal-phone.ts", import.meta.url), "utf8");
+//
+// The gates moved out of the action into revealPhoneForRecord when the Chrome
+// extension needed the same capability -- a second copy of a hundred lines of
+// spend policy is exactly how the enrichment logic drifted into spending 9
+// credits per lead. The behaviour is unchanged, so these assertions read BOTH
+// files: the action for its schema contract, the helper for the gate order.
+const ACTION_SRC = readFileSync(new URL("../actions/reveal-phone.ts", import.meta.url), "utf8");
+const HELPER_SRC = readFileSync(
+  new URL("../server/helpers/reveal-phone-for-record.ts", import.meta.url),
+  "utf8",
+);
+const SRC = `${ACTION_SRC}\n${HELPER_SRC}`;
 
 function indexOfCode(code: string): number {
   const i = SRC.indexOf(`code: "${code}"`);

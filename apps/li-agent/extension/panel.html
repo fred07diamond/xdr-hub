@@ -293,6 +293,20 @@
     #draft-btn:hover:not(:disabled) { background: #004182; }
     #draft-btn:disabled { background: #aaa; cursor: not-allowed; }
 
+    .contact-mini-btn {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 7px;
+      border: 1px solid #e5e7eb;
+      border-radius: 5px;
+      background: #fff;
+      color: #1a1a1a;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .contact-mini-btn:hover:not(:disabled) { background: #f3f4f6; }
+    .contact-mini-btn:disabled { color: #aaa; cursor: not-allowed; }
+
     #add-to-list-btn {
       width: 100%;
       padding: 8px;
@@ -1610,6 +1624,48 @@
       </div>
       <div id="add-to-list-status"></div>
     </div>
+    <!-- Contact details, for the case the dashboard is bad at: you are on
+         someone's profile and want to call them now. Both buttons go through
+         the same credit guard the app uses; the extension is not a side door
+         around the budget. -->
+    <div id="contact-section" style="display:none;margin-top:10px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#6b7280">Contact</span>
+        <span id="contact-credits" style="font-size:11px;color:#6b7280"></span>
+      </div>
+
+      <div id="contact-email-row" style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+        <span style="font-size:11px;color:#6b7280;width:42px;flex-shrink:0">Email</span>
+        <span id="contact-email" style="font-size:12px;color:#1a1a1a;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span>
+        <button id="contact-email-btn" type="button" class="contact-mini-btn">Find · 1</button>
+        <button id="contact-email-copy" type="button" class="contact-mini-btn" style="display:none">Copy</button>
+      </div>
+
+      <div id="contact-phone-row" style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:#6b7280;width:42px;flex-shrink:0">Phone</span>
+        <span id="contact-phone" style="font-size:12px;color:#1a1a1a;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span>
+        <button id="contact-phone-btn" type="button" class="contact-mini-btn">Reveal · 8</button>
+        <a id="contact-phone-call" href="#" style="display:none;font-size:11px;font-weight:600;color:#0a66c2;text-decoration:none;padding:3px 7px;border:1px solid #cfe0f5;border-radius:5px;background:#eaf2fb">Call</a>
+        <button id="contact-phone-copy" type="button" class="contact-mini-btn" style="display:none">Copy</button>
+      </div>
+
+      <div id="contact-error" style="display:none;margin-top:6px;font-size:11px;line-height:1.45;color:#b42318"></div>
+
+      <!-- Two-step override, matching the dashboard. A batch cannot override
+           the fit bar, but a single deliberate reveal can. -->
+      <div id="contact-override" style="display:none;margin-top:6px;padding:7px;border:1px solid #fcd34d;border-radius:6px;background:#fffbeb">
+        <div id="contact-override-text" style="font-size:11px;line-height:1.45;color:#92400e;margin-bottom:6px"></div>
+        <label style="display:flex;gap:6px;align-items:flex-start;font-size:11px;color:#92400e;margin-bottom:6px">
+          <input id="contact-override-ack" type="checkbox" style="margin-top:2px;flex-shrink:0" />
+          <span>I understand this spends 8 shared credits on a lead below the fit bar.</span>
+        </label>
+        <div style="display:flex;gap:6px">
+          <button id="contact-override-go" type="button" class="contact-mini-btn" disabled>Reveal anyway · 8</button>
+          <button id="contact-override-cancel" type="button" class="contact-mini-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="status"></div>
 
     <div id="verdict-section">
