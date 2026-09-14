@@ -2,7 +2,7 @@ import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import { getDb } from "../../db/index.js";
-import { apolloCreditLedger } from "../../db/schema.js";
+import { apolloCreditLedger, apolloWebhookDeliveries } from "../../db/schema.js";
 
 // Reads and writes for apollo_credit_ledger. Policy lives in guard.ts; this
 // file only knows how to record a spend and how to add one up.
@@ -269,6 +269,97 @@ export async function voidStaleReservations(olderThanMs = 5 * 60 * 1000): Promis
     });
   }
   return stale.length;
+}
+
+/**
+ * Records that a webhook payload was seen, returning false if it already had
+ * been.
+ *
+ * Apollo delivers at-least-once, so the handler must be idempotent. The
+ * existing phone-number write happens to be idempotent by accident (same value
+ * written twice); credit reconciliation would NOT be -- a redelivery would
+ * reconcile a second time. Keyed on a hash of the raw body so a genuine retry
+ * of the same payload is recognised regardless of ordering or timing.
+ */
+export async function claimWebhookDelivery(
+  deliveryId: string,
+  creditsConsumed: number | null,
+  apolloPersonIds: string[],
+): Promise<boolean> {
+  const existing = await getDb()
+    .select({ id: apolloWebhookDeliveries.id })
+    .from(apolloWebhookDeliveries)
+    .where(eq(apolloWebhookDeliveries.id, deliveryId))
+    .limit(1);
+  if (existing.length > 0) return false;
+
+  await getDb()
+    .insert(apolloWebhookDeliveries)
+    .values({
+      id: deliveryId,
+      receivedAt: new Date().toISOString(),
+      creditsConsumed,
+      apolloPersonIds: apolloPersonIds.join(","),
+    })
+    .onConflictDoNothing();
+
+  // Re-read rather than trusting the insert: two concurrent deliveries of the
+  // same payload both pass the check above, and onConflictDoNothing's affected
+  // row count is not portable across SQLite and Postgres.
+  const after = await getDb()
+    .select({ receivedAt: apolloWebhookDeliveries.receivedAt })
+    .from(apolloWebhookDeliveries)
+    .where(eq(apolloWebhookDeliveries.id, deliveryId))
+    .limit(1);
+  return after.length > 0;
+}
+
+/**
+ * The maximum credits a single reveal can be reconciled to.
+ *
+ * The webhook endpoint is `requiresAuth: false` and publicly reachable, so
+ * `credits_consumed` arrives from an UNTRUSTED source. Without a ceiling a
+ * forged payload could inflate recorded spend and hard-stop enrichment for the
+ * whole workspace -- a self-inflicted denial of service. Clamped to what we
+ * actually reserved.
+ */
+export const MAX_RECONCILED_REVEAL_CREDITS = UNIT_COST.phone_reveal;
+
+/**
+ * Applies Apollo's authoritative cost to the reservation a reveal created.
+ *
+ * Returns what happened, so the caller can log a payload that matched nothing.
+ */
+export async function reconcileRevealCredits(
+  apolloPersonId: string,
+  creditsConsumed: number | null,
+  outcome: "revealed" | "reveal_no_match",
+): Promise<"reconciled" | "no_open_reservation"> {
+  const open = await findOpenRevealByPersonId(apolloPersonId);
+  // Nothing open to reconcile: either already settled by an earlier delivery,
+  // or a payload for a reveal this app never requested. Either way, do not
+  // create anything -- an unauthenticated endpoint must not be able to write
+  // new spend rows.
+  if (!open) return "no_open_reservation";
+
+  let actual: number | null = null;
+  if (creditsConsumed != null && Number.isFinite(creditsConsumed)) {
+    actual = Math.min(MAX_RECONCILED_REVEAL_CREDITS, Math.max(0, Math.trunc(creditsConsumed)));
+  }
+
+  await finalizeLedgerRow(open.id, {
+    status: "reconciled",
+    outcome,
+    // Null leaves COALESCE(actual, estimated) falling back to the 8 we
+    // reserved, which is the conservative direction when Apollo tells us
+    // nothing.
+    actualCredits: actual,
+    note:
+      creditsConsumed == null
+        ? "webhook carried no credits_consumed; estimate stands"
+        : `apollo credits_consumed=${creditsConsumed}`,
+  });
+  return "reconciled";
 }
 
 /**

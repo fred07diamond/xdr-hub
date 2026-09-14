@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { getDb } from "../db/index.js";
-import { leadLists, leadListItems } from "../db/schema.js";
+import { leadLists, leadListItems, prospects } from "../db/schema.js";
 import { voidStaleReservations } from "./apollo-credits/ledger.js";
 import { enrichApolloRecord } from "./enrich-apollo-record.js";
 import { scoreLeadListItem } from "./score-lead-list-item.js";
@@ -64,10 +64,20 @@ async function unclaimRetryableStale(db: Db): Promise<void> {
 
 async function timeoutStalePhoneReveals(db: Db): Promise<void> {
   const staleCutoff = isoMinutesAgo(PHONE_REVEAL_STALE_MS);
+  const now = new Date().toISOString();
   await db
     .update(leadListItems)
-    .set({ phoneRevealStatus: "failed", updatedAt: new Date().toISOString() })
+    .set({ phoneRevealStatus: "failed", updatedAt: now })
     .where(and(eq(leadListItems.phoneRevealStatus, "requested"), lt(leadListItems.phoneRevealRequestedAt, staleCutoff)));
+  // Prospects too. This only covered lead_list_items, so a prospect's reveal
+  // could sit "requested" forever -- showing "Revealing..." in the UI
+  // indefinitely, never reaching Analytics' Phone Reveal "Failed" bucket, and
+  // (now that reveals cost real money) stranding its 8-credit reservation as
+  // pending_webhook so the credits were never released or confirmed.
+  await db
+    .update(prospects)
+    .set({ phoneRevealStatus: "failed", updatedAt: now })
+    .where(and(eq(prospects.phoneRevealStatus, "requested"), lt(prospects.phoneRevealRequestedAt, staleCutoff)));
 }
 
 async function claimBatch(db: Db) {
