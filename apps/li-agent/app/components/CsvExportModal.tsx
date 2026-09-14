@@ -246,12 +246,18 @@ export function CsvExportModal<T extends ExportableRow>({
 
           {/* The real header, from the real builder -- not a hand-written copy
               that could describe columns the file does not have. */}
+          {/* A real grid, not just horizontal rules.
+              With truncated titles and em-dashes for empties, row lines alone
+              left no way to tell which value sat in which column -- the eye
+              had to travel back up to the header and count. `divide-x` on each
+              row draws the column separators; `border-separate` is avoided so
+              the outer rounded border still clips cleanly. */}
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-xs">
+            <table className="w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b border-border bg-muted/40 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                <tr className="divide-x divide-border bg-muted/50 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
                   {CSV_HEADER.map((h) => (
-                    <th key={h} className="whitespace-nowrap px-2.5 py-1.5 font-medium">
+                    <th key={h} className="whitespace-nowrap border-b border-border px-2.5 py-2 font-semibold">
                       {h}
                     </th>
                   ))}
@@ -264,12 +270,19 @@ export function CsvExportModal<T extends ExportableRow>({
                   // columns the moment a field contains a comma.
                   const cells = csvRowCells(row);
                   return (
-                    <tr key={i} className="border-b border-border/50 last:border-0">
+                    <tr
+                      key={i}
+                      // Zebra striping on top of the grid: two cues beat one
+                      // when a row is long enough to need horizontal scrolling.
+                      className={`divide-x divide-border/70 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
+                    >
                       {CSV_HEADER.map((h, ci) => (
                         <td
                           key={h}
-                          className={`max-w-[160px] truncate px-2.5 py-1.5 ${cells[ci] ? "text-foreground" : "text-muted-foreground/50"}`}
-                          title={cells[ci] || "empty"}
+                          className={`max-w-[170px] truncate border-t border-border/50 px-2.5 py-2 ${
+                            cells[ci] ? "text-foreground" : "text-center text-muted-foreground/40"
+                          }`}
+                          title={cells[ci] || `${h}: empty`}
                         >
                           {cells[ci] || "—"}
                         </td>
