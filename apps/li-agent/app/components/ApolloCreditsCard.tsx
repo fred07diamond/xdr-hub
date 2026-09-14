@@ -65,8 +65,8 @@ function num(v: string, fallback: number): number {
 }
 
 export function ApolloCreditsCard() {
-  const { data, isLoading } = useActionQuery("get-apollo-credit-settings", {});
-  const { data: usageRaw } = useActionQuery("get-apollo-credit-usage", {});
+  const { data, isLoading, refetch } = useActionQuery("get-apollo-credit-settings", {});
+  const { data: usageRaw, refetch: refetchUsage } = useActionQuery("get-apollo-credit-usage", {});
   const settings = data as CreditSettings | undefined;
   const usage = usageRaw as UsageData | undefined;
   const save = useActionMutation("set-apollo-credit-settings");
@@ -84,18 +84,35 @@ export function ApolloCreditsCard() {
   const [seeded, setSeeded] = useState(false);
   const [saved, setSaved] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<null | boolean>(null);
+  // Own error state rather than relying on save.isError: mutateAsync rejects,
+  // and without catching it the rejection was an unhandled promise from an
+  // onClick, leaving "Unsaved changes" up with nothing explaining why.
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  /**
+   * Seeds every field from a settings object.
+   *
+   * Called both by the initial effect and directly with the SAVE RESPONSE.
+   * That second path is the fix for saving appearing to do nothing: reseeding
+   * from `settings` alone re-read a react-query cache that had never been
+   * refetched, so the fields snapped back to their pre-save values.
+   */
+  function applySettings(s: CreditSettings) {
+    setBudget(String(s.periodBudget));
+    setAnchorDay(String(s.anchorDay));
+    setUserDefault(String(s.userDefaultLimit));
+    setPhoneStop(String(s.phoneStopPct));
+    setSweepReserve(String(s.sweepReservePct));
+    setMargin(String(s.safetyMargin));
+    setEnrichBar(s.enrichMinVerdict);
+    setPhoneBar(s.phoneMinVerdict);
+  }
 
   useEffect(() => {
     if (!settings || seeded) return;
-    setBudget(String(settings.periodBudget));
-    setAnchorDay(String(settings.anchorDay));
-    setUserDefault(String(settings.userDefaultLimit));
-    setPhoneStop(String(settings.phoneStopPct));
-    setSweepReserve(String(settings.sweepReservePct));
-    setMargin(String(settings.safetyMargin));
-    setEnrichBar(settings.enrichMinVerdict);
-    setPhoneBar(settings.phoneMinVerdict);
+    applySettings(settings);
     setSeeded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, seeded]);
 
   const dirty = useMemo(() => {
@@ -114,27 +131,60 @@ export function ApolloCreditsCard() {
 
   async function handleSavePolicy() {
     if (!settings) return;
-    await save.mutateAsync({
-      periodBudget: num(budget, settings.periodBudget),
-      anchorDay: num(anchorDay, settings.anchorDay),
-      userDefaultLimit: num(userDefault, settings.userDefaultLimit),
-      phoneStopPct: num(phoneStop, settings.phoneStopPct),
-      sweepReservePct: num(sweepReserve, settings.sweepReservePct),
-      safetyMargin: num(margin, settings.safetyMargin),
-      enrichMinVerdict: enrichBar,
-      phoneMinVerdict: phoneBar,
-    });
-    setSeeded(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaveError(null);
+    try {
+      const res = (await save.mutateAsync({
+        periodBudget: num(budget, settings.periodBudget),
+        anchorDay: num(anchorDay, settings.anchorDay),
+        userDefaultLimit: num(userDefault, settings.userDefaultLimit),
+        phoneStopPct: num(phoneStop, settings.phoneStopPct),
+        sweepReservePct: num(sweepReserve, settings.sweepReservePct),
+        safetyMargin: num(margin, settings.safetyMargin),
+        enrichMinVerdict: enrichBar,
+        phoneMinVerdict: phoneBar,
+      })) as { ok?: boolean; error?: string; settings?: CreditSettings };
+
+      // An action can decline without throwing. Treat that as a failure rather
+      // than flashing "Saved!" over a write that never happened.
+      if (res?.ok === false) {
+        setSaveError(res.error ?? "The server declined that change.");
+        return;
+      }
+
+      if (res?.settings) applySettings({ ...settings, ...res.settings });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      // Repoint the cache at the new values too, so the usage header and any
+      // other reader stop showing the old budget.
+      await Promise.all([refetch(), refetchUsage()]);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save the credit settings.");
+    }
   }
 
   async function handleConfirmToggle() {
     const next = confirmToggle;
     setConfirmToggle(null);
     if (next == null) return;
-    await save.mutateAsync({ enabled: next });
-    setSeeded(false);
+    setSaveError(null);
+    try {
+      const res = (await save.mutateAsync({ enabled: next })) as {
+        ok?: boolean;
+        error?: string;
+        settings?: CreditSettings;
+      };
+      if (res?.ok === false) {
+        setSaveError(res.error ?? "The server declined that change.");
+        return;
+      }
+      await Promise.all([refetch(), refetchUsage()]);
+    } catch (err) {
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : `Could not turn enrichment ${next ? "on" : "off"}.`,
+      );
+    }
   }
 
   const spent = usage?.spent ?? 0;
@@ -335,9 +385,7 @@ export function ApolloCreditsCard() {
                 <span className="text-xs text-muted-foreground">Unsaved changes</span>
               )}
             </div>
-            {save.isError && (
-              <p className="text-xs text-destructive">{(save.error as Error)?.message ?? "Failed to save"}</p>
-            )}
+            {saveError && <p className="text-xs text-destructive">{saveError}</p>}
           </>
         )}
       </CardContent>
@@ -434,17 +482,35 @@ export function ApolloUserLimitsCard() {
   // a table of live inputs invites saving the wrong row.
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [rowError, setRowError] = useState<string | null>(null);
 
   async function commit(email: string) {
     const trimmed = draft.trim();
     // Empty CLEARS the override so the user re-inherits the workspace default,
     // rather than pinning them to today's value.
     const value = trimmed === "" ? null : Number.parseInt(trimmed, 10);
-    if (value != null && (!Number.isFinite(value) || value < 0)) return;
-    await setLimit.mutateAsync({ userEmail: email, creditLimit: value });
-    setEditing(null);
-    setDraft("");
-    await refetch();
+    if (value != null && (!Number.isFinite(value) || value < 0)) {
+      setRowError("Enter a whole number of credits, or leave it blank to inherit the default.");
+      return;
+    }
+    setRowError(null);
+    try {
+      // Same shape as the settings card: an uncaught rejection here left the
+      // row stuck in edit mode with no explanation.
+      const res = (await setLimit.mutateAsync({ userEmail: email, creditLimit: value })) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (res?.ok === false) {
+        setRowError(res.error ?? "The server declined that change.");
+        return;
+      }
+      setEditing(null);
+      setDraft("");
+      await refetch();
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : "Could not save that limit.");
+    }
   }
 
   const rows = d?.rows ?? [];
@@ -578,9 +644,7 @@ export function ApolloUserLimitsCard() {
           </p>
         )}
 
-        {setLimit.isError && (
-          <p className="text-xs text-destructive">{(setLimit.error as Error)?.message ?? "Failed to save"}</p>
-        )}
+        {rowError && <p className="text-xs text-destructive">{rowError}</p>}
       </CardContent>
     </Card>
   );

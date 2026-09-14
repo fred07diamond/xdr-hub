@@ -1,4 +1,4 @@
-import { useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
+import { callAction, useActionQuery } from "@agent-native/core/client/hooks";
 import { IconAlertTriangle, IconCoins, IconDownload, IconX } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -212,23 +212,34 @@ export function CreditGaugeCard({
  * Downloads the credit ledger for a period.
  *
  * This is the artifact the credit pilot runs on: several Apollo billing
- * behaviours cannot be determined from the API (whether a no-match still
- * bills, whether a combined match+reveal is 9 or 8), so the only way to
+ * behaviours cannot be determined from the API (whether a combined
+ * match+reveal is 9 or 8, whether org-enrich bills at all), so the only way to
  * resolve them is to export a period and compare the total against Apollo's
  * real balance. `reprice-apollo-credit-ledger` then applies the correction.
+ *
+ * Uses `callAction` with an explicit GET rather than a hook, for two reasons:
+ *
+ * - The action declares `http: { method: "GET" }` because it is a read.
+ *   `useActionMutation` POSTs, which the framework rejects outright -- the bug
+ *   this replaced.
+ * - `useActionQuery` would issue the GET on mount, so simply opening Analytics
+ *   would run a 5,000-row ledger scan nobody asked for. An export has to stay
+ *   on demand.
  */
 export function LedgerExportButton({ periodStart }: { periodStart: string }) {
-  const exportLedger = useActionMutation("list-apollo-credit-ledger");
+  const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleExport() {
     setError(null);
+    setIsPending(true);
     try {
-      const result = (await exportLedger.mutateAsync({ periodStart })) as {
+      const result = await callAction<{
         rows?: Record<string, unknown>[];
         truncated?: boolean;
-      };
-      const rows = result.rows ?? [];
+      }>("list-apollo-credit-ledger", { periodStart }, { method: "GET" });
+
+      const rows = result?.rows ?? [];
       if (rows.length === 0) {
         setError("No credits spent this period yet.");
         return;
@@ -264,29 +275,27 @@ export function LedgerExportButton({ periodStart }: { periodStart: string }) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      if (result.truncated) {
-        setError("Hit the row cap — this export is partial.");
-      }
+      if (result?.truncated) setError("Hit the row cap — this export is partial.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not export the ledger.");
+    } finally {
+      setIsPending(false);
     }
   }
 
   return (
-    <div className="flex shrink-0 flex-col items-end gap-1">
+    <div className="flex flex-col items-end gap-1">
       <button
         type="button"
         onClick={handleExport}
-        disabled={exportLedger.isPending}
+        disabled={isPending}
+        title="Every charged call this period, for reconciling against an Apollo invoice."
         className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
       >
         <IconDownload size={13} />
-        {exportLedger.isPending ? "Exporting…" : "Export ledger"}
+        {isPending ? "Exporting…" : "Export ledger"}
       </button>
-      <p className="max-w-[180px] text-right text-[10px] leading-3 text-muted-foreground">
-        Every charged call, for reconciling against an Apollo invoice.
-      </p>
-      {error && <p className="max-w-[180px] text-right text-[10px] text-destructive">{error}</p>}
+      {error && <p className="max-w-[220px] text-right text-[10px] text-destructive">{error}</p>}
     </div>
   );
 }

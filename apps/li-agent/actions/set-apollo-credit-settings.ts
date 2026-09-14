@@ -3,7 +3,11 @@ import { z } from "zod";
 
 import { getDb } from "../server/db/index.js";
 import { workspaceSettings } from "../server/db/schema.js";
-import { APOLLO_SETTING_KEYS, VERDICT_BAR_VALUES } from "../server/helpers/apollo-credits/settings.js";
+import {
+  APOLLO_SETTING_KEYS,
+  getApolloCreditSettings,
+  VERDICT_BAR_VALUES,
+} from "../server/helpers/apollo-credits/settings.js";
 import { MAX_ANCHOR_DAY, MIN_ANCHOR_DAY } from "../server/helpers/apollo-credits/period.js";
 import { requireAdmin } from "../server/helpers/require-admin.js";
 
@@ -64,6 +68,14 @@ export default defineAction({
         .onConflictDoUpdate({ target: workspaceSettings.key, set: { value: w.value, updatedAt: now } });
     }
 
-    return { ok: true as const, updated: writes.map((w) => w.key) };
+    // Return the settings as they now actually READ BACK, not the input.
+    //
+    // This is what lets the form reseed from ground truth instead of from a
+    // react-query cache that has not been refetched -- the bug where saving
+    // appeared to do nothing because the fields snapped back to the stale
+    // cached values. It also surfaces clamping honestly: send phoneStopPct
+    // 150 and the form will show the 100 that was stored.
+    const settings = await getApolloCreditSettings();
+    return { ok: true as const, updated: writes.map((w) => w.key), settings };
   },
 });

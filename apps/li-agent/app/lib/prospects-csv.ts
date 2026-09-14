@@ -30,7 +30,7 @@ function splitName(name: string | null): { first: string; last: string } {
 }
 
 export function buildMasterCsv(rows: CsvRow[]): string {
-  const header = ["First Name", "Last Name", "Company", "Title", "Email", "Phone", "LinkedIn Url", "Location"];
+  const header = ["First Name", "Last Name", "Company", "Title", "Email", "Mobile Phone", "LinkedIn Url", "Location"];
   const body = rows.map((row) => {
     const { first, last } = splitName(row.name);
     return [

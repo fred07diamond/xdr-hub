@@ -2012,7 +2012,7 @@ function splitLeadName(name) {
 }
 
 function buildApolloCsv(items) {
-  const header = ["First Name", "Last Name", "Company", "Title", "Email", "Phone", "LinkedIn Url", "Location"];
+  const header = ["First Name", "Last Name", "Company", "Title", "Email", "Mobile Phone", "LinkedIn Url", "Location"];
   const rows = items.map((item) => {
     const { first, last } = splitLeadName(item.name);
     return [
