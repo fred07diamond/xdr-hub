@@ -4,6 +4,7 @@ import { getDb } from "../db/index.js";
 import { leadListItems, prospects } from "../db/schema.js";
 import { buildMessagingContext } from "./build-messaging-context.js";
 import { draftProfile } from "./draft-profile.js";
+import { assessableFrom } from "./fit-score.js";
 import { fitScoreColumns } from "./fit-score-columns.js";
 import { buildProfileSummary, selectPersona } from "./select-persona.js";
 
@@ -85,6 +86,10 @@ export async function scoreLeadListItem(
     profileUrl: profileUrlForPrompt,
     personaId,
     personaName,
+    // Explicit rather than inferred from the summary string: a lead-list row
+    // has no about/activity, so Intent must be EXCLUDED from the total rather
+    // than scored zero. See assessableFrom() in fit-score.ts.
+    assessable: assessableFrom(profile),
   });
 
   const now = new Date().toISOString();

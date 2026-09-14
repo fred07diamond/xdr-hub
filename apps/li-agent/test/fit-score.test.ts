@@ -187,3 +187,117 @@ describe("outreach generators leave room for an answer", () => {
     expect(SRC).toContain('reasoningEffort: "none"');
   });
 });
+
+describe("assessable dimensions — the possible-instead-of-strong bug", () => {
+  // A Sales Nav lead-list row carries name, headline, company, location. No
+  // `about`, no `recentActivity`. So Intent (25 of 100) was structurally
+  // unavailable and the rubric scored it 0-6 for "no activity supplied":
+  // a PERFECT lead-list lead topped out around 28+18+20+3 = 69, one point
+  // under the 70 needed for `strong`. Leads were marked down for data we
+  // never captured.
+
+  const LEAD_LIST_ROW = {
+    headline: "Director of Product Management",
+    company: "Ancestry",
+    about: null,
+    recentActivity: null,
+  };
+  const CAPTURED_PROFILE = {
+    headline: "Director of Product Management",
+    company: "Ancestry",
+    about: "I lead the platform team.",
+    recentActivity: "Posted about design-system tooling 3 days ago",
+  };
+
+  it("marks intent unassessable for a lead-list row", async () => {
+    const { assessableFrom } = await import("../server/helpers/fit-score.js");
+    const flags = assessableFrom(LEAD_LIST_ROW);
+    expect(flags.intent).toBe(false);
+    expect(flags.roleFit).toBe(true);
+    expect(flags.seniority).toBe(true);
+    expect(flags.companyFit).toBe(true);
+  });
+
+  it("marks everything assessable for a captured profile", async () => {
+    const { assessableFrom } = await import("../server/helpers/fit-score.js");
+    expect(assessableFrom(CAPTURED_PROFILE)).toEqual({
+      roleFit: true,
+      seniority: true,
+      companyFit: true,
+      intent: true,
+    });
+  });
+
+  it("scores out of 75 when intent cannot be judged", async () => {
+    const { assessableFrom, assessableMax } = await import("../server/helpers/fit-score.js");
+    expect(assessableMax(assessableFrom(LEAD_LIST_ROW))).toBe(75);
+    expect(assessableMax(assessableFrom(CAPTURED_PROFILE))).toBe(100);
+  });
+
+  it("promotes the exact lead that was landing in `possible`", async () => {
+    // The regression case, in numbers. A strong Director at a target account
+    // with no activity data.
+    const { assessableFrom, normalizedScore, verdictForScore } = await import(
+      "../server/helpers/fit-score.js"
+    );
+    const flags = assessableFrom(LEAD_LIST_ROW);
+    const breakdown = { roleFit: 28, seniority: 18, companyFit: 20, intent: 0 };
+
+    // Before: 66 of 100 -> possible.
+    expect(verdictForScore(66)).toBe("possible");
+    // After: 66 of an assessable 75 -> 88 -> strong.
+    const score = normalizedScore(breakdown, flags);
+    expect(score).toBe(88);
+    expect(verdictForScore(score)).toBe("strong");
+  });
+
+  it("does not inflate a genuinely weak lead", async () => {
+    // Normalizing must not turn a bad lead good. Low scores on the dimensions
+    // that WERE assessable still produce a low result.
+    const { assessableFrom, normalizedScore, verdictForScore } = await import(
+      "../server/helpers/fit-score.js"
+    );
+    const flags = assessableFrom(LEAD_LIST_ROW);
+    const score = normalizedScore({ roleFit: 5, seniority: 4, companyFit: 3, intent: 0 }, flags);
+    expect(score).toBeLessThan(40);
+    expect(verdictForScore(score)).toBe("weak");
+  });
+
+  it("keeps a fully-captured profile on the same scale", async () => {
+    const { assessableFrom, normalizedScore } = await import("../server/helpers/fit-score.js");
+    const flags = assessableFrom(CAPTURED_PROFILE);
+    // All four assessable, so the normalized score equals the raw total.
+    expect(normalizedScore({ roleFit: 30, seniority: 20, companyFit: 25, intent: 25 }, flags)).toBe(100);
+    expect(normalizedScore({ roleFit: 28, seniority: 18, companyFit: 20, intent: 0 }, flags)).toBe(66);
+  });
+
+  it("returns 0 when nothing at all can be assessed", async () => {
+    const { assessableFrom, normalizedScore } = await import("../server/helpers/fit-score.js");
+    const flags = assessableFrom({ headline: null, company: null, about: null, recentActivity: null });
+    expect(normalizedScore({ roleFit: 30, seniority: 20, companyFit: 25, intent: 25 }, flags)).toBe(0);
+  });
+
+  it("tells the model which dimensions to leave alone", async () => {
+    // Without this the model invents a low Intent score rather than skipping
+    // it, and that low score was the whole problem.
+    const { assessableFrom, unassessableNote } = await import("../server/helpers/fit-score.js");
+    const note = unassessableNote(assessableFrom(LEAD_LIST_ROW));
+    expect(note).toContain("Intent signals");
+    expect(note).toMatch(/EXCLUDED/);
+    expect(unassessableNote(assessableFrom(CAPTURED_PROFILE))).toBe("");
+  });
+
+  it("every draftProfile caller passes real flags", () => {
+    // The string-sniffing fallback exists only so an unported caller is
+    // approximately right. Nothing should rely on it.
+    for (const path of [
+      "server/helpers/score-lead-list-item.ts",
+      "actions/redraft-prospect.ts",
+      "actions/capture-profile.ts",
+    ]) {
+      expect(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), path).toContain(
+        "assessable: assessableFrom(profile)",
+      );
+    }
+  });
+});

@@ -7,6 +7,7 @@ import { messagingCanvases, prospects } from "../server/db/schema.js";
 import { buildMessagingContext } from "../server/helpers/build-messaging-context.js";
 import { buildCanvasContext } from "../server/helpers/build-canvas-context.js";
 import { draftProfile } from "../server/helpers/draft-profile.js";
+import { assessableFrom } from "../server/helpers/fit-score.js";
 import { fitScoreColumns } from "../server/helpers/fit-score-columns.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
@@ -144,6 +145,7 @@ export default defineAction({
       profileUrl: args.profileUrl,
       personaId,
       personaName,
+      assessable: assessableFrom(profile),
     });
 
     const draftedAt = new Date().toISOString();

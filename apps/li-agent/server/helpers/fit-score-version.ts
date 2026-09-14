@@ -5,4 +5,7 @@
  * import it without a cycle (fit-score-columns needs DraftResult's type, and
  * draft-profile needs the rubric).
  */
-export const SCORE_PROMPT_VERSION = "s1";
+// s2: dimensions with no supporting evidence are EXCLUDED from the total
+// rather than scored zero, so the same lead now scores higher than under s1.
+// Recorded per row, so a mixed table is still comparable.
+export const SCORE_PROMPT_VERSION = "s2";

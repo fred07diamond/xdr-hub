@@ -5,6 +5,7 @@ import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
 import { buildMessagingContext } from "../server/helpers/build-messaging-context.js";
 import { draftProfile } from "../server/helpers/draft-profile.js";
+import { assessableFrom } from "../server/helpers/fit-score.js";
 import { fitScoreColumns } from "../server/helpers/fit-score-columns.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 
@@ -49,6 +50,7 @@ export default defineAction({
       profileUrl: prospect.profileUrl,
       personaId,
       personaName,
+      assessable: assessableFrom(profile),
     });
 
     await db

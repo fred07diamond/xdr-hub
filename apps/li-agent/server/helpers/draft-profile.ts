@@ -3,11 +3,14 @@ import { getOutreachVoiceGuidelines } from "@xdr-hub/shared/server";
 import { getOwnerCtx } from "./get-owner-ctx.js";
 import { getPersonaGrounding, unauthorizedCustomerMentioned } from "./sales-library.js";
 import {
+  assessableFrom,
   clampDimension,
+  normalizedScore,
   SCORE_JSON_CONTRACT,
   SCORING_RUBRIC,
-  totalScore,
+  unassessableNote,
   verdictForScore,
+  type AssessableFlags,
   type FitBreakdown,
   type FitVerdict,
 } from "./fit-score.js";
@@ -41,6 +44,7 @@ export async function draftProfile({
   profileUrl,
   personaId,
   personaName,
+  assessable,
 }: {
   icpText: string | null;
   profileSummary: string;
@@ -48,6 +52,15 @@ export async function draftProfile({
   profileUrl: string;
   personaId?: string | null;
   personaName?: string | null;
+  /**
+   * Which dimensions the caller actually supplied evidence for.
+   *
+   * Defaults to everything-assessable so existing callers keep working, but
+   * every caller should pass it: a Sales Nav lead-list row has no about or
+   * activity, and treating Intent as scoreable there is what pushed every
+   * lead into `possible`. See assessableFrom() in fit-score.ts.
+   */
+  assessable?: AssessableFlags;
 }): Promise<DraftResult> {
   let fitVerdict: DraftResult["fitVerdict"] = "inconclusive";
   let fitReason = "No ICP document uploaded — add ICP criteria on the ICP tab to enable fit scoring.";
@@ -57,6 +70,16 @@ export async function draftProfile({
   let fitScore: number | null = null;
   let fitBreakdown: FitBreakdown | null = null;
   let intentSignal: string | null = null;
+  // Inferred from the summary when not supplied, so a caller that forgets is
+  // approximately right rather than silently penalising the lead.
+  const flags: AssessableFlags =
+    assessable ??
+    assessableFrom({
+      headline: profileSummary.includes("Headline:") ? "y" : null,
+      company: /\b(Company|Role):/.test(profileSummary) ? "y" : null,
+      about: profileSummary.includes("About (") ? "y" : null,
+      recentActivity: profileSummary.includes("Recent activity:") ? "y" : null,
+    });
 
   try {
     const ownerCtx = await getOwnerCtx();
@@ -84,7 +107,9 @@ export async function draftProfile({
         messagingBlock +
         voiceBlock +
         salesLibraryBlock +
-        `${SCORING_RUBRIC}\n\n` +
+        `${SCORING_RUBRIC}\n` +
+        unassessableNote(flags) +
+        `\n` +
         // No fitVerdict is requested. It is derived from the score, so the
         // model cannot hand back a label that disagrees with its own numbers.
         'Reply with valid JSON only: { ' +
@@ -170,8 +195,19 @@ export async function draftProfile({
         intent: clampDimension(raw.intent, "intent"),
         seniority: clampDimension(raw.seniority, "seniority"),
       };
-      fitBreakdown = breakdown;
-      fitScore = totalScore(breakdown);
+      // Dimensions with no evidence are stored NULL, not 0. The columns are
+      // already nullable, so this needs no migration -- and it keeps "we could
+      // not judge this" distinct from "we judged it and it scored zero", which
+      // is the distinction the whole fix turns on.
+      fitBreakdown = {
+        roleFit: flags.roleFit ? breakdown.roleFit : null,
+        companyFit: flags.companyFit ? breakdown.companyFit : null,
+        intent: flags.intent ? breakdown.intent : null,
+        seniority: flags.seniority ? breakdown.seniority : null,
+      };
+      // Normalized over what could be assessed, so a lead-list row judged on
+      // role/seniority/company is comparable with a fully captured profile.
+      fitScore = normalizedScore(breakdown, flags);
       fitVerdict = verdictForScore(fitScore, true);
       if (parsed.intentSignal) {
         const sig = stripEmDashes(String(parsed.intentSignal)).slice(0, 200).trim();

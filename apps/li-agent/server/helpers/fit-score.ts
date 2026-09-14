@@ -52,11 +52,20 @@ export const MAX_FIT_SCORE = Object.values(SCORE_WEIGHTS).reduce((a, b) => a + b
 
 export type ScoreDimension = keyof typeof SCORE_WEIGHTS;
 
+/**
+ * Per-dimension scores.
+ *
+ * NULL means "no evidence, so not judged" -- distinct from 0, which means
+ * "judged and scored zero". That distinction is what stops a lead being marked
+ * down for data we never captured, and it is why these are nullable rather
+ * than defaulted. clampDimension treats null as 0 for arithmetic; the
+ * assessable flags decide whether a dimension contributes at all.
+ */
 export interface FitBreakdown {
-  roleFit: number;
-  companyFit: number;
-  intent: number;
-  seniority: number;
+  roleFit: number | null;
+  companyFit: number | null;
+  intent: number | null;
+  seniority: number | null;
 }
 
 export type FitVerdict = "strong" | "possible" | "weak" | "inconclusive";
@@ -71,6 +80,79 @@ export type FitVerdict = "strong" | "possible" | "weak" | "inconclusive";
  * silent shift in what "strong" admits would silently change spend.
  */
 export const VERDICT_THRESHOLDS = { strong: 70, possible: 40 } as const;
+
+/**
+ * Which dimensions the supplied data can actually support a judgment on.
+ *
+ * THIS IS THE FIX for every lead landing in `possible`.
+ *
+ * A Sales Nav lead-list row carries name, headline, company and location. It
+ * has no `about` and no `recentActivity` -- those only appear once someone
+ * opens the real profile and capture-profile runs. So Intent, worth 25 of 100,
+ * was structurally unavailable: the rubric scores it 0-6 for "no activity
+ * supplied". The arithmetic ceiling for a PERFECT lead-list lead was roughly
+ * 28 + 18 + 20 + 3 = 69, one point under the 70 needed for `strong`.
+ *
+ * Leads were therefore being marked down for data we never captured rather
+ * than for being worse leads, which is exactly what "leads that used to be
+ * strong are now possible" was.
+ *
+ * Assessability is decided HERE, from what was actually sent to the model,
+ * rather than asked of the model. We know what we put in the prompt; it can
+ * only guess at what was withheld.
+ */
+export interface AssessableFlags {
+  roleFit: boolean;
+  seniority: boolean;
+  companyFit: boolean;
+  intent: boolean;
+}
+
+export function assessableFrom(input: {
+  headline?: string | null;
+  role?: string | null;
+  company?: string | null;
+  about?: string | null;
+  recentActivity?: string | null;
+}): AssessableFlags {
+  const hasTitle = !!(input.headline?.trim() || input.role?.trim());
+  return {
+    // A headline or role is the minimum for judging what someone does. The
+    // `about` text improves it but is not required.
+    roleFit: hasTitle || !!input.about?.trim(),
+    seniority: hasTitle || !!input.about?.trim(),
+    companyFit: !!input.company?.trim(),
+    // Intent needs dated evidence. Without activity there is nothing to
+    // assess, and scoring it zero is a claim we cannot support.
+    intent: !!input.recentActivity?.trim(),
+  };
+}
+
+/** Total weight of the dimensions that could be assessed. */
+export function assessableMax(flags: AssessableFlags): number {
+  return (Object.keys(SCORE_WEIGHTS) as ScoreDimension[])
+    .filter((d) => flags[d])
+    .reduce((sum, d) => sum + SCORE_WEIGHTS[d], 0);
+}
+
+/**
+ * Score as a percentage of what COULD be assessed.
+ *
+ * A lead judged on role, seniority and company is scored out of 75 and scaled
+ * to 100, so it stays comparable with a fully-captured profile judged out of
+ * 100. Without this, richer data is the only way to score highly and the
+ * number measures our capture coverage rather than the lead.
+ */
+export function normalizedScore(breakdown: FitBreakdown, flags: AssessableFlags): number {
+  const max = assessableMax(flags);
+  // Nothing assessable at all: no score, rather than a zero that would read as
+  // a judgment.
+  if (max <= 0) return 0;
+  const earned = (Object.keys(SCORE_WEIGHTS) as ScoreDimension[])
+    .filter((d) => flags[d])
+    .reduce((sum, d) => sum + clampDimension(breakdown[d], d), 0);
+  return Math.max(0, Math.min(MAX_FIT_SCORE, Math.round((earned / max) * MAX_FIT_SCORE)));
+}
 
 /** Clamps a raw dimension score into its weight. */
 export function clampDimension(value: unknown, dimension: ScoreDimension): number {
@@ -162,6 +244,25 @@ export const SCORING_RUBRIC = [
   `score is useless — reserve 90+ for leads you would genuinely prioritise today`,
   `over everything else in the list.`,
 ].join("\n");
+
+/**
+ * Instruction naming the dimensions that cannot be judged from this input.
+ *
+ * Told explicitly rather than left implicit, because a model handed a rubric
+ * with an Intent section and no activity data will invent a low score for it
+ * rather than leave it alone -- and that low score was the whole problem.
+ */
+export function unassessableNote(flags: AssessableFlags): string {
+  const missing = (Object.keys(SCORE_WEIGHTS) as ScoreDimension[]).filter((d) => !flags[d]);
+  if (missing.length === 0) return "";
+  return (
+    `\nIMPORTANT: this profile contains no evidence for ${missing
+      .map((d) => DIMENSION_LABELS[d])
+      .join(" or ")}. Score ${missing.length === 1 ? "it" : "them"} 0 and do NOT let that absence ` +
+    `reduce the others. ${missing.length === 1 ? "That dimension is" : "Those dimensions are"} EXCLUDED ` +
+    `from the total rather than counted as a failure, so the lead is judged only on what is actually here.\n`
+  );
+}
 
 /** JSON contract appended to the prompt. */
 export const SCORE_JSON_CONTRACT =
