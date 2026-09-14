@@ -14,7 +14,7 @@ import {
   describePhoneRevealState,
   TONE_CLASS,
 } from "@/lib/enrichment-vocabulary";
-import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
+import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, MAX_BULK_SCORE, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { CsvExportModal } from "@/components/CsvExportModal";
 import { applyShiftClickSelection } from "@/lib/selection";
@@ -422,6 +422,8 @@ export default function LeadListsPage() {
   const [renamingListId, setRenamingListId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [scoreProgress, setScoreProgress] = useState<{ done: number; total: number } | null>(null);
+  const [scoreError, setScoreError] = useState<string | null>(null);
   // Selected LISTS (distinct from selectedItemIds, which is leads within one
   // list). Deleting a list takes its leads with it, so these are deliberately
   // separate selections that cannot be confused for one another.
@@ -480,6 +482,7 @@ export default function LeadListsPage() {
   const renameList = useActionMutation("rename-lead-list");
   const bulkDeleteItems = useActionMutation("bulk-delete-lead-list-items");
   const revealPhone = useActionMutation("reveal-phone");
+  const scoreItem = useActionMutation("score-lead-list-item");
   const enrichItem = useActionMutation("enrich-lead-list-item");
 
   // Status eligibility AND quality. This previously filtered on status
@@ -554,6 +557,59 @@ export default function LeadListsPage() {
     setExportRequest((prev) => (prev ? { ...prev, rows: merged } : prev));
     return merged;
   }
+
+  /**
+   * Scores and drafts a batch of leads.
+   *
+   * This is the backfill path that did not exist. The background sweep only
+   * scores leads imported after it shipped (autoEnrich), so every older list
+   * has no verdict at all -- which is why the Fit column read blank and why
+   * the export's phone toggle found nothing eligible: the fit bar cannot be
+   * cleared by a lead that was never scored.
+   *
+   * Costs no Apollo credits. Scoring is an LLM call against the persona
+   * criteria; the credit guard is not involved, which is precisely why the
+   * pipeline scores BEFORE it spends.
+   */
+  async function runBulkScore(targets: LeadListItem[]) {
+    const batch = targets.slice(0, MAX_BULK_SCORE);
+    if (batch.length === 0) return;
+    setScoreError(null);
+    setScoreProgress({ done: 0, total: batch.length });
+    let consecutiveFailures = 0;
+    try {
+      for (const item of batch) {
+        try {
+          const res = (await scoreItem.mutateAsync({ itemId: item.id })) as
+            | { ok?: boolean; error?: string }
+            | undefined;
+          if (res?.error) throw new Error(res.error);
+          consecutiveFailures = 0;
+        } catch (err) {
+          consecutiveFailures += 1;
+          // A systemic failure (no ICP uploaded, model outage) would otherwise
+          // repeat identically for every remaining lead.
+          if (consecutiveFailures >= BULK_MAX_CONSECUTIVE_FAILURES) {
+            setScoreError(
+              `Stopped after ${BULK_MAX_CONSECUTIVE_FAILURES} failures in a row. ${
+                err instanceof Error ? err.message : ""
+              }`.trim(),
+            );
+            break;
+          }
+        } finally {
+          setScoreProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+        }
+      }
+    } finally {
+      setScoreProgress(null);
+      await itemsQuery.refetch();
+    }
+  }
+
+  // Leads on this page with no verdict yet. Drives the "Score N unscored"
+  // button, so the backfill is one click rather than a selection exercise.
+  const unscoredItems = allItems.filter((i) => !i.fitVerdict);
 
   function toggleListSelected(listId: string) {
     setSelectedListIds((prev) => {
@@ -969,6 +1025,19 @@ export default function LeadListsPage() {
                 toast would be gone before anyone read why it stopped. Before
                 this, a budget refusal produced N silent no-ops and the user
                 was told nothing at all. */}
+            {scoreError && (
+              <div className="flex items-start justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2.5">
+                <p className="text-xs text-amber-800 dark:text-amber-300">{scoreError}</p>
+                <button
+                  type="button"
+                  onClick={() => setScoreError(null)}
+                  className="shrink-0 text-xs text-amber-800/70 hover:text-amber-900 dark:text-amber-300/70"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {bulkHalt && (
               <div className="flex items-start justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2.5">
                 <p className="text-xs text-amber-800 dark:text-amber-300">
@@ -1053,6 +1122,40 @@ export default function LeadListsPage() {
                 </div>
               )}
               <div className="flex items-center gap-2">
+                {/* Scoring sits BEFORE enrich in the toolbar because it comes
+                    first in the pipeline and costs nothing -- a lead should be
+                    scored before anyone decides whether it is worth a credit.
+                    Shown whenever anything is unscored, regardless of whether
+                    Apollo enrichment is switched on, since the two are
+                    independent. */}
+                {scoreProgress ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <IconLoader2 size={12} className="animate-spin" />
+                    Scoring {scoreProgress.done}/{scoreProgress.total}…
+                  </span>
+                ) : selectedItemIds.size > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void runBulkScore(allItems.filter((i) => selectedItemIds.has(i.id)))}
+                    title="Score fit against your ICP and draft a note. No Apollo credits."
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                  >
+                    <IconSparkles size={12} />
+                    Score {Math.min(selectedItemIds.size, MAX_BULK_SCORE)}
+                    {selectedItemIds.size > MAX_BULK_SCORE && ` of ${selectedItemIds.size}`}
+                  </button>
+                ) : unscoredItems.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void runBulkScore(unscoredItems)}
+                    title="Score fit against your ICP and draft a note. Free — no Apollo credits."
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                  >
+                    <IconSparkles size={12} />
+                    Score {Math.min(unscoredItems.length, MAX_BULK_SCORE)} unscored
+                    {unscoredItems.length > MAX_BULK_SCORE && ` of ${unscoredItems.length}`}
+                  </button>
+                ) : null}
                 {bulkEnrichProgress ? (
                   <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                     <IconLoader2 size={12} className="animate-spin" />

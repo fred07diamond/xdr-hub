@@ -22,6 +22,16 @@
 export const MAX_BULK_ENRICH = 50;
 
 /** Apollo's pricing, mirrored for the pre-flight estimate. */
+/**
+ * Cap on a bulk SCORING run.
+ *
+ * Scoring costs no Apollo credits -- it is an LLM call and a database write --
+ * so this is a runtime bound, not a spend bound. At a few seconds each, 50 is
+ * about as long as anyone will watch a progress counter, and the same number
+ * as the enrich cap keeps the two predictable.
+ */
+export const MAX_BULK_SCORE = 50;
+
 export const CREDITS_PER_EMAIL = 1;
 export const CREDITS_PER_PHONE_REVEAL = 8;
 

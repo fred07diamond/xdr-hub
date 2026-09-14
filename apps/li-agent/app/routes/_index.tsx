@@ -79,7 +79,7 @@ import {
   describePhoneRevealState,
   TONE_CLASS,
 } from "@/lib/enrichment-vocabulary";
-import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, type BulkHaltState } from "@/lib/apollo-limits";
+import { BULK_HALT_CODES, BULK_MAX_CONSECUTIVE_FAILURES, CREDITS_PER_PHONE_REVEAL, describeHalt, MAX_BULK_ENRICH, MAX_BULK_SCORE, type BulkHaltState } from "@/lib/apollo-limits";
 import { isBulkEligibleQuality, leadQuality, sortByQuality } from "@/lib/lead-quality";
 import { cn } from "@/lib/utils";
 
@@ -1218,6 +1218,7 @@ export default function ProspectsRoute() {
   const enrichLeadListItem = useActionMutation("enrich-lead-list-item");
   const revealPhone = useActionMutation("reveal-phone");
   const scoreLeadListItem = useActionMutation("score-lead-list-item");
+  const redraftProspect = useActionMutation("redraft-prospect");
 
   const tagsQuery = useActionQuery("list-prospect-tags", {});
   const allTags: Tag[] = ((tagsQuery.data as { tags?: Tag[] } | undefined)?.tags ?? []);
@@ -1373,12 +1374,29 @@ export default function ProspectsRoute() {
     [allProspects, selectedIds],
   );
 
-  // Score & Draft only applies to not-yet-visited lead_list-sourced rows --
-  // a real prospects row already has a fit score/draft, so bulk scoring
-  // only targets the complementary subset of the selection.
+  // Score & Draft used to target ONLY lead_list-sourced rows, on the reasoning
+  // that a real prospects row already has a verdict. That is true and was
+  // still the wrong call: a verdict is only as good as the persona criteria it
+  // was scored against, and those change. Editing the ICP left every existing
+  // prospect carrying a stale verdict with no way to refresh it.
+  //
+  // So both sources are scoreable now. Lead-list rows go through
+  // score-lead-list-item (first score); prospects rows go through
+  // redraft-prospect, whose own description is "re-run AI scoring and note
+  // drafting" -- it existed all along and nothing bulk reached it.
   const selectedLeadListSourced = useMemo(
     () => allProspects.filter((p) => selectedIds.has(p.id) && p.source === "lead_list"),
     [allProspects, selectedIds],
+  );
+  const selectedScoreable = useMemo(
+    () => allProspects.filter((p) => selectedIds.has(p.id)),
+    [allProspects, selectedIds],
+  );
+  // How many of the selection have never been scored, so the button can say
+  // "Score" vs "Rescore" honestly instead of guessing.
+  const selectedUnscored = useMemo(
+    () => selectedScoreable.filter((p) => !p.fitVerdict).length,
+    [selectedScoreable],
   );
 
   async function handleBulkDelete() {
@@ -1561,7 +1579,7 @@ export default function ProspectsRoute() {
   // hit surfaces as a normal per-item error rather than throwing, so the
   // batch can just keep recording errors and move on.
   async function handleBulkScoreDraft() {
-    const targets = selectedLeadListSourced;
+    const targets = selectedScoreable.slice(0, MAX_BULK_SCORE);
     if (targets.length === 0) return;
     setBulkScoreDraftProgress({ done: 0, total: targets.length });
     for (const p of targets) {
@@ -1572,7 +1590,14 @@ export default function ProspectsRoute() {
         return next;
       });
       try {
-        const result = await scoreLeadListItem.mutateAsync({ itemId: p.rawId });
+        // Route by source: a lead-list row is being scored for the first
+        // time, a prospects row is being RE-scored against the current
+        // persona criteria.
+        const result = (await (p.source === "lead_list"
+          ? scoreLeadListItem.mutateAsync({ itemId: p.rawId })
+          : redraftProspect.mutateAsync({ id: p.rawId }))) as
+          | { ok?: boolean; error?: string }
+          | undefined;
         if (result?.error) {
           const message = result.error;
           setScoringErrors((prev) => new Map(prev).set(p.id, message));
@@ -1741,10 +1766,13 @@ export default function ProspectsRoute() {
                   </span>
                 ) : (
                   <button type="button" onClick={handleBulkScoreDraft}
-                    disabled={selectedLeadListSourced.length === 0}
-                    title={selectedLeadListSourced.length === 0 ? "Only not-yet-visited leads can be scored here" : undefined}
+                    disabled={selectedScoreable.length === 0}
+                    title="Re-score fit against your current persona criteria and redraft the note. No Apollo credits."
                     className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
-                    <IconSparkles size={13} /> Score &amp; Draft selected
+                    <IconSparkles size={13} />{" "}
+                    {selectedUnscored === selectedScoreable.length ? "Score" : "Rescore"}{" "}
+                    {Math.min(selectedScoreable.length, MAX_BULK_SCORE)}
+                    {selectedScoreable.length > MAX_BULK_SCORE && ` of ${selectedScoreable.length}`}
                   </button>
                 )}
                 <AddToListPopover
