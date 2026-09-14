@@ -152,7 +152,13 @@ export async function enrichApolloRecord(
 ): Promise<ApolloEnrichmentOutcome> {
   const row = target.row as EnrichableRow;
 
-  if (isEnrichmentFresh(row)) return outcomeFromStoredRow(row);
+  // The freshness short-circuit exists to avoid re-paying for data we already
+  // have. A phone-reveal request is asking for data we DON'T have (Apollo only
+  // returns a personal number on the call that requests the reveal), so a
+  // fresh row must not block it -- otherwise "Reveal phone" would silently do
+  // nothing on any lead enriched in the last 30 days, which is most of them.
+  // The caller is responsible for not asking when a number is already stored.
+  if (!options.revealPhone && isEnrichmentFresh(row)) return outcomeFromStoredRow(row);
 
   // Authorize and pre-record the spend BEFORE anything else. Two properties
   // matter here:
@@ -281,13 +287,32 @@ export async function enrichApolloRecord(
   // (irrelevant) outcome. Matching key is Apollo's own person.id --
   // live-confirmed the webhook payload has no request_id, only a
   // `people[].id` identifying which person each result is for.
+  // Computed explicitly rather than inferred from the shape of the update
+  // object: the update now also carries attribution columns, so an
+  // `"phoneRevealStatus" in update` check no longer narrows the type and the
+  // resulting `{} | null` silently widened the return value.
+  const revealStatus: EnrichableRow["phoneRevealStatus"] = !revealPhone
+    ? row.phoneRevealStatus
+    : phone
+      ? "done"
+      : person?.id
+        ? "requested"
+        : "failed";
+
   const phoneRevealUpdate = !revealPhone
     ? {}
-    : phone
-      ? { phoneRevealStatus: "done" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null }
-      : person?.id
-        ? { phoneRevealStatus: "requested" as const, phoneRevealRequestId: person.id, phoneRevealRequestedAt: enrichedAt }
-        : { phoneRevealStatus: "failed" as const, phoneRevealRequestId: null, phoneRevealRequestedAt: null };
+    : {
+        phoneRevealStatus: revealStatus,
+        phoneRevealRequestId: revealStatus === "requested" ? (person?.id ?? null) : null,
+        phoneRevealRequestedAt: revealStatus === "requested" ? enrichedAt : null,
+        // Attribution: an 8-credit spend is recorded against a named person,
+        // and an override of the fit gate is recorded as such -- so the
+        // override count on the Analytics gauge reflects real decisions rather
+        // than being inferred after the fact.
+        phoneRevealRequestedBy: options.actorEmail ?? null,
+        phoneRevealOverride: options.overrideFitGate ? 1 : 0,
+        phoneRevealOverrideAt: options.overrideFitGate ? enrichedAt : null,
+      };
 
   await persist(db, target, {
     enrichmentStatus: status,
@@ -316,8 +341,7 @@ export async function enrichApolloRecord(
     enrichedCompanySize: organization?.estimated_num_employees ?? null,
     companyDomain: person?.organization?.primary_domain ?? row.companyDomain,
     enrichmentError,
-    phoneRevealStatus:
-      ("phoneRevealStatus" in phoneRevealUpdate ? phoneRevealUpdate.phoneRevealStatus : row.phoneRevealStatus) ?? null,
+    phoneRevealStatus: revealStatus ?? null,
     ...(phoneRevealSkippedReason ? { phoneRevealSkippedReason } : {}),
   };
 }
