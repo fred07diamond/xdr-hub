@@ -92,6 +92,10 @@ export function HotLeadsSection<T extends HotLead>({
   const [showAll, setShowAll] = useState(false);
   const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
   const [scoringAll, setScoringAll] = useState<{ done: number; total: number } | null>(null);
+  // Surfaced rather than swallowed. draftProfile catches its own failures and
+  // writes fitReason "Draft failed: ...", so a broken score wrote a row and
+  // returned normally -- the button appeared to do nothing at all.
+  const [scoreError, setScoreError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -113,9 +117,12 @@ export function HotLeadsSection<T extends HotLead>({
 
   async function scoreOne(lead: T) {
     if (!onScore) return;
+    setScoreError(null);
     setScoringIds((prev) => new Set(prev).add(lead.id));
     try {
       await onScore(lead);
+    } catch (err) {
+      setScoreError(err instanceof Error ? err.message : "Could not score that lead.");
     } finally {
       setScoringIds((prev) => {
         const next = new Set(prev);
@@ -132,9 +139,21 @@ export function HotLeadsSection<T extends HotLead>({
       // Sequential, matching every other scoring loop in the app: each is an
       // LLM call against a per-owner rate bucket, and firing 19 at once just
       // converts them into rate-limit errors.
+      let failures = 0;
+      let lastMessage = "";
       for (const lead of targets) {
-        await onScore(lead).catch(() => {});
+        await onScore(lead).catch((err: unknown) => {
+          failures += 1;
+          lastMessage = err instanceof Error ? err.message : "";
+        });
         setScoringAll((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+      }
+      // Reported once at the end rather than per lead. A run of 19 that failed
+      // silently looked like the button did nothing.
+      if (failures > 0) {
+        setScoreError(
+          `${failures} of ${targets.length} could not be scored.${lastMessage ? ` ${lastMessage}` : ""}`,
+        );
       }
     } finally {
       setScoringAll(null);
@@ -223,6 +242,12 @@ export function HotLeadsSection<T extends HotLead>({
             : `${settings.scoreThreshold}+ score, or strong fit in a matched persona`}
         </span>
       </div>
+
+      {scoreError && (
+        <p className="mx-4 mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
+          {scoreError}
+        </p>
+      )}
 
       {!collapsed && (
         <div className="px-4 pb-3">

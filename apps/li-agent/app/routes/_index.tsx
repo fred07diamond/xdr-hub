@@ -1985,9 +1985,16 @@ export default function ProspectsRoute() {
           // Routed by source exactly like handleBulkScoreDraft: a lead-list
           // row is scored for the first time, a prospects row is RE-scored
           // against the current persona criteria.
-          if (lead.source === "lead_list") await scoreLeadListItem.mutateAsync({ itemId: lead.rawId });
-          else await redraftProspect.mutateAsync({ id: lead.rawId });
+          const res = (await (lead.source === "lead_list"
+            ? scoreLeadListItem.mutateAsync({ itemId: lead.rawId })
+            : redraftProspect.mutateAsync({ id: lead.rawId }))) as
+            | { ok?: boolean; error?: string }
+            | undefined;
           await refetch();
+          // These actions DECLINE by returning ok:false rather than throwing,
+          // so without this the section's error handler never fires and a
+          // failed score looks like a no-op.
+          if (res?.ok === false) throw new Error(res.error ?? "Scoring was declined.");
         }}
       />
 

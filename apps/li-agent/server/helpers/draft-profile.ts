@@ -104,7 +104,11 @@ export async function draftProfile({
       completeText({
         systemPrompt,
         input: profileSummary || `LinkedIn profile: ${profileUrl}`,
-        maxOutputTokens: 700,
+        // Raised from 700. The response GREW when granular scoring landed --
+        // it now carries a four-number score object and an intentSignal on top
+        // of the reason, note and follow-up -- and I did not raise the cap with
+        // it, so the answer could be truncated even with reasoning off.
+        maxOutputTokens: 1200,
         /**
          * Reasoning OFF, same as the briefing phases, and for the same reason.
          *
