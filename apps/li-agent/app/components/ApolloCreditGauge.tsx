@@ -86,11 +86,15 @@ export function useCreditUsage() {
 /**
  * Compact credit strip for the Analytics Overview tab.
  *
- * Deliberately small. The full breakdown now lives on its own Credits tab (see
- * ApolloCreditUsage.tsx), the way Apollo gives credit usage a whole screen --
- * this one had grown into the largest thing on Overview while still not
- * answering much. What survives is the question Overview should answer at a
- * glance: how much is left, and is anything paused.
+ * Shows the VIEWER'S OWN allowance, not the workspace total. On Overview the
+ * actionable question is "how much can I still spend?", and the workspace
+ * figure does not answer it -- a personal cap of 2,000 against a workspace
+ * budget of 27,996 means the number that will actually stop an xDR is their
+ * own. The workspace picture is an admin concern and lives on the Credits tab.
+ *
+ * The one workspace fact kept here is the tier: when enrichment is stopped or
+ * phones are paused workspace-wide, a healthy personal balance is misleading,
+ * because the thing blocking them is not their own limit.
  */
 export function CreditGaugeCard({
   className,
@@ -104,11 +108,19 @@ export function CreditGaugeCard({
 
   if (isLoading || !d) return null;
 
-  const pct = d.budget > 0 ? Math.min(100, (d.spent / d.budget) * 100) : 0;
-  const emailPct = d.budget > 0 ? Math.min(100, (d.emailCredits / d.budget) * 100) : 0;
-  const phonePct = d.budget > 0 ? Math.min(100 - emailPct, (d.phoneCredits / d.budget) * 100) : 0;
-  const overBar = pct >= 100;
-  const phonesPaused = pct >= d.phoneStopPct;
+  const mine = d.mine;
+  // No personal figures means no session to attribute spend to. The workspace
+  // view is a tab away; do not silently substitute it here.
+  if (!mine) return null;
+
+  const limit = mine.limit;
+  const pct = limit > 0 ? Math.min(100, (mine.credits / limit) * 100) : 0;
+  const emailPct = limit > 0 ? Math.min(100, (mine.emailCredits / limit) * 100) : 0;
+  const phonePct = limit > 0 ? Math.min(100 - emailPct, (mine.phoneCredits / limit) * 100) : 0;
+
+  const personalExhausted = mine.remaining === 0 && limit > 0;
+  const workspaceStopped = d.spentPct >= 100;
+  const phonesPaused = d.spentPct >= d.phoneStopPct;
 
   return (
     <div
@@ -119,17 +131,15 @@ export function CreditGaugeCard({
         <div className="min-w-0">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
             <IconCoins size={15} />
-            Apollo Credits
+            Your Apollo Credits
           </h3>
           <p className="mt-0.5 flex flex-wrap items-baseline gap-1.5">
             <span
-              className={`text-2xl font-semibold tabular-nums ${overBar ? "text-destructive" : phonesPaused ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
+              className={`text-2xl font-semibold tabular-nums ${personalExhausted || workspaceStopped ? "text-destructive" : "text-foreground"}`}
             >
-              {d.remaining.toLocaleString()}
+              {mine.remaining.toLocaleString()}
             </span>
-            <span className="text-xs text-muted-foreground">
-              / {d.budget.toLocaleString()} available
-            </span>
+            <span className="text-xs text-muted-foreground">/ {limit.toLocaleString()} available</span>
           </p>
           <p className="text-xs text-muted-foreground">
             {d.enabled ? `Renews ${d.resetLabel}` : "Enrichment is off — nothing is being spent"}
@@ -137,30 +147,51 @@ export function CreditGaugeCard({
         </div>
 
         <div className="min-w-[180px] flex-1">
-          <div className="relative flex h-2 w-full overflow-hidden rounded-full bg-muted">
+          {/* Their spend against THEIR limit. No phone-pause tick here: that
+              threshold is a percentage of the workspace budget, so marking it
+              on a personal bar would put it at a meaningless position. */}
+          <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
             <div className="h-full bg-sky-500" style={{ width: `${emailPct}%` }} title="Emails" />
             <div className="h-full bg-violet-500" style={{ width: `${phonePct}%` }} title="Phone reveals" />
-            <div
-              className="absolute top-0 h-full w-0.5 bg-foreground/50"
-              style={{ left: `${Math.min(99.5, d.phoneStopPct)}%` }}
-              title={`Phone reveals pause at ${d.phoneStopPct}%`}
-            />
           </div>
           <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
             <span>
-              <b className="font-semibold tabular-nums text-foreground">{d.spent.toLocaleString()}</b> used
+              <b className="font-semibold tabular-nums text-foreground">{mine.credits.toLocaleString()}</b> used
               ({Math.round(pct)}%)
             </span>
-            {d.wastedCredits > 0 && (
-              <span className="text-destructive">{d.wastedCredits.toLocaleString()} wasted</span>
-            )}
-            {d.lowFitCredits > 0 && (
-              <span className="text-amber-600 dark:text-amber-400">
-                {d.lowFitCredits.toLocaleString()} on low-fit leads
+            {mine.credits > 0 && (
+              <span>
+                {mine.emailCredits.toLocaleString()} on emails, {mine.phoneCredits.toLocaleString()} on phones
               </span>
             )}
-            {phonesPaused && <span className="text-amber-600 dark:text-amber-400">phone reveals paused</span>}
+            {mine.lowFit > 0 && (
+              <span className="text-amber-600 dark:text-amber-400">
+                {mine.lowFit.toLocaleString()} on low-fit leads
+              </span>
+            )}
+            {mine.wasted > 0 && (
+              <span className="text-destructive">{mine.wasted.toLocaleString()} wasted</span>
+            )}
           </p>
+
+          {/* Workspace-level blocks override a healthy personal balance, so
+              they are stated rather than left to be discovered on a failed
+              click. */}
+          {d.enabled && (workspaceStopped || phonesPaused) && (
+            <p
+              className={`mt-1 text-[11px] ${workspaceStopped ? "text-destructive" : "text-amber-600 dark:text-amber-400"}`}
+            >
+              {workspaceStopped
+                ? `The workspace has used its whole budget — enrichment is paused for everyone until ${d.resetLabel}.`
+                : "The workspace is past 80% — phone reveals are paused for everyone, emails still work."}
+            </p>
+          )}
+          {d.enabled && !workspaceStopped && personalExhausted && (
+            <p className="mt-1 text-[11px] text-destructive">
+              You have used your whole allowance for this period. Ask an admin to raise it, or wait for{" "}
+              {d.resetLabel}.
+            </p>
+          )}
         </div>
 
         {onOpenDetails && (
