@@ -335,6 +335,20 @@ async function listLeadLists() {
   return await res.json(); // { lists: [{ id, name, totalCount }] }
 }
 
+async function checkLeadsInLists(salesNavLeadUrls) {
+  const { appUrl, apiToken } = await getSettings();
+  const res = await fetch(`${appUrl}/_agent-native/actions/check-leads-in-lists`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ salesNavLeadUrls, apiToken: apiToken || null }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`check-leads-in-lists failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return await res.json(); // { inLists: { [url]: { listId, listName, addedAt } }, checked }
+}
+
 async function getLeadListItems(listId) {
   const { appUrl, apiToken } = await getSettings();
   const tokenParam = apiToken ? `&apiToken=${encodeURIComponent(apiToken)}` : "";
@@ -599,6 +613,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     listLeadLists()
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => sendResponse({ ok: false, error: err.message, lists: [] }));
+    return true;
+  }
+
+  if (msg.type === "CHECK_LEADS_IN_LISTS") {
+    checkLeadsInLists(msg.salesNavLeadUrls || [])
+      .then((result) => sendResponse({ ok: true, ...result }))
+      // `ok: false` matters: the panel must not clear a local exclusion on a
+      // failed check, only on a successful one that came back clean.
+      .catch((err) => sendResponse({ ok: false, error: err.message, inLists: {} }));
     return true;
   }
 

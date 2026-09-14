@@ -1276,6 +1276,13 @@ function switchTab(tab) {
   mainContent.style.display = tab === "profile" ? "block" : "none";
   engagersTab.style.display = tab === "engagers" ? "block" : "none";
   if (listsTab) listsTab.style.display = tab === "lists" ? "block" : "none";
+
+  // Opening the Lists tab re-checks the capture against the server, so a list
+  // deleted on the platform frees its leads here without needing a fresh
+  // scrape first. Fire-and-forget: it re-renders itself if anything changed.
+  if (tab === "lists" && Object.keys(listImportSession.leadsByUrl).length > 0) {
+    void reconcileAlreadySentWithServer(Object.keys(listImportSession.leadsByUrl));
+  }
 }
 
 tabProfileBtn.addEventListener("click", () => switchTab("profile"));
@@ -1545,6 +1552,77 @@ function saveAlreadySentLeads() {
   }
 }
 
+/**
+ * Reconciles the local "already in a list" cache against the SERVER.
+ *
+ * The local cache is written optimistically the moment a capture is sent, so
+ * the chip appears instantly. It was also the only source of truth, which is
+ * why deleting a list left its leads permanently un-importable: the cache
+ * still claimed they belonged to a list that no longer existed, and
+ * mergeLeadRows auto-excludes anything the cache flags.
+ *
+ * So the server now gets the last word. Three things happen here:
+ *
+ * - A lead the server says is NOT in any existing list is dropped from the
+ *   cache AND un-excluded, so a deleted list frees its leads immediately.
+ * - A lead the server says IS in a list gets the real, current list name --
+ *   which also fixes leads imported on another machine showing as new.
+ * - A failed check changes nothing. Clearing exclusions because the network
+ *   blipped would silently re-import genuine duplicates.
+ */
+async function reconcileAlreadySentWithServer(urls) {
+  const wanted = [...new Set((urls || []).filter(Boolean))];
+  if (wanted.length === 0) return false;
+
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({
+      type: "CHECK_LEADS_IN_LISTS",
+      salesNavLeadUrls: wanted,
+    });
+  } catch {
+    return false;
+  }
+  if (!res?.ok) return false;
+
+  const inLists = res.inLists || {};
+  let changed = false;
+
+  for (const url of wanted) {
+    const server = inLists[url];
+    if (server) {
+      const local = alreadySentByUrl[url];
+      if (!local || local.listName !== server.listName) {
+        alreadySentByUrl[url] = {
+          listName: server.listName,
+          sentAt: server.addedAt || new Date().toISOString(),
+        };
+        changed = true;
+      }
+    } else if (alreadySentByUrl[url]) {
+      // The list this lead was in is gone. Free it.
+      delete alreadySentByUrl[url];
+      const lead = listImportSession.leadsByUrl[url];
+      if (lead) lead.alreadySent = null;
+      const idx = listImportSession.excludedUrls.indexOf(url);
+      if (idx !== -1) listImportSession.excludedUrls.splice(idx, 1);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveAlreadySentLeads();
+    saveListImportSession();
+    // Re-apply the (now corrected) cache onto the rows already captured, so
+    // chips and checkboxes agree with what the server just said.
+    for (const [url, lead] of Object.entries(listImportSession.leadsByUrl)) {
+      lead.alreadySent = alreadySentByUrl[url] ?? null;
+    }
+    renderListsTab();
+  }
+  return changed;
+}
+
 function markLeadsAlreadySent(leads, listName) {
   const sentAt = new Date().toISOString();
   for (const lead of leads) {
@@ -1633,7 +1711,21 @@ function mergeLeadRows(rows) {
   }
   saveListImportSession();
   renderListsTab();
+  if (addedAny) scheduleAlreadySentReconcile();
   return addedAny;
+}
+
+// mergeLeadRows fires on every scrape tick as the xDR pages through a search,
+// so the server check is debounced rather than issued per page. 1.2s is long
+// enough to coalesce a burst of pages and short enough that the checkboxes
+// settle before anyone reaches for Send.
+let reconcileTimer = null;
+function scheduleAlreadySentReconcile() {
+  if (reconcileTimer) clearTimeout(reconcileTimer);
+  reconcileTimer = setTimeout(() => {
+    reconcileTimer = null;
+    void reconcileAlreadySentWithServer(Object.keys(listImportSession.leadsByUrl));
+  }, 1200);
 }
 
 function isLeadExcluded(lead) {
