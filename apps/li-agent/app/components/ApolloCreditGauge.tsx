@@ -14,6 +14,30 @@ import { csvEscape } from "@/lib/prospects-csv";
 // per consumer -- the cost popovers on Prospects and Lead Lists ride the same
 // query.
 
+/**
+ * What the spend columns mean.
+ *
+ * Lives in the help disclosure rather than as small print under the table:
+ * every definition on this card is in one place, and the card itself carries
+ * no explanatory paragraphs.
+ */
+const CREDIT_TERMS: Array<{ term: string; meaning: string }> = [
+  {
+    term: "Got data",
+    meaning: "Credits that bought a real email address or phone number.",
+  },
+  {
+    term: "Low fit",
+    meaning:
+      "Credits that bought real data for a lead the ICP scored weak, or spent by overriding the fit gate. The money was spent on the wrong person.",
+  },
+  {
+    term: "Wasted",
+    meaning:
+      "Credits charged where nothing usable came back. Only a timed-out reveal lands here, so this should stay near zero — an empty lookup is free.",
+  },
+];
+
 /** Poll settings shared by every consumer, so they collapse into one query. */
 const USAGE_QUERY_OPTIONS = {
   refetchInterval: 120_000,
@@ -90,7 +114,9 @@ export function CreditGaugeCard({ className }: { className?: string }) {
             Apollo Credits
           </h3>
           <p className="text-xs text-muted-foreground">
-            {d.enabled ? `Resets ${d.resetLabel}` : "Enrichment is turned off — no credits are being spent."}
+            {d.enabled
+              ? `Resets ${d.resetLabel} · 1 per email, 8 per phone`
+              : "Enrichment is turned off — no credits are being spent."}
           </p>
         </div>
         <div className="text-right">
@@ -120,81 +146,90 @@ export function CreditGaugeCard({ className }: { className?: string }) {
             title={`Phone reveals pause at ${d.phoneStopPct}%`}
           />
         </div>
-        {/* Every number carries its unit. The previous wording ("8 on 8
-            emails", "8 on 1 phone reveals") put two different quantities
-            side by side with no label, so the same "8" meant credits in one
-            place and records in the other. */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-sky-500" />
-            <span className="text-muted-foreground">Emails found</span>
-            <span className="font-medium tabular-nums text-foreground">{d.emailCalls.toLocaleString()}</span>
+        {/* The leading figure is CREDITS and says so. Dropping the word to
+            save space is what produced the original unreadable "8 on 8
+            emails", where the same 8 meant credits on one side and records on
+            the other -- so the unit stays, twice, and is cut everywhere else
+            on the card instead. */}
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+          <span className="flex items-baseline gap-1.5">
+            <span className="mb-px h-2 w-2 shrink-0 self-center rounded-full bg-sky-500" />
             <span className="text-muted-foreground">
-              = {d.emailCredits.toLocaleString()} {d.emailCredits === 1 ? "credit" : "credits"}
+              <b className="font-semibold tabular-nums text-foreground">{d.emailCredits.toLocaleString()}</b>{" "}
+              {d.emailCredits === 1 ? "credit" : "credits"} on {d.emailCalls.toLocaleString()}{" "}
+              {d.emailCalls === 1 ? "email" : "emails"}
             </span>
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-violet-500" />
-            <span className="text-muted-foreground">Phones revealed</span>
-            <span className="font-medium tabular-nums text-foreground">{d.phoneCalls.toLocaleString()}</span>
+          <span className="flex items-baseline gap-1.5">
+            <span className="mb-px h-2 w-2 shrink-0 self-center rounded-full bg-violet-500" />
             <span className="text-muted-foreground">
-              = {d.phoneCredits.toLocaleString()} {d.phoneCredits === 1 ? "credit" : "credits"}
+              <b className="font-semibold tabular-nums text-foreground">{d.phoneCredits.toLocaleString()}</b>{" "}
+              {d.phoneCredits === 1 ? "credit" : "credits"} on {d.phoneCalls.toLocaleString()} phone{" "}
+              {d.phoneCalls === 1 ? "reveal" : "reveals"}
             </span>
           </span>
-          <span className="text-muted-foreground">{Math.round(pct)}% of budget used</span>
+          <span className="ml-auto text-muted-foreground">{Math.round(pct)}% used</span>
         </div>
+      </div>
 
-        {/* The lookups that returned nothing. Worth stating explicitly and
-            worth stating as FREE, because the obvious worry on seeing a
-            column of "No email on file" is that each one cost a credit. */}
+      {/* An inset panel rather than four free-standing tiles.
+          Two reasons, both structural:
+          - It groups "where the money went" into one visual object instead of
+            leaving it as four siblings competing with the header.
+          - The tiles implied the four figures SUM to the total. They do not:
+            by-hand plus automatic is the total, while low-fit and wasted are
+            subsets of it. "Of that" makes the nesting readable. */}
+      <dl className="mt-4 space-y-1.5 rounded-lg bg-muted/40 px-3 py-2.5 text-xs">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <dt className="w-[52px] shrink-0 text-muted-foreground">Credits</dt>
+          <dd className="flex flex-wrap items-baseline gap-x-1.5 text-muted-foreground">
+            <b className="font-semibold tabular-nums text-foreground">{d.manualCredits.toLocaleString()}</b>
+            by hand
+            <span className="text-muted-foreground/50">·</span>
+            <b className="font-semibold tabular-nums text-foreground">{d.sweepCredits.toLocaleString()}</b>
+            automatically
+            <span className="text-[11px] text-muted-foreground/70">
+              (sweep cap {d.sweepCap.toLocaleString()})
+            </span>
+          </dd>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <dt className="w-[52px] shrink-0 text-muted-foreground">Of those</dt>
+          <dd className="flex flex-wrap items-baseline gap-x-1.5 text-muted-foreground">
+            <b
+              className={`font-semibold tabular-nums ${d.lowFitCredits > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}
+            >
+              {d.lowFitCredits.toLocaleString()}
+            </b>
+            on low-fit leads
+            {d.overrideCount > 0 && (
+              <span className="text-[11px] text-muted-foreground/70">
+                ({d.overrideCount} {d.overrideCount === 1 ? "override" : "overrides"})
+              </span>
+            )}
+            <span className="text-muted-foreground/50">·</span>
+            <b
+              className={`font-semibold tabular-nums ${d.wastedCredits > 0 ? "text-destructive" : "text-foreground"}`}
+            >
+              {d.wastedCredits.toLocaleString()}
+            </b>
+            wasted
+          </dd>
+        </div>
+        {/* Free outcomes belong in this panel rather than as a loose paragraph:
+            the worry on seeing a column of "No email on file" is that each one
+            cost a credit, and this is where someone looks to check. */}
         {d.emptyCalls > 0 && (
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            {d.emptyCalls.toLocaleString()} {d.emptyCalls === 1 ? "lookup" : "lookups"} came back empty —
-            Apollo had no data for {d.emptyCalls === 1 ? "that person" : "those people"}.{" "}
-            <span className="font-medium text-foreground">Not charged.</span>
-          </p>
+          <div className="flex flex-wrap items-baseline gap-x-2 border-t border-border/60 pt-1.5">
+            <dt className="w-[52px] shrink-0 text-muted-foreground">Free</dt>
+            <dd className="text-muted-foreground">
+              <b className="font-semibold tabular-nums text-foreground">{d.emptyCalls.toLocaleString()}</b>{" "}
+              {d.emptyCalls === 1 ? "lookup" : "lookups"} came back empty — Apollo only charges when it has the
+              data
+            </dd>
+          </div>
         )}
-      </div>
-
-      {/* Every tile is credits, so the numbers are comparable. The old row
-          mixed credits ("automatic 0") with record counts ("phone reveals 1")
-          and a status word ("available") under the same styling. */}
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat
-          label="Spent automatically"
-          value={`${d.sweepCredits.toLocaleString()} credits`}
-          sub={`of ${d.sweepCap.toLocaleString()} the sweep may use`}
-        />
-        <Stat
-          label="Spent by hand"
-          value={`${d.manualCredits.toLocaleString()} credits`}
-          sub="someone clicked Enrich or Reveal"
-        />
-        <Stat
-          label="Spent on low-fit leads"
-          value={`${d.lowFitCredits.toLocaleString()} credits`}
-          sub={
-            d.overrideCount > 0
-              ? `${d.overrideCount} fit ${d.overrideCount === 1 ? "override" : "overrides"}`
-              : "no gate overrides"
-          }
-          alert={d.lowFitCredits > 0}
-        />
-        <Stat
-          label="Paid for nothing"
-          value={`${d.wastedCredits.toLocaleString()} credits`}
-          sub={d.wastedCredits > 0 ? "charged, nothing came back" : "nothing wasted"}
-          alert={d.wastedCredits > 0}
-        />
-      </div>
-
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        Phone reveals are{" "}
-        <span className={phonesPaused ? "font-medium text-amber-600 dark:text-amber-400" : "font-medium text-foreground"}>
-          {phonesPaused ? "paused" : "available"}
-        </span>{" "}
-        · 1 credit per email, 8 per phone · Apollo only charges when it actually has the data
-      </p>
+      </dl>
 
       {phonesPaused && d.enabled && (
         <p className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
@@ -205,109 +240,136 @@ export function CreditGaugeCard({ className }: { className?: string }) {
         </p>
       )}
 
-      {/* The vocabulary, generated from the same module the table cells read,
-          so the legend cannot describe states the tables no longer show. */}
-      <details className="group mt-3">
-        <summary className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <IconHelpCircle size={13} />
-          What do the Email and Phone states mean, and which ones cost credits?
+      {/* Per-person spend, then the help disclosure as a quiet footer.
+          Help text belongs AFTER the data it explains, not between the summary
+          and the table. */}
+      {d.topSpenders && (
+        <div className="mt-4 border-t border-border pt-3">
+          {/* Title and export on ONE aligned row. Previously the button sat in
+              a flex row beside the table, which pushed the table into a narrow
+              column and left the button floating against nothing. */}
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h4 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Spend by person <span className="font-normal normal-case tracking-normal">(credits)</span>
+            </h4>
+            <LedgerExportButton periodStart={d.periodStart} />
+          </div>
+
+          {d.topSpenders.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No credits spent yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              {/* A table rather than "16 · 14 calls", which gave two unlabeled
+                  numbers and no answer to the actual question: how much of what
+                  this person spent was worth spending. Column meanings live in
+                  header tooltips and the footer disclosure, not in a paragraph
+                  of small print under the table. */}
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <th className="pb-1.5 pr-3 font-medium">Person</th>
+                    <th className="pb-1.5 pl-3 text-right font-medium">Spent</th>
+                    <th
+                      className="pb-1.5 pl-3 text-right font-medium"
+                      title="Credits that bought a real email or phone number"
+                    >
+                      Got data
+                    </th>
+                    <th
+                      className="pb-1.5 pl-3 text-right font-medium"
+                      title="Credits spent on a lead the ICP scored weak, or by overriding the fit gate"
+                    >
+                      Low fit
+                    </th>
+                    <th
+                      className="pb-1.5 pl-3 text-right font-medium"
+                      title="Credits charged where nothing usable came back"
+                    >
+                      Wasted
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.topSpenders.slice(0, 6).map((s) => (
+                    <tr key={s.actorEmail} className="border-t border-border/50">
+                      <td className="py-1.5 pr-3">
+                        <span className="block max-w-[180px] truncate text-foreground" title={s.actorEmail}>
+                          {s.actorEmail.split("@")[0]}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pl-3 text-right font-semibold tabular-nums text-foreground">
+                        {s.credits.toLocaleString()}
+                      </td>
+                      <td className="py-1.5 pl-3 text-right tabular-nums text-muted-foreground">
+                        {s.delivered.toLocaleString()}
+                      </td>
+                      <td
+                        className={`py-1.5 pl-3 text-right tabular-nums ${s.lowFit > 0 ? "font-medium text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
+                      >
+                        {s.lowFit.toLocaleString()}
+                      </td>
+                      <td
+                        className={`py-1.5 pl-3 text-right tabular-nums ${s.wasted > 0 ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                      >
+                        {s.wasted.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* One disclosure holding every definition on the card, so the card
+          itself carries no explanatory paragraphs. Generated from the same
+          module the table cells read, so it cannot describe states the tables
+          no longer show. */}
+      <details className="mt-3 border-t border-border pt-2.5">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+          <IconHelpCircle size={13} className="shrink-0" />
+          What these states mean, and which ones cost credits
         </summary>
-        <div className="mt-2 overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-muted/40 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                <th className="px-2.5 py-1.5 font-medium">State</th>
-                <th className="px-2.5 py-1.5 font-medium">What it means</th>
-                <th className="px-2.5 py-1.5 font-medium">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ENRICHMENT_LEGEND.map((row) => (
-                <tr key={row.label} className="border-b border-border/50 last:border-0 align-top">
-                  <td className="whitespace-nowrap px-2.5 py-1.5 font-medium text-foreground">{row.label}</td>
-                  <td className="px-2.5 py-1.5 text-muted-foreground">{row.meaning}</td>
-                  <td
-                    className={`whitespace-nowrap px-2.5 py-1.5 ${row.cost === "Free" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"}`}
-                  >
-                    {row.cost}
-                  </td>
+
+        <div className="mt-2.5 space-y-3">
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-2.5 py-1.5 font-medium">Email / phone state</th>
+                  <th className="px-2.5 py-1.5 font-medium">What it means</th>
+                  <th className="px-2.5 py-1.5 font-medium">Cost</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {ENRICHMENT_LEGEND.map((row) => (
+                  <tr key={row.label} className="border-b border-border/50 align-top last:border-0">
+                    <td className="whitespace-nowrap px-2.5 py-1.5 font-medium text-foreground">{row.label}</td>
+                    <td className="px-2.5 py-1.5 text-muted-foreground">{row.meaning}</td>
+                    <td
+                      className={`whitespace-nowrap px-2.5 py-1.5 ${row.cost === "Free" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"}`}
+                    >
+                      {row.cost}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* The column definitions the table footnote used to carry. */}
+          <dl className="space-y-1 text-xs">
+            {CREDIT_TERMS.map((t) => (
+              <div key={t.term} className="flex flex-wrap gap-x-2">
+                <dt className="w-[70px] shrink-0 font-medium text-foreground">{t.term}</dt>
+                <dd className="flex-1 text-muted-foreground">{t.meaning}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </details>
 
-      {/* topSpenders is present only for admins (omitted server-side), so it
-          doubles as the admin gate for the ledger export beside it. */}
-      {d.topSpenders && (
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-3 border-t border-border pt-3">
-          <div className="min-w-[280px] flex-1">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Spend by person this period
-            </p>
-            {d.topSpenders.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No credits spent yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                {/* A table rather than "16 · 14 calls", which gave two
-                    unlabeled numbers and no answer to the actual question:
-                    how much of what this person spent was worth spending. */}
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                      <th className="pb-1 pr-3 font-medium">Person</th>
-                      <th className="pb-1 pr-3 text-right font-medium">Spent</th>
-                      <th className="pb-1 pr-3 text-right font-medium" title="Credits that bought a real email or phone number">
-                        Got data
-                      </th>
-                      <th className="pb-1 pr-3 text-right font-medium" title="Credits spent on a lead the ICP scored weak, or by overriding the fit gate">
-                        Low fit
-                      </th>
-                      <th className="pb-1 text-right font-medium" title="Credits charged where nothing usable came back">
-                        Wasted
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {d.topSpenders.slice(0, 6).map((s) => (
-                      <tr key={s.actorEmail} className="border-t border-border/50">
-                        <td className="py-1 pr-3">
-                          <span className="block max-w-[150px] truncate text-foreground" title={s.actorEmail}>
-                            {s.actorEmail.split("@")[0]}
-                          </span>
-                        </td>
-                        <td className="py-1 pr-3 text-right font-medium tabular-nums text-foreground">
-                          {s.credits.toLocaleString()}
-                        </td>
-                        <td className="py-1 pr-3 text-right tabular-nums text-muted-foreground">
-                          {s.delivered.toLocaleString()}
-                        </td>
-                        <td
-                          className={`py-1 pr-3 text-right tabular-nums ${s.lowFit > 0 ? "font-medium text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
-                        >
-                          {s.lowFit.toLocaleString()}
-                        </td>
-                        <td
-                          className={`py-1 text-right tabular-nums ${s.wasted > 0 ? "font-medium text-destructive" : "text-muted-foreground"}`}
-                        >
-                          {s.wasted.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="mt-1.5 text-[10px] leading-4 text-muted-foreground">
-                  All figures are credits. <span className="text-foreground">Low fit</span> is money that bought real
-                  data for someone not worth calling. <span className="text-foreground">Wasted</span> is money charged
-                  that returned nothing — an empty lookup is free, so this should stay near zero.
-                </p>
-              </div>
-            )}
-          </div>
-          <LedgerExportButton periodStart={d.periodStart} />
-        </div>
-      )}
     </div>
   );
 }
@@ -391,28 +453,6 @@ function LedgerExportButton({ periodStart }: { periodStart: string }) {
         Every charged call, for reconciling against an Apollo invoice.
       </p>
       {error && <p className="max-w-[180px] text-right text-[10px] text-destructive">{error}</p>}
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  sub,
-  alert,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  alert?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`text-base font-semibold tabular-nums ${alert ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
-        {value}
-      </p>
-      {sub && <p className="text-[11px] leading-4 text-muted-foreground">{sub}</p>}
     </div>
   );
 }
