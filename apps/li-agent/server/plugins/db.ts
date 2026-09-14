@@ -982,6 +982,38 @@ export default runMigrations(
                   WHERE lead_list_items.list_id = lead_lists.id
                )`,
     },
+    {
+      // Granular fit scoring. fit_verdict stays and is now DERIVED from
+      // fit_score (see server/helpers/fit-score.ts), so every existing
+      // consumer -- the credit guard's spend gates, the verdict filter pills,
+      // Analytics counts -- keeps working with no change.
+      //
+      // Plain ADD COLUMN, not ADD COLUMN IF NOT EXISTS: SQLite rejects that
+      // syntax and the framework already treats a duplicate-column error as a
+      // no-op (see v106's own note).
+      //
+      // Existing rows get NULL, which the UI renders as "not scored yet"
+      // rather than as a zero. A zero would read as "we assessed this person
+      // and they are worthless", which is a different and wrong claim.
+      version: 124,
+      name: "add-granular-fit-score-columns",
+      sql: [
+        `ALTER TABLE prospects ADD COLUMN fit_score INTEGER`,
+        `ALTER TABLE prospects ADD COLUMN score_role_fit INTEGER`,
+        `ALTER TABLE prospects ADD COLUMN score_seniority INTEGER`,
+        `ALTER TABLE prospects ADD COLUMN score_company_fit INTEGER`,
+        `ALTER TABLE prospects ADD COLUMN score_intent INTEGER`,
+        `ALTER TABLE prospects ADD COLUMN intent_signal TEXT`,
+        `ALTER TABLE prospects ADD COLUMN scored_at_version TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN fit_score INTEGER`,
+        `ALTER TABLE lead_list_items ADD COLUMN score_role_fit INTEGER`,
+        `ALTER TABLE lead_list_items ADD COLUMN score_seniority INTEGER`,
+        `ALTER TABLE lead_list_items ADD COLUMN score_company_fit INTEGER`,
+        `ALTER TABLE lead_list_items ADD COLUMN score_intent INTEGER`,
+        `ALTER TABLE lead_list_items ADD COLUMN intent_signal TEXT`,
+        `ALTER TABLE lead_list_items ADD COLUMN scored_at_version TEXT`,
+      ].join(";\n"),
+    },
   ],
   { table: "outreach_migrations" },
 );

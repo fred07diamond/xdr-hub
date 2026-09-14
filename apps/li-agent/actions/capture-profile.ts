@@ -7,6 +7,7 @@ import { messagingCanvases, prospects } from "../server/db/schema.js";
 import { buildMessagingContext } from "../server/helpers/build-messaging-context.js";
 import { buildCanvasContext } from "../server/helpers/build-canvas-context.js";
 import { draftProfile } from "../server/helpers/draft-profile.js";
+import { fitScoreColumns } from "../server/helpers/fit-score-columns.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 import { resolveOwner } from "../server/helpers/resolve-owner.js";
 import { checkRateLimit } from "../server/helpers/rate-limit.js";
@@ -136,7 +137,7 @@ export default defineAction({
     const messagingContext =
       canvasMessagingContext ?? (await buildMessagingContext(personaId, ownerEmail, db));
 
-    const { fitVerdict, fitReason, draftNote, draftFollowUp } = await draftProfile({
+    const draft = await draftProfile({
       icpText,
       profileSummary,
       messagingContext,
@@ -148,9 +149,20 @@ export default defineAction({
     const draftedAt = new Date().toISOString();
     await db
       .update(prospects)
-      .set({ fitVerdict, fitReason, draftNote, draftFollowUp, personaId, personaName, personaColor, status: "drafted", updatedAt: draftedAt })
+      .set({
+        fitVerdict: draft.fitVerdict,
+        fitReason: draft.fitReason,
+        draftNote: draft.draftNote,
+        draftFollowUp: draft.draftFollowUp,
+        ...fitScoreColumns(draft),
+        personaId,
+        personaName,
+        personaColor,
+        status: "drafted",
+        updatedAt: draftedAt,
+      })
       .where(eq(prospects.id, id));
 
-    return { id, status: "drafted" as const, fitVerdict, fitReason, draftNote, draftFollowUp, personaName, personaColor };
+    return { id, status: "drafted" as const, ...draft, personaName, personaColor };
   },
 });

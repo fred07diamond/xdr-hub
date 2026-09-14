@@ -5,6 +5,7 @@ import { getDb } from "../server/db/index.js";
 import { prospects } from "../server/db/schema.js";
 import { buildMessagingContext } from "../server/helpers/build-messaging-context.js";
 import { draftProfile } from "../server/helpers/draft-profile.js";
+import { fitScoreColumns } from "../server/helpers/fit-score-columns.js";
 import { buildProfileSummary, selectPersona } from "../server/helpers/select-persona.js";
 
 export default defineAction({
@@ -41,7 +42,7 @@ export default defineAction({
     const profileSummary = buildProfileSummary(profile);
     const messagingContext = await buildMessagingContext(personaId, userEmail, db);
 
-    const { fitVerdict, fitReason, draftNote, draftFollowUp } = await draftProfile({
+    const draft = await draftProfile({
       icpText,
       profileSummary,
       messagingContext,
@@ -52,9 +53,20 @@ export default defineAction({
 
     await db
       .update(prospects)
-      .set({ fitVerdict, fitReason, draftNote, draftFollowUp, personaId, personaName, personaColor, status: "drafted", updatedAt: new Date().toISOString() })
+      .set({
+        fitVerdict: draft.fitVerdict,
+        fitReason: draft.fitReason,
+        draftNote: draft.draftNote,
+        draftFollowUp: draft.draftFollowUp,
+        ...fitScoreColumns(draft),
+        personaId,
+        personaName,
+        personaColor,
+        status: "drafted",
+        updatedAt: new Date().toISOString(),
+      })
       .where(eq(prospects.id, id));
 
-    return { ok: true, draft: { fitVerdict, fitReason, draftNote, draftFollowUp, personaName, personaColor } };
+    return { ok: true, draft: { ...draft, personaName, personaColor } };
   },
 });

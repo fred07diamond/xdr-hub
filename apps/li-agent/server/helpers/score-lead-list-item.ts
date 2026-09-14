@@ -4,6 +4,7 @@ import { getDb } from "../db/index.js";
 import { leadListItems, prospects } from "../db/schema.js";
 import { buildMessagingContext } from "./build-messaging-context.js";
 import { draftProfile } from "./draft-profile.js";
+import { fitScoreColumns } from "./fit-score-columns.js";
 import { buildProfileSummary, selectPersona } from "./select-persona.js";
 
 type Db = ReturnType<typeof getDb>;
@@ -15,6 +16,8 @@ export interface ScoreLeadListItemResult {
   code?: "no_profile_url";
   prospectId?: string;
   fitVerdict?: "strong" | "possible" | "weak" | "inconclusive";
+  /** 0-100. Null when no ICP document exists, so fit was never assessed. */
+  fitScore?: number | null;
   fitReason?: string;
   draftNote?: string;
   draftFollowUp?: string | null;
@@ -75,7 +78,7 @@ export async function scoreLeadListItem(
   const { icpText, personaId, personaName, personaColor } = await selectPersona(db, profile);
   const profileSummary = buildProfileSummary(profile);
   const messagingContext = await buildMessagingContext(personaId, ownerEmail, db);
-  const { fitVerdict, fitReason, draftNote, draftFollowUp } = await draftProfile({
+  const draft = await draftProfile({
     icpText,
     profileSummary,
     messagingContext,
@@ -88,10 +91,11 @@ export async function scoreLeadListItem(
   await db
     .update(leadListItems)
     .set({
-      fitVerdict,
-      fitReason,
-      draftNote,
-      draftFollowUp,
+      fitVerdict: draft.fitVerdict,
+      fitReason: draft.fitReason,
+      draftNote: draft.draftNote,
+      draftFollowUp: draft.draftFollowUp,
+      ...fitScoreColumns(draft),
       personaId,
       personaName,
       personaColor,
@@ -100,7 +104,16 @@ export async function scoreLeadListItem(
     })
     .where(eq(leadListItems.id, item.id));
 
-  return { ok: true, fitVerdict, fitReason, draftNote, draftFollowUp, personaName, personaColor };
+  return {
+    ok: true,
+    fitVerdict: draft.fitVerdict,
+    fitReason: draft.fitReason,
+    draftNote: draft.draftNote,
+    draftFollowUp: draft.draftFollowUp,
+    fitScore: draft.fitScore,
+    personaName,
+    personaColor,
+  };
 }
 
 /**
