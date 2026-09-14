@@ -1981,6 +1981,14 @@ export default function ProspectsRoute() {
         leads={pageRows}
         onGenerate={(lead) => setOutreachLead(lead)}
         onOpen={(lead) => setSelectedId(lead.id)}
+        onScore={async (lead) => {
+          // Routed by source exactly like handleBulkScoreDraft: a lead-list
+          // row is scored for the first time, a prospects row is RE-scored
+          // against the current persona criteria.
+          if (lead.source === "lead_list") await scoreLeadListItem.mutateAsync({ itemId: lead.rawId });
+          else await redraftProspect.mutateAsync({ id: lead.rawId });
+          await refetch();
+        }}
       />
 
       {/* Table */}

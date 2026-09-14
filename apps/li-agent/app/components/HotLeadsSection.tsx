@@ -1,5 +1,11 @@
 import { useActionQuery } from "@agent-native/core/client/hooks";
-import { IconChevronDown, IconChevronRight, IconFlame } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconFlame,
+  IconLoader2,
+  IconSparkles,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
@@ -51,6 +57,11 @@ export interface HotLeadsSectionProps<T extends HotLead> {
   onGenerate?: (lead: T) => void;
   /** Opens the row's normal detail view. */
   onOpen?: (lead: T) => void;
+  /**
+   * Scores or rescores one lead. Without this the cards told people to
+   * "rescore for a detailed score" and offered no way to do it.
+   */
+  onScore?: (lead: T) => Promise<void>;
   /** Label for the surface, e.g. "in this list". */
   scopeLabel?: string;
   /** Hidden entirely when the workspace has no scored leads at all. */
@@ -64,6 +75,7 @@ export function HotLeadsSection<T extends HotLead>({
   leads,
   onGenerate,
   onOpen,
+  onScore,
   scopeLabel = "",
   className,
 }: HotLeadsSectionProps<T>) {
@@ -78,6 +90,8 @@ export function HotLeadsSection<T extends HotLead>({
 
   const [collapsed, setCollapsed] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
+  const [scoringAll, setScoringAll] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
     try {
@@ -94,6 +108,36 @@ export function HotLeadsSection<T extends HotLead>({
       localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
     } catch {
       // Not persisting is a minor annoyance.
+    }
+  }
+
+  async function scoreOne(lead: T) {
+    if (!onScore) return;
+    setScoringIds((prev) => new Set(prev).add(lead.id));
+    try {
+      await onScore(lead);
+    } finally {
+      setScoringIds((prev) => {
+        const next = new Set(prev);
+        next.delete(lead.id);
+        return next;
+      });
+    }
+  }
+
+  async function scoreAllEstimated(targets: T[]) {
+    if (!onScore || targets.length === 0) return;
+    setScoringAll({ done: 0, total: targets.length });
+    try {
+      // Sequential, matching every other scoring loop in the app: each is an
+      // LLM call against a per-owner rate bucket, and firing 19 at once just
+      // converts them into rate-limit errors.
+      for (const lead of targets) {
+        await onScore(lead).catch(() => {});
+        setScoringAll((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+      }
+    } finally {
+      setScoringAll(null);
     }
   }
 
@@ -117,59 +161,93 @@ export function HotLeadsSection<T extends HotLead>({
   // How many are running on the legacy signal rather than a real score. Worth
   // stating once in the header: it is the difference between "these are the
   // best three" and "these are the best three we can tell so far".
-  const estimated = hot.filter((l) => typeof l.fitScore !== "number").length;
 
   const shown = showAll ? hot : hot.slice(0, MAX_SHOWN);
+  const estimatedLeads = hot.filter((l) => typeof l.fitScore !== "number");
 
   return (
-    <section
-      className={`border-b border-amber-300/60 bg-gradient-to-b from-amber-50/80 to-transparent dark:border-amber-900/50 dark:from-amber-950/25 ${className ?? ""}`}
-    >
-      <button
-        type="button"
-        onClick={toggleCollapsed}
-        aria-expanded={!collapsed}
-        className="flex w-full items-center gap-2 px-4 py-2.5 text-left"
-      >
-        {collapsed ? (
-          <IconChevronRight size={14} className="shrink-0 text-amber-700 dark:text-amber-400" />
-        ) : (
-          <IconChevronDown size={14} className="shrink-0 text-amber-700 dark:text-amber-400" />
-        )}
-        <IconFlame size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
-        <span className="text-sm font-semibold text-foreground">
-          Hot leads
-          <span className="ms-1.5 font-normal text-muted-foreground">
-            {hot.length}
-            {scopeLabel ? ` ${scopeLabel}` : ""}
+    // Neutral surface with ONE amber accent (the flame and a hairline top
+    // border), rather than an amber gradient behind amber-bordered cards
+    // holding amber chips. Six of those stacked is a wall of yellow, and the
+    // colour stops meaning "notable" once everything on screen has it.
+    <section className={`border-b border-border bg-muted/30 ${className ?? ""}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-expanded={!collapsed}
+          className="flex items-center gap-2 text-left"
+        >
+          {collapsed ? (
+            <IconChevronRight size={14} className="shrink-0 text-muted-foreground" />
+          ) : (
+            <IconChevronDown size={14} className="shrink-0 text-muted-foreground" />
+          )}
+          <IconFlame size={15} className="shrink-0 text-amber-500" />
+          <span className="text-sm font-semibold text-foreground">
+            Hot leads
+            <span className="ms-1.5 font-normal text-muted-foreground">
+              {hot.length}
+              {scopeLabel ? ` ${scopeLabel}` : ""}
+            </span>
           </span>
+        </button>
+
+        {/* The instruction the cards used to carry, said ONCE, and now next to
+            the button that acts on it. */}
+        {onScore && estimatedLeads.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void scoreAllEstimated(estimatedLeads)}
+            disabled={!!scoringAll}
+            className="ms-auto inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+          >
+            {scoringAll ? (
+              <>
+                <IconLoader2 size={12} className="animate-spin" />
+                Scoring {scoringAll.done}/{scoringAll.total}…
+              </>
+            ) : (
+              <>
+                <IconSparkles size={12} />
+                Score {estimatedLeads.length} for detail
+              </>
+            )}
+          </button>
+        )}
+        <span
+          className={`text-[11px] text-muted-foreground ${onScore && estimatedLeads.length > 0 ? "" : "ms-auto"}`}
+        >
+          {estimatedLeads.length === hot.length
+            ? "Strong fit in a matched persona"
+            : `${settings.scoreThreshold}+ score, or strong fit in a matched persona`}
         </span>
-        <span className="ms-auto text-[11px] text-muted-foreground">
-          {estimated === hot.length
-            ? "Strong fit in a matched persona · rescore for detailed scores"
-            : estimated > 0
-              ? `${settings.scoreThreshold}+ score, or strong fit in a matched persona`
-              : `${settings.scoreThreshold}+ score, with live intent or decision-level authority`}
-        </span>
-      </button>
+      </div>
 
       {!collapsed && (
-        <div className="space-y-2 px-4 pb-3">
-          {shown.map((lead) => (
-            <HotLeadCard
-              key={lead.id}
-              lead={lead}
-              settings={settings}
-              onGenerate={onGenerate ? () => onGenerate(lead) : undefined}
-              onOpen={onOpen ? () => onOpen(lead) : undefined}
-            />
-          ))}
+        <div className="px-4 pb-3">
+          {/* Two columns once there is room. Nineteen full-width cards holding
+              a name and two buttons was mostly empty space, which made the
+              section feel enormous for the amount it said. */}
+          <div className="grid gap-2 lg:grid-cols-2">
+            {shown.map((lead) => (
+              <HotLeadCard
+                key={lead.id}
+                lead={lead}
+                settings={settings}
+                scoring={scoringIds.has(lead.id) || !!scoringAll}
+                onGenerate={onGenerate ? () => onGenerate(lead) : undefined}
+                onOpen={onOpen ? () => onOpen(lead) : undefined}
+                onScore={onScore ? () => void scoreOne(lead) : undefined}
+              />
+            ))}
+          </div>
 
           {hot.length > MAX_SHOWN && (
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="mt-2 text-xs text-muted-foreground hover:text-foreground"
             >
               {showAll ? "Show fewer" : `Show all ${hot.length}`}
             </button>
@@ -183,22 +261,27 @@ export function HotLeadsSection<T extends HotLead>({
 function HotLeadCard<T extends HotLead>({
   lead,
   settings,
+  scoring,
   onGenerate,
   onOpen,
+  onScore,
 }: {
   lead: T;
   settings: HotLeadSettings;
+  scoring?: boolean;
   onGenerate?: () => void;
   onOpen?: () => void;
+  onScore?: () => void;
 }) {
   const assessment = assessHotLead(lead, settings);
   const link = lead.profileUrl || lead.salesNavLeadUrl || null;
+  const scored = typeof lead.fitScore === "number";
 
   return (
-    <div className="rounded-lg border border-amber-300/70 bg-card p-3 dark:border-amber-900/50">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
+          <div className="flex min-w-0 items-baseline gap-1.5">
             {onOpen ? (
               <button
                 type="button"
@@ -212,46 +295,70 @@ function HotLeadCard<T extends HotLead>({
                 {lead.name ?? "Unnamed lead"}
               </span>
             )}
-            {typeof lead.fitScore === "number" ? (
-              <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+            {scored ? (
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-amber-600 dark:text-amber-400">
                 {lead.fitScore}
               </span>
             ) : (
-              // No number to show. A placeholder "0" or "—" in the same
-              // position would read as a score of zero, which is the opposite
-              // of what this lead is.
-              <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                Stellar
-              </span>
+              // A small flame instead of a "STELLAR" pill. The pill repeated
+              // down six cards was the loudest thing on the page while saying
+              // the same thing the section header already said.
+              <IconFlame
+                size={12}
+                className="shrink-0 text-amber-500"
+                title="Strong fit in a matched persona"
+              />
             )}
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {[lead.enrichedTitle || lead.headline, lead.company].filter(Boolean).join(" · ") || "—"}
           </p>
 
-          {/* The specific signal, not a restatement of the score. This is the
-              sentence that tells someone what to open with. */}
           {lead.intentSignal && (
             <p className="mt-1.5 border-s-2 border-amber-400 ps-2 text-xs italic text-foreground">
               {lead.intentSignal}
             </p>
           )}
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {describeHotReasons(assessment.reasons)}
-          </p>
+          {/* Only shown for a SCORED lead, where it says something specific.
+              For a legacy lead the reason is identical on every card and is
+              already in the section header, so repeating it per card was pure
+              noise. */}
+          {scored && assessment.reasons.length > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {describeHotReasons(assessment.reasons)}
+            </p>
+          )}
         </div>
 
-        <ScoreBreakdown lead={lead} />
+        {scored && <ScoreBreakdown lead={lead} />}
       </div>
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2.5">
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         {onGenerate && (
           <button
             type="button"
             onClick={onGenerate}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
           >
             Write outreach
+          </button>
+        )}
+        {/* The action the copy was asking for. Present for a scored lead too,
+            since criteria change and a rescore is how you refresh it. */}
+        {onScore && (
+          <button
+            type="button"
+            onClick={onScore}
+            disabled={scoring}
+            title={
+              scored
+                ? "Re-score against the current persona criteria"
+                : "Score for a detailed 0-100 breakdown"
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+          >
+            {scoring ? <IconLoader2 size={11} className="animate-spin" /> : <IconSparkles size={11} />}
+            {scoring ? "Scoring…" : scored ? "Rescore" : "Score"}
           </button>
         )}
         {link && (
@@ -259,19 +366,20 @@ function HotLeadCard<T extends HotLead>({
             href={link}
             target="_blank"
             rel="noreferrer"
-            className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+            className="rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted"
           >
-            Open LinkedIn
+            LinkedIn
           </a>
         )}
-        {/* Contact data is stated rather than implied, so it is obvious
-            whether an email generator has anything to send to. */}
-        <span className="ms-auto flex items-center gap-2 text-[11px] text-muted-foreground">
+        {/* Beside the actions rather than pinned to the far edge, where it
+            floated unattached to anything. */}
+        <span className="ms-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className={lead.enrichedEmail ? "text-foreground" : ""}>
-            {lead.enrichedEmail ? "email ✓" : "no email"}
+            {lead.enrichedEmail ? "email" : "no email"}
           </span>
+          <span aria-hidden>·</span>
           <span className={lead.enrichedPhone ? "text-foreground" : ""}>
-            {lead.enrichedPhone ? "phone ✓" : "no phone"}
+            {lead.enrichedPhone ? "phone" : "no phone"}
           </span>
         </span>
       </div>

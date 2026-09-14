@@ -1103,6 +1103,12 @@ export default function LeadListsPage() {
               leads={allItems}
               scopeLabel="in this list"
               onGenerate={(lead) => setOutreachLead(lead)}
+              // Reuses runBulkScore with a single item rather than a second
+              // code path: it already handles the error reporting and the
+              // refetch, and a parallel one-off would drift from it.
+              onScore={async (lead) => {
+                await runBulkScore([lead]);
+              }}
             />
 
             {scoreError && (
