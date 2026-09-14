@@ -165,3 +165,25 @@ describe("client mirror does not drift from the server", () => {
     for (const d of DIMENSION_ORDER) expect(DIMENSION_LABELS[d]).toBeTruthy();
   });
 });
+
+describe("draft-profile leaves room for an answer", () => {
+  const SRC = readFileSync(new URL("../server/helpers/draft-profile.ts", import.meta.url), "utf8");
+
+  it("runs with reasoning OFF", () => {
+    // The engine default is Medium/High, and Anthropic's manual thinking
+    // budgets start at 1024 against this call's 700-token cap -- thinking
+    // alone could consume the whole allowance and return an empty draft,
+    // surfacing as "Draft failed" or a silently unscored lead. This call
+    // scores four numbered dimensions and writes a 200-character note; there
+    // is nothing to reason about.
+    expect(SRC).toContain('reasoningEffort: "none"');
+  });
+});
+
+describe("outreach generators leave room for an answer", () => {
+  const SRC = readFileSync(new URL("../server/helpers/generate-outreach.ts", import.meta.url), "utf8");
+
+  it("runs with reasoning OFF", () => {
+    expect(SRC).toContain('reasoningEffort: "none"');
+  });
+});

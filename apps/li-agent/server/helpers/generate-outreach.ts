@@ -159,6 +159,11 @@ export async function generateOutreach(
         // needs a fraction of what three InMail variants do, and an oversized
         // cap is an invitation to ramble.
         maxOutputTokens: variants > 1 ? 1200 : 600,
+        // Reasoning off, as in draft-profile.ts: the engine default is
+        // Medium/High, whose thinking budget alone exceeds this cap and would
+        // return an empty draft. Writing a short message from supplied
+        // material is not a reasoning task.
+        reasoningEffort: "none",
         // Well inside the ~20s proxy wall this deployment sits behind (see
         // persona-briefing.ts's own note on that limit).
         timeoutMs: 18_000,

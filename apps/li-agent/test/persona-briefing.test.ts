@@ -220,6 +220,37 @@ describe("buildPersonaBriefing", () => {
     ).rejects.toThrow(/Could not generate the briefing/);
   });
 
+  it("runs every phase with reasoning OFF", async () => {
+    // THE fix for the reported timeouts and empty briefings.
+    //
+    // completeText with no reasoningEffort takes the engine default, which the
+    // framework resolves to Medium/High. That explained both failures at once:
+    // latency was dominated by thinking (so a 2,448-word persona failed
+    // exactly like a 4,918-word one, and trimming the input twice changed
+    // nothing), and thinking consumed the whole maxOutputTokens budget before
+    // any answer was produced -- Anthropic's manual thinking budgets start at
+    // 1024 and reach 8000 for medium, against a cap that was 2000.
+    //
+    // These phases extract JSON from a supplied document. There is nothing to
+    // reason about.
+    replyAll(FULL);
+    await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
+
+    expect(completeText).toHaveBeenCalledTimes(3);
+    for (const call of completeText.mock.calls) {
+      expect(call[0].reasoningEffort).toBe("none");
+    }
+  });
+
+  it("leaves output budget for an answer rather than for thinking", async () => {
+    // A cap below the smallest thinking budget is a guaranteed empty response.
+    replyAll(FULL);
+    await buildPersonaBriefing({ personaName: "VP Eng", icpText: "ICP text" });
+    for (const call of completeText.mock.calls) {
+      expect(call[0].maxOutputTokens).toBeGreaterThanOrEqual(2000);
+    }
+  });
+
   it("RETRIES a phase that timed out, rather than giving up", async () => {
     // The reported failure: "target titles: completeText timed out after
     // 19000ms" with no second attempt, because the old code only retried on a

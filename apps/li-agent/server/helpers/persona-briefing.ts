@@ -148,12 +148,41 @@ const MAX_ITEM_CHARS = 240;
 // short -- it needs somewhere between 16s and the 28s that did get proxied
 // away. Overshooting is also much cheaper now that a timed-out phase keeps
 // its prior content and the next run only retries what is still missing.
-// 12s + 5.5s = 17.5s, inside the ~20s wall the corporate proxy enforces on
-// the inbound request. The previous 19s consumed the entire budget, so a
-// timeout had nowhere to retry into -- which is exactly what "target titles:
-// completeText timed out after 19000ms" was, three times over.
-const PHASE_TIMEOUT_MS = 12_000;
+// 13s + 5.5s = 18.5s, inside the ~20s wall the corporate proxy enforces on the
+// inbound request.
+//
+// Cutting this to 12s did not help and could not have: the timeouts were not
+// input-bound. See BRIEFING_REASONING_EFFORT -- the phases were running with
+// the engine's DEFAULT reasoning effort, so latency was dominated by thinking
+// tokens and a 2,448-word persona failed exactly like a 4,918-word one.
+const PHASE_TIMEOUT_MS = 13_000;
 const RETRY_ATTEMPT_TIMEOUT_MS = 5_500;
+
+/**
+ * Reasoning OFF for every briefing phase. This is the fix for the timeouts.
+ *
+ * completeText with no `reasoningEffort` takes the engine default, which the
+ * framework resolves to Medium or High (see @agent-native/core's
+ * reasoning-effort module: "engine defaults resolve it to High", and a missing
+ * selection "now means the Medium default"). Every briefing phase was
+ * therefore paying for extended thinking, which explains BOTH reported
+ * failures with one cause:
+ *
+ * - The timeouts were latency-bound on THINKING, not on input. That is why
+ *   trimming the input twice changed nothing and why Design (2,448 words)
+ *   failed identically to Product (4,918 words).
+ * - "The model returned an empty briefing" was thinking consuming the entire
+ *   maxOutputTokens budget before any answer was produced.
+ *   anthropicManualThinkingBudget's tiers start at 1024 and reach 8000 for
+ *   medium, against a cap that was set to 2000. The answer was being starved.
+ *
+ * These phases extract structured JSON from a document the model is handed.
+ * There is nothing to reason about. `none` is an explicitly supported
+ * sentinel the engine distinguishes from a missing selection, and
+ * normalizeReasoningEffortForModel drops it for models without effort
+ * controls, so it is safe across providers.
+ */
+const BRIEFING_REASONING_EFFORT = "none" as const;
 
 /**
  * Bump when a change to the prompt or the briefing shape means previously
@@ -475,7 +504,7 @@ export async function buildPersonaBriefing({
   // -- a cap the model can realistically reach is a cap that costs a
   // truncation retry, and at 8000 for one combined call that was the normal
   // path for a large persona rather than the exception.
-  const PHASE_MAX_OUTPUT_TOKENS = 2000;
+  const PHASE_MAX_OUTPUT_TOKENS = 3000;
 
   function parseJsonResponse(text: string): Record<string, any> | undefined {
     const raw = text
@@ -542,6 +571,7 @@ export async function buildPersonaBriefing({
                 : phaseSystemPrompt,
           input: trimmedInput,
           maxOutputTokens: mode === "first" ? PHASE_MAX_OUTPUT_TOKENS : Math.floor(PHASE_MAX_OUTPUT_TOKENS / 2),
+          reasoningEffort: BRIEFING_REASONING_EFFORT,
           timeoutMs: mode === "first" ? PHASE_TIMEOUT_MS : RETRY_ATTEMPT_TIMEOUT_MS,
         });
       return ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();

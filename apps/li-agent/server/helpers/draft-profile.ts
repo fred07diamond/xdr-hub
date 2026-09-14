@@ -105,6 +105,21 @@ export async function draftProfile({
         systemPrompt,
         input: profileSummary || `LinkedIn profile: ${profileUrl}`,
         maxOutputTokens: 700,
+        /**
+         * Reasoning OFF, same as the briefing phases, and for the same reason.
+         *
+         * completeText with no effort takes the engine default, which resolves
+         * to Medium or High. Against a 700-token cap that is a guaranteed
+         * starvation: Anthropic's manual thinking budgets start at 1024 and
+         * reach 8000 for medium, so thinking alone could consume the whole
+         * allowance and return an empty draft with stopReason max_tokens --
+         * which surfaces here as "Draft failed" or a silently unscored lead.
+         *
+         * This call scores four numbered dimensions against a supplied rubric
+         * and writes a 200-character note. It is extraction and short-form
+         * writing, not reasoning.
+         */
+        reasoningEffort: "none",
       });
     const result = ownerCtx
       ? await runWithRequestContext(ownerCtx, callCompleteText)
