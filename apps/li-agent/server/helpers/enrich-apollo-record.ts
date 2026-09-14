@@ -3,6 +3,12 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { leadListItems, prospects } from "../db/schema.js";
 import { enrichApolloOrganization, extractApolloPhone, matchApolloPerson } from "./apollo-client.js";
+import {
+  reserveEnrichment,
+  settleEnrichment,
+  type ApolloTrigger,
+  type BlockedReason,
+} from "./apollo-credits/guard.js";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -55,6 +61,38 @@ export interface ApolloEnrichmentOutcome {
   companyDomain: string | null;
   enrichmentError: string | null;
   phoneRevealStatus: "requested" | "done" | "no_match" | "failed" | null;
+  /**
+   * Set when the credit guard refused the spend. The row is left exactly as it
+   * was -- not claimed, not marked failed -- so a later run can retry once the
+   * budget allows. Callers surface this instead of treating it as a data
+   * failure, and bulk loops use it to stop rather than retrying N times
+   * against a closed budget.
+   */
+  blockedReason?: BlockedReason;
+  blockedMessage?: string;
+  /**
+   * Set when the 8-credit reveal leg was dropped but the 1-credit email still
+   * went ahead -- tiered degradation past the phone-stop threshold.
+   */
+  phoneRevealSkippedReason?: "budget_paused";
+}
+
+export interface EnrichOptions {
+  /** Who to charge. `sweep` spends against the workspace, not a person. */
+  trigger?: ApolloTrigger;
+  actorEmail?: string | null;
+  /**
+   * Whether to ask Apollo for the 8-credit phone reveal.
+   *
+   * Defaults to FALSE, which is a deliberate change from the old
+   * `revealPhone = !enrichedPhone` rule: that made every enrich -- including
+   * every unattended sweep enrich -- cost 9 credits instead of 1, and
+   * re-requested a reveal on every non-fresh pass for anyone Apollo had no
+   * number for. Only the explicit reveal path opts in.
+   */
+  revealPhone?: boolean;
+  /** Set by the reveal action when a user knowingly overrode the fit gate. */
+  overrideFitGate?: boolean;
 }
 
 // Once Apollo has actually returned a usable result, holding onto it for
@@ -110,10 +148,47 @@ async function persist(
 export async function enrichApolloRecord(
   db: Db,
   target: EnrichTarget,
+  options: EnrichOptions = {},
 ): Promise<ApolloEnrichmentOutcome> {
   const row = target.row as EnrichableRow;
 
   if (isEnrichmentFresh(row)) return outcomeFromStoredRow(row);
+
+  // Authorize and pre-record the spend BEFORE anything else. Two properties
+  // matter here:
+  //
+  // 1. It happens before the row is claimed, so a refused spend leaves the row
+  //    untouched and retryable rather than stranded at "enriching".
+  // 2. Reservations are written before the Apollo call, so concurrent
+  //    authorizations can see them -- otherwise N simultaneous requests would
+  //    each read the same pre-spend total and all pass.
+  const reservation = await reserveEnrichment(
+    {
+      trigger: options.trigger ?? "manual",
+      actorEmail: options.actorEmail ?? null,
+      subjectTable: target.kind === "lead_list_item" ? "lead_list_items" : "prospects",
+      subjectId: row.id,
+      fitVerdict: (row as { fitVerdict?: string | null }).fitVerdict ?? null,
+    },
+    {
+      wantPhoneReveal: options.revealPhone ?? false,
+      wantOrgEnrich: true,
+      overrideFitGate: options.overrideFitGate,
+    },
+  );
+
+  if (!reservation.ok) {
+    return {
+      ...outcomeFromStoredRow(row),
+      // Report the row's ACTUAL current status rather than inventing a
+      // terminal one: nothing was attempted, so nothing failed.
+      enrichmentStatus: row.enrichmentStatus as ApolloEnrichmentOutcome["enrichmentStatus"],
+      blockedReason: reservation.reason,
+      blockedMessage: reservation.message,
+    };
+  }
+
+  const { auth, revealPhone: revealAuthorized, phoneRevealSkippedReason } = reservation;
 
   // Claim the row only once we know we are actually going to call Apollo.
   //
@@ -136,27 +211,57 @@ export async function enrichApolloRecord(
   // apps/prospecting-hub/actions/enrich-contact-with-apollo.ts.
   const warnings: string[] = [];
 
-  // Only request Apollo's paid phone reveal when we don't already have a
-  // personal number on file -- re-enriching someone already revealed
-  // shouldn't spend credits again.
-  const revealPhone = !row.enrichedPhone;
+  // Whether to spend the 8 credits. The guard has already applied the fit gate
+  // and the phone-stop tier, so by here this is simply "was the reveal leg
+  // authorized" -- and never the old `!row.enrichedPhone` inference, which
+  // made every enrich cost 9 credits by default.
+  const revealPhone = revealAuthorized;
+
+  const settle: Parameters<typeof settleEnrichment>[1] = {};
 
   let person = null;
   try {
-    person = await matchApolloPerson({ name: row.name ?? "", companyName: row.company, revealPhone });
+    person = await matchApolloPerson({ name: row.name ?? "", companyName: row.company, revealPhone }, auth);
+    settle.personMatch = { outcome: person ? "match" : "no_match", apolloPersonId: person?.id ?? null };
   } catch (err) {
-    warnings.push(`Person lookup: ${err instanceof Error ? err.message : String(err)}`);
+    const message = err instanceof Error ? err.message : String(err);
+    warnings.push(`Person lookup: ${message}`);
+    // A timeout stays charged (Apollo may well have processed it); any other
+    // rejection is treated as not billed. See settleEnrichment for why.
+    settle.personMatch = { outcome: /timed? ?out|abort/i.test(message) ? "timeout" : "http_error" };
+  }
+
+  // The reveal rides on the same /people/match call, so its fate is decided by
+  // that call's outcome rather than a separate request.
+  if (revealPhone) {
+    settle.phoneReveal = settle.personMatch?.outcome === "match"
+      ? { outcome: "requested", apolloPersonId: person?.id ?? null }
+      : { outcome: settle.personMatch?.outcome === "timeout" ? "timeout" : "http_error" };
+  } else {
+    settle.phoneReveal = { outcome: "not_requested" };
   }
 
   let organization = null;
   try {
-    organization = await enrichApolloOrganization({
-      domain: person?.organization?.primary_domain ?? null,
-      email: person?.email ?? null,
-    });
+    organization = await enrichApolloOrganization(
+      {
+        domain: person?.organization?.primary_domain ?? null,
+        email: person?.email ?? null,
+      },
+      auth,
+    );
+    settle.orgEnrich = { outcome: organization ? "match" : "no_match" };
   } catch (err) {
-    warnings.push(`Organization lookup: ${err instanceof Error ? err.message : String(err)}`);
+    const message = err instanceof Error ? err.message : String(err);
+    warnings.push(`Organization lookup: ${message}`);
+    settle.orgEnrich = { outcome: /timed? ?out|abort/i.test(message) ? "timeout" : "http_error" };
   }
+
+  // Close out every reservation. In a finally-equivalent position: an
+  // unsettled reservation keeps consuming budget until the orphan reaper
+  // voids it, and settleEnrichment swallows its own write failures so
+  // bookkeeping can never mask the enrichment result.
+  await settleEnrichment(auth, settle);
 
   const enrichedAt = new Date().toISOString();
   const status = person || organization ? "done" : warnings.length > 0 ? "failed" : "not_found";
@@ -213,5 +318,6 @@ export async function enrichApolloRecord(
     enrichmentError,
     phoneRevealStatus:
       ("phoneRevealStatus" in phoneRevealUpdate ? phoneRevealUpdate.phoneRevealStatus : row.phoneRevealStatus) ?? null,
+    ...(phoneRevealSkippedReason ? { phoneRevealSkippedReason } : {}),
   };
 }

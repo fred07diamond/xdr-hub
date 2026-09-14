@@ -45,7 +45,18 @@ export default defineAction({
     // table it wrote to; the two copies had already drifted once, and credit
     // metering has to sit at a single choke point or a call site can spend
     // without being counted.
-    const result = await enrichApolloRecord(db, { kind: "prospect", row: prospect });
+    const result = await enrichApolloRecord(
+      db,
+      { kind: "prospect", row: prospect },
+      { trigger: ctx?.caller === "tool" ? "agent" : "manual", actorEmail: ctx?.userEmail ?? null },
+    );
+
+    // A budget/allowance refusal is reported with a machine-readable code
+    // so a bulk loop can STOP rather than retrying N times against a
+    // closed budget and swallowing every rejection.
+    if (result.blockedReason) {
+      return { ok: false, code: result.blockedReason, error: result.blockedMessage };
+    }
 
     return { ok: true, ...result };
   },

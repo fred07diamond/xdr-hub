@@ -24,6 +24,36 @@ vi.mock("../server/helpers/apollo-client.js", () => ({
   extractApolloPhone: () => extractedPhone,
 }));
 
+// The credit guard is stubbed so this file tests the ENRICHMENT logic.
+// The guard's own policy has its own suite (apollo-credit-guard.test.ts).
+let reserveOk = true;
+let reserveBlocked: { reason: string; message: string } = {
+  reason: "period_exhausted",
+  message: "Out of credits.",
+};
+let grantReveal: boolean | null = null; // null = honour what was requested
+let reserveCalls: Array<{ ctx: Record<string, unknown>; opts: Record<string, unknown> }> = [];
+let settled: Array<Record<string, unknown>> = [];
+
+vi.mock("../server/helpers/apollo-credits/guard.js", () => ({
+  reserveEnrichment: async (ctx: Record<string, unknown>, opts: Record<string, unknown>) => {
+    reserveCalls.push({ ctx, opts });
+    if (!reserveOk) return { ok: false, ...reserveBlocked, state: null };
+    const wanted = !!opts.wantPhoneReveal;
+    const granted = grantReveal === null ? wanted : grantReveal;
+    return {
+      ok: true,
+      auth: { periodKey: "2026-09-04", legs: [] },
+      revealPhone: granted,
+      ...(wanted && !granted ? { phoneRevealSkippedReason: "budget_paused" } : {}),
+      state: null,
+    };
+  },
+  settleEnrichment: async (_auth: unknown, result: Record<string, unknown>) => {
+    settled.push(result);
+  },
+}));
+
 const { enrichApolloRecord, isEnrichmentFresh } = await import(
   "../server/helpers/enrich-apollo-record.js"
 );
@@ -64,6 +94,10 @@ function row(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   writes = [];
   matchCalls.length = 0;
+  reserveOk = true;
+  grantReveal = null;
+  reserveCalls = [];
+  settled = [];
   matchResult = null;
   matchThrows = null;
   orgResult = null;
@@ -129,18 +163,36 @@ describe("enrichApolloRecord — freshness short-circuit", () => {
 });
 
 describe("enrichApolloRecord — phone reveal economics", () => {
-  it("requests a reveal when there is no phone on file", async () => {
+  it("does NOT request a reveal by default", async () => {
+    // THE credit fix. This used to be `revealPhone = !enrichedPhone`, so every
+    // enrich -- including every unattended sweep enrich -- cost 9 credits
+    // instead of 1, and re-bought an 8-credit reveal on every non-fresh pass
+    // for anyone Apollo had no number for. It is now strictly opt-in.
     matchResult = { id: "apollo_1", email: "a@b.com" };
     await enrichApolloRecord(fakeDb, { kind: "lead_list_item", row: row() });
+    expect(matchCalls[0]).toMatchObject({ revealPhone: false });
+    expect(reserveCalls[0].opts).toMatchObject({ wantPhoneReveal: false });
+  });
+
+  it("requests a reveal only when explicitly asked", async () => {
+    matchResult = { id: "apollo_1", email: "a@b.com" };
+    await enrichApolloRecord(fakeDb, { kind: "lead_list_item", row: row() }, { revealPhone: true });
     expect(matchCalls[0]).toMatchObject({ revealPhone: true });
   });
 
-  it("does NOT re-request a reveal when a number is already stored", async () => {
-    // A reveal is 8 credits, 8x an email. Re-buying one we already have is
-    // the single most expensive mistake available here.
-    matchResult = { id: "apollo_1" };
-    await enrichApolloRecord(fakeDb, { kind: "lead_list_item", row: row({ enrichedPhone: "+1 555 0100" }) });
+  it("proceeds email-only when the guard pauses reveals past the threshold", async () => {
+    // Tiered degradation: the 8-credit leg is dropped, the 1-credit one still
+    // runs, and the caller is told why rather than the whole enrich failing.
+    matchResult = { id: "apollo_1", email: "a@b.com" };
+    grantReveal = false;
+    const out = await enrichApolloRecord(
+      fakeDb,
+      { kind: "lead_list_item", row: row() },
+      { revealPhone: true },
+    );
     expect(matchCalls[0]).toMatchObject({ revealPhone: false });
+    expect(out.phoneRevealSkippedReason).toBe("budget_paused");
+    expect(out.enrichmentStatus).toBe("done");
   });
 
   it("keeps an existing number when Apollo's response carries none", async () => {
@@ -161,7 +213,11 @@ describe("enrichApolloRecord — phone reveal economics", () => {
   it("marks a reveal as requested and stores Apollo's person id to match the webhook", async () => {
     matchResult = { id: "apollo_person_9", email: "a@b.com" };
     extractedPhone = null;
-    const out = await enrichApolloRecord(fakeDb, { kind: "lead_list_item", row: row() });
+    const out = await enrichApolloRecord(
+      fakeDb,
+      { kind: "lead_list_item", row: row() },
+      { revealPhone: true },
+    );
     expect(out.phoneRevealStatus).toBe("requested");
     expect(writes[1]).toMatchObject({
       phoneRevealStatus: "requested",
@@ -172,7 +228,11 @@ describe("enrichApolloRecord — phone reveal economics", () => {
   it("marks a reveal done when the number arrived synchronously", async () => {
     matchResult = { id: "apollo_1", email: "a@b.com" };
     extractedPhone = "+1 555 0199";
-    const out = await enrichApolloRecord(fakeDb, { kind: "lead_list_item", row: row() });
+    const out = await enrichApolloRecord(
+      fakeDb,
+      { kind: "lead_list_item", row: row() },
+      { revealPhone: true },
+    );
     expect(out.phoneRevealStatus).toBe("done");
     expect(writes[1]).toMatchObject({ phoneRevealStatus: "done", phoneRevealRequestId: null });
   });
@@ -234,6 +294,94 @@ describe("enrichApolloRecord — outcome statuses", () => {
   });
 });
 
+describe("enrichApolloRecord — a refused spend", () => {
+  it("leaves the row completely untouched", async () => {
+    // Critical: no claim, no status change, nothing. A budget pause must not
+    // corrupt the row or make it look attempted, so it stays retryable once
+    // credits are available again.
+    reserveOk = false;
+    const out = await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+
+    expect(writes).toHaveLength(0);
+    expect(matchCalls).toHaveLength(0);
+    expect(out.blockedReason).toBe("period_exhausted");
+    expect(out.blockedMessage).toBe("Out of credits.");
+  });
+
+  it("reports the row's real status rather than inventing a failure", async () => {
+    // Nothing was attempted, so nothing failed -- surfacing "failed" here
+    // would make a budget pause indistinguishable from bad lead data.
+    reserveOk = false;
+    const out = await enrichApolloRecord(fakeDb, {
+      kind: "prospect",
+      row: row({ enrichmentStatus: "idle" }),
+    });
+    expect(out.enrichmentStatus).toBe("idle");
+  });
+
+  it("is checked BEFORE the row is claimed", async () => {
+    // Ordering guarantee: reserve must precede the "enriching" write, or a
+    // refusal would strand the row exactly like the bug this replaced.
+    reserveOk = false;
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    expect(reserveCalls).toHaveLength(1);
+    expect(writes).toHaveLength(0);
+  });
+});
+
+describe("enrichApolloRecord — settlement reporting", () => {
+  it("reports a match with Apollo's person id, for webhook reconciliation", async () => {
+    matchResult = { id: "apollo_person_9", email: "a@b.com" };
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    expect(settled[0]).toMatchObject({
+      personMatch: { outcome: "match", apolloPersonId: "apollo_person_9" },
+    });
+  });
+
+  it("reports a no-match distinctly from an error", async () => {
+    matchResult = null;
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    expect(settled[0]).toMatchObject({ personMatch: { outcome: "no_match" } });
+  });
+
+  it("classifies a timeout separately from other failures", async () => {
+    // They settle differently on purpose: a timeout stays charged because
+    // Apollo may have processed it, while another rejection is treated as
+    // not billed.
+    matchThrows = new Error("The operation timed out");
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    expect(settled[0]).toMatchObject({ personMatch: { outcome: "timeout" } });
+  });
+
+  it("classifies a non-timeout rejection as an http error", async () => {
+    matchThrows = new Error("Apollo error (403): forbidden");
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    expect(settled[0]).toMatchObject({ personMatch: { outcome: "http_error" } });
+  });
+
+  it("marks the reveal not_requested when none was asked for", async () => {
+    // So its reservation is voided rather than left holding 8 credits.
+    matchResult = { id: "apollo_1" };
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    expect(settled[0]).toMatchObject({ phoneReveal: { outcome: "not_requested" } });
+  });
+
+  it("ties the reveal's fate to the match call it rides on", async () => {
+    // The reveal is a flag on the same /people/match request, so a failed
+    // match means the reveal never happened either.
+    matchThrows = new Error("Apollo error (500)");
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() }, { revealPhone: true });
+    expect(settled[0]).toMatchObject({ phoneReveal: { outcome: "http_error" } });
+  });
+
+  it("settles every leg even when the enrichment itself found nothing", async () => {
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toHaveProperty("personMatch");
+    expect(settled[0]).toHaveProperty("orgEnrich");
+  });
+});
+
 describe("enrichApolloRecord — parity across both tables", () => {
   it("writes identical values for a prospect and a lead list item", async () => {
     // The whole point of unifying: the two paths were verbatim copies and had
@@ -242,12 +390,12 @@ describe("enrichApolloRecord — parity across both tables", () => {
     orgResult = { industry: "Computing", estimated_num_employees: 40 };
     extractedPhone = "+1 555 0199";
 
-    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() });
+    await enrichApolloRecord(fakeDb, { kind: "prospect", row: row() }, { revealPhone: true });
     const prospectWrites = [...writes];
     writes = [];
     matchCalls.length = 0;
 
-    await enrichApolloRecord(fakeDb, { kind: "lead_list_item", row: row() });
+    await enrichApolloRecord(fakeDb, { kind: "lead_list_item", row: row() }, { revealPhone: true });
 
     // Timestamps differ between runs; everything else must match.
     const strip = (v: Record<string, unknown>) => {

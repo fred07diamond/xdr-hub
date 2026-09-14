@@ -1,5 +1,6 @@
 import { readAppSecret } from "@agent-native/core/secrets";
 import { getRequestOrgId } from "@agent-native/core/server";
+import { claimLeg, type ApolloSpendUnit, type CreditAuthorization } from "./apollo-credits/guard.js";
 
 const APOLLO_API_BASE = "https://api.apollo.io/api/v1";
 
@@ -27,10 +28,41 @@ const DEFAULT_APOLLO_TIMEOUT_MS = 20_000;
 // re-enable.
 const APOLLO_ENRICHMENT_DISABLED = true;
 
-async function apolloFetch(path: string, options?: RequestInit, timeoutMs: number = DEFAULT_APOLLO_TIMEOUT_MS): Promise<unknown> {
+/**
+ * Which credit unit an endpoint spends. Derived from the path so that a future
+ * endpoint added without thinking about credits fails loudly (unmapped path =>
+ * no leg to claim => throw) rather than silently spending unmetered.
+ */
+function unitForPath(path: string): ApolloSpendUnit {
+  if (path.startsWith("/people/match")) return "person_match";
+  if (path.startsWith("/organizations/")) return "org_enrich";
+  throw new Error(
+    `Apollo endpoint "${path}" has no credit-unit mapping. Add one in apollo-client.ts before calling it, ` +
+      "so its spend is metered.",
+  );
+}
+
+async function apolloFetch(
+  path: string,
+  options: RequestInit | undefined,
+  // Required, not optional: every Apollo request must carry proof that its
+  // credits were authorized and recorded. CreditAuthorization is branded and
+  // cannot be constructed outside apollo-credits/guard.ts, so a call site
+  // physically cannot reach Apollo without going through reserveEnrichment --
+  // which makes bypassing the budget a compile error rather than a
+  // code-review convention.
+  auth: CreditAuthorization,
+  timeoutMs: number = DEFAULT_APOLLO_TIMEOUT_MS,
+): Promise<unknown> {
   if (APOLLO_ENRICHMENT_DISABLED) {
     throw new Error("Apollo enrichment is temporarily disabled.");
   }
+  // Consume the leg funding THIS call. Throws if the authorization has no
+  // unconsumed leg for this unit, so a replayed authorization cannot pay for a
+  // second request. Claimed before the fetch so that a failed request still
+  // counts as attempted when the reservation is settled.
+  claimLeg(auth, unitForPath(path));
+
   const apiKey = await getApolloToken();
   if (!apiKey) {
     throw new Error("Apollo not connected. Set APOLLO_API_KEY in Settings or your environment.");
@@ -115,12 +147,15 @@ export const APOLLO_PHONE_REVEAL_WEBHOOK_URL = "https://xdr-hub.netlify.app/li-a
 // A no-match is a normal, expected outcome (null person), never an error.
 // When revealPhone is set, the caller must remember person.id themselves
 // (not returned separately here) to match the later webhook callback.
-export async function matchApolloPerson(options: {
-  name: string;
-  companyName?: string | null;
-  email?: string | null;
-  revealPhone?: boolean;
-}): Promise<ApolloPersonMatch | null> {
+export async function matchApolloPerson(
+  options: {
+    name: string;
+    companyName?: string | null;
+    email?: string | null;
+    revealPhone?: boolean;
+  },
+  auth: CreditAuthorization,
+): Promise<ApolloPersonMatch | null> {
   const cleanedName = cleanForApolloMatch(options.name);
   if (!cleanedName) return null;
   const body: Record<string, unknown> = { name: cleanedName };
@@ -130,11 +165,16 @@ export async function matchApolloPerson(options: {
   if (options.revealPhone) {
     body.reveal_phone_number = true;
     body.webhook_url = APOLLO_PHONE_REVEAL_WEBHOOK_URL;
+    // The reveal is 8 credits riding on this same request, so it needs its own
+    // leg claimed -- apolloFetch only claims the person_match leg for this
+    // path. Without this an authorization granted for an email-only enrich
+    // could quietly buy a reveal.
+    claimLeg(auth, "phone_reveal");
   }
   const result = (await apolloFetch("/people/match", {
     method: "POST",
     body: JSON.stringify(body),
-  })) as ApolloPersonMatchResponse;
+  }, auth)) as ApolloPersonMatchResponse;
   return result.person ?? null;
 }
 
@@ -193,14 +233,17 @@ function domainFromEmail(email: string | null | undefined): string | null {
 // falling back to the domain portion of the person's email address --
 // without either, there's no way to look up the company under this key's
 // current scope, and this returns null rather than guessing by name.
-export async function enrichApolloOrganization(options: {
-  domain?: string | null;
-  email?: string | null;
-}): Promise<ApolloOrganization | null> {
+export async function enrichApolloOrganization(
+  options: {
+    domain?: string | null;
+    email?: string | null;
+  },
+  auth: CreditAuthorization,
+): Promise<ApolloOrganization | null> {
   const domain = options.domain ?? domainFromEmail(options.email);
   if (!domain) return null;
   const result = (await apolloFetch(`/organizations/enrich?domain=${encodeURIComponent(domain)}`, {
     method: "GET",
-  })) as ApolloOrganizationEnrichResponse;
+  }, auth)) as ApolloOrganizationEnrichResponse;
   return result.organization ?? null;
 }

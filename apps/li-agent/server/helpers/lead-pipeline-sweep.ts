@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { leadLists, leadListItems } from "../db/schema.js";
+import { voidStaleReservations } from "./apollo-credits/ledger.js";
 import { enrichApolloRecord } from "./enrich-apollo-record.js";
 import { scoreLeadListItem } from "./score-lead-list-item.js";
 
@@ -116,13 +117,44 @@ export async function runLeadPipelineSweepTick(): Promise<void> {
   try {
     await unclaimRetryableStale(db);
     await timeoutStalePhoneReveals(db);
+    // Release credit reservations abandoned by a process that died between
+    // reserving and settling -- they would otherwise consume budget forever.
+    // Runs here rather than on a schedule because this deployment has no
+    // reliable cron (see server/middleware/lead-pipeline-sweep.ts).
+    await voidStaleReservations();
 
     const batch = await claimBatch(db);
     const ownerEmailByListId = new Map<string, string | null>();
     for (const item of batch) {
       if (Date.now() - startedAt > TICK_BUDGET_MS) break;
       try {
-        await enrichApolloRecord(db, { kind: "lead_list_item", row: item });
+        // trigger: "sweep" charges the workspace rather than a person (so no
+        // personal allowance applies) and is capped at the sweep's own share
+        // of the period budget, leaving credits for interactive work.
+        // revealPhone stays false: an unattended pass must never spend 8
+        // credits on a phone number nobody asked for.
+        const enriched = await enrichApolloRecord(
+          db,
+          { kind: "lead_list_item", row: item },
+          { trigger: "sweep", actorEmail: null, revealPhone: false },
+        );
+
+        // A refused spend is not a lead failure. Return the row to idle
+        // WITHOUT burning a pipeline attempt and stop the tick: otherwise a
+        // multi-day budget pause would march every queued lead through
+        // MAX_ATTEMPTS and mark hundreds of them permanently failed.
+        if (enriched.blockedReason) {
+          await db
+            .update(leadListItems)
+            .set({
+              enrichmentStatus: "idle",
+              pipelineAttempts: Math.max(0, item.pipelineAttempts - 1),
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(leadListItems.id, item.id));
+          break;
+        }
+
         // Re-select: enrichApolloRecord already wrote the enrichment
         // columns to the row -- scoreLeadListItem needs those fresh values
         // (e.g. enrichedLinkedinUrl), not the pre-enrichment snapshot.

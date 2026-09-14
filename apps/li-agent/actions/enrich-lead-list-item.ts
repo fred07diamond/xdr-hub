@@ -38,7 +38,18 @@ export default defineAction({
     // enrichApolloRecord claims the row itself (sets "enriching") once it has
     // decided to actually call Apollo -- doing it here instead stranded a
     // fresh row at "enriching" when the freshness check short-circuited.
-    const result = await enrichApolloRecord(db, { kind: "lead_list_item", row: item });
+    // Attribute the spend to the caller so their personal allowance
+    // applies. `agent` is tracked separately from `manual` because these
+    // actions are agent-tool-callable, so the agent can loop them.
+    const result = await enrichApolloRecord(
+      db,
+      { kind: "lead_list_item", row: item },
+      { trigger: ctx?.caller === "tool" ? "agent" : "manual", actorEmail: ctx!.userEmail! },
+    );
+
+    if (result.blockedReason) {
+      return { ok: false, code: result.blockedReason, error: result.blockedMessage };
+    }
 
     return { ok: true, ...result };
   },
