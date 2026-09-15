@@ -341,3 +341,36 @@ describe("fitReason is about the lead, not about our data", () => {
     expect(SRC).toMatch(/scoring process in fitReason/);
   });
 });
+
+describe("the section spans every page of the current filter", () => {
+  // Reported: hot leads appeared under the Stellar filter but not under "All
+  // fits". Cause: the section was fed `pageRows` — one page of 25 out of 257 —
+  // so it only surfaced hot leads that happened to land on page 1. Applying a
+  // filter pulled more of them onto page 1, which is why they looked like they
+  // existed only there.
+  //
+  // A FILTER is a user intent and the section should respect it. PAGINATION is
+  // not: nobody intends "only page 1", and the whole point of this section is
+  // not having to hunt.
+  const SRC = readFileSync(new URL("../app/routes/_index.tsx", import.meta.url), "utf8");
+
+  it("Prospects feeds it the filtered set, not one page", () => {
+    expect(SRC).toContain("leads={filtered}");
+    expect(SRC).not.toContain("leads={pageRows}");
+  });
+
+  it("still respects the active filters", () => {
+    // `filtered` is allProspects.filter(matchesCurrentFilters), so a verdict
+    // or persona filter still applies -- it is only pagination that is
+    // ignored.
+    expect(SRC).toMatch(/const filtered = useMemo\(\s*\(\) => allProspects\.filter\(matchesCurrentFilters\)/);
+  });
+
+  it("Lead Lists was already page-independent", () => {
+    // allItems comes from its own query with limit 500 / offset 0, not the
+    // visible page, so that surface never had the bug.
+    const LL = readFileSync(new URL("../app/routes/lead-lists.tsx", import.meta.url), "utf8");
+    expect(LL).toContain("leads={allItems}");
+    expect(LL).toMatch(/allItemsQuery = useActionQuery\([\s\S]{0,120}limit: 500, offset: 0/);
+  });
+});

@@ -2013,11 +2013,21 @@ export default function ProspectsRoute() {
         )}
       </div>
 
-      {/* Hot leads above the table. Fed from the FILTERED rows rather than
-          everything, so it reflects what is actually on screen -- a "hot"
-          section contradicting an active filter would be worse than none. */}
+      {/* Fed from `filtered`, NOT `pageRows`.
+          
+          It was pageRows, on the reasoning that the section should reflect
+          what is on screen. That conflated two different things: a FILTER is
+          a user intent ("show me weak leads") and the section should respect
+          it, but PAGINATION is not -- nobody intends "only page 1". Scoped to
+          a page, a hot lead sitting on page 5 never surfaced, and under "All
+          fits" the section showed only the handful that happened to land on
+          the first 25 of 257. Applying the Stellar filter pulled more onto
+          page 1, which is why they appeared to exist only there.
+          
+          The entire point of this section is that you should not have to hunt
+          for the best leads, so it spans every page of the current filter. */}
       <HotLeadsSection
-        leads={pageRows}
+        leads={filtered}
         onGenerate={(lead) => setOutreachLead(lead)}
         onOpen={(lead) => setSelectedId(lead.id)}
         onScore={async (lead) => {
