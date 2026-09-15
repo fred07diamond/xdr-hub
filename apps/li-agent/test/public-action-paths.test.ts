@@ -74,6 +74,16 @@ describe("actions the extension calls are reachable without a session", () => {
     expect(listedIn("server/middleware/org-membership.ts").has(action)).toBe(true);
   });
 
+  it.each(CALLED)("%s sets top-level requiresAuth: false too", (action) => {
+    // TWO layers gate this, and both must be opened. publicPaths gets the
+    // request past the global auth guard ("Unauthorized"); the action's own
+    // top-level `requiresAuth` -- which defaults to TRUE -- gets it past
+    // dispatch ("Unauthenticated"). check-leads-in-lists had the publicAgent
+    // flag but not the top-level one, so it swapped one error for the other.
+    const src = readFileSync(new URL(`actions/${action}.ts`, ROOT), "utf8");
+    expect(src).toMatch(/^\s*requiresAuth: false,/m);
+  });
+
   it.each(CALLED)("%s exists as an action file", (action) => {
     // A typo in an extension URL is the other way this fails silently.
     const files = new Set(

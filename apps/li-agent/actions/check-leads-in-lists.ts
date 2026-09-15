@@ -41,6 +41,12 @@ export default defineAction({
       .describe("Sales Navigator lead URLs from the current capture"),
     apiToken: z.string().nullish().describe("Personal API token from Settings"),
   }),
+  // Both flags are required, and I had only set the publicAgent one. The
+  // top-level `requiresAuth` defaults to true, so after the publicPaths fix
+  // let the request past the global guard, the ACTION's own gate rejected it
+  // with {"error":"Unauthenticated"} -- a different error from the guard's
+  // "Unauthorized", which is how the two layers are told apart.
+  requiresAuth: false,
   publicAgent: { expose: true, readOnly: true, requiresAuth: false },
   readOnly: true,
   http: { method: "POST" },
