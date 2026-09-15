@@ -45,8 +45,18 @@ export default defineAction({
     apiToken: z.string().nullish().describe("Personal API token from Settings"),
   }),
   requiresAuth: false,
+  // NO `http` block, deliberately.
+  //
+  // Declaring `http: { method: "POST" }` was why this returned a bare
+  // {"error":"Unauthorized"} and the extension buttons did nothing: an
+  // explicit http block creates a direct HTTP route whose auth is separate
+  // from the publicAgent path, so the request was rejected by the framework
+  // before `run` ever executed -- which is why my own "add your API token"
+  // message never appeared.
+  //
+  // capture-profile, import-sales-nav-list and ingest-post-engager are all
+  // POSTed by the extension and all omit it. Matching them.
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
-  http: { method: "POST" },
   audit: {
     target: (args) => ({ type: "prospect", id: args.profileUrl }),
     summary: (args) =>

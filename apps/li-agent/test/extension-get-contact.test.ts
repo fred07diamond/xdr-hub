@@ -141,3 +141,45 @@ describe("extension wiring", () => {
     expect(src("extension/panel.js")).toMatch(/phoneRevealStatus === "requested"[\s\S]{0,200}disabled = true/);
   });
 });
+
+describe("the action must be reachable by the extension at all", () => {
+  const SRC = readFileSync(new URL("../actions/extension-get-contact.ts", import.meta.url), "utf8");
+
+  it("declares NO http block", () => {
+    // This is why the buttons did nothing. `http: { method: "POST" }` creates
+    // a direct HTTP route whose auth is separate from the publicAgent path, so
+    // the request was rejected by the framework with a bare
+    // {"error":"Unauthorized"} before `run` executed -- which is why the
+    // action's own "add your API token" message never appeared.
+    //
+    // Verified against production: list-lead-lists-for-extension (no http
+    // block) answered unauthenticated; this one did not.
+    expect(SRC).not.toMatch(/^\s*http: \{/m);
+  });
+
+  it("matches the declaration every other extension write action uses", () => {
+    expect(SRC).toContain("requiresAuth: false");
+    expect(SRC).toContain("publicAgent: { expose: true, readOnly: false, requiresAuth: false }");
+  });
+});
+
+describe("contact details live in the profile card", () => {
+  it("the block sits inside #profile-card, not as its own panel", () => {
+    // As a separate grey panel below the buttons it read as a feature bolted
+    // on, and put two competing card surfaces on a narrow side panel. The
+    // profile card already holds who this person is.
+    const HTML = readFileSync(new URL("../extension/panel.html", import.meta.url), "utf8");
+    const cardStart = HTML.indexOf('<div id="profile-card">');
+    const contact = HTML.indexOf('<div id="contact-section"');
+    const statusDiv = HTML.indexOf('<div id="status"></div>');
+    expect(cardStart).toBeGreaterThan(-1);
+    expect(contact).toBeGreaterThan(cardStart);
+    // And before the action buttons / status line that used to precede it.
+    expect(contact).toBeLessThan(statusDiv);
+  });
+
+  it("appears exactly once", () => {
+    const HTML = readFileSync(new URL("../extension/panel.html", import.meta.url), "utf8");
+    expect(HTML.match(/id="contact-section"/g)).toHaveLength(1);
+  });
+});
