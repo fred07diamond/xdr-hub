@@ -72,9 +72,16 @@ describe("extension-get-contact — not a side door", () => {
     expect(SRC).toContain("phoneError");
   });
 
-  it("audits the spend, naming an override", () => {
-    expect(SRC).toMatch(/audit:/);
-    expect(SRC).toMatch(/OVERRIDE below the fit bar/);
+  it("declares NO audit block, which is what makes it reachable", () => {
+    // The framework's audit layer needs a resolved actor, so an audited action
+    // is rejected with {"error":"Unauthorized"} before schema validation. This
+    // was the ONLY public action in the app carrying one, and that is why the
+    // extension buttons did nothing.
+    //
+    // The spend is still attributable: apollo_credit_ledger records
+    // actorEmail, trigger, fit verdict at spend time and the override flag for
+    // every credit, which is what Export ledger reads.
+    expect(SRC).not.toMatch(/^\s*audit: \{/m);
   });
 });
 
@@ -145,15 +152,16 @@ describe("extension wiring", () => {
 describe("the action must be reachable by the extension at all", () => {
   const SRC = readFileSync(new URL("../actions/extension-get-contact.ts", import.meta.url), "utf8");
 
-  it("declares NO http block", () => {
+  it("declares no http block either, matching the other extension actions", () => {
     // This is why the buttons did nothing. `http: { method: "POST" }` creates
     // a direct HTTP route whose auth is separate from the publicAgent path, so
     // the request was rejected by the framework with a bare
     // {"error":"Unauthorized"} before `run` executed -- which is why the
     // action's own "add your API token" message never appeared.
     //
-    // Verified against production: list-lead-lists-for-extension (no http
-    // block) answered unauthenticated; this one did not.
+    // Not the cause of the Unauthorized -- that was the audit block -- but
+    // kept off for consistency with capture-profile, import-sales-nav-list
+    // and ingest-post-engager, none of which declare one.
     expect(SRC).not.toMatch(/^\s*http: \{/m);
   });
 

@@ -57,13 +57,23 @@ export default defineAction({
   // capture-profile, import-sales-nav-list and ingest-post-engager are all
   // POSTed by the extension and all omit it. Matching them.
   publicAgent: { expose: true, readOnly: false, requiresAuth: false },
-  audit: {
-    target: (args) => ({ type: "prospect", id: args.profileUrl }),
-    summary: (args) =>
-      args.wantPhone
-        ? `Extension phone reveal (${REVEAL_CREDITS} credits)${args.override ? " — OVERRIDE below the fit bar" : ""}`
-        : "Extension email lookup (1 credit)",
-  },
+  // NO `audit` block, and that is load-bearing rather than an omission.
+  //
+  // This was the real reason the extension buttons did nothing. It was the
+  // ONLY public action in the app carrying one, and the framework's audit
+  // layer needs a resolved actor identity -- so an audited action is rejected
+  // with a bare {"error":"Unauthorized"} BEFORE schema validation, which is
+  // why the action's own "add your API token" message never appeared.
+  //
+  // Proven by probing production: capture-profile, import-sales-nav-list and
+  // ingest-post-engager all reach schema validation on an unauthenticated
+  // POST; this one did not. None of them declare audit.
+  //
+  // The spend is still fully attributable without it. apollo_credit_ledger
+  // records actorEmail, trigger, the fit verdict at spend time and the
+  // override flag for every credit, and that -- not the framework audit log --
+  // is what the Export ledger button reads and what an admin actually
+  // reviews.
   run: async ({ profileUrl, wantEmail, wantPhone, confirmCredits, override, apiToken }, ctx) => {
     const actorEmail = await resolveOwnerStrict(apiToken, ctx);
     if (!actorEmail) {
