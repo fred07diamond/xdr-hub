@@ -3,10 +3,15 @@ import { getWorkspaceOrgId, isWorkspaceMember } from "@xdr-hub/shared/server";
 import { getDb } from "../db/index.js";
 
 // Paths the extension calls without a session — auth is handled by API token
-// inside each action, not here. This list is documentation only: the actual
-// enforcement is each action's own `requiresAuth` flag at dispatch time, so
-// an action missing from this list isn't a gap — but keep it accurate so the
-// next reader isn't misled about what's actually public.
+// inside each action, not here.
+//
+// This list must stay in sync with `publicPaths` in server/plugins/auth.ts,
+// which is the one that actually gates the request. An earlier version of this
+// comment said omission "isn't a gap" because each action's own `requiresAuth`
+// flag enforces at dispatch time. That is misleading and cost real debugging
+// time: the global auth guard rejects an unlisted path with
+// {"error":"Unauthorized"} BEFORE dispatch, so `requiresAuth: false` never
+// gets a chance to run. Two actions shipped dead because of it.
 const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/capture-profile",
   "/_agent-native/actions/get-draft",
@@ -26,6 +31,12 @@ const PUBLIC_ACTION_PATHS = new Set([
   "/_agent-native/actions/get-lead-list-items-for-extension",
   "/_agent-native/actions/summarize-lead-list-for-extension",
   "/_agent-native/actions/generate-sales-nav-search",
+  "/_agent-native/actions/check-leads-in-lists",
+  "/_agent-native/actions/extension-get-contact",
+  "/_agent-native/actions/list-icp-personas",
+  "/_agent-native/actions/add-persona-documents",
+  "/_agent-native/actions/delete-persona-document",
+  "/_agent-native/actions/check-sales-nav-leads-captured",
 ]);
 
 // Runs after auth.ts (alphabetical order). Rejects authenticated users who

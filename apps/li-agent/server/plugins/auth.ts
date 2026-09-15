@@ -24,5 +24,22 @@ export default createAuthPlugin({
     "/_agent-native/actions/get-lead-list-items-for-extension",
     "/_agent-native/actions/summarize-lead-list-for-extension",
     "/_agent-native/actions/generate-sales-nav-search",
+    // Both of these were shipped WITHOUT being listed here and were therefore
+    // dead: the guard rejected them with {"error":"Unauthorized"} before the
+    // action ran, so check-leads-in-lists never reconciled a deleted list and
+    // the extension's contact buttons did nothing. `requiresAuth: false` and
+    // `publicAgent` on the action are NOT sufficient -- see the note above.
+    "/_agent-native/actions/check-leads-in-lists",
+    "/_agent-native/actions/extension-get-contact",
+    // These four were ALSO dead, and not recently: the extension's
+    // Settings -> ICP Personas panel and its Sales Nav "already captured"
+    // check have been returning {"error":"Unauthorized"} the whole time.
+    // Found by deriving the list from what extension/*.js actually fetches
+    // rather than from what the actions declare -- see
+    // test/public-action-paths.test.ts.
+    "/_agent-native/actions/list-icp-personas",
+    "/_agent-native/actions/add-persona-documents",
+    "/_agent-native/actions/delete-persona-document",
+    "/_agent-native/actions/check-sales-nav-leads-captured",
   ],
 });
