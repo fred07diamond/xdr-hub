@@ -13,6 +13,25 @@ import { incrementLeadCounter } from "../server/helpers/lead-counters.js";
 // queue.ts's IMPORT_LIMIT so one import can't produce an unbounded insert.
 const IMPORT_LIMIT = 500;
 
+/**
+ * How many leads get their persona classified INSIDE the import request.
+ *
+ * A 224-lead import died with a 504 "Inactivity Timeout" -- the corporate
+ * proxy page, not a Netlify error -- because this classification is one LLM
+ * call over every lead in the batch, and at 224 numbered lines it ran past the
+ * ~20s the proxy allows.
+ *
+ * The import itself is a shallow insert and is fast. Only the classification
+ * scales with list size, so it is bounded here and the remainder get their
+ * persona from the background sweep, which assigns one per lead as part of
+ * scoring anyway (score-lead-list-item -> selectPersona).
+ *
+ * 100 rather than a chunked-parallel scheme: the import has to return inside a
+ * fixed wall-clock budget it does not control, and a bound that always fits is
+ * worth more than a cleverer approach that sometimes does not.
+ */
+const PERSONA_CLASSIFY_LIMIT = 100;
+
 export default defineAction({
   description:
     "Import a Sales Navigator saved lead list captured by the LinkedIn Agent extension, or add a single profile from the extension's 'Add to list' action (one lead, carrying a real profileUrl instead of a salesNavLeadUrl). The import itself stays a fast, shallow insert -- Apollo enrichment, ICP fit scoring, and connection-note drafting run afterward, automatically and in the background (server/helpers/lead-pipeline-sweep.ts), independent of the extension or browser staying open.",
@@ -123,10 +142,14 @@ export default defineAction({
     // generation. Best-effort: any failure here must not block the import
     // itself, since the import is the durable outcome that matters.
     let personaMatches: Awaited<ReturnType<typeof selectPersonasBatch>> = [];
+    // Bounded, so a large import cannot be taken down by its own optional
+    // enrichment step. Leads past the limit are inserted with no persona and
+    // pick one up when the sweep scores them.
+    const toClassify = deduped.slice(0, PERSONA_CLASSIFY_LIMIT);
     try {
       personaMatches = await selectPersonasBatch(
         db,
-        deduped.map((lead) => ({ name: lead.name, headline: lead.headline, company: lead.company })),
+        toClassify.map((lead) => ({ name: lead.name, headline: lead.headline, company: lead.company })),
       );
     } catch {
       personaMatches = [];

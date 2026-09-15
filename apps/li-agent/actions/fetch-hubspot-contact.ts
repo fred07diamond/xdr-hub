@@ -95,6 +95,7 @@ export default defineAction({
           systemPrompt,
           input: `Email correspondence with ${name}${role || company ? ` (${[role, company].filter(Boolean).join(" at ")})` : ""}:\n\n${transcript}`,
           maxOutputTokens: 300,
+          reasoningEffort: "none",
         });
       const result = ownerCtx
         ? await runWithRequestContext(ownerCtx, callCompleteText)

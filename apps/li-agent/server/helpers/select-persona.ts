@@ -99,6 +99,7 @@ export async function selectPersona(db: Db, profile: ProfileData): Promise<Perso
           systemPrompt: "You match LinkedIn profiles to ICP personas. Reply with ONLY the number of the best-matching persona (e.g. '2'). If none clearly fits, reply '0'.",
           input: `Personas:\n${personaList}\n\nProfile: ${profileBlurb}`,
           maxOutputTokens: 5,
+          reasoningEffort: "none",
         });
       const selResult = ownerCtxForSel
         ? await runWithRequestContext(ownerCtxForSel, selectCall)
@@ -193,6 +194,24 @@ export async function selectPersonasBatch(db: Db, profiles: BatchProfileInput[])
         // More headroom per line ("<n>:<m>\n" plus normal model formatting
         // slop) makes that failure mode much less likely to trigger at all.
         maxOutputTokens: Math.max(300, profiles.length * 16),
+        reasoningEffort: "none",
+        /**
+         * Time-boxed, because this call sits INSIDE the import request.
+         *
+         * A 224-lead Sales Nav import died with a 504 "Inactivity Timeout"
+         * from the corporate proxy (the Blue Coat page, not a Netlify error),
+         * and this was why: one classification call over 224 profiles, with
+         * the engine's default reasoning effort and NO timeout, ran until
+         * something upstream gave up.
+         *
+         * The surrounding code already treats a classification FAILURE as
+         * non-fatal, with the comment "the import is the durable outcome that
+         * matters". It did not treat SLOWNESS the same way, so a slow call
+         * took the whole import down with it. 10s keeps it well inside the
+         * ~20s proxy wall, and a lead that misses out simply has no persona
+         * until the background sweep assigns one.
+         */
+        timeoutMs: 10_000,
       });
     const result = ownerCtxForSel ? await runWithRequestContext(ownerCtxForSel, call) : await call();
 

@@ -270,6 +270,7 @@ export default defineAction({
           systemPrompt,
           input: `Saved personas:\n${personaList}\n\nRequest: ${prompt}`,
           maxOutputTokens: 600,
+          reasoningEffort: "none",
         });
       const result = ownerCtxForCall ? await runWithRequestContext(ownerCtxForCall, call) : await call();
 

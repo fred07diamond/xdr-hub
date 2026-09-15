@@ -30,6 +30,7 @@ export async function resolveConnectButtonIndex(
         "Reply with ONLY the integer index of the main profile Connect button.",
       input: `Profile being viewed: ${profileName}\n\nCandidates:\n${candidateList}\n\nWhich index is the Connect button for ${profileName}?`,
       maxOutputTokens: 5,
+      reasoningEffort: "none",
     });
 
   let result;

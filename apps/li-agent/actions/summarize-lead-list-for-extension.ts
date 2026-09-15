@@ -61,6 +61,7 @@ export default defineAction({
             "Mention the size, the dominant persona(s) if any, and notable company patterns. No preamble, no markdown, just the sentence.",
           input: `List "${list.name}" -- ${items.length} leads.\nPersona breakdown: ${topPersonas || "none assigned"}.\nTop companies: ${topCompanies || "varied"}.\nSample titles: ${sampleTitles || "none"}.`,
           maxOutputTokens: 80,
+          reasoningEffort: "none",
         });
       const result = ownerCtxForSummary ? await runWithRequestContext(ownerCtxForSummary, call) : await call();
       return { summary: result.text.trim() };

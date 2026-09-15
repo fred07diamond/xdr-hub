@@ -34,6 +34,7 @@ export default defineAction({
         systemPrompt,
         input,
         maxOutputTokens: 300,
+        reasoningEffort: "none",
       });
 
     const result = ownerCtx

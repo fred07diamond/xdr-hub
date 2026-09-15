@@ -198,7 +198,7 @@ export default defineAction({
         "Write a concise, genuine note under 280 characters. Reference something specific and real about their work or comment. " +
         "No generic openers like 'I came across your profile'. Output ONLY the note text, nothing else.";
       const input = [profileSummary, commentLine].filter(Boolean).join("\n\n") || "Unknown profile";
-      const call = () => completeText({ systemPrompt, input, maxOutputTokens: 120 });
+      const call = () => completeText({ systemPrompt, input, maxOutputTokens: 120, reasoningEffort: "none" });
       const result = ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
       draftNote = result.text.trim().slice(0, 280) || null;
     } catch { /* best-effort */ }

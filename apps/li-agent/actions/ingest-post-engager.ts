@@ -18,6 +18,7 @@ async function generatePostName(rawText: string): Promise<string> {
         "Reply with ONLY the title, no quotes, no punctuation at the end.",
       input: rawText.slice(0, 300),
       maxOutputTokens: 30,
+      reasoningEffort: "none",
     });
     const result = ownerCtx ? await runWithRequestContext(ownerCtx, call) : await call();
     return result.text.trim().slice(0, 80);

@@ -39,7 +39,7 @@ export async function scoreEngager({
 
     const input = profileSummary || "Unknown profile";
     const callCompleteText = () =>
-      completeText({ systemPrompt, input, maxOutputTokens: 300 });
+      completeText({ systemPrompt, input, maxOutputTokens: 300, reasoningEffort: "none" });
 
     const result = ownerCtx
       ? await runWithRequestContext(ownerCtx, callCompleteText)

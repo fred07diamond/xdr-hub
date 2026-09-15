@@ -60,7 +60,7 @@ export default defineAction({
 
     const ownerCtx = await getOwnerCtx();
     const callCompleteText = () =>
-      completeText({ systemPrompt, input, maxOutputTokens: 400 });
+      completeText({ systemPrompt, input, maxOutputTokens: 400, reasoningEffort: "none" });
 
     const result = ownerCtx
       ? await runWithRequestContext(ownerCtx, callCompleteText)
