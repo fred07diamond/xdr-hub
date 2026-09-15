@@ -571,7 +571,10 @@ export default function LeadListsPage() {
    */
   async function revealPhonesForExport(rows: LeadListItem[]): Promise<LeadListItem[]> {
     const ids = new Set(rows.map((r) => r.id));
-    for (const row of rows.slice(0, MAX_BULK_ENRICH)) {
+      // No slice here: the export modal has already decided how many to run,
+      // budgeted against remaining CREDITS rather than a record count. Capping
+      // again at 50 would silently ignore what the user typed.
+    for (const row of rows) {
       const res = (await revealPhone.mutateAsync({
         source: "lead_list_item",
         id: row.id,

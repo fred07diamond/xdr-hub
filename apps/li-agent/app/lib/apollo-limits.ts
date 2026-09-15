@@ -2,22 +2,19 @@
 // disagree about what a "batch" is.
 
 /**
- * Maximum records one bulk enrich may touch.
+ * Default batch size for a bulk run. NO LONGER A CEILING.
  *
- * 50 because bulk enrichment is a SEQUENTIAL client-side loop over the
- * single-record action (deliberately, to stay under Apollo's rate limits), so
- * at roughly 2s per call 50 is already ~100 seconds of a user watching a
- * progress counter. A larger cap mostly produces abandoned tabs mid-loop,
- * which strands rows in `enriching` until the reaper clears them.
+ * This was a hard cap of 50 RECORDS, and that is the wrong unit: 50 emails is
+ * 50 credits while 50 phone reveals is 400, so a record cap prices two runs
+ * that differ eightfold as if they were identical. On a 224-lead list it was
+ * also simply in the way -- the cap, not the budget, was the thing stopping
+ * the work.
  *
- * Effective ceilings before this existed: 500 on the Lead Lists page and
- * **5000** on Prospects, where "select all matching" plus one click could
- * attempt five thousand Apollo calls.
- *
- * This is a COURTESY limit. The server enforces the real ceilings (period
- * budget, per-user allowance, hourly rate limit) and returns a typed refusal,
- * because the server only ever sees independent single-record calls and cannot
- * tell that they came from one click.
+ * The real ceiling is credits, and both spend surfaces now compute it from
+ * what the workspace and the user have left, with an editable count. This
+ * constant survives only as the default batch size for callers that do not
+ * pass one (runBulkEnrich, handleBulkEnrich), and as the scoring cap's
+ * sibling.
  */
 export const MAX_BULK_ENRICH = 50;
 

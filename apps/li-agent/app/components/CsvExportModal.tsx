@@ -3,11 +3,7 @@ import { useMemo, useState } from "react";
 
 import { useCreditUsage, type CreditUsage } from "@/components/ApolloCreditGauge";
 import { useApolloEnrichment } from "@/lib/apollo-enrichment";
-import {
-  CREDITS_PER_EMAIL,
-  CREDITS_PER_PHONE_REVEAL,
-  MAX_BULK_ENRICH,
-} from "@/lib/apollo-limits";
+import { CREDITS_PER_EMAIL, CREDITS_PER_PHONE_REVEAL } from "@/lib/apollo-limits";
 import { buildMasterCsv, CSV_HEADER, csvRowCells, type CsvRow } from "@/lib/prospects-csv";
 import { describeBar, verdictClearsBar } from "@/lib/verdict-bar";
 
@@ -116,23 +112,71 @@ export function CsvExportModal<T extends ExportableRow>({
 
   // The batch cap applies here too. Without it, "export 400 leads and enrich
   // the missing ones" would be a single click authorizing 400 Apollo calls.
-  const emailCount = Math.min(missingEmail.length, MAX_BULK_ENRICH);
-  const phoneCount = Math.min(phoneEligible.length, MAX_BULK_ENRICH);
-
-  const emailCredits = enrichEmails ? emailCount * CREDITS_PER_EMAIL : 0;
-  const phoneCredits = revealPhones ? phoneCount * CREDITS_PER_PHONE_REVEAL : 0;
-  const creditCost = emailCredits + phoneCredits;
-
   const remaining = usage?.remaining ?? null;
   const personalRemaining = usage?.mine?.remaining ?? null;
+
+  /**
+   * The ceiling is CREDITS, not a record count.
+   *
+   * It used to be a flat MAX_BULK_ENRICH = 50 records, which is the wrong
+   * unit: 50 emails is 50 credits and 50 phone reveals is 400, so a record cap
+   * treats two runs that differ eightfold in cost as equivalent. On a 224-lead
+   * list it also just got in the way -- the cap, not the budget, was the thing
+   * stopping the work.
+   *
+   * So the real limit is whichever credit ceiling binds first: the workspace
+   * budget or the user's own allowance. The server enforces both regardless;
+   * this is so the UI cannot offer a run it knows will be refused halfway.
+   */
+  const creditCeiling = Math.min(
+    remaining ?? Number.POSITIVE_INFINITY,
+    personalRemaining ?? Number.POSITIVE_INFINITY,
+  );
+
+  // How many the user asked for. Null means "not set yet" and falls back to
+  // whatever the budget affords, so the default is useful rather than 50.
+  const [emailWanted, setEmailWanted] = useState<number | null>(null);
+  const [phoneWanted, setPhoneWanted] = useState<number | null>(null);
+
+  const maxEmails = Math.min(
+    missingEmail.length,
+    Number.isFinite(creditCeiling) ? Math.floor(creditCeiling / CREDITS_PER_EMAIL) : missingEmail.length,
+  );
+  const emailCount = enrichEmails ? Math.min(emailWanted ?? maxEmails, maxEmails) : 0;
+  const emailCredits = emailCount * CREDITS_PER_EMAIL;
+
+  // Phones are budgeted against what the emails leave behind, so the two
+  // toggles cannot jointly authorise more than the ceiling.
+  const phoneBudget = Number.isFinite(creditCeiling) ? creditCeiling - emailCredits : Number.POSITIVE_INFINITY;
+  const maxPhones = Math.min(
+    phoneEligible.length,
+    Number.isFinite(phoneBudget)
+      ? Math.max(0, Math.floor(phoneBudget / CREDITS_PER_PHONE_REVEAL))
+      : phoneEligible.length,
+  );
+  const phoneCount = revealPhones ? Math.min(phoneWanted ?? maxPhones, maxPhones) : 0;
+  const phoneCredits = phoneCount * CREDITS_PER_PHONE_REVEAL;
+
+  const creditCost = emailCredits + phoneCredits;
+
   // Fail closed in the display: if either ceiling cannot cover it, say so
   // rather than letting the run stop halfway.
   const overWorkspace = remaining != null && creditCost > remaining;
   const overPersonal = personalRemaining != null && creditCost > personalRemaining;
   const overBudget = overWorkspace || overPersonal;
 
-  const canEnrichEmails = !!onEnrich && apollo.enabled && emailCount > 0;
-  const canRevealPhones = !!onRevealPhones && apollo.enabled && phoneCount > 0 && !phonesPaused;
+  // Honest about time as well as money. A record cap was partly standing in
+  // for "how long will I be watching this", and removing it without saying so
+  // would trade one surprise for another.
+  const APPROX_SECONDS_PER_CALL = 2;
+  const estSeconds = (emailCount + phoneCount) * APPROX_SECONDS_PER_CALL;
+  const estLabel =
+    estSeconds < 60
+      ? `${estSeconds}s`
+      : `${Math.round(estSeconds / 60)} min`;
+
+  const canEnrichEmails = !!onEnrich && apollo.enabled && maxEmails > 0;
+  const canRevealPhones = !!onRevealPhones && apollo.enabled && maxPhones > 0 && !phonesPaused;
 
   if (!open) return null;
 
@@ -160,7 +204,7 @@ export function CsvExportModal<T extends ExportableRow>({
       setBusy("enriching");
       setProgress(`Finding ${emailCount} ${emailCount === 1 ? "email" : "emails"}…`);
       try {
-        finalRows = await onEnrich(missingEmail.slice(0, MAX_BULK_ENRICH));
+        finalRows = await onEnrich(missingEmail.slice(0, emailCount));
       } catch (err) {
         return failRun(err, "Enrichment");
       }
@@ -180,7 +224,7 @@ export function CsvExportModal<T extends ExportableRow>({
             verdictClearsBar(r.fitVerdict, phoneBar),
         );
         if (stillMissing.length > 0) {
-          finalRows = await onRevealPhones(stillMissing.slice(0, MAX_BULK_ENRICH));
+          finalRows = await onRevealPhones(stillMissing.slice(0, phoneCount));
         }
       } catch (err) {
         return failRun(err, "Phone reveal");
@@ -338,19 +382,25 @@ export function CsvExportModal<T extends ExportableRow>({
                 </p>
               </div>
 
-              <div className="mt-3 space-y-2.5">
+              <div className="mt-3 space-y-3">
                 <ToggleRow
                   on={enrichEmails}
                   disabled={!canEnrichEmails || !!busy}
                   onChange={setEnrichEmails}
                   label="Enrich emails"
                   count={emailCount}
+                  max={maxEmails}
+                  available={missingEmail.length}
+                  onCountChange={setEmailWanted}
+                  unitCredits={CREDITS_PER_EMAIL}
                   detail={
                     missingEmail.length === 0
                       ? "every record already has one"
                       : !apollo.enabled
                         ? "enrichment is off"
-                        : `1 credit each${missingEmail.length > MAX_BULK_ENRICH ? ` · capped at ${MAX_BULK_ENRICH}` : ""}`
+                        : maxEmails < missingEmail.length
+                          ? `1 credit each · ${maxEmails.toLocaleString()} affordable`
+                          : "1 credit each"
                   }
                 />
                 <ToggleRow
@@ -359,6 +409,10 @@ export function CsvExportModal<T extends ExportableRow>({
                   onChange={setRevealPhones}
                   label="Enrich phone numbers"
                   count={phoneCount}
+                  max={maxPhones}
+                  available={phoneEligible.length}
+                  onCountChange={setPhoneWanted}
+                  unitCredits={CREDITS_PER_PHONE_REVEAL}
                   detail={
                     phonesPaused
                       ? "paused workspace-wide"
@@ -385,6 +439,11 @@ export function CsvExportModal<T extends ExportableRow>({
                     {emailCredits > 0 && <>{emailCount} × 1 for emails</>}
                     {emailCredits > 0 && phoneCredits > 0 && " · "}
                     {phoneCredits > 0 && <>{phoneCount} × 8 for phones</>}
+                  </p>
+                )}
+                {creditCost > 0 && (
+                  <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                    about {estLabel} to run
                   </p>
                 )}
                 {remaining != null && (
@@ -447,12 +506,17 @@ export function CsvExportModal<T extends ExportableRow>({
 }
 
 /**
- * Apollo-style pill switch with a trailing record count.
+ * Apollo-style pill switch with an EDITABLE count.
  *
- * A switch rather than a checkbox because each one authorises spending, and a
- * switch reads as a mode being turned on rather than a box incidentally
- * ticked. Disabled state still shows its count and reason, so "0" is
- * explained rather than just unavailable.
+ * The count used to be a read-only number showing a hardcoded 50-record cap,
+ * which is the wrong unit and the wrong control: 50 emails is 50 credits while
+ * 50 phone reveals is 400, and on a 224-lead list the cap rather than the
+ * budget was the thing stopping the work.
+ *
+ * So the number is an input, its ceiling comes from remaining credits, and the
+ * credit total below updates as it changes. A switch rather than a checkbox
+ * because each one authorises spending, and the count sits inside the switch's
+ * own row so the amount and the decision are not in two different places.
  */
 function ToggleRow({
   on,
@@ -460,6 +524,10 @@ function ToggleRow({
   onChange,
   label,
   count,
+  max,
+  available,
+  onCountChange,
+  unitCredits,
   detail,
 }: {
   on: boolean;
@@ -467,6 +535,12 @@ function ToggleRow({
   onChange: (v: boolean) => void;
   label: string;
   count: number;
+  /** Ceiling from remaining credits and available records. */
+  max: number;
+  /** How many records could use this, ignoring budget. */
+  available: number;
+  onCountChange: (v: number | null) => void;
+  unitCredits: number;
   detail: string;
 }) {
   return (
@@ -487,11 +561,60 @@ function ToggleRow({
         />
       </button>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-foreground">{label}</span>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{count}</span>
+          {on && !disabled && max > 0 ? (
+            <span className="flex shrink-0 items-center gap-1">
+              <input
+                type="number"
+                min={0}
+                max={max}
+                value={count}
+                disabled={disabled}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  // Empty clears back to the default (everything affordable)
+                  // rather than pinning the run to zero.
+                  if (raw === "") return onCountChange(null);
+                  const n = Number.parseInt(raw, 10);
+                  if (!Number.isFinite(n)) return;
+                  onCountChange(Math.max(0, Math.min(max, n)));
+                }}
+                className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+                aria-label={`How many to ${label.toLowerCase()}`}
+              />
+              <button
+                type="button"
+                onClick={() => onCountChange(max)}
+                title={`Use all ${max.toLocaleString()} the budget allows`}
+                className="text-[10px] text-muted-foreground underline hover:text-foreground"
+              >
+                max
+              </button>
+            </span>
+          ) : (
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{max}</span>
+          )}
         </div>
-        <p className="text-[11px] leading-4 text-muted-foreground">{detail}</p>
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          {detail}
+          {/* Stated whenever the BUDGET is the binding constraint rather than
+              the data, so it is obvious which limit is in play. */}
+          {on && max < available && (
+            <>
+              {" · "}
+              <span className="text-amber-600 dark:text-amber-400">
+                {(available - max).toLocaleString()} more need credits you do not have
+              </span>
+            </>
+          )}
+        </p>
+        {on && count > 0 && (
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            {count.toLocaleString()} × {unitCredits} ={" "}
+            <b className="font-semibold text-foreground">{(count * unitCredits).toLocaleString()}</b> credits
+          </p>
+        )}
       </div>
     </div>
   );

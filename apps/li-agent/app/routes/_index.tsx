@@ -1697,7 +1697,10 @@ export default function ProspectsRoute() {
    */
   async function enrichForExport(rows: Prospect[]): Promise<Prospect[]> {
     const ids = new Set(rows.map((r) => r.id));
-    for (const row of rows.slice(0, MAX_BULK_ENRICH)) {
+      // No slice here: the export modal has already decided how many to run,
+      // budgeted against remaining CREDITS rather than a record count. Capping
+      // again at 50 would silently ignore what the user typed.
+    for (const row of rows) {
       // enrichOne already routes prospect vs lead-list rows to the right
       // action and returns the refusal code, so reuse it rather than
       // reimplementing the dispatch (and getting the id field wrong, which is
@@ -1728,7 +1731,10 @@ export default function ProspectsRoute() {
    */
   async function revealPhonesForExport(rows: Prospect[]): Promise<Prospect[]> {
     const ids = new Set(rows.map((r) => r.id));
-    for (const row of rows.slice(0, MAX_BULK_ENRICH)) {
+      // No slice here: the export modal has already decided how many to run,
+      // budgeted against remaining CREDITS rather than a record count. Capping
+      // again at 50 would silently ignore what the user typed.
+    for (const row of rows) {
       const res = (await revealPhone.mutateAsync({
         source: row.source === "prospect" ? "prospect" : "lead_list_item",
         id: row.rawId,

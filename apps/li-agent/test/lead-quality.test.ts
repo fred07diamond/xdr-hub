@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -119,11 +120,22 @@ describe("isHighValue / isBulkEligibleQuality", () => {
 });
 
 describe("apollo-limits", () => {
-  it("caps a bulk run well below the old effective ceilings", () => {
-    // Was 500 on Lead Lists and 5000 on Prospects, where "select all matching"
-    // plus one click could attempt five thousand Apollo calls.
+  it("keeps 50 as the DEFAULT batch size, not a ceiling", () => {
+    // It was a hard cap on RECORDS, which is the wrong unit: 50 emails is 50
+    // credits while 50 phone reveals is 400. Both spend surfaces now derive
+    // the ceiling from remaining credits and let the user set the count, so
+    // this is only the default for callers that pass nothing.
     expect(MAX_BULK_ENRICH).toBe(50);
-    expect(MAX_BULK_ENRICH).toBeLessThan(500);
+  });
+
+  it("no spend surface treats it as a hard cap any more", () => {
+    // The export modal and the table's confirm both budget in credits now. A
+    // record cap reappearing there would silently override a typed count.
+    for (const path of ["app/components/CsvExportModal.tsx", "app/components/EnrichCostConfirm.tsx"]) {
+      const src = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+      const code = src.split("\n").filter((l) => !/^\s*(\*|\/\/)/.test(l)).join("\n");
+      expect(code, path).not.toContain("MAX_BULK_ENRICH");
+    }
   });
 
   it("mirrors Apollo's 8:1 cost asymmetry", () => {
