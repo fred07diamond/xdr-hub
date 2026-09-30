@@ -28,8 +28,12 @@ the move that fills each gap.
   contact in HubSpot, and Dobby's message. If an email already went out
   after the form (`firstTouch`), do not draft a first touch; say so, and if
   asked for a follow-up, build on what was sent instead of repeating it.
-- `resolve-playbook` and `get-playbook-entry` for `msg.first_touch.structure`,
-  `msg.agency.first_touch`, and knowledge entries that answer the question.
+- `get-messaging-guide` with the lead's approach: the playbook's Messaging
+  section, which is how every draft is written (the TCQ rubric, voice,
+  choosing questions, the formula for the class, and a worked example). It
+  is the source of truth; it comes from the current playbook, so follow it
+  over anything you remember.
+- `get-playbook-entry` for knowledge entries that answer the question.
 - The Sales handbook (`get-handbook-doc`): `03-lead-routing-and-playbooks`
   (Contact Sales handling, agency routing and who to route to),
   `05-email-playbook` (voice, objections, the approved customer evidence),
@@ -88,107 +92,16 @@ unknown stays unknown.
 
 ## 4. Draft, then call `save-draft`
 
-### TCQ, and the rubric every draft is checked against
+Follow every rule `get-messaging-guide` returned, in order: the shared rules
+(`msg.first_touch.structure`, `.voice`, `.questions`), then the block for the
+lead's class, and `msg.first_touch.example` as the bar. Those blocks are
+edited by the PA team in the Playbook, so do not work from memory.
 
-- **Trigger**: open on the specific thing they said, in their words: the
-  message, or a form answer (business driver, how they will measure
-  success, budget status, who makes the call, tech stack, use case). Never
-  "thanks for reaching out about Builder" as the whole trigger, never a
-  paraphrase that loses their detail. Put the exact words you quoted in
-  `rubric.trigger`; PA checks they appear in the form and in the email.
-- **Connection**: one sentence tying it to teams like theirs ("teams like
-  yours usually hit X"), with the benefit their persona cares about (design
-  quality, dev efficiency, product velocity; for Content, marketing shipping
-  pages without waiting on engineering). Not a feature list, never "Builder
-  can help teams..." or "our platform". Put it in `rubric.connection`.
-- **Question**: the ask. Pain in their world, filling the biggest gap, or
-  the time offer. Reasonable: 15 to 30 minutes, never "demo our platform".
-  Put it in `rubric.ask`.
-- Under 75 words when possible. No filler like "I'll confirm the best-fit
-  approach and get back to you"; only promise to confirm something real
-  they asked that you cannot answer.
-
-### Formula by class
-
-- **Highly Qualified Content**: acknowledge the initiative in their words,
-  one sentence that the CMS is part of the Enterprise plan, offer two days
-  for 30 minutes (for example "Would Wednesday or Thursday work for 30
-  minutes?"), prep questions only for genuine gaps, demo framed as tailored.
-  Do not re-ask what the message answered.
-- **Standard Content**: acknowledge in their words, one line that the CMS is
-  part of the Enterprise plan, 2 or 3 of the Content questions the message
-  and form have not answered (pages, who edits, current setup, page types,
-  timeline), no demo on the first touch, conversation first.
-- **Content price check**: the anchor from the handbook, hedged, only in
-  reply to a pricing ask on a clearly small lead.
-- **Highly Qualified Code**: acknowledge, one line of value, two days for 30
-  minutes, then prep questions led by a hypothesis anchored in V2 pain (work
-  rebuilt at handoff, AI gains not compounding), "or is there a different
-  challenge driving this?", preferring questions that double as signals (is
-  engineering in the loop, Cursor or Copilot, SSO, seats).
-- **Standard Code**: acknowledge, a line of value, 2 or 3 qualifying
-  questions (enterprise signals, path to engineering), then "let me know and
-  we can find time".
-- **Agency**: partner framing, the path question, or the client headcount
-  and HQ question.
-
-No calendar links; offer days, not specific times. Write in their language
-and sign with the owner's first name (or `[owner first name]`).
-
-### A bad draft and a better one (Standard Content)
-
-Their message: "Doing buy vs. build evaluation on enabling marketing to
-build and test paid landing pages without eng." Business driver: reduce
-engineering bottlenecks. Success measure: % of marketing LPs built and
-tested without eng.
-
-Bad, and why: "Thanks for sharing that you're evaluating build versus buy.
-Builder's visual CMS can help teams create and publish landing pages. I'll
-confirm the best-fit approach and get back to you by tomorrow. How many
-landing pages do you expect to launch monthly, and what's your traffic?"
-The trigger is paraphrased, the connection is a product pitch, the confirm
-line is filler, the question is an interrogation, and Enterprise-only is
-missing.
-
-Better:
-
-> Hi Sam,
->
-> Saw you're weighing build vs. buy so marketing can build and test paid
-> landing pages without eng. Teams like yours usually find the eng queue,
-> not the page builder, is what sets the pace.
->
-> Our CMS is part of the Enterprise plan. Roughly how many pages would
-> marketing run a month, and who would build them day to day?
->
-> Happy to find time Wednesday or Thursday if it's easier to talk it through.
->
-> Riley
-
-### Choosing questions
-
-Fill the biggest gap. Ask about their pain and their world, never their
-interest in us or their buying process. No "what's driving your interest",
-"who signs off", "want to see a demo", "do you have 15 minutes", "what's
-your traffic". The test: with every mention of Builder removed, would a
-thoughtful peer ask this?
-
-### Voice
-
-A technical founder or staff engineer, plain and a little casual. No em
-dashes, no colons, no "Best regards". Say Builder, never Builder.io, Fusion,
-or Publish. "Design-to-code" may describe their problem, never the pitch;
-win on collaboration and control, not out-coding Cursor or Copilot. At most
-one proof point, only from the handbook's customer evidence. Never pitch a
-demo as the first call; call it an intro, walkthrough, or working session.
-
-Ambiguous domains (student, personal, generic) are a yellow flag, not a
-disqualifier: a Contact Sales form is intent. Write a qualifying first touch
-that surfaces the team and company, and flag the domain in the brief.
-
-Save with `approach`, `cta` (`meeting` needs two days), `rubric`,
-`used_entry_ids`, and `question_handling`. If lint fails, fix only what it
-names, at most twice.
+Save with `approach`, `cta` (`meeting` needs two days), `rubric` (the trigger
+in their exact words, the connection, the ask), `used_entry_ids` (the
+message rule ids you followed), and `question_handling`. The lint checks the
+draft against the same playbook; if it fails, fix only what it names, at
+most twice.
 
 ## Hard lines
 

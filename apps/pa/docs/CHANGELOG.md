@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-30 (messaging in the playbook)
+
+- The drafting rules now live in the Playbook's Messaging section: the TCQ
+  rubric, voice, choosing questions, a block for each Contact Sales class,
+  the agency path, and a worked example. Edit them there; the next draft
+  follows the change (D65).
+- The first touch card no longer repeats PA's unsent draft under an email
+  already sent from HubSpot.
+
 ## 2026-09-30 (first touch view)
 
 - When the first email already went out from HubSpot, the lead shows it as

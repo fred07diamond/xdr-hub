@@ -7,8 +7,9 @@ import {
   lintDraft,
   triggerSource,
 } from "../server/core/drafting/index.js";
+import { uniqueCitations } from "../server/core/playbook/resolve.js";
 import { loadRelease } from "../server/core/playbook/store.js";
-import { newId, now, repo } from "../server/lib/pa-context.js";
+import { activeRelease, newId, now, repo } from "../server/lib/pa-context.js";
 
 // States where a first touch can still be written: a new lead waiting for it
 // (with or without an owner yet), or an attached lead whose owner asked.
@@ -16,7 +17,7 @@ const DRAFTABLE = new Set(["awaiting_first_touch", "routed", "attached"]);
 
 export default defineAction({
   description:
-    "Save a first-touch draft for one engagement, following the first-touch-drafting skill. The draft is linted against the pinned playbook's message rules and saved as proposed (passes) or needs_edit (with the problems returned, so you can fix only those and save again). Never sends anything. Use [calendar link] where the owner's calendar link goes.",
+    "Save a first-touch draft for one engagement, following the first-touch-drafting skill. The draft is linted against the current playbook's message rules (get-messaging-guide) and saved as proposed (passes) or needs_edit (with the problems returned, so you can fix only those and save again). Never sends anything. Use [calendar link] where the owner's calendar link goes.",
   schema: draftInputSchema.extend({
     engagementId: z.string().min(1),
   }),
@@ -61,9 +62,12 @@ export default defineAction({
         | undefined
     )?.owner;
     const { engagementId: _engagement, ...input } = args;
+    // Messaging follows the current playbook (D65), so a Playbook edit
+    // applies to the next draft on any lead, old or new.
+    const messaging = await activeRelease(repository);
     const lint = lintDraft({
       draft: input,
-      release,
+      release: messaging,
       explicitQuestion: assessment?.explicitQuestion ?? null,
       ownerFirstName: firstName(
         owner?.displayName ?? routedOwner?.displayName ?? null,
@@ -85,9 +89,16 @@ export default defineAction({
         engagementId: engagement.id,
         submissionId: submission?.id ?? null,
         playbookReleaseId: engagement.playbookReleaseId,
-        entryVersions: release.entries
-          .filter((entry) => input.used_entry_ids.includes(entry.id))
-          .map((entry) => ({ id: entry.id, version: entry.version })),
+        entryVersions: uniqueCitations(
+          [
+            ...release.entries,
+            ...messaging.entries.filter(
+              (entry) => entry.type === "message_rule",
+            ),
+          ]
+            .filter((entry) => input.used_entry_ids.includes(entry.id))
+            .map((entry) => ({ id: entry.id, version: entry.version })),
+        ),
         ruleResults: JSON.parse(
           JSON.stringify({ needed: true, source: "agent", lint }),
         ),

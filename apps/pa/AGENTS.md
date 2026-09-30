@@ -94,7 +94,7 @@ Planned, not built yet (do not call): `approve-draft`,
 
 - `inbound-message-assessment`: read a form message and save a structured
   assessment.
-- `first-touch-drafting`: draft a first touch that follows the message rules.
+- `first-touch-drafting`: draft a first touch that follows the message rules. How to write lives in the playbook's Messaging section (`get-messaging-guide`), not in the skill.
 - `playbook-steward`: draft playbook changes and suggestions; what the agent
   may and may not do with the playbook.
 - `pa-build-context` (dev only): build context and guardrails for coding

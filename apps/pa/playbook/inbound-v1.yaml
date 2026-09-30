@@ -153,15 +153,14 @@ entries:
     precedence: 4
     version: 1
     body: |
-      Follow the Sales handbook's email playbook (05) and Contact Sales handling (03).
-      Classify the lead first: Highly Qualified Content, Standard Content, Highly Qualified Code, Standard Code, or the Content price check.
-      TCQ: acknowledge the specific request in their message (trigger), connect it to Builder in a sentence (connection), then the ask (question).
-      Contact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two days for 30 minutes (for example Wednesday or Thursday), no calendar link. Standard leads get 2 or 3 qualifying questions first and a soft offer to find time.
-      The trigger quotes their own words from the message or a form answer; the connection ties it to teams like theirs; the ask is about their world, never their interest in us.
-      Never pitch a demo as the first call; call it an intro, walkthrough, or working session.
-      Never disclose pricing, except the Content price check. Never invent a fact, metric, or customer quote.
-      Plain, casual voice, under 75 words when possible. No em dashes, no colons, a casual sign-off, signed with the owner's first name.
-      Say Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.
+      Every first touch follows TCQ, and every draft is checked against it.
+      Trigger. Open on the specific thing they said, in their words, from the message or a form answer (business driver, how they will measure success, budget status, who makes the call, tech stack, use case). Never "thanks for reaching out about Builder" as the whole trigger, never a paraphrase that loses their detail. The exact words quoted go in rubric.trigger; PA checks they appear in the form and in the email.
+      Connection. One sentence tying it to teams like theirs ("teams like yours usually hit X"), with the benefit their persona cares about (design quality, dev efficiency, product velocity; for Content, marketing shipping pages without waiting on engineering). Not a feature list, never "Builder can help teams" or "our platform". Goes in rubric.connection.
+      Question. The ask. Pain in their world, filling the biggest gap, or the time offer. Reasonable, 15 to 30 minutes, never "demo our platform". Goes in rubric.ask.
+      Classify the lead first, then follow the formula for its class (the class blocks below).
+      Under 75 words when possible. No filler like "I'll confirm the best-fit approach and get back to you"; only promise to confirm something real they asked that you cannot answer.
+      No calendar links. Offer days, not specific times (for example "Would Wednesday or Thursday work for 30 minutes?").
+      Never disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.
     params:
       min_words: 25
       target_words: 75
@@ -195,8 +194,8 @@ entries:
         - "cutting-edge"
         - "Want to see a demo"
         - "Do you have 15 minutes"
-    source: "Sales handbook, 05 Email playbook and 03 Contact Sales form handling"
-  - id: msg.agency.first_touch
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.first_touch.voice
     block: message_rule
     section: messaging
     position: 1
@@ -205,10 +204,149 @@ entries:
     owner_team: pa_team
     precedence: 4
     version: 1
+    body: |
+      A technical founder or staff engineer, plain and a little casual.
+      No em dashes, no colons, no "Best regards". A casual sign-off, signed with the owner's first name.
+      Say Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.
+      "Design-to-code" may describe their problem, never the pitch. Win on collaboration and control, not on out-coding Cursor or Copilot.
+      At most one proof point, and only from the Sales handbook's approved customer evidence.
+      Never pitch a demo as the first call; call it an intro, walkthrough, or working session.
+      Ambiguous domains (student, personal, generic) are a yellow flag, not a disqualifier. A Contact Sales form is intent, so write a qualifying first touch that surfaces the team and company, and flag the domain in the brief.
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.first_touch.questions
+    block: message_rule
+    section: messaging
+    position: 2
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    body: |
+      Fill the biggest gap. Ask about their pain and their world, never their interest in us or their buying process.
+      Never ask "what's driving your interest", "who signs off", "want to see a demo", "do you have 15 minutes", or "what's your traffic".
+      The test. With every mention of Builder removed, would a thoughtful peer ask this?
+      Do not re-ask what the message or the form already answered.
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.first_touch.hq_content
+    block: message_rule
+    section: messaging
+    position: 3
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    scope:
+      approach: hq_content
+    body: |
+      Highly Qualified Content.
+      Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. Offer two days for 30 minutes (for example "Would Wednesday or Thursday work for 30 minutes?"). Prep questions only for genuine gaps. Frame the demo as tailored to them.
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.first_touch.standard_content
+    block: message_rule
+    section: messaging
+    position: 4
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    scope:
+      approach: standard_content
+    body: |
+      Standard Content.
+      Acknowledge in their words. One line that the CMS is part of the Enterprise plan. Ask 2 or 3 of the Content questions the message and form have not answered (how many pages, who edits, current setup, page types, timeline). No demo on the first touch; conversation first.
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.first_touch.content_price_check
+    block: message_rule
+    section: messaging
+    position: 5
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    scope:
+      approach: content_price_check
+    body: |
+      Content price check.
+      Only in reply to a pricing ask on a clearly small lead (both employees under 50 and page views under 500k are known). Give the anchor from the Sales handbook, hedged. Otherwise no pricing.
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.first_touch.hq_code
+    block: message_rule
+    section: messaging
+    position: 6
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    scope:
+      approach: hq_code
+    body: |
+      Highly Qualified Code.
+      Acknowledge, one line of value, two days for 30 minutes. Then prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by "or is there a different challenge driving this?". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.first_touch.standard_code
+    block: message_rule
+    section: messaging
+    position: 7
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    scope:
+      approach: standard_code
+    body: |
+      Standard Code.
+      Acknowledge, a line of value, 2 or 3 qualifying questions (enterprise signals, a path to engineering), then "let me know and we can find time". Company size alone never decides enterprise need.
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
+  - id: msg.agency.first_touch
+    block: message_rule
+    section: messaging
+    position: 8
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
     scope:
       relationship_state: agency
-    body: "Acknowledge that they are evaluating for a client. Offer the partner path when relevant. Ask who the client is and what they want to build, in service of setting up the right trial or call."
+    body: |
+      Agency, SI, or consultancy. Partner framing first.
+      Find the path. Internal use, a client project, or exploring.
+      For a client project, ask the client's headcount and HQ before proposing times. Offer the partner path when relevant.
+      Routing and who to route to are in the Sales handbook (03).
 
+  - id: msg.first_touch.example
+    block: message_rule
+    section: messaging
+    position: 9
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    body: |
+      A bad draft and a better one (Standard Content).
+      Their message. "Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng." Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.
+
+      Bad. "Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?"
+      Why it is bad. The trigger is paraphrased, the connection is a product pitch, the confirm line is filler, the question is an interrogation, and Enterprise-only is missing.
+
+      Better.
+      Hi Sam,
+
+      Saw you're weighing build vs. buy so marketing can build and test paid landing pages without eng. Teams like yours usually find the eng queue, not the page builder, is what sets the pace.
+
+      Our CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?
+
+      Happy to find time Wednesday or Thursday if it's easier to talk it through.
+
+      Riley
+    source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: kb.partner_program
     block: knowledge
     section: knowledge

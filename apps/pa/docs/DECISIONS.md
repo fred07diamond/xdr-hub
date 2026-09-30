@@ -1204,3 +1204,25 @@ bottom. Revisit one only when its "revisit when" condition happens.
   draft card shows that email ("Already contacted from HubSpot").
 - **The agent reads the history** before drafting or revising, so it never
   repeats what was already sent.
+
+## D65. Messaging lives in the playbook (2026-09-30)
+
+- Fred: "It should live in the playbook." The xDR master instructions and
+  the TCQ framework (D61, D62) had been written into the drafting skill, so
+  nobody could see or edit them in the app.
+- **The Messaging section holds them** as message rule blocks:
+  `msg.first_touch.structure` (the TCQ rubric, with the lint params), `.voice`,
+  `.questions`, one block per class (`.hq_content`, `.standard_content`,
+  `.content_price_check`, `.hq_code`, `.standard_code`, scoped by
+  `approach`), `msg.agency.first_touch`, and `.example` (a bad draft and a
+  better one). They are edited, checked, and approved like any other block
+  (D44, D46).
+- **The agent reads them** through `get-messaging-guide`, which returns the
+  shared rules plus the lead's class. The skill now says how to gather,
+  classify, and save; how to write is the playbook's.
+- **Messaging follows the current playbook,** not the lead's pinned release:
+  a Playbook edit applies to the next draft on any lead, old or new, and the
+  lint in `save-draft` checks against the same rules. Rules and routing
+  stay pinned. The draft receipt cites the message rule versions it used.
+- The price anchor and customer evidence stay in the Sales handbook; the
+  blocks point to it.

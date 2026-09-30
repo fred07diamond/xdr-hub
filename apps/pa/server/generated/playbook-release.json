@@ -194,7 +194,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Follow the Sales handbook's email playbook (05) and Contact Sales handling (03).\nClassify the lead first: Highly Qualified Content, Standard Content, Highly Qualified Code, Standard Code, or the Content price check.\nTCQ: acknowledge the specific request in their message (trigger), connect it to Builder in a sentence (connection), then the ask (question).\nContact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two days for 30 minutes (for example Wednesday or Thursday), no calendar link. Standard leads get 2 or 3 qualifying questions first and a soft offer to find time.\nThe trigger quotes their own words from the message or a form answer; the connection ties it to teams like theirs; the ask is about their world, never their interest in us.\nNever pitch a demo as the first call; call it an intro, walkthrough, or working session.\nNever disclose pricing, except the Content price check. Never invent a fact, metric, or customer quote.\nPlain, casual voice, under 75 words when possible. No em dashes, no colons, a casual sign-off, signed with the owner's first name.\nSay Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.\n",
+      "body": "Every first touch follows TCQ, and every draft is checked against it.\nTrigger. Open on the specific thing they said, in their words, from the message or a form answer (business driver, how they will measure success, budget status, who makes the call, tech stack, use case). Never \"thanks for reaching out about Builder\" as the whole trigger, never a paraphrase that loses their detail. The exact words quoted go in rubric.trigger; PA checks they appear in the form and in the email.\nConnection. One sentence tying it to teams like theirs (\"teams like yours usually hit X\"), with the benefit their persona cares about (design quality, dev efficiency, product velocity; for Content, marketing shipping pages without waiting on engineering). Not a feature list, never \"Builder can help teams\" or \"our platform\". Goes in rubric.connection.\nQuestion. The ask. Pain in their world, filling the biggest gap, or the time offer. Reasonable, 15 to 30 minutes, never \"demo our platform\". Goes in rubric.ask.\nClassify the lead first, then follow the formula for its class (the class blocks below).\nUnder 75 words when possible. No filler like \"I'll confirm the best-fit approach and get back to you\"; only promise to confirm something real they asked that you cannot answer.\nNo calendar links. Offer days, not specific times (for example \"Would Wednesday or Thursday work for 30 minutes?\").\nNever disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.\n",
       "params": {
         "min_words": 25,
         "target_words": 75,
@@ -237,11 +237,124 @@
           "Do you have 15 minutes"
         ]
       },
-      "source": "Sales handbook, 05 Email playbook and 03 Contact Sales form handling",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "owner_team": "pa_team",
       "block": "message_rule",
       "section": "messaging",
       "position": 0
+    },
+    {
+      "id": "msg.first_touch.voice",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "A technical founder or staff engineer, plain and a little casual.\nNo em dashes, no colons, no \"Best regards\". A casual sign-off, signed with the owner's first name.\nSay Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.\n\"Design-to-code\" may describe their problem, never the pitch. Win on collaboration and control, not on out-coding Cursor or Copilot.\nAt most one proof point, and only from the Sales handbook's approved customer evidence.\nNever pitch a demo as the first call; call it an intro, walkthrough, or working session.\nAmbiguous domains (student, personal, generic) are a yellow flag, not a disqualifier. A Contact Sales form is intent, so write a qualifying first touch that surfaces the team and company, and flag the domain in the brief.\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 1
+    },
+    {
+      "id": "msg.first_touch.questions",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Fill the biggest gap. Ask about their pain and their world, never their interest in us or their buying process.\nNever ask \"what's driving your interest\", \"who signs off\", \"want to see a demo\", \"do you have 15 minutes\", or \"what's your traffic\".\nThe test. With every mention of Builder removed, would a thoughtful peer ask this?\nDo not re-ask what the message or the form already answered.\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 2
+    },
+    {
+      "id": "msg.first_touch.hq_content",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Highly Qualified Content.\nAcknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. Offer two days for 30 minutes (for example \"Would Wednesday or Thursday work for 30 minutes?\"). Prep questions only for genuine gaps. Frame the demo as tailored to them.\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "scope": {
+        "approach": "hq_content"
+      },
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 3
+    },
+    {
+      "id": "msg.first_touch.standard_content",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Standard Content.\nAcknowledge in their words. One line that the CMS is part of the Enterprise plan. Ask 2 or 3 of the Content questions the message and form have not answered (how many pages, who edits, current setup, page types, timeline). No demo on the first touch; conversation first.\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "scope": {
+        "approach": "standard_content"
+      },
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 4
+    },
+    {
+      "id": "msg.first_touch.content_price_check",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Content price check.\nOnly in reply to a pricing ask on a clearly small lead (both employees under 50 and page views under 500k are known). Give the anchor from the Sales handbook, hedged. Otherwise no pricing.\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "scope": {
+        "approach": "content_price_check"
+      },
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 5
+    },
+    {
+      "id": "msg.first_touch.hq_code",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Highly Qualified Code.\nAcknowledge, one line of value, two days for 30 minutes. Then prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by \"or is there a different challenge driving this?\". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "scope": {
+        "approach": "hq_code"
+      },
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 6
+    },
+    {
+      "id": "msg.first_touch.standard_code",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Standard Code.\nAcknowledge, a line of value, 2 or 3 qualifying questions (enterprise signals, a path to engineering), then \"let me know and we can find time\". Company size alone never decides enterprise need.\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "scope": {
+        "approach": "standard_code"
+      },
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 7
     },
     {
       "id": "msg.agency.first_touch",
@@ -250,14 +363,28 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Acknowledge that they are evaluating for a client. Offer the partner path when relevant. Ask who the client is and what they want to build, in service of setting up the right trial or call.",
+      "body": "Agency, SI, or consultancy. Partner framing first.\nFind the path. Internal use, a client project, or exploring.\nFor a client project, ask the client's headcount and HQ before proposing times. Offer the partner path when relevant.\nRouting and who to route to are in the Sales handbook (03).\n",
       "scope": {
         "relationship_state": "agency"
       },
       "owner_team": "pa_team",
       "block": "message_rule",
       "section": "messaging",
-      "position": 1
+      "position": 8
+    },
+    {
+      "id": "msg.first_touch.example",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "A bad draft and a better one (Standard Content).\nTheir message. \"Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng.\" Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.\n\nBad. \"Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?\"\nWhy it is bad. The trigger is paraphrased, the connection is a product pitch, the confirm line is filler, the question is an interrogation, and Enterprise-only is missing.\n\nBetter.\nHi Sam,\n\nSaw you're weighing build vs. buy so marketing can build and test paid landing pages without eng. Teams like yours usually find the eng queue, not the page builder, is what sets the pace.\n\nOur CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?\n\nHappy to find time Wednesday or Thursday if it's easier to talk it through.\n\nRiley\n",
+      "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 9
     },
     {
       "id": "kb.partner_program",
@@ -414,12 +541,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "98af1321001967b4e26db73b8e43316c38e03e6c722d97f859fb4d52440f55a5",
-  "short_id": "98af1321",
+  "id": "38fd316dc1a8a084a80b5cee35f9a50bcce28515344d06e65ee2a4d74a85e89e",
+  "short_id": "38fd316d",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "cf410cc7747867c94928f54c62299479f2e3cadf91d001611c98fe889b2a9aec"
+      "sha256": "fa6f9ece97c0d51423d2c02a57962f8fbf8657033a5f1275608407ffe420c654"
     },
     {
       "path": "config/routing-pool.yaml",
