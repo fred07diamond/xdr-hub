@@ -1,5 +1,8 @@
 [build]
-  command = "npx @agent-native/core@latest deploy --preset netlify --build-only"
+  # The repo's pinned, patched core (see pnpm-workspace.yaml), not @latest:
+  # npx @latest ran a newer core from its own cache, which could not see the
+  # repo's vite and drifted from the pinned 0.176.4.
+  command = "pnpm exec agent-native deploy --preset netlify --build-only"
   publish = "dist"
 
 [build.environment]
