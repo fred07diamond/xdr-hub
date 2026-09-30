@@ -10,8 +10,8 @@
 - The Team page has a Routing section: each person's role, meeting link, and
   a PA's pod AE, starting from the owners seen on leads.
 - The board shows the route under each lead's class. The old routing text
-  reads as the owner now ("Owner Kaffa Sakho, who already owns the
-  account"), which also fixes the doubled "to Javier Alcaraz".
+  reads as the owner now ("Owner [name], who already owns the account"),
+  which also fixes the owner's name showing twice.
 - Playbook: a new Routing section with "Routing by class", and the owner
   assignment blocks moved to Ownership.
 
