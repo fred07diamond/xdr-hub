@@ -5,7 +5,9 @@ export type InboxStatus =
   | "processing"
   | "done"
   | "failed"
-  | "skipped";
+  | "skipped"
+  /** Queued to be re-read from HubSpot and re-run (D63). */
+  | "refresh";
 
 export interface InboxRecord {
   id: string;

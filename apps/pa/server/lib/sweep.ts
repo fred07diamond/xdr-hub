@@ -1,6 +1,7 @@
 // One pass of the minute poll (D58): intake, agent wake-up, decision deadlines.
 import { checkDecisionDeadlines } from "./decisions.js";
 import {
+  processRefreshQueue,
   ensureInboundAgent,
   INTAKE_CORRELATION,
   listAgentWork,
@@ -26,6 +27,8 @@ export async function runInboundSweep(owner: {
     limit: 50,
     actor: "system:minute-poll",
   });
+  // Refresh requests (D63) before counting work, so refreshed leads are woken too.
+  const refresh = await processRefreshQueue(15_000);
   const repository = repo();
   const work = await listAgentWork(repository, 50);
   // Checked every minute, so a change to the agent's instructions or model
@@ -50,7 +53,7 @@ export async function runInboundSweep(owner: {
     const due =
       !lastQueued ||
       now().getTime() - Date.parse(lastQueued.occurredAt) > REWAKE_MS;
-    if (pulled.new > 0 || due) {
+    if (pulled.new > 0 || refresh.refreshed > 0 || due) {
       agent = await wakeInboundAgent(owner);
       await repository.appendEvent({
         id: newId(),
@@ -68,6 +71,7 @@ export async function runInboundSweep(owner: {
   return {
     ...pulled,
     agentWork: work.length,
+    refresh,
     agentSetup,
     agent,
     org: Boolean(owner.orgId),

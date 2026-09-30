@@ -5,7 +5,7 @@ import {
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client/hooks";
-import { IconCloudDownload, IconRobot } from "@tabler/icons-react";
+import { IconCloudDownload, IconRefresh, IconRobot } from "@tabler/icons-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ export function IntakeBar({ onPulled }: { onPulled: () => void }) {
   const pull = useActionMutation("pull-contact-sales");
   const enable = useActionMutation("enable-inbound-agent");
   const backfill = useActionMutation("run-decision-loop");
+  const refreshAll = useActionMutation("refresh-all-leads");
   const data = status.data as IntakeStatus | undefined;
   if (!data) return null;
   const last = data.lastPull;
@@ -64,6 +65,35 @@ export function IntakeBar({ onPulled }: { onPulled: () => void }) {
         >
           <IconRobot className="size-4" aria-hidden="true" />
           Turn on the inbound agent
+        </Button>
+      ) : null}
+      {data.canPull ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={refreshAll.isPending}
+          title="Re-read every undecided lead from HubSpot and run it through today's triage, class, brief, draft, and decision, so older leads match new ones."
+          onClick={() =>
+            refreshAll.mutate(
+              {},
+              {
+                onSuccess: (raw) => {
+                  const result = raw as { queued: number };
+                  toast.success(
+                    result.queued > 0
+                      ? `Refreshing ${result.queued} ${result.queued === 1 ? "lead" : "leads"} from HubSpot. They update over the next few minutes.`
+                      : "No undecided leads to refresh.",
+                  );
+                  onPulled();
+                },
+                onError: (error) => toast.error(actionErrorMessage(error)),
+              },
+            )
+          }
+        >
+          <IconRefresh className="size-4" aria-hidden="true" />
+          {refreshAll.isPending ? "Queuing..." : "Refresh all leads"}
         </Button>
       ) : null}
       {data.canPull ? (

@@ -1168,3 +1168,20 @@ bottom. Revisit one only when its "revisit when" condition happens.
   instructions and model current.
 - **Existing drafts:** draft rules are versioned; an undecided lead whose
   draft predates version 2 goes back to the agent's queue and is redrafted.
+
+## D63. Refresh from HubSpot, so old and new leads are equal
+
+- **Status:** Decided by Fred, 2026-09-30: "add a refresh button so that
+  old and new leads can be equal."
+- **Choice:** "Refresh from HubSpot" on a lead, and "Refresh all leads" on
+  the board. A refresh re-reads the contact (read-only) with today's
+  properties (form and questionnaire answers, owner assignment dates, the
+  record link), applies the Contact Sales filter, closes the old engagement
+  as `refreshed` and hides it (kept for history), and runs a fresh inbox row
+  through today's pipeline: ownership as of the submission, classification,
+  the Contact Sales class, the decision (due 24 hours from the refresh), the
+  lead brief, and a TCQ draft.
+- **Bulk:** "Refresh all leads" queues every undecided live lead (inbox
+  status `refresh`); the minute poll refreshes a batch each minute and wakes
+  the agent. Decided leads are left alone; a single decided lead can still
+  be refreshed after a confirmation.

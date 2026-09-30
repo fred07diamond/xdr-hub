@@ -17,6 +17,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconExternalLink,
+  IconRefresh,
   IconFileOff,
   IconMessageCircleQuestion,
   IconReceipt,
@@ -104,7 +105,15 @@ function Breadcrumb({ current }: { current: string }) {
   );
 }
 
-function RecordHeader({ detail }: { detail: EngagementDetail }) {
+function RecordHeader({
+  detail,
+  onRefresh,
+  refreshing,
+}: {
+  detail: EngagementDetail;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   const name = detail.lead.name ?? detail.lead.email;
   const place = countryName(detail.lead.country);
   return (
@@ -143,6 +152,19 @@ function RecordHeader({ detail }: { detail: EngagementDetail }) {
           </p>
         </div>
       </div>
+      {onRefresh ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={refreshing}
+          onClick={onRefresh}
+          title="Re-read this lead from HubSpot and run it through today's triage, class, brief, draft, and decision"
+        >
+          <IconRefresh className="size-4" aria-hidden="true" />
+          {refreshing ? "Refreshing..." : "Refresh from HubSpot"}
+        </Button>
+      ) : null}
       {detail.lead.crmUrl ? (
         <Button asChild size="sm" variant="outline">
           <a href={detail.lead.crmUrl} target="_blank" rel="noreferrer">
@@ -447,6 +469,7 @@ export default function EngagementRoute() {
   const suffix = fromTab ? `?tab=${fromTab}` : "";
   const [drawerOpen, setDrawerOpen] = useState(false);
   const decide = useActionMutation("decide-lead");
+  const refresh = useActionMutation("refresh-lead");
   const intake = useActionQuery("get-intake-status", {}, { enabled: !demo });
   const canDecide =
     !demo &&
@@ -638,7 +661,52 @@ export default function EngagementRoute() {
               </DemoNotice>
             </div>
           ) : null}
-          <RecordHeader detail={detail} />
+          <RecordHeader
+            detail={detail}
+            refreshing={refresh.isPending}
+            onRefresh={
+              canDecide && detail.lead.crmUrl
+                ? () => {
+                    if (
+                      detail.decision?.status === "decided" &&
+                      !window.confirm(
+                        "This lead is already decided. Refreshing starts it over as a new lead. Continue?",
+                      )
+                    )
+                      return;
+                    refresh.mutate(
+                      { engagementId: detail.id },
+                      {
+                        onSuccess: (raw) => {
+                          const result = raw as {
+                            status: string;
+                            engagementId: string | null;
+                          };
+                          if (
+                            result.status === "refreshed" &&
+                            result.engagementId
+                          ) {
+                            toast.success(
+                              "Refreshed from HubSpot. The agent is reading it and drafting now.",
+                            );
+                            navigate(
+                              `/inbound/${result.engagementId}${suffix}`,
+                            );
+                          } else
+                            toast.success(
+                              result.status === "not_contact_sales"
+                                ? "HubSpot shows this is not a Contact Sales submission, so it is hidden."
+                                : "This contact is gone from HubSpot, so it is hidden.",
+                            );
+                        },
+                        onError: (error) =>
+                          toast.error(actionErrorMessage(error)),
+                      },
+                    );
+                  }
+                : undefined
+            }
+          />
           {detail.decision ? (
             <div className="mt-4">
               <DecisionBar

@@ -82,7 +82,7 @@ People only, hidden from the agent: `review-playbook-change`,
 `publish-playbook-change`, `update-suggestion`, `enable-playbook-review`,
 `list-crm-connections`, `set-crm-credential`, `test-crm-connection`,
 `remove-crm-credential`, `update-handbook-doc`, `import-handbook-docs`,
-`enable-inbound-agent`, `decide-lead` (the rep's decision; the agent may
+`enable-inbound-agent`, `refresh-lead`, `refresh-all-leads`, `decide-lead` (the rep's decision; the agent may
 recommend but never decides).
 
 Planned, not built yet (do not call): `approve-draft`,

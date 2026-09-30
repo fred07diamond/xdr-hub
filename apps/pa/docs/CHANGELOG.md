@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30 (refresh)
+
+- "Refresh from HubSpot" on a lead and "Refresh all leads" on the board
+  re-read leads from HubSpot and run them through today's rules, so older
+  leads match new ones (D63).
+
 ## 2026-09-30 (TCQ rubric)
 
 - Drafts are checked against the TCQ rubric: the trigger must be the lead's

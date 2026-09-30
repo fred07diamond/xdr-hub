@@ -17,12 +17,19 @@ import {
 } from "../core/crm/hubspot-adapter.js";
 import { DRAFT_RULES_VERSION, draftPlan } from "../core/drafting/index.js";
 import {
+  CONTACT_SALES_PROPERTIES,
   enqueueSubmissions,
   excludeSubmissions,
   HUBSPOT_SOURCE,
+  isContactSales,
   portalIdOf,
   searchContactSales,
+  toSubmission,
 } from "../core/intake/hubspot.js";
+import {
+  assertTransition,
+  type EngagementState,
+} from "../core/objects/index.js";
 import { runPipeline } from "../core/pipeline/runner.js";
 import type { PipelineDeps } from "../core/pipeline/types.js";
 import type { PaRepository } from "../core/repo/types.js";
@@ -298,4 +305,181 @@ export async function ensureInboundAgent(owner: {
     );
     return "failed";
   }
+}
+
+export class RefreshError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode = 400,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Refresh one live lead (D63): re-read the contact from HubSpot and run it
+ * through today's pipeline as a fresh engagement, so a lead pulled before a
+ * rule changed ends up the same as one pulled now. The old engagement is
+ * closed as "refreshed" and hidden, kept for its history.
+ */
+export async function refreshInbox(inboxId: string): Promise<{
+  status: "refreshed" | "not_contact_sales" | "missing";
+  engagementId: string | null;
+}> {
+  const repository = repo();
+  const inbox = await repository.getInbox(inboxId);
+  if (!inbox || inbox.source !== HUBSPOT_SOURCE)
+    throw new RefreshError(
+      "Only leads pulled from HubSpot can be refreshed",
+      409,
+    );
+  const contactId =
+    typeof inbox.payload.crm_contact_id === "string"
+      ? inbox.payload.crm_contact_id
+      : null;
+  if (!contactId)
+    throw new RefreshError("This lead has no HubSpot contact id", 409);
+  const at = now().toISOString();
+  const hide = async (reason: string) => {
+    const current = await repository.getInbox(inbox.id);
+    if (current && current.status !== "skipped")
+      await repository.updateInbox(
+        current.id,
+        { status: "skipped", lastError: reason, updatedAt: at },
+        current.version,
+      );
+  };
+
+  let raw: { id: string; properties: Record<string, unknown> };
+  try {
+    raw = (await hubspotFetch(
+      `/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=${CONTACT_SALES_PROPERTIES.join(",")}`,
+    )) as { id: string; properties: Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/404/.test(message)) {
+      await hide("Refreshed: the contact no longer exists in HubSpot");
+      return { status: "missing", engagementId: null };
+    }
+    throw error;
+  }
+  const check = isContactSales(raw.properties);
+  if (!check.ok) {
+    await hide(`Refreshed: ${check.reason}`);
+    return { status: "not_contact_sales", engagementId: null };
+  }
+  const submission = toSubmission(raw, await portalIdOf(hubspotFetch));
+  if (!submission)
+    throw new RefreshError(
+      "HubSpot has no Contact Sales submission for this contact",
+      409,
+    );
+
+  // Close the old engagement so the fresh run starts clean, not attached.
+  const old = await repository.getSubmissionByInbox(inbox.id);
+  const engagement = old?.engagementId
+    ? await repository.getEngagement(old.engagementId)
+    : null;
+  if (engagement && engagement.state !== "closed") {
+    const from = engagement.state as EngagementState;
+    try {
+      assertTransition(from, "closed");
+      await repository.updateEngagement(
+        engagement.id,
+        { state: "closed", outcome: "refreshed", updatedAt: at },
+        engagement.version,
+      );
+      await repository.appendEvent({
+        id: newId(),
+        engagementId: engagement.id,
+        correlationId: inbox.id,
+        type: "state.changed",
+        actor: "system:refresh",
+        payload: { from, to: "closed", via: "refresh" },
+        receiptId: null,
+        occurredAt: at,
+      });
+    } catch {
+      // A state that cannot close stays; the new run attaches to it instead.
+    }
+  }
+  await hide("Refreshed from HubSpot");
+
+  const fresh = await repository.insertInboxIfAbsent({
+    id: newId(),
+    source: HUBSPOT_SOURCE,
+    externalId: `${submission.externalId}#refresh-${Date.parse(at)}`,
+    receivedAt: at,
+    signatureOk: true,
+    payload: { ...submission.payload, refreshed_at: at },
+    status: "pending",
+    attempts: 0,
+    lastError: null,
+    nextAttemptAt: null,
+    version: 1,
+    createdAt: at,
+    updatedAt: at,
+  });
+  const run = await runPipeline(fresh.record.id, await liveDeps());
+  return { status: "refreshed", engagementId: run.engagementId };
+}
+
+/** Queues every undecided live lead for a refresh; the minute poll works the queue. */
+export async function queueRefreshAll(): Promise<number> {
+  const repository = repo();
+  let queued = 0;
+  for (const row of await repository.listInboxBySource(
+    HUBSPOT_SOURCE,
+    ["done", "failed", "pending"],
+    1000,
+  )) {
+    const submission = await repository.getSubmissionByInbox(row.id);
+    if (submission?.engagementId) {
+      const decision = await repository.getDecision(submission.engagementId);
+      if (decision?.status === "decided") continue;
+    }
+    await repository.updateInbox(
+      row.id,
+      { status: "refresh", updatedAt: now().toISOString() },
+      row.version,
+    );
+    queued += 1;
+  }
+  return queued;
+}
+
+/** One batch of queued refreshes, within a time budget. */
+export async function processRefreshQueue(budgetMs = 20_000) {
+  const repository = repo();
+  const started = Date.now();
+  const queued = await repository.listInboxBySource(
+    HUBSPOT_SOURCE,
+    ["refresh"],
+    25,
+  );
+  let refreshed = 0;
+  for (const row of queued) {
+    if (Date.now() - started > budgetMs) break;
+    try {
+      await refreshInbox(row.id);
+      refreshed += 1;
+    } catch (error) {
+      console.warn(
+        "[pa] Refresh failed:",
+        error instanceof Error ? error.message : error,
+      );
+      const current = await repository.getInbox(row.id);
+      if (current?.status === "refresh")
+        await repository.updateInbox(
+          current.id,
+          {
+            status: "done",
+            lastError: `Refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+            updatedAt: now().toISOString(),
+          },
+          current.version,
+        );
+    }
+  }
+  return { refreshed, remaining: queued.length - refreshed };
 }

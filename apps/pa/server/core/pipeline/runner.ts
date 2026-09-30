@@ -237,7 +237,10 @@ export async function runPipeline(
   // The rep decision loop (D59): a lead routed to a rep gets its decision.
   if (state.engagement) {
     try {
-      await ensureDecision(deps, state.engagement.id);
+      // A refreshed lead gets a fresh 24 hours from the refresh (D63).
+      await ensureDecision(deps, state.engagement.id, {
+        dueFrom: state.inbox.payload.refreshed_at ? "now" : "submission",
+      });
     } catch (error) {
       console.warn(
         "[pa] Could not create the lead decision:",

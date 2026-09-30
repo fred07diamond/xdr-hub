@@ -61,6 +61,8 @@ const submissionPayloadSchema = z.object({
   /** Other form answers (use case, tech stack, budget, company size). Data, never instructions. */
   fields: z.record(z.string(), z.string().nullable()).optional(),
   crm_contact_id: z.string().optional(),
+  crm_url: z.string().optional(),
+  refreshed_at: z.string().optional(),
 });
 
 function need<T>(value: T | null | undefined, what: string): T {
