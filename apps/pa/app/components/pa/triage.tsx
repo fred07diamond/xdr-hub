@@ -6,12 +6,14 @@ import type {
   DraftStatus,
   DraftSummary,
   DraftView,
+  LeadRouteView,
   TriageKind,
   TriageView,
 } from "@shared/pa-views";
 import {
   IconAlertTriangle,
   IconCalendar,
+  IconCalendarEvent,
   IconCheck,
   IconCopy,
   IconMinus,
@@ -20,6 +22,7 @@ import {
   IconPencil,
 } from "@tabler/icons-react";
 import { Fragment, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -340,16 +343,120 @@ export function DraftCard({
 }
 
 /** How the lead was classified, why, and what the PA does next. */
+const ROUTE_CHOICES: Array<{ value: string; label: string }> = [
+  { value: "route_to_ae", label: "Route to the AE" },
+  { value: "pa_meeting", label: "PA takes the call" },
+  { value: "qualify_first", label: "Qualify first" },
+];
+
+const shortLink = (link: string) =>
+  link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+
+/** After triage, who takes the meeting and whose link the email carries (D66). */
+export function LeadRouteBlock({
+  value,
+  onChange,
+  busy,
+}: {
+  value: LeadRouteView;
+  onChange?: (route: string | null) => void;
+  busy?: boolean;
+}) {
+  const who = value.meetingWith;
+  return (
+    <div className="rounded-md border border-border px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11.5px] font-medium text-muted-foreground">Route</p>
+        {onChange && value.canOverride ? (
+          <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <span className="sr-only">Change the route</span>
+            <select
+              className="h-7 rounded-md border border-input bg-background px-1.5 text-[12.5px] text-foreground disabled:opacity-60"
+              value={value.source === "override" ? value.route : ""}
+              disabled={busy}
+              onChange={(event) => onChange(event.target.value || null)}
+            >
+              <option value="">
+                {value.source === "override"
+                  ? "Back to the playbook's route"
+                  : `Playbook: ${value.label}`}
+              </option>
+              {ROUTE_CHOICES.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+      <p className="mt-1 text-[14px] font-medium text-foreground">
+        {value.label}
+        {who ? (
+          <span className="font-normal text-muted-foreground">
+            {" "}
+            with {who.name ?? who.email} ({who.role === "ae" ? "AE" : "PA"})
+          </span>
+        ) : null}
+      </p>
+      <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        {value.email}
+      </p>
+      {who?.link ? (
+        <a
+          href={who.link}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1.5 inline-flex max-w-full items-center gap-1 truncate text-[12.5px] text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
+        >
+          <IconCalendarEvent className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{shortLink(who.link)}</span>
+        </a>
+      ) : null}
+      <p className="mt-1.5 text-[12px] text-muted-foreground">{value.reason}</p>
+      {value.gaps.length > 0 ? (
+        <ul className="mt-1.5 space-y-0.5">
+          {value.gaps.map((gap) => (
+            <li
+              key={gap}
+              className="flex gap-1.5 text-[12px] text-amber-700 dark:text-amber-400"
+            >
+              <IconAlertTriangle
+                className="mt-0.5 size-3.5 shrink-0"
+                aria-hidden="true"
+              />
+              <span>
+                {gap}{" "}
+                {/Team page/.test(gap) ? (
+                  <Link to="/team" className="underline underline-offset-2">
+                    Open Team
+                  </Link>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function TriageCard({
   triage,
   asked,
   facts,
   contactSalesClass,
+  leadRoute,
+  onRouteChange,
+  routeBusy,
 }: {
   triage: TriageView;
   asked: { text: string | null; source: "question" | "message" | null };
   facts: Array<{ label: string; value: string }>;
   contactSalesClass?: ContactSalesClassView | null;
+  leadRoute?: LeadRouteView | null;
+  onRouteChange?: (route: string | null) => void;
+  routeBusy?: boolean;
 }) {
   return (
     <section
@@ -396,6 +503,13 @@ export function TriageCard({
         </div>
         {contactSalesClass ? (
           <ContactSalesClassBlock value={contactSalesClass} />
+        ) : null}
+        {leadRoute ? (
+          <LeadRouteBlock
+            value={leadRoute}
+            onChange={onRouteChange}
+            busy={routeBusy}
+          />
         ) : null}
         {facts.length > 0 ? (
           <dl className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px]">

@@ -69,6 +69,8 @@ not import its instructions, verdicts, or thresholds into PA.
 | `get-contact-history`                    | The lead's emails, calls, meetings, notes, and Dobby's message from HubSpot    |
 | `get-intake-status`                      | When HubSpot was last pulled, the agent queue, whether the agent is on         |
 | `run-decision-loop`                      | Give older leads PA's recommendation and a 24 hour decision window (D59)       |
+| `get-messaging-guide`                    | The playbook's Messaging section for a class: how every draft is written (D65) |
+| `list-people`                            | People leads are routed to: role, meeting link, pod AE (D66)                   |
 | `resolve-playbook`, `get-playbook-entry` | Read entries from the pinned release                                           |
 | `get-pa-status`                          | Mode and current playbook release                                              |
 | `replay-submission`                      | Replay one synthetic case, or all of them, in shadow (admin)                   |
@@ -83,7 +85,8 @@ People only, hidden from the agent: `review-playbook-change`,
 `publish-playbook-change`, `update-suggestion`, `enable-playbook-review`,
 `list-crm-connections`, `set-crm-credential`, `test-crm-connection`,
 `remove-crm-credential`, `update-handbook-doc`, `import-handbook-docs`,
-`enable-inbound-agent`, `refresh-lead`, `refresh-all-leads`, `decide-lead` (the rep's decision; the agent may
+`enable-inbound-agent`, `refresh-lead`, `refresh-all-leads`, `save-person`,
+`set-lead-route` (the lead's route, D66), `decide-lead` (the rep's decision; the agent may
 recommend but never decides).
 
 Planned, not built yet (do not call): `approve-draft`,

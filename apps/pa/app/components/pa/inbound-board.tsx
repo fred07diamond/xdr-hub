@@ -1,5 +1,7 @@
 import type { BoardResult, BoardRow, BoardTab } from "@shared/pa-views";
 import {
+  IconAlertTriangle,
+  IconArrowRight,
   IconCheck,
   IconExternalLink,
   IconFilter,
@@ -39,6 +41,31 @@ function tabHref(tab: BoardTab, state: string | undefined) {
   const params = new URLSearchParams({ tab });
   if (state) params.set("state", state);
   return `?${params.toString()}`;
+}
+
+/** Who takes the meeting (D66), under the class on each row. */
+function RouteLine({ row }: { row: BoardRow }) {
+  const route = row.leadRoute;
+  if (!route || route.route === "no_sales_email") return null;
+  const who = route.meetingWith;
+  return (
+    <p className="mt-1.5 flex items-center gap-1 text-[12.5px] font-medium text-foreground">
+      <IconArrowRight
+        className="size-3.5 shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      />
+      <span className="truncate">
+        {route.label}
+        {who ? `, ${who.name ?? who.email}` : ""}
+      </span>
+      {route.gaps.length > 0 ? (
+        <IconAlertTriangle
+          className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-label={route.gaps.join(" ")}
+        />
+      ) : null}
+    </p>
+  );
 }
 
 export function BoardTabs({
@@ -327,7 +354,8 @@ export function BoardTable({
               </td>
               <td className="border-b border-border px-2.5 py-3">
                 <TriageBadge triage={row.triage} />
-                <p className="mt-1 line-clamp-2 text-[12.5px] leading-[1.45] text-muted-foreground">
+                <RouteLine row={row} />
+                <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-[1.45] text-muted-foreground">
                   {row.triage.why}
                 </p>
               </td>
@@ -397,7 +425,8 @@ export function BoardCards({
               </div>
               <div>
                 <TriageBadge triage={row.triage} />
-                <p className="mt-1 text-[12.5px] leading-[1.45] text-muted-foreground">
+                <RouteLine row={row} />
+                <p className="mt-0.5 text-[12.5px] leading-[1.45] text-muted-foreground">
                   {row.triage.why}
                 </p>
               </div>

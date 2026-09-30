@@ -173,6 +173,15 @@ const OWNER_NAMES: Record<string, string> = {
   both: "RevOps and PA team",
 };
 
+const CLASS_NAMES: Record<string, string> = {
+  hq_content: "Highly Qualified Content",
+  hq_code: "Highly Qualified Code",
+  standard_content: "Standard Content",
+  standard_code: "Standard Code",
+  content_price_check: "Content price check",
+  agency: "Agency",
+};
+
 /** A short read view of a block's data, like a CMS card preview. */
 function summary(block: Block): ReactNode {
   const d = block.data;
@@ -205,6 +214,21 @@ function summary(block: Block): ReactNode {
         : "Salesforce";
     case "crm_mapping":
       return "Open to map CRM properties";
+    case "class_routes": {
+      const toAe = Object.entries(d)
+        .filter(([, route]) => route === "route_to_ae")
+        .map(([key]) => CLASS_NAMES[key] ?? key);
+      const pa = Object.entries(d)
+        .filter(([, route]) => route === "pa_meeting")
+        .map(([key]) => CLASS_NAMES[key] ?? key);
+      return [
+        toAe.length ? `To the AE: ${toAe.join(", ")}` : null,
+        pa.length ? `PA takes the call: ${pa.join(", ")}` : null,
+        "Everything else qualifies first",
+      ]
+        .filter(Boolean)
+        .join(". ");
+    }
     default: {
       if (!block.body) return null;
       // Message rules open with their own name; the card already shows it.

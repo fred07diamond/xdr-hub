@@ -68,6 +68,10 @@ export const ruleParamSchemas = {
     agency_partner_rep: z.string(),
     round_robin_pool: z.string(),
   }),
+  "rule.routing.by_class": z.record(
+    z.string(),
+    z.enum(["route_to_ae", "pa_meeting", "qualify_first", "agency"]),
+  ),
   "rule.routing.sal_stale_days": z.object({
     days: z.number().int().positive(),
   }),

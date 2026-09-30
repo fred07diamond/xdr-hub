@@ -114,7 +114,7 @@
       },
       "owner_team": "revops",
       "block": "routing_order",
-      "section": "routing",
+      "section": "ownership",
       "position": 0
     },
     {
@@ -130,8 +130,30 @@
       },
       "owner_team": "revops",
       "block": "threshold",
-      "section": "routing",
+      "section": "ownership",
       "position": 1
+    },
+    {
+      "id": "rule.routing.by_class",
+      "type": "rule",
+      "owner": "Sales leadership",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": "Routing happens after the lead is triaged, and it decides whose meeting link goes in the email.\nA good fit for enterprise goes to the AE: the account's AE in HubSpot, else the PA's pod AE. The email carries the AE's meeting link to speed up the sales process.\nA lead the PA thinks has potential, but that is not an enterprise fit yet, is the PA's call: the email carries the PA's own meeting link.\nAnything unclear qualifies first with questions and no link. The PA can change the route on any lead.\n",
+      "params": {
+        "hq_content": "route_to_ae",
+        "hq_code": "route_to_ae",
+        "standard_content": "qualify_first",
+        "standard_code": "qualify_first",
+        "content_price_check": "qualify_first",
+        "agency": "agency"
+      },
+      "rationale": "Fred, 2026-09-30: the lead is routed from the PA to the AE once it meets the enterprise bar; otherwise the PA takes the call.",
+      "owner_team": "both",
+      "block": "class_routes",
+      "section": "routing",
+      "position": 0
     },
     {
       "id": "rule.sla.first_touch",
@@ -194,7 +216,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Every first touch follows TCQ, and every draft is checked against it.\nTrigger. Open on the specific thing they said, in their words, from the message or a form answer (business driver, how they will measure success, budget status, who makes the call, tech stack, use case). Never \"thanks for reaching out about Builder\" as the whole trigger, never a paraphrase that loses their detail. The exact words quoted go in rubric.trigger; PA checks they appear in the form and in the email.\nConnection. One sentence tying it to teams like theirs (\"teams like yours usually hit X\"), with the benefit their persona cares about (design quality, dev efficiency, product velocity; for Content, marketing shipping pages without waiting on engineering). Not a feature list, never \"Builder can help teams\" or \"our platform\". Goes in rubric.connection.\nQuestion. The ask. Pain in their world, filling the biggest gap, or the time offer. Reasonable, 15 to 30 minutes, never \"demo our platform\". Goes in rubric.ask.\nClassify the lead first, then follow the formula for its class (the class blocks below).\nUnder 75 words when possible. No filler like \"I'll confirm the best-fit approach and get back to you\"; only promise to confirm something real they asked that you cannot answer.\nNo calendar links. Offer days, not specific times (for example \"Would Wednesday or Thursday work for 30 minutes?\").\nNever disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.\n",
+      "body": "Every first touch follows TCQ, and every draft is checked against it.\nTrigger. Open on the specific thing they said, in their words, from the message or a form answer (business driver, how they will measure success, budget status, who makes the call, tech stack, use case). Never \"thanks for reaching out about Builder\" as the whole trigger, never a paraphrase that loses their detail. The exact words quoted go in rubric.trigger; PA checks they appear in the form and in the email.\nConnection. One sentence tying it to teams like theirs (\"teams like yours usually hit X\"), with the benefit their persona cares about (design quality, dev efficiency, product velocity; for Content, marketing shipping pages without waiting on engineering). Not a feature list, never \"Builder can help teams\" or \"our platform\". Goes in rubric.connection.\nQuestion. The ask. Pain in their world, filling the biggest gap, or the time offer. Reasonable, 15 to 30 minutes, never \"demo our platform\". Goes in rubric.ask.\nClassify the lead first, then follow the formula for its class (the class blocks below).\nUnder 75 words when possible. No filler like \"I'll confirm the best-fit approach and get back to you\"; only promise to confirm something real they asked that you cannot answer.\nThe lead's route decides the ask (the Routing section; get-engagement returns it as leadRoute). Route to the AE, or the PA takes the call, means that person's meeting link is the ask, exactly as given, with no day suggestions. Qualify first and the agency path carry no link yet.\nNever disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.\n",
       "params": {
         "min_words": 25,
         "target_words": 75,
@@ -278,7 +300,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Highly Qualified Content.\nAcknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. Offer two days for 30 minutes (for example \"Would Wednesday or Thursday work for 30 minutes?\"). Prep questions only for genuine gaps. Frame the demo as tailored to them.\n",
+      "body": "Highly Qualified Content.\nRouted to the AE. Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. The AE's meeting link is the ask, to speed up the sales process, with 1 or 2 questions only for genuine gaps. Frame the call as tailored to them.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "hq_content"
@@ -295,7 +317,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Standard Content.\nAcknowledge in their words. One line that the CMS is part of the Enterprise plan. Ask 2 or 3 of the Content questions the message and form have not answered (how many pages, who edits, current setup, page types, timeline). No demo on the first touch; conversation first.\n",
+      "body": "Standard Content.\nAcknowledge in their words. One line that the CMS is part of the Enterprise plan. Ask 2 or 3 of the Content questions the message and form have not answered (how many pages, who edits, current setup, page types, timeline). No demo on the first touch; conversation first.\nQualify first by default, so no link. When the PA takes the call, end with the PA's meeting link after the questions.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "standard_content"
@@ -329,7 +351,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Highly Qualified Code.\nAcknowledge, one line of value, two days for 30 minutes. Then prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by \"or is there a different challenge driving this?\". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).\n",
+      "body": "Highly Qualified Code.\nRouted to the AE. Acknowledge, one line of value, and the AE's meeting link as the ask. Then 1 or 2 prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by \"or is there a different challenge driving this?\". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "hq_code"
@@ -346,7 +368,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Standard Code.\nAcknowledge, a line of value, 2 or 3 qualifying questions (enterprise signals, a path to engineering), then \"let me know and we can find time\". Company size alone never decides enterprise need.\n",
+      "body": "Standard Code.\nAcknowledge, a line of value, 2 or 3 qualifying questions (enterprise signals, a path to engineering), then \"let me know and we can find time\". Company size alone never decides enterprise need.\nQualify first by default, so no link. When the PA takes the call, end with the PA's meeting link instead.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "standard_code"
@@ -379,7 +401,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "A bad draft and a better one (Standard Content).\nTheir message. \"Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng.\" Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.\n\nBad. \"Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?\"\nWhy it is bad. The trigger is paraphrased, the connection is a product pitch, the confirm line is filler, the question is an interrogation, and Enterprise-only is missing.\n\nBetter.\nHi Sam,\n\nSaw you're weighing build vs. buy so marketing can build and test paid landing pages without eng. Teams like yours usually find the eng queue, not the page builder, is what sets the pace.\n\nOur CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?\n\nHappy to find time Wednesday or Thursday if it's easier to talk it through.\n\nRiley\n",
+      "body": "A bad draft and a better one (Standard Content, qualify first).\nTheir message. \"Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng.\" Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.\n\nBad. \"Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?\"\nWhy it is bad. The trigger is paraphrased, the connection is a product pitch, the confirm line is filler, the question is an interrogation, and Enterprise-only is missing.\n\nBetter.\nHi Sam,\n\nSaw you're weighing build vs. buy so marketing can build and test paid landing pages without eng. Teams like yours usually find the eng queue, not the page builder, is what sets the pace.\n\nOur CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?\n\nHappy to find time if it's easier to talk it through.\n\nRiley\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "owner_team": "pa_team",
       "block": "message_rule",
@@ -541,12 +563,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "38fd316dc1a8a084a80b5cee35f9a50bcce28515344d06e65ee2a4d74a85e89e",
-  "short_id": "38fd316d",
+  "id": "6041481ffde9d9f6f6ddf43e06a3576c813f855b0f1b9d63ebff06821ffac9d1",
+  "short_id": "6041481f",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "fa6f9ece97c0d51423d2c02a57962f8fbf8657033a5f1275608407ffe420c654"
+      "sha256": "05bf6730437b9180eb7a878b279c9e73ea79a95603d95767b81e4d0089dc6614"
     },
     {
       "path": "config/routing-pool.yaml",

@@ -22,8 +22,12 @@ the move that fills each gap.
 - `get-engagement`: the message, form answers (use case, tech stack,
   business driver, success measure, budget status, who makes the call,
   company size, Breeze score, title), the CRM snapshot (lifecycle, owners,
-  open deals, firmographics), the scorecard, and `contactSalesClass`, PA's
-  suggested class with the criteria behind it.
+  open deals, firmographics), the scorecard, `contactSalesClass`, PA's
+  suggested class with the criteria behind it, and `leadRoute`: who takes
+  the meeting once the lead is triaged (route to the AE, the PA takes the
+  call, qualify first, or an exit), with `meetingWith.link`, the exact
+  meeting link the email carries. The owner is the PA HubSpot assigned; the
+  route is separate.
 - `get-contact-history`: every email, call, meeting, and note on the
   contact in HubSpot, and Dobby's message. If an email already went out
   after the form (`firstTouch`), do not draft a first touch; say so, and if
@@ -97,7 +101,13 @@ Follow every rule `get-messaging-guide` returned, in order: the shared rules
 lead's class, and `msg.first_touch.example` as the bar. Those blocks are
 edited by the PA team in the Playbook, so do not work from memory.
 
-Save with `approach`, `cta` (`meeting` needs two days), `rubric` (the trigger
+The route sets the ask. When `leadRoute.meetingWith` is set, the email
+carries that exact link as the ask (`cta: meeting`); when the link is
+missing, put `[meeting link]` where it goes and say so. Qualify first and
+the agency path carry no link (`cta: reply`). Never invent a link and never
+use one from memory.
+
+Save with `approach`, `cta`, `rubric` (the trigger
 in their exact words, the connection, the ask), `used_entry_ids` (the
 message rule ids you followed), and `question_handling`. The lint checks the
 draft against the same playbook; if it fails, fix only what it names, at

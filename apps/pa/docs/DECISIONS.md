@@ -1226,3 +1226,37 @@ bottom. Revisit one only when its "revisit when" condition happens.
   stay pinned. The draft receipt cites the message rule versions it used.
 - The price anchor and customer evidence stay in the Sales handbook; the
   blocks point to it.
+
+## D66. Routing is the handoff after triage, not the owner (2026-09-30)
+
+- Fred: "Routing occurs after the lead is processed. The lead is routed from
+  the PA to the AE after a set criterion is met." A good enterprise fit gets
+  an email with the AE's meeting link to speed up the sales process; a lead
+  with potential that is not an enterprise fit is the PA's call, with the
+  PA's own meeting link.
+- **Owner and route are separate.** The owner is the PA HubSpot assigned
+  (what PA used to call routing; the playbook section is now Ownership, and
+  the lead page says "Owner X, assigned in HubSpot"). The route is new and
+  comes after triage.
+- **Routes:** route to the AE, PA takes the call, qualify first (questions,
+  no link), the agency path, their AE and CSM (customer), the deal's AE
+  (open deal), and no sales email (support, educational, junk).
+- **The rule is a playbook block,** `rule.routing.by_class` in the new
+  Routing section: Highly Qualified Content and Code go to the AE; Standard
+  and the price check qualify first; agencies take the agency path. Fred
+  approved this starting mapping. The PA overrides it per lead
+  (`set-lead-route`, people only): the AE, the PA's own call, or qualify
+  first. Customers, open deals, and non-sales exits are not overridable.
+- **Which AE:** the company's HubSpot owner when that owner is not a PA,
+  else the PA's pod AE. Fred chose this.
+- **Meeting links:** Fred chose "link only". The meeting link is the ask,
+  with no day suggestions; this replaces "no calendar links, offer
+  Wednesday or Thursday" (D62). Links, roles, and pod AEs are team data on
+  the Team page (`pa_people`, migration v10), never in source. A missing
+  link or pod AE is named on the lead, and the draft uses `[meeting link]`.
+- **Drafts follow the route.** `save-draft` lints against it: a meeting
+  route must carry that exact link, a qualify-first route carries none. The
+  draft records the route and link it was written for; when either changes
+  (an override, a new link, a new pod AE) the agent rewrites it.
+  `DRAFT_RULES_VERSION` is 3, so every undecided draft is rewritten once.
+- Not changed: nothing is sent and nothing is written to HubSpot.

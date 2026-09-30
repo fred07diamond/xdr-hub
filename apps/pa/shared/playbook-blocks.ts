@@ -17,7 +17,16 @@ export const SECTIONS = [
     label: "Rules of engagement",
     hint: "Who we engage, and what a submission triggers first",
   },
-  { id: "routing", label: "Routing", hint: "Who owns a lead, in what order" },
+  {
+    id: "ownership",
+    label: "Ownership",
+    hint: "Which PA owns a lead: HubSpot's assignment, in what order",
+  },
+  {
+    id: "routing",
+    label: "Routing",
+    hint: "After triage: whether the AE or the PA takes the meeting",
+  },
   { id: "clocks", label: "Clocks", hint: "How fast each step must happen" },
   {
     id: "qualification",
@@ -111,7 +120,7 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     icon: "IconWorld",
     description:
       "A list of countries a rule applies to, such as the countries we do not engage.",
-    sections: ["rules_of_engagement", "routing", "qualification"],
+    sections: ["rules_of_engagement", "ownership", "qualification"],
     defaultOwnerTeam: "revops",
     storage: { kind: "entry", entryType: "rule", idPrefix: "rule" },
     schema: z.object({ countries: z.array(isoCountry) }).loose(),
@@ -139,8 +148,9 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     type: "routing_order",
     label: "Routing order",
     icon: "IconArrowsSort",
-    description: "Routing steps in order; the first that finds an owner wins.",
-    sections: ["routing"],
+    description:
+      "Ownership steps in order; the first that finds an owner wins.",
+    sections: ["ownership"],
     defaultOwnerTeam: "revops",
     storage: { kind: "entry", entryType: "rule", idPrefix: "rule" },
     schema: z
@@ -160,7 +170,7 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     icon: "IconGauge",
     description:
       "A number a rule compares against, such as days before an SAL counts as stale.",
-    sections: ["routing", "qualification", "rules_of_engagement"],
+    sections: ["ownership", "qualification", "rules_of_engagement"],
     defaultOwnerTeam: "revops",
     storage: { kind: "entry", entryType: "rule", idPrefix: "rule" },
     schema: z.record(z.string(), z.union([z.number(), z.string()])),
@@ -236,11 +246,27 @@ export const BLOCK_TYPES: readonly BlockType[] = [
       "Knowledge is read by the drafting agent through get-playbook-entry; no code change is needed.",
   },
   {
+    type: "class_routes",
+    label: "Routing by class",
+    icon: "IconArrowsExchange",
+    description:
+      "For each Contact Sales class, who takes the meeting: the AE, the PA, or qualify first.",
+    sections: ["routing"],
+    defaultOwnerTeam: "both",
+    storage: { kind: "entry", entryType: "rule", idPrefix: "rule" },
+    schema: z.record(z.string(), z.string()),
+    body: "optional",
+    empty: () => ({}),
+    brief:
+      "Read by server/core/lead-route; a new route needs a branch in leadRouteFor, its email rule in the Messaging section, and tests.",
+    singleton: true,
+  },
+  {
     type: "person_pool",
     label: "Round-robin pool",
     icon: "IconUsers",
     description: "The people new, unowned leads are shared between.",
-    sections: ["routing"],
+    sections: ["ownership"],
     defaultOwnerTeam: "pa_team",
     storage: { kind: "config", target: "config.routing_pool" },
     schema: z.object({ pool: z.array(emailOrTodo) }),
@@ -286,7 +312,13 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     icon: "IconPuzzle",
     description:
       "A rule in plain words, with the CRM fields it needs. The app owner gets a build request.",
-    sections: ["rules_of_engagement", "routing", "clocks", "qualification"],
+    sections: [
+      "rules_of_engagement",
+      "ownership",
+      "routing",
+      "clocks",
+      "qualification",
+    ],
     defaultOwnerTeam: "revops",
     storage: { kind: "entry", entryType: "rule", idPrefix: "rule" },
     schema: z.record(z.string(), z.unknown()),
@@ -359,7 +391,8 @@ const ENTRY_TITLES: Record<string, string> = {
   "def.disqualify": "Disqualify",
   "rule.precheck.outcomes": "Pre-check outcomes",
   "rule.precheck.restricted_countries": "Restricted countries",
-  "rule.routing.order": "Routing order",
+  "rule.routing.order": "Ownership order",
+  "rule.routing.by_class": "Routing by class",
   "rule.routing.sal_stale_days": "When a SAL goes stale",
   "rule.sla.first_touch": "First touch SLA",
   "rule.sla.decision": "Decision deadline",

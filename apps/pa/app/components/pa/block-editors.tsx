@@ -344,6 +344,58 @@ const OUTCOMES: Record<string, string> = {
   disqualify_logged: "Disqualify and log",
   continue: "Continue",
 };
+const CLASS_LABELS: Record<string, string> = {
+  hq_content: "Highly Qualified Content",
+  hq_code: "Highly Qualified Code",
+  standard_content: "Standard Content",
+  standard_code: "Standard Code",
+  content_price_check: "Content price check",
+  agency: "Agency",
+};
+const ROUTE_OPTIONS: Record<string, string> = {
+  route_to_ae: "Route to the AE (AE's meeting link)",
+  pa_meeting: "PA takes the call (PA's meeting link)",
+  qualify_first: "Qualify first (questions, no link)",
+  agency: "Agency path (path question)",
+};
+
+function ClassRoutesEditor({
+  data,
+  onChange,
+}: {
+  data: Data;
+  onChange: (next: Data) => void;
+}) {
+  return (
+    <Field
+      label="Route for each class"
+      hint="The PA can still change the route on any lead."
+    >
+      <ul className="grid gap-1.5">
+        {Object.entries(CLASS_LABELS).map(([key, label]) => (
+          <li key={key} className="flex flex-wrap items-center gap-2">
+            <span className="min-w-40 flex-1 text-[13px]">{label}</span>
+            <select
+              aria-label={`Route for ${label}`}
+              className="h-7 rounded-md border border-input bg-background px-1.5 text-[12.5px]"
+              value={String(data[key] ?? "qualify_first")}
+              onChange={(event) =>
+                onChange({ ...data, [key]: event.target.value })
+              }
+            >
+              {Object.entries(ROUTE_OPTIONS).map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+            </select>
+          </li>
+        ))}
+      </ul>
+    </Field>
+  );
+}
+
 const humanize = (key: string) =>
   key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 const email = (value: string) =>
@@ -711,6 +763,8 @@ export function BlockDataEditor({ block, data, onChange }: BlockEditorProps) {
       return <OutcomeMapEditor data={data} onChange={onChange} />;
     case "routing_order":
       return <RoutingOrderEditor data={data} onChange={onChange} />;
+    case "class_routes":
+      return <ClassRoutesEditor data={data} onChange={onChange} />;
     case "threshold":
       return (
         <NumbersEditor

@@ -7,6 +7,8 @@ import {
   lintDraft,
   triggerSource,
 } from "../server/core/drafting/index.js";
+import { routeForEngagement } from "../server/core/lead-route/engagement.js";
+import { draftRouteOf } from "../server/core/lead-route/index.js";
 import { uniqueCitations } from "../server/core/playbook/resolve.js";
 import { loadRelease } from "../server/core/playbook/store.js";
 import { activeRelease, newId, now, repo } from "../server/lib/pa-context.js";
@@ -65,7 +67,11 @@ export default defineAction({
     // Messaging follows the current playbook (D65), so a Playbook edit
     // applies to the next draft on any lead, old or new.
     const messaging = await activeRelease(repository);
+    const route = draftRouteOf(
+      await routeForEngagement(repository, messaging, engagement),
+    );
     const lint = lintDraft({
+      route,
       draft: input,
       release: messaging,
       explicitQuestion: assessment?.explicitQuestion ?? null,

@@ -5,6 +5,8 @@ import {
   type DraftRecord,
   type DecisionRecord,
   type LeadBriefRecord,
+  type PersonRecord,
+  type RouteOverrideRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type ContactRecord,
@@ -40,6 +42,8 @@ interface Tables {
   drafts: Map<string, DraftRecord>;
   decisions: Map<string, DecisionRecord>;
   briefs: Map<string, LeadBriefRecord>;
+  people: Map<string, PersonRecord>;
+  routeOverrides: Map<string, RouteOverrideRecord>;
   handbook: Map<string, HandbookDocRecord>;
   handbookRevisions: Map<string, HandbookRevisionRecord>;
   releases: Map<string, ReleaseRecord>;
@@ -65,6 +69,8 @@ function emptyTables(): Tables {
     drafts: new Map(),
     decisions: new Map(),
     briefs: new Map(),
+    people: new Map(),
+    routeOverrides: new Map(),
     handbook: new Map(),
     handbookRevisions: new Map(),
     releases: new Map(),
@@ -389,6 +395,36 @@ export class MemoryRepository implements PaRepository {
       .filter((item) => item.docId === docId)
       .sort((a, b) => b.version - a.version)
       .map(copy);
+  }
+
+  async upsertPerson(record: PersonRecord) {
+    const email = record.email.toLowerCase();
+    const current = this.tables.people.get(email);
+    const next = {
+      ...record,
+      email,
+      createdAt: current?.createdAt ?? record.createdAt,
+    };
+    this.tables.people.set(email, copy(next));
+    return copy(next);
+  }
+  async listPeople() {
+    return [...this.tables.people.values()]
+      .map(copy)
+      .sort((a, b) => a.email.localeCompare(b.email));
+  }
+  async setRouteOverride(record: RouteOverrideRecord) {
+    this.tables.routeOverrides.set(record.engagementId, copy(record));
+  }
+  async clearRouteOverride(engagementId: string) {
+    this.tables.routeOverrides.delete(engagementId);
+  }
+  async getRouteOverride(engagementId: string) {
+    const found = this.tables.routeOverrides.get(engagementId);
+    return found ? copy(found) : null;
+  }
+  async listRouteOverrides() {
+    return [...this.tables.routeOverrides.values()].map(copy);
   }
 
   async insertLeadBrief(record: LeadBriefRecord) {

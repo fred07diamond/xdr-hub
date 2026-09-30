@@ -7,6 +7,7 @@ import {
   draftPlan,
   lintDraft,
   type DraftInput,
+  type DraftRoute,
 } from "../../server/core/drafting/index.js";
 import { seedRelease } from "../../server/core/playbook/release.js";
 
@@ -15,7 +16,7 @@ const good: DraftInput = {
   body: [
     "Hi Priya,",
     "Saw you're moving your marketing site to a headless CMS. Our CMS is part of the Enterprise plan, and I'll send the SSO details over tomorrow.",
-    "Would Wednesday or Thursday work for 30 minutes to walk through your setup?",
+    "Grab 30 minutes with Sam, our AE, to walk through your setup https://meetings.example.com/sam",
     "Thanks,",
     "Dana",
   ].join("\n\n"),
@@ -26,7 +27,7 @@ const good: DraftInput = {
   rubric: {
     trigger: "moving our marketing site to a headless CMS",
     connection: "Our CMS is part of the Enterprise plan",
-    ask: "Would Wednesday or Thursday work for 30 minutes?",
+    ask: "Grab 30 minutes with Sam, our AE",
   },
   question_handling: "will_confirm",
 };
@@ -34,13 +35,25 @@ const good: DraftInput = {
 const SOURCE =
   "We are moving our marketing site to a headless CMS. Can you share whether you support SSO?";
 
-const lint = (draft: Partial<DraftInput>, question: string | null = "Q?") =>
+const TO_AE: DraftRoute = {
+  route: "route_to_ae",
+  label: "Route to the AE",
+  needsLink: true,
+  link: "https://meetings.example.com/sam",
+};
+
+const lint = (
+  draft: Partial<DraftInput>,
+  question: string | null = "Q?",
+  route: DraftRoute | null = TO_AE,
+) =>
   lintDraft({
     draft: { ...good, ...draft },
     release: seedRelease,
     explicitQuestion: question,
     ownerFirstName: "Dana",
     sourceText: SOURCE,
+    route,
   });
 
 const codes = (draft: Partial<DraftInput>, question?: string | null) =>
@@ -151,9 +164,32 @@ describe("lintDraft", () => {
         body: `${good.body}\nhttps://example.com/a and https://example.com/b`,
       }),
     ).toContain("calls_to_action");
+    // The route decides the ask (D66): its meeting link, or none yet.
     expect(
-      codes({ body: good.body.replace("Wednesday or Thursday", "sometime") }),
-    ).toContain("calendar_link");
+      codes({
+        body: good.body.replace(" https://meetings.example.com/sam", ""),
+      }),
+    ).toContain("meeting_link");
+    expect(
+      lint({}, "Q?", {
+        route: "qualify_first",
+        label: "Qualify first",
+        needsLink: false,
+        link: null,
+      }).problems.map((problem) => problem.code),
+    ).toContain("meeting_link");
+    expect(
+      lint(
+        {
+          body: good.body.replace(
+            "https://meetings.example.com/sam",
+            "[meeting link]",
+          ),
+        },
+        "Q?",
+        { ...TO_AE, link: null },
+      ).problems.map((problem) => problem.code),
+    ).not.toContain("meeting_link");
     expect(codes({ question_handling: "no_question" })).toContain("question");
     // TCQ (D62): the trigger is their words, used in the email.
     expect(
@@ -208,7 +244,7 @@ describe("the demo board, as a PA sees it", () => {
     const priya = byName.get("Priya Natarajan")!;
     expect(priya.triage.kind).toBe("reply");
     expect(priya.triage.label).toBe("Qualified lead");
-    expect(priya.triage.why).toMatch(/round robin to PA/);
+    expect(priya.triage.why).toMatch(/^Owner PA .+, by round robin\.$/);
     expect(priya.draft.status).toBe("ready");
     expect(priya.draft.preview).not.toMatch(/^Hi /);
 
@@ -224,7 +260,9 @@ describe("the demo board, as a PA sees it", () => {
     // Every lead has an owner, so an owned account is classified by the lead
     // itself; the open deal and the customer are their own classes (D59).
     expect(byName.get("Marcus Lee")!.triage.label).toBe("Qualified lead");
-    expect(byName.get("Marcus Lee")!.triage.why).toMatch(/Owned account/);
+    expect(byName.get("Marcus Lee")!.triage.why).toMatch(
+      /already owns the account/,
+    );
     expect(byName.get("Ines Duarte")!.triage.label).toBe("Open deal");
     expect(byName.get("Elena Petrova")!.triage.label).toBe("Existing customer");
     expect(byName.get("Sam Whitfield")!.triage.label).toBe("Support request");
@@ -244,7 +282,6 @@ describe("the demo board, as a PA sees it", () => {
       "banned_phrase",
       "banned_phrase",
       "banned_phrase",
-      "calendar_link",
       "calls_to_action",
       "colon",
       "content_enterprise",

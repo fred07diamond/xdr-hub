@@ -83,7 +83,7 @@ export default defineAction({
         block: "person_pool",
         title: entryTitle("config.routing_pool"),
         blockLabel: "Round-robin pool",
-        section: "routing",
+        section: "ownership",
         position: 99,
         ownerTeam: "pa_team",
         owner: "PA lead",

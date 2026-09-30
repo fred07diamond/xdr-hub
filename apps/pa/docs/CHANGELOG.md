@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-30 (routing after triage)
+
+- Every lead now shows its route: route to the AE, PA takes the call, or
+  qualify first, plus the customer, open deal, agency, and non-sales exits.
+  You can change it on the lead; the draft is rewritten to match (D66).
+- Meeting emails carry the meeting link of whoever takes the call: the
+  account's AE, else the PA's pod AE, or the PA. No more day suggestions.
+- The Team page has a Routing section: each person's role, meeting link, and
+  a PA's pod AE, starting from the owners seen on leads.
+- The board shows the route under each lead's class. The old routing text
+  reads as the owner now ("Owner Kaffa Sakho, who already owns the
+  account"), which also fixes the doubled "to Javier Alcaraz".
+- Playbook: a new Routing section with "Routing by class", and the owner
+  assignment blocks moved to Ownership.
+
 ## 2026-09-30 (playbook page)
 
 - The Playbook shows one section at a time, picked from a section list with

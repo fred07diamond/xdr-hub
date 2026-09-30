@@ -23,6 +23,9 @@ export const TIME_OPTIONS_TOKEN = "[time options]";
 /** Signs a draft for a lead with no owner yet; filled when it is assigned. */
 export const OWNER_NAME_TOKEN = "[owner first name]";
 
+/** Where the route's meeting link goes when none is on file (D66). */
+export const MEETING_LINK_TOKEN = "[meeting link]";
+
 /**
  * The Contact Sales classes from the Sales handbook (03), decided before the
  * draft is written. Each has its own formula.
@@ -69,7 +72,7 @@ export const draftInputSchema = z.object({
   cta: z
     .enum(CTA_KINDS)
     .describe(
-      `The one call to action. "meeting" needs ${TIME_OPTIONS_TOKEN} (Highly Qualified) or ${CALENDAR_LINK_TOKEN} in the body.`,
+      `The one call to action. "meeting" when the lead's route carries a meeting link (put that exact link in the body, or ${MEETING_LINK_TOKEN} when none is on file); "reply" when it qualifies first.`,
     ),
   language: z
     .string()
@@ -133,7 +136,7 @@ export type DraftStatus = "proposed" | "needs_edit";
  * The version of the draft rules. A draft saved under older rules is
  * redrafted while its lead is still undecided (D62).
  */
-export const DRAFT_RULES_VERSION = 2;
+export const DRAFT_RULES_VERSION = 3;
 
 export interface LintProblem {
   code:
@@ -142,6 +145,7 @@ export interface LintProblem {
     | "banned_phrase"
     | "calls_to_action"
     | "calendar_link"
+    | "meeting_link"
     | "question"
     | "unknown_entry"
     | "signature"
@@ -167,6 +171,18 @@ export interface LintResult {
   questionHandling: QuestionHandling;
   /** Rules that code cannot check yet, shown so nobody assumes they were. */
   notChecked: string[];
+  /** The route the draft was checked against (D66), to redraft on a change. */
+  route?: { route: string; link: string | null } | null;
+}
+
+/** The lead's route as the lint sees it (D66). */
+export interface DraftRoute {
+  route: string;
+  /** The meeting link the email must carry, when the route has one on file. */
+  link: string | null;
+  /** Whether the route puts a meeting link in the email at all. */
+  needsLink: boolean;
+  label: string;
 }
 
 export interface DraftPlan {
@@ -245,14 +261,17 @@ export function draftPlan(input: {
 
 const words = (text: string) =>
   text
-    .replace(/\[(calendar link|time options|owner first name)\]/gi, " ")
+    .replace(
+      /\[(calendar link|meeting link|time options|owner first name)\]/gi,
+      " ",
+    )
     .split(/\s+/)
     .filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
 
 const escapeRegExp = (text: string) =>
   text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const LINK = /https?:\/\/\S+|\[calendar link\]/gi;
+const LINK = /https?:\/\/\S+|\[(calendar|meeting) link\]/gi;
 
 /** SPEC 5.5, against the pinned release's message rules. */
 export function lintDraft(input: {
@@ -262,6 +281,8 @@ export function lintDraft(input: {
   ownerFirstName: string | null;
   /** The message and form answers the trigger must come from (D62). */
   sourceText?: string | null;
+  /** The lead's route (D66): whose meeting link the email carries, if any. */
+  route?: DraftRoute | null;
 }): LintResult {
   const { draft, release } = input;
   const params = messageRuleParams.parse(
@@ -350,21 +371,33 @@ export function lintDraft(input: {
       message: `Has ${links.length} links; a first touch has one call to action.`,
     });
   }
-  const bodyLower = draft.body.toLowerCase();
-  const weekdays = new Set(
-    bodyLower.match(
-      /\b(monday|tuesday|wednesday|thursday|friday|lunes|martes|mi[eé]rcoles|jueves|viernes)\b/g,
-    ) ?? [],
-  );
-  if (
+  // The route decides the ask (D66): a meeting route carries that person's
+  // meeting link, and a qualify-first route carries no link yet.
+  const route = input.route ?? null;
+  if (route?.needsLink) {
+    const expected = route.link ?? MEETING_LINK_TOKEN;
+    if (!draft.body.includes(expected)) {
+      problems.push({
+        code: "meeting_link",
+        message: route.link
+          ? `The route is "${route.label}", so the email needs the meeting link ${route.link}.`
+          : `The route is "${route.label}", but no meeting link is on file. Put ${MEETING_LINK_TOKEN} where it goes.`,
+      });
+    }
+  } else if (route && links.length > 0) {
+    problems.push({
+      code: "meeting_link",
+      message: `The route is "${route.label}", so no meeting link yet. Ask the questions first.`,
+    });
+  } else if (
+    !route &&
     draft.cta === "meeting" &&
-    weekdays.size < 2 &&
-    !bodyLower.includes(TIME_OPTIONS_TOKEN)
+    links.length === 0 &&
+    !draft.body.toLowerCase().includes(TIME_OPTIONS_TOKEN)
   ) {
     problems.push({
-      code: "calendar_link",
-      message:
-        "The call to action is a meeting, but it does not offer two days (for example Wednesday or Thursday).",
+      code: "meeting_link",
+      message: `The call to action is a meeting, but there is no meeting link. Put ${MEETING_LINK_TOKEN} where it goes.`,
     });
   }
 
@@ -483,6 +516,7 @@ export function lintDraft(input: {
       "Customer names need an approved reference entry",
       "Whether the questions pass the peer test",
     ],
+    route: route ? { route: route.route, link: route.link } : null,
   };
 }
 

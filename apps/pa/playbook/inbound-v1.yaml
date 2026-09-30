@@ -75,7 +75,7 @@ entries:
       countries: [] # TODO RevOps supplies the list
   - id: rule.routing.order
     block: routing_order
-    section: routing
+    section: ownership
     position: 0
     type: rule
     owner: Sales leadership
@@ -94,7 +94,7 @@ entries:
       round_robin_pool: config/routing-pool.yaml
   - id: rule.routing.sal_stale_days
     block: threshold
-    section: routing
+    section: ownership
     position: 1
     type: rule
     owner: RevOps
@@ -103,6 +103,28 @@ entries:
     version: 1
     params:
       days: 90 # TODO confirm
+  - id: rule.routing.by_class
+    block: class_routes
+    section: routing
+    position: 0
+    type: rule
+    owner: Sales leadership
+    owner_team: both
+    precedence: 2
+    version: 1
+    body: |
+      Routing happens after the lead is triaged, and it decides whose meeting link goes in the email.
+      A good fit for enterprise goes to the AE: the account's AE in HubSpot, else the PA's pod AE. The email carries the AE's meeting link to speed up the sales process.
+      A lead the PA thinks has potential, but that is not an enterprise fit yet, is the PA's call: the email carries the PA's own meeting link.
+      Anything unclear qualifies first with questions and no link. The PA can change the route on any lead.
+    params:
+      hq_content: route_to_ae
+      hq_code: route_to_ae
+      standard_content: qualify_first
+      standard_code: qualify_first
+      content_price_check: qualify_first
+      agency: agency
+    rationale: "Fred, 2026-09-30: the lead is routed from the PA to the AE once it meets the enterprise bar; otherwise the PA takes the call."
   - id: rule.sla.first_touch
     block: clock
     section: clocks
@@ -159,7 +181,7 @@ entries:
       Question. The ask. Pain in their world, filling the biggest gap, or the time offer. Reasonable, 15 to 30 minutes, never "demo our platform". Goes in rubric.ask.
       Classify the lead first, then follow the formula for its class (the class blocks below).
       Under 75 words when possible. No filler like "I'll confirm the best-fit approach and get back to you"; only promise to confirm something real they asked that you cannot answer.
-      No calendar links. Offer days, not specific times (for example "Would Wednesday or Thursday work for 30 minutes?").
+      The lead's route decides the ask (the Routing section; get-engagement returns it as leadRoute). Route to the AE, or the PA takes the call, means that person's meeting link is the ask, exactly as given, with no day suggestions. Qualify first and the agency path carry no link yet.
       Never disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.
     params:
       min_words: 25
@@ -241,7 +263,7 @@ entries:
       approach: hq_content
     body: |
       Highly Qualified Content.
-      Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. Offer two days for 30 minutes (for example "Would Wednesday or Thursday work for 30 minutes?"). Prep questions only for genuine gaps. Frame the demo as tailored to them.
+      Routed to the AE. Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. The AE's meeting link is the ask, to speed up the sales process, with 1 or 2 questions only for genuine gaps. Frame the call as tailored to them.
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.first_touch.standard_content
     block: message_rule
@@ -257,6 +279,7 @@ entries:
     body: |
       Standard Content.
       Acknowledge in their words. One line that the CMS is part of the Enterprise plan. Ask 2 or 3 of the Content questions the message and form have not answered (how many pages, who edits, current setup, page types, timeline). No demo on the first touch; conversation first.
+      Qualify first by default, so no link. When the PA takes the call, end with the PA's meeting link after the questions.
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.first_touch.content_price_check
     block: message_rule
@@ -286,7 +309,7 @@ entries:
       approach: hq_code
     body: |
       Highly Qualified Code.
-      Acknowledge, one line of value, two days for 30 minutes. Then prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by "or is there a different challenge driving this?". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).
+      Routed to the AE. Acknowledge, one line of value, and the AE's meeting link as the ask. Then 1 or 2 prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by "or is there a different challenge driving this?". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.first_touch.standard_code
     block: message_rule
@@ -302,6 +325,7 @@ entries:
     body: |
       Standard Code.
       Acknowledge, a line of value, 2 or 3 qualifying questions (enterprise signals, a path to engineering), then "let me know and we can find time". Company size alone never decides enterprise need.
+      Qualify first by default, so no link. When the PA takes the call, end with the PA's meeting link instead.
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.agency.first_touch
     block: message_rule
@@ -330,7 +354,7 @@ entries:
     precedence: 4
     version: 1
     body: |
-      A bad draft and a better one (Standard Content).
+      A bad draft and a better one (Standard Content, qualify first).
       Their message. "Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng." Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.
 
       Bad. "Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?"
@@ -343,7 +367,7 @@ entries:
 
       Our CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?
 
-      Happy to find time Wednesday or Thursday if it's easier to talk it through.
+      Happy to find time if it's easier to talk it through.
 
       Riley
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"

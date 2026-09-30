@@ -43,6 +43,21 @@ const CTA_LABELS: Record<string, string> = {
 /** The lint rules in SPEC 5.5 that code checks, for "passes N checks". */
 const LINT_CHECKS = 8;
 
+/** How the owner was found, said after their name (D66: owner, not route). */
+const OWNER_HOW: Record<string, string> = {
+  crm_contact_owner: "assigned in HubSpot",
+  crm_company_owner: "owns the account",
+  crm_deal_owner: "owns the open deal",
+  crm_customer_owner: "owns the customer account",
+  round_robin: "by round robin",
+  partner_rep: "partner rep",
+};
+
+const ownerLine = (owner: string | null, source: string | null) =>
+  owner
+    ? `Owner ${owner}${source && OWNER_HOW[source] ? `, ${OWNER_HOW[source]}` : ""}.`
+    : "No owner yet.";
+
 const sentence = (text: string) => {
   const clean = text.trim().replace(/\.$/, "");
   return clean ? `${clean}.` : "";
@@ -103,7 +118,7 @@ export function triageFor(input: {
           kind: "review",
           label: "Existing customer",
           verdictLabel,
-          why: `Routed to ${owner ?? "the account owner"}. PA cannot tell whether they are on the team already using Builder or a different team.`,
+          why: `${ownerLine(owner, input.engagement.ownerSource)} PA cannot tell whether they are on the team already using Builder or a different team.`,
           action:
             "Check their team: redirect to the AE and CSM, or treat it as an expansion lead.",
         };
@@ -114,7 +129,9 @@ export function triageFor(input: {
             ? "Qualified lead"
             : "Needs a look",
         verdictLabel: null,
-        why: `Owned account, routed to ${owner ?? "the account owner"}.`,
+        why: owner
+          ? `Owner ${owner}, who already owns the account.`
+          : "Owned account.",
         action: input.ownerIsMe
           ? "Yours: review the draft and decide."
           : `${owner ?? "The owner"} reviews the draft and decides.`,
@@ -168,10 +185,8 @@ export function triageFor(input: {
         ? "Not sales ready"
         : (verdictLabel ?? "Needs a first touch");
   const assigned = owner
-    ? reason
-      ? `${reason.replace(/\.$/, "")} to ${owner}.`
-      : `Assigned to ${owner}.`
-    : reason || "Not assigned to an owner yet.";
+    ? ownerLine(owner, input.engagement.ownerSource)
+    : reason || "No owner yet.";
   const draftAction: Record<DraftSummary["status"], string> = {
     ready: "Review the draft reply.",
     needs_edit: "The draft breaks a message rule: fix it before it goes out.",

@@ -452,6 +452,26 @@ CREATE TABLE IF NOT EXISTS pa_lead_briefs (
 CREATE INDEX IF NOT EXISTS pa_lead_briefs_engagement ON pa_lead_briefs (engagement_id, created_at)
 `;
 
+export const leadRouting = `
+CREATE TABLE IF NOT EXISTS pa_people (
+  email TEXT PRIMARY KEY,
+  display_name TEXT,
+  role TEXT,
+  meeting_link TEXT,
+  pod_ae_email TEXT,
+  updated_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pa_route_overrides (
+  engagement_id TEXT PRIMARY KEY,
+  route TEXT NOT NULL,
+  note TEXT,
+  set_by TEXT NOT NULL,
+  set_at TEXT NOT NULL
+)
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -468,6 +488,7 @@ export const PA_MIGRATIONS = [
   { version: 7, name: "pa-sales-handbook", sql: salesHandbook },
   { version: 8, name: "pa-rep-decisions", sql: repDecisions },
   { version: 9, name: "pa-lead-briefs", sql: leadBriefs },
+  { version: 10, name: "pa-lead-routing", sql: leadRouting },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {

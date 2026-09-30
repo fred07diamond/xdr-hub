@@ -490,3 +490,24 @@ export const paLeadBriefs = table(
   },
   (t) => [index("pa_lead_briefs_engagement").on(t.engagementId, t.createdAt)],
 );
+
+// Lead routing (D66), migration v10. The people a lead can be routed to, with
+// their meeting links, and a PA's override of the playbook's route. Links and
+// pairings are team data: they live here, never in source.
+export const paPeople = table("pa_people", {
+  email: text("email").primaryKey(),
+  displayName: text("display_name"),
+  role: text("role"),
+  meetingLink: text("meeting_link"),
+  podAeEmail: text("pod_ae_email"),
+  updatedBy: text("updated_by").notNull(),
+  ...stamps,
+});
+
+export const paRouteOverrides = table("pa_route_overrides", {
+  engagementId: text("engagement_id").primaryKey(),
+  route: text("route").notNull(),
+  note: text("note"),
+  setBy: text("set_by").notNull(),
+  setAt: text("set_at").notNull(),
+});

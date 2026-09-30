@@ -34,7 +34,9 @@
       "pa_crm_schema": "Team-shared CRM property definitions (names, types, options; no record data). The PA agent reads it only through PA actions (D48).",
       "pa_handbook_docs": "Team-shared Sales handbook for the one Product Advocate team (D53); read through list-handbook and get-handbook-doc, edited only by PA role holders through update-handbook-doc. The PA agent runs with frameworkTools.database off. Pending Fred review, 2026-09-30.",
       "pa_handbook_revisions": "Team-shared Sales handbook for the one Product Advocate team (D53); read through list-handbook and get-handbook-doc, edited only by PA role holders through update-handbook-doc. The PA agent runs with frameworkTools.database off. Pending Fred review, 2026-09-30.",
-      "pa_lead_briefs": "Team-shared PA queue data by design (one Product Advocate team, D61); read through get-engagement and written through save-lead-brief. The PA agent runs with frameworkTools.database off. Pending Fred review, 2026-09-30."
+      "pa_lead_briefs": "Team-shared PA queue data by design (one Product Advocate team, D61); read through get-engagement and written through save-lead-brief. The PA agent runs with frameworkTools.database off. Pending Fred review, 2026-09-30.",
+      "pa_people": "Team-shared PA routing data by design (one Product Advocate team): who takes a lead's meeting and each lead's route. The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_route_overrides": "Team-shared PA routing data by design (one Product Advocate team): who takes a lead's meeting and each lead's route. The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30."
     }
   }
 }

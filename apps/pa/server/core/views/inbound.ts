@@ -7,6 +7,7 @@ import type {
   ClockView,
   EngagementDetail,
   EvaluationView,
+  LeadRouteView,
   OpenItemView,
   OwnerView,
   ReceiptDetail,
@@ -19,6 +20,8 @@ import {
   leadBriefSchema,
 } from "../brief/index.js";
 import { readFirstTouchClock, nextWorkingInstant } from "../clocks/index.js";
+import { routeForEngagement } from "../lead-route/engagement.js";
+import type { LeadRouteResult } from "../lead-route/index.js";
 import {
   ENGAGEMENT_STATES,
   RELATIONSHIP_LABELS,
@@ -42,6 +45,7 @@ import { contactSalesClass } from "../qualify/index.js";
 import type {
   EngagementRecord,
   PaRepository,
+  PersonRecord,
   ReceiptRecord,
   UserProfileRecord,
 } from "../repo/types.js";
@@ -268,6 +272,34 @@ async function briefView(
   };
 }
 
+const FIXED_ROUTES = new Set(["no_sales_email", "customer_team", "deal_ae"]);
+
+function leadRouteView(route: LeadRouteResult): LeadRouteView {
+  return {
+    route: route.route,
+    label: route.label,
+    email: route.email,
+    reason: route.reason,
+    source: route.source,
+    meetingWith: route.meetingWith,
+    gaps: route.gaps,
+    canOverride: !FIXED_ROUTES.has(route.route),
+  };
+}
+
+async function leadRouteOf(
+  repo: PaRepository,
+  release: PlaybookRelease,
+  engagement: EngagementRecord,
+  triageKind: string,
+  people?: PersonRecord[],
+): Promise<LeadRouteView | null> {
+  if (triageKind === "pending") return null;
+  return leadRouteView(
+    await routeForEngagement(repo, release, engagement, { people }),
+  );
+}
+
 function crmUrlOf(inbox: { payload: Record<string, unknown> } | null) {
   const url = inbox?.payload.crm_url;
   return typeof url === "string" && url.startsWith("https://app.hubspot.com/")
@@ -282,6 +314,7 @@ async function buildRow(
   viewer: Viewer,
   release: PlaybookRelease,
   now: Date,
+  people: PersonRecord[],
 ): Promise<BoardRow & { hidden: boolean }> {
   const contact = await repo.getContact(engagement.contactId);
   const submissions = await repo.listSubmissionsForEngagement(engagement.id);
@@ -366,6 +399,13 @@ async function buildRow(
   return {
     id: engagement.id,
     triage,
+    leadRoute: await leadRouteOf(
+      repo,
+      release,
+      engagement,
+      triage.kind,
+      people,
+    ),
     draft: draftSummary(draft),
     sla: slaView({ engagement, clock, events, submittedAt, now }),
     decision: decisionView(await repo.getDecision(engagement.id), now),
@@ -447,6 +487,7 @@ export async function buildInboundBoard(input: {
     (await input.repo.listProfiles()).map((profile) => [profile.id, profile]),
   );
   const engagements = await input.repo.listEngagements();
+  const people = await input.repo.listPeople();
   const rows: BoardRow[] = [];
   for (const engagement of engagements) {
     const { hidden, ...row } = await buildRow(
@@ -456,6 +497,7 @@ export async function buildInboundBoard(input: {
       input.viewer,
       input.release,
       input.now,
+      people,
     );
     // Rows the intake found were not Contact Sales stay out of the board.
     if (!hidden) rows.push(row);
@@ -741,6 +783,7 @@ export async function buildEngagementDetail(input: {
   return {
     id: engagement.id,
     triage,
+    leadRoute: await leadRouteOf(repo, input.release, engagement, triage.kind),
     draft,
     sla: slaView({ engagement, clock, events, submittedAt, now: input.now }),
     decision: decisionView(await repo.getDecision(engagement.id), input.now),

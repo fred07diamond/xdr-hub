@@ -195,6 +195,30 @@ export interface LeadBriefRecord {
   createdAt: string;
 }
 
+export type PersonRole = "pa" | "ae" | "csm";
+
+/** Someone a lead can be routed to (D66): role, meeting link, pod AE. */
+export interface PersonRecord {
+  email: string;
+  displayName: string | null;
+  role: PersonRole | null;
+  meetingLink: string | null;
+  /** For a PA: the AE their enterprise leads go to when the account has none. */
+  podAeEmail: string | null;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A PA's override of the playbook's route for one lead. */
+export interface RouteOverrideRecord {
+  engagementId: string;
+  route: string;
+  note: string | null;
+  setBy: string;
+  setAt: string;
+}
+
 export type HandbookStatus = "index" | "current" | "legacy";
 
 export interface HandbookDocRecord {
@@ -515,6 +539,13 @@ export interface PaRepository extends PlaybookStore {
   insertLeadBrief(record: LeadBriefRecord): Promise<void>;
   /** The newest brief for an engagement. */
   getLeadBrief(engagementId: string): Promise<LeadBriefRecord | null>;
+
+  upsertPerson(record: PersonRecord): Promise<PersonRecord>;
+  listPeople(): Promise<PersonRecord[]>;
+  setRouteOverride(record: RouteOverrideRecord): Promise<void>;
+  clearRouteOverride(engagementId: string): Promise<void>;
+  getRouteOverride(engagementId: string): Promise<RouteOverrideRecord | null>;
+  listRouteOverrides(): Promise<RouteOverrideRecord[]>;
 
   insertDecisionIfAbsent(record: DecisionRecord): Promise<boolean>;
   getDecision(engagementId: string): Promise<DecisionRecord | null>;

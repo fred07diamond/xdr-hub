@@ -18,6 +18,8 @@ import {
   type DraftRecord,
   type DecisionRecord,
   type LeadBriefRecord,
+  type PersonRecord,
+  type RouteOverrideRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type SubmissionRecord,
@@ -56,6 +58,8 @@ const {
   paDrafts,
   paDecisions,
   paLeadBriefs,
+  paPeople,
+  paRouteOverrides,
   paHandbookDocs,
   paHandbookRevisions,
   paSubmissions,
@@ -542,6 +546,45 @@ export class DrizzleRepository implements PaRepository {
       .where(eq(paHandbookRevisions.docId, docId))
       .orderBy(desc(paHandbookRevisions.version));
     return rows as HandbookRevisionRecord[];
+  }
+
+  async upsertPerson(record: PersonRecord) {
+    const email = record.email.toLowerCase();
+    const { email: _email, createdAt: _createdAt, ...updatable } = record;
+    const [row] = await this.db
+      .insert(paPeople)
+      .values({ ...record, email })
+      .onConflictDoUpdate({ target: paPeople.email, set: updatable })
+      .returning();
+    return row as PersonRecord;
+  }
+  async listPeople() {
+    const rows = await this.db.select().from(paPeople).orderBy(paPeople.email);
+    return rows as PersonRecord[];
+  }
+  async setRouteOverride(record: RouteOverrideRecord) {
+    const { engagementId: _id, ...updatable } = record;
+    await this.db.insert(paRouteOverrides).values(record).onConflictDoUpdate({
+      target: paRouteOverrides.engagementId,
+      set: updatable,
+    });
+  }
+  async clearRouteOverride(engagementId: string) {
+    await this.db
+      .delete(paRouteOverrides)
+      .where(eq(paRouteOverrides.engagementId, engagementId));
+  }
+  async getRouteOverride(engagementId: string) {
+    const [row] = await this.db
+      .select()
+      .from(paRouteOverrides)
+      .where(eq(paRouteOverrides.engagementId, engagementId))
+      .limit(1);
+    return (row as RouteOverrideRecord | undefined) ?? null;
+  }
+  async listRouteOverrides() {
+    const rows = await this.db.select().from(paRouteOverrides);
+    return rows as RouteOverrideRecord[];
   }
 
   async insertLeadBrief(record: LeadBriefRecord) {

@@ -115,6 +115,25 @@ export interface TriageView {
   action: string;
 }
 
+/** After triage, who takes the meeting (D66). */
+export interface LeadRouteView {
+  route: string;
+  label: string;
+  /** What the email does on this route. */
+  email: string;
+  reason: string;
+  source: "playbook" | "override" | "crm";
+  meetingWith: {
+    email: string;
+    name: string | null;
+    role: "ae" | "pa";
+    link: string | null;
+  } | null;
+  gaps: string[];
+  /** Whether the PA can change it on this lead. */
+  canOverride: boolean;
+}
+
 export type DraftStatus = "ready" | "needs_edit" | "waiting" | "not_needed";
 
 export interface DraftSummary {
@@ -161,6 +180,7 @@ export interface BoardRow {
   flagged: boolean;
   submittedAt: string;
   triage: TriageView;
+  leadRoute: LeadRouteView | null;
   draft: DraftSummary;
   sla: SlaView;
   decision: DecisionView | null;
@@ -302,6 +322,7 @@ export interface EngagementDetail {
     notes: string[];
   } | null;
   triage: TriageView;
+  leadRoute: LeadRouteView | null;
   draft: DraftView;
   sla: SlaView;
   decision: DecisionView | null;

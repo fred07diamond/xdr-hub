@@ -91,6 +91,20 @@ export const EVALUATORS: Record<RuleId, Evaluator> = {
     ],
     summary: "Routing steps in order; the first that yields an owner wins",
   },
+  "rule.routing.by_class": {
+    paramSchema: ruleParamSchemas["rule.routing.by_class"],
+    reads: [
+      "hq_content",
+      "hq_code",
+      "standard_content",
+      "standard_code",
+      "content_price_check",
+      "agency",
+    ],
+    crmFields: ["company.owner", "deal.owner"],
+    summary:
+      "After triage, which class goes to the AE, which the PA takes, and which qualifies first",
+  },
   "rule.routing.sal_stale_days": {
     paramSchema: ruleParamSchemas["rule.routing.sal_stale_days"],
     reads: ["days"],

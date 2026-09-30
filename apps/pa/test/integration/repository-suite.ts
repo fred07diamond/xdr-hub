@@ -323,6 +323,60 @@ export function defineRepositorySuite(dialect: "sqlite" | "postgres") {
       ]);
     });
 
+    it("keeps people and route overrides (D66), last write wins", async () => {
+      const at = "2026-09-30T12:00:00.000Z";
+      await m.repo.upsertPerson({
+        email: "PA@Example.com",
+        displayName: "Pat",
+        role: "pa",
+        meetingLink: "https://meetings.example.com/pat",
+        podAeEmail: "ae@example.com",
+        updatedBy: "someone@example.com",
+        createdAt: at,
+        updatedAt: at,
+      });
+      await m.repo.upsertPerson({
+        email: "pa@example.com",
+        displayName: "Pat",
+        role: "pa",
+        meetingLink: "https://meetings.example.com/pat-2",
+        podAeEmail: null,
+        updatedBy: "someone@example.com",
+        createdAt: "2026-10-01T00:00:00.000Z",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      });
+      const people = await m.repo.listPeople();
+      expect(people).toHaveLength(1);
+      expect(people[0]).toMatchObject({
+        email: "pa@example.com",
+        meetingLink: "https://meetings.example.com/pat-2",
+        podAeEmail: null,
+        createdAt: at,
+      });
+
+      const [engagement] = await m.repo.listEngagements();
+      await m.repo.setRouteOverride({
+        engagementId: engagement.id,
+        route: "pa_meeting",
+        note: null,
+        setBy: "someone@example.com",
+        setAt: at,
+      });
+      await m.repo.setRouteOverride({
+        engagementId: engagement.id,
+        route: "route_to_ae",
+        note: "enterprise after all",
+        setBy: "someone@example.com",
+        setAt: at,
+      });
+      expect((await m.repo.getRouteOverride(engagement.id))?.route).toBe(
+        "route_to_ae",
+      );
+      expect(await m.repo.listRouteOverrides()).toHaveLength(1);
+      await m.repo.clearRouteOverride(engagement.id);
+      expect(await m.repo.getRouteOverride(engagement.id)).toBeNull();
+    });
+
     it("fails loudly on a corrupt JSON column instead of passing a string on", async () => {
       const [engagement] = await m.repo.listEngagements();
       await m.exec.execute({

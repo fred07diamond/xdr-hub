@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 
 import { SalesCycle } from "../../app/components/pa/clock.js";
 import { BoardTable } from "../../app/components/pa/inbound-board.js";
-import { DraftCard, TriageCard } from "../../app/components/pa/triage.js";
+import {
+  DraftCard,
+  LeadRouteBlock,
+  TriageCard,
+} from "../../app/components/pa/triage.js";
 import { buildDemoData } from "../../server/core/demo/index.js";
 
 describe("triage UI", () => {
@@ -68,5 +72,35 @@ describe("triage UI", () => {
     expect(html.indexOf("How it was classified")).toBeLessThan(
       html.indexOf("Drafted reply"),
     );
+  });
+
+  it("shows the route: who takes the meeting and the link, or what is missing", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <LeadRouteBlock
+          value={{
+            route: "route_to_ae",
+            label: "Route to the AE",
+            email: "Include the AE's meeting link as the ask.",
+            reason: "From the lead's class and the playbook's routing rule.",
+            source: "playbook",
+            meetingWith: {
+              email: "ae@example.com",
+              name: "Alex",
+              role: "ae",
+              link: null,
+            },
+            gaps: ["No meeting link for Alex. Add it on the Team page."],
+            canOverride: true,
+          }}
+          onChange={() => {}}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain("Route to the AE");
+    expect(html).toContain("with Alex (AE)");
+    expect(html).toContain("Playbook: Route to the AE");
+    expect(html).toContain("PA takes the call");
+    expect(html).toContain('href="/team"');
   });
 });

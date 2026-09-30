@@ -415,7 +415,7 @@ function DecisionPanels({ detail }: { detail: EngagementDetail }) {
           </p>
         )}
       </Panel>
-      <Panel title="Route">
+      <Panel title="Ownership">
         {detail.route ? (
           <div className="space-y-4">
             <div>
@@ -436,7 +436,7 @@ function DecisionPanels({ detail }: { detail: EngagementDetail }) {
             <OpenItems items={detail.route.openItems} />
           </div>
         ) : (
-          <p className="text-[13px] text-muted-foreground">Not routed yet.</p>
+          <p className="text-[13px] text-muted-foreground">No owner yet.</p>
         )}
       </Panel>
     </>
@@ -476,6 +476,7 @@ export default function EngagementRoute() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const decide = useActionMutation("decide-lead");
   const refresh = useActionMutation("refresh-lead");
+  const setRoute = useActionMutation("set-lead-route");
   const history = useContactHistory(
     id,
     !demo && Boolean(engagement.data?.lead.crmUrl),
@@ -753,6 +754,28 @@ export default function EngagementRoute() {
             <TriageCard
               triage={detail.triage}
               contactSalesClass={detail.contactSalesClass}
+              leadRoute={detail.leadRoute}
+              onRouteChange={
+                !canDecide
+                  ? undefined
+                  : (next) =>
+                      setRoute.mutate(
+                        { engagementId: detail.id, route: next as never },
+                        {
+                          onSuccess: () => {
+                            toast.success(
+                              next
+                                ? "Route changed. The draft is being rewritten."
+                                : "Back to the playbook's route. The draft is being rewritten.",
+                            );
+                            void engagement.refetch();
+                          },
+                          onError: (error) =>
+                            toast.error(actionErrorMessage(error)),
+                        },
+                      )
+              }
+              routeBusy={setRoute.isPending}
               asked={{
                 text:
                   detail.assessment?.explicitQuestion ??
