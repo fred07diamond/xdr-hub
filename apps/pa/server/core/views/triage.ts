@@ -51,6 +51,8 @@ export function triageFor(input: {
   ownerName: string | null;
   ownerIsMe: boolean;
   draftStatus: DraftSummary["status"];
+  /** A live lead whose message the agent has not read yet. */
+  awaitingAgent?: boolean;
 }): TriageView {
   const verdictLabel = input.verdict
     ? (VERDICT_LABELS[input.verdict as Verdict] ?? input.verdict)
@@ -58,6 +60,15 @@ export function triageFor(input: {
   const owner = input.ownerName;
   const reason = input.routeReason ? sentence(input.routeReason) : "";
 
+  if (!input.precheckOutcome && input.awaitingAgent) {
+    return {
+      kind: "pending",
+      label: "Waiting for the agent",
+      verdictLabel,
+      why: "The agent reads the message first. Then PA classifies the lead and drafts the reply.",
+      action: "Nothing to do yet. The draft follows on its own.",
+    };
+  }
   if (!input.precheckOutcome) {
     return {
       kind: "pending",
@@ -199,6 +210,13 @@ export function draftView(input: {
     problemCount: 0,
   };
   const draft = input.draft;
+  if (!draft && !input.precheckOutcome) {
+    return {
+      ...empty,
+      status: "waiting",
+      note: "The draft comes after the agent has read the message and PA has classified the lead.",
+    };
+  }
   if (!draft) {
     const plan = draftPlan({
       state: input.engagement.state,

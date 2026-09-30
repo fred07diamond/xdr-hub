@@ -186,6 +186,13 @@ async function releaseFor(
   return stored ? playbookReleaseSchema.parse(stored.content) : current;
 }
 
+function crmUrlOf(inbox: { payload: Record<string, unknown> } | null) {
+  const url = inbox?.payload.crm_url;
+  return typeof url === "string" && url.startsWith("https://app.hubspot.com/")
+    ? url
+    : null;
+}
+
 async function buildRow(
   repo: PaRepository,
   engagement: EngagementRecord,
@@ -193,7 +200,7 @@ async function buildRow(
   viewer: Viewer,
   release: PlaybookRelease,
   now: Date,
-): Promise<BoardRow> {
+): Promise<BoardRow & { hidden: boolean }> {
   const contact = await repo.getContact(engagement.contactId);
   const submissions = await repo.listSubmissionsForEngagement(engagement.id);
   const latest = submissions[submissions.length - 1];
@@ -227,6 +234,7 @@ async function buildRow(
     (precheckReceipt?.ruleResults.outcome as string | undefined) ?? null;
   const drafts = await repo.listDrafts(engagement.id);
   const leadName = contact?.name ?? latest?.name ?? null;
+  const inbox = latest ? await repo.getInbox(latest.inboxId) : null;
   const ownerDisplay = ownerView(owner, viewer);
   const draft = draftView({
     engagement,
@@ -247,6 +255,7 @@ async function buildRow(
     ownerName: owner?.displayName ?? null,
     ownerIsMe: Boolean(ownerDisplay?.isMe),
     draftStatus: draft.status,
+    awaitingAgent: !assessment && inbox?.source === "hubspot",
   });
   const submittedAt = latest?.submittedAt ?? engagement.createdAt;
   const clock = clockView({
@@ -264,9 +273,11 @@ async function buildRow(
     sla: slaView({ engagement, clock, events, submittedAt, now }),
     state: engagement.state,
     stateLabel: stateLabel(engagement.state),
+    hidden: inbox?.status === "skipped",
     lead: {
       name: leadName,
       email,
+      crmUrl: crmUrlOf(inbox),
       company: latest?.companyName ?? null,
       domain,
       personalDomain: engagement.accountId === null,
@@ -340,16 +351,16 @@ export async function buildInboundBoard(input: {
   const engagements = await input.repo.listEngagements();
   const rows: BoardRow[] = [];
   for (const engagement of engagements) {
-    rows.push(
-      await buildRow(
-        input.repo,
-        engagement,
-        profiles,
-        input.viewer,
-        input.release,
-        input.now,
-      ),
+    const { hidden, ...row } = await buildRow(
+      input.repo,
+      engagement,
+      profiles,
+      input.viewer,
+      input.release,
+      input.now,
     );
+    // Rows the intake found were not Contact Sales stay out of the board.
+    if (!hidden) rows.push(row);
   }
   const counts: Record<BoardTab, number> = {
     mine: rows.filter((row) => row.owner?.isMe).length,
@@ -586,6 +597,7 @@ export async function buildEngagementDetail(input: {
 
   const drafts = await repo.listDrafts(engagement.id);
   const ownerDisplay = ownerView(owner, input.viewer);
+  const inbox = latest ? await repo.getInbox(latest.inboxId) : null;
   const draft = draftView({
     engagement,
     precheckOutcome: precheck?.outcome ?? null,
@@ -605,6 +617,7 @@ export async function buildEngagementDetail(input: {
     ownerName: owner?.displayName ?? null,
     ownerIsMe: Boolean(ownerDisplay?.isMe),
     draftStatus: draft.status,
+    awaitingAgent: !assessment && inbox?.source === "hubspot",
   });
 
   const submittedAt = latest?.submittedAt ?? engagement.createdAt;
@@ -644,6 +657,7 @@ export async function buildEngagementDetail(input: {
     lead: {
       name: contact?.name ?? latest?.name ?? null,
       email,
+      crmUrl: crmUrlOf(inbox),
       company: latest?.companyName ?? null,
       domain: email.slice(email.lastIndexOf("@") + 1),
       personalDomain: engagement.accountId === null,

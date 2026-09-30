@@ -1004,3 +1004,22 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - **Still judgment, not code:** the class itself, TCQ, which questions to
   ask, and customer evidence. The skill carries those; evals should cover
   them next.
+
+## D56. Only Contact Sales form submissions come in, each with its HubSpot link
+
+- **Status:** Decided by Fred, 2026-09-30: "I currently only wanna pull
+  Contact Sales (defined as someone who submitted the form)."
+- **Fact (read-only, 2026-09-30):** `most_recent_contact_sales_date` is also
+  set for other forms, such as a livestream registration and a meetings
+  link. So the date only narrows the search.
+- **Choice:** a contact is Contact Sales when `form_type` is "Contact Sales"
+  (the Sales Demo form) or "Thank You Page Questionnaire" (which only follows
+  it), or the recent conversion is the Sales Demo form. Other matches are
+  left out, and a row pulled before this rule is hidden (inbox `skipped`,
+  with the reason).
+- The questionnaire answers come in with the lead: business driver, how
+  they will measure success, budget status, and who makes the final call.
+- Every live lead links to its HubSpot record (portal id from
+  `/account-info/v3/details`), on the board and the lead page; rows pulled
+  earlier get the link on the next pull.
+- A live lead the agent has not read yet says "Waiting for the agent".

@@ -11,6 +11,7 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
+  IconExternalLink,
   IconFileOff,
   IconMessageCircleQuestion,
   IconReceipt,
@@ -131,6 +132,14 @@ function RecordHeader({ detail }: { detail: EngagementDetail }) {
           </p>
         </div>
       </div>
+      {detail.lead.crmUrl ? (
+        <Button asChild size="sm" variant="outline">
+          <a href={detail.lead.crmUrl} target="_blank" rel="noreferrer">
+            <IconExternalLink className="size-4" aria-hidden="true" />
+            Open in HubSpot
+          </a>
+        </Button>
+      ) : null}
       <div>
         <p className="text-[11px] text-muted-foreground">Owner</p>
         <div className="mt-0.5">

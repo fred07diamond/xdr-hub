@@ -9,6 +9,8 @@ import {
 } from "../../server/core/crm/hubspot-adapter.js";
 import {
   enqueueSubmissions,
+  excludeSubmissions,
+  isContactSales,
   searchContactSales,
   toSubmission,
 } from "../../server/core/intake/hubspot.js";
@@ -31,6 +33,8 @@ const contactSales = (id: string, email: string, when: string) => ({
     company_fit_score___breeze: "7",
     most_recent_contact_sales_date: String(Date.parse(when.slice(0, 10))),
     most_recently_contact_sales_date__date_time_: when,
+    form_type: "Contact Sales",
+    recent_conversion_event_name: "Contact Sales: Sales Demo Form",
   },
 });
 
@@ -101,7 +105,7 @@ describe("HubSpot intake", () => {
       since: new Date("2026-09-28T00:00:00.000Z"),
       limit: 50,
     });
-    expect(found.map((item) => item.contactId)).toEqual(["c1"]);
+    expect(found.submissions.map((item) => item.contactId)).toEqual(["c1"]);
   });
 
   it("is idempotent: a re-poll adds nothing", async () => {
@@ -113,6 +117,66 @@ describe("HubSpot intake", () => {
     )!;
     expect(await enqueueSubmissions(repo, [submission], deps)).toHaveLength(1);
     expect(await enqueueSubmissions(repo, [submission], deps)).toHaveLength(0);
+  });
+});
+
+describe("Contact Sales only", () => {
+  it("keeps the Sales Demo form and its thank-you questionnaire, drops other forms", () => {
+    expect(isContactSales({ form_type: "Contact Sales" }).ok).toBe(true);
+    expect(
+      isContactSales({ form_type: "Thank You Page Questionnaire" }).ok,
+    ).toBe(true);
+    expect(
+      isContactSales({
+        form_type: "Other",
+        recent_conversion_event_name: "Request a trial: Sales Demo Form",
+      }).ok,
+    ).toBe(true);
+    const livestream = isContactSales({
+      form_type: "Livestream",
+      recent_conversion_event_name: "Livestream signup",
+    });
+    expect(livestream.ok).toBe(false);
+    expect(livestream.reason).toMatch(/Livestream signup/);
+  });
+
+  it("excludes a non Contact Sales match and hides a row already pulled", async () => {
+    const repo = new MemoryRepository();
+    const clock = fixedClock();
+    const livestream = {
+      ...contactSales("c9", "x@example.com", "2026-09-30T12:00:00.000Z"),
+    };
+    livestream.properties = {
+      ...livestream.properties,
+      form_type: "Livestream",
+      recent_conversion_event_name: "Livestream signup",
+    };
+    await enqueueSubmissions(repo, [toSubmission(livestream)!], {
+      now: clock.now,
+      newId: idFactory(clock),
+    });
+    const { fetch } = fakeHubSpot([[livestream]]);
+    const found = await searchContactSales(fetch, {
+      since: new Date("2026-09-28T00:00:00.000Z"),
+      limit: 50,
+    });
+    expect(found.submissions).toEqual([]);
+    expect(await excludeSubmissions(repo, found.excluded, clock.now)).toBe(1);
+    const row = await repo.getInboxBySource(
+      "hubspot",
+      found.excluded[0].externalId,
+    );
+    expect(row?.status).toBe("skipped");
+  });
+
+  it("links to the HubSpot record when the portal is known", () => {
+    const submission = toSubmission(
+      contactSales("c1", "sam@example.com", "2026-09-30T15:04:00.000Z"),
+      "12345",
+    )!;
+    expect(submission.payload.crm_url).toBe(
+      "https://app.hubspot.com/contacts/12345/record/0-1/c1",
+    );
   });
 });
 

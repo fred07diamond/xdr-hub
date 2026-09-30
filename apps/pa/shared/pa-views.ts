@@ -75,6 +75,8 @@ export interface SalesStageView {
 export interface LeadView {
   name: string | null;
   email: string;
+  /** The contact's HubSpot record, for live leads. */
+  crmUrl: string | null;
   company: string | null;
   domain: string;
   personalDomain: boolean;

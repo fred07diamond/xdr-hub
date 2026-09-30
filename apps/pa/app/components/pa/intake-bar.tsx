@@ -79,10 +79,22 @@ export function IntakeBar({ onPulled }: { onPulled: () => void }) {
                   const result = raw as {
                     found: number;
                     new: number;
+                    notContactSales: number;
                     agentWork: number;
+                    agent: string;
                   };
                   toast.success(
-                    `${result.new} new of ${result.found} recent Contact Sales submissions.${result.agentWork > 0 ? ` ${result.agentWork} waiting for the agent to read and draft.` : ""}`,
+                    [
+                      `${result.new} new of ${result.found} recent Contact Sales submissions.`,
+                      result.notContactSales > 0
+                        ? `${result.notContactSales} other form ${result.notContactSales === 1 ? "submission" : "submissions"} left out.`
+                        : "",
+                      result.agentWork > 0
+                        ? `${result.agentWork} waiting for the agent${result.agent === "not_enabled" ? "; turn on the inbound agent to draft them" : ""}.`
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
                   );
                   void status.refetch();
                   onPulled();

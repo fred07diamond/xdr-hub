@@ -13,7 +13,9 @@ import {
 import { draftPlan } from "../core/drafting/index.js";
 import {
   enqueueSubmissions,
+  excludeSubmissions,
   HUBSPOT_SOURCE,
+  portalIdOf,
   searchContactSales,
 } from "../core/intake/hubspot.js";
 import { runPipeline } from "../core/pipeline/runner.js";
@@ -103,14 +105,17 @@ export async function pullContactSales(input: {
 }) {
   const deps = await liveDeps();
   const since = new Date(now().getTime() - input.lookbackHours * 3_600_000);
-  const submissions = await searchContactSales(hubspotFetch, {
+  const portalId = await portalIdOf(hubspotFetch);
+  const { submissions, excluded } = await searchContactSales(hubspotFetch, {
     since,
     limit: input.limit,
+    portalId,
   });
   const created = await enqueueSubmissions(deps.repo, submissions, {
     now,
     newId,
   });
+  const hidden = await excludeSubmissions(deps.repo, excluded, now);
   const run = await processPending(deps);
   await deps.repo.appendEvent({
     id: newId(),
@@ -121,6 +126,8 @@ export async function pullContactSales(input: {
     payload: {
       found: submissions.length,
       new: created.length,
+      not_contact_sales: excluded.length,
+      hidden,
       processed: run.processed,
       failed: run.failed,
       remaining: run.remaining,
@@ -132,6 +139,8 @@ export async function pullContactSales(input: {
   return {
     found: submissions.length,
     new: created.length,
+    notContactSales: excluded.length,
+    hidden,
     ...run,
   };
 }

@@ -1,6 +1,7 @@
 import type { BoardResult, BoardRow, BoardTab } from "@shared/pa-views";
 import {
   IconCheck,
+  IconExternalLink,
   IconFilter,
   IconMessageCircleQuestion,
   IconShieldExclamation,
@@ -307,8 +308,20 @@ export function BoardTable({
                 <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
                   {leadSubline(row)}
                 </p>
-                <p className="mt-0.5 text-[11.5px] tabular-nums text-muted-foreground">
+                <p className="mt-0.5 flex items-center gap-2 text-[11.5px] tabular-nums text-muted-foreground">
                   {formatRelative(row.submittedAt, now)}
+                  {row.lead.crmUrl ? (
+                    <a
+                      href={row.lead.crmUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={stopRowClick}
+                      className="inline-flex items-center gap-0.5 rounded-[3px] text-foreground/80 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      HubSpot
+                      <IconExternalLink className="size-3" aria-hidden="true" />
+                    </a>
+                  ) : null}
                 </p>
               </td>
               <td className="border-b border-border px-2.5 py-3">
