@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-30 (playbook page)
+
+- The Playbook shows one section at a time, picked from a section list with
+  block counts and a dot where something needs attention.
+- Blocks read as a plain list: a name (for example "Highly Qualified
+  Content") and a short preview. Ids, owning team, and enforcement moved
+  into the block's editor; cards only flag what needs attention.
+- The always-open block palette is gone; "Add block" on a section offers
+  only the kinds that belong there. Drag to reorder still works.
+- Release and role details moved into the menu next to the draft button.
+
 ## 2026-09-30 (messaging in the playbook)
 
 - The drafting rules now live in the Playbook's Messaging section: the TCQ

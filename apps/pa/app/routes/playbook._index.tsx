@@ -9,16 +9,12 @@ import {
 // teams review and publish.
 import {
   DndContext,
-  DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  closestCorners,
-  useDraggable,
-  useDroppable,
+  closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -31,12 +27,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { blockType, newEntryId, type SectionId } from "@shared/playbook-blocks";
 import { TEAM_LABELS, type PlaybookRole } from "@shared/playbook-roles";
 import {
+  IconAlertTriangle,
   IconArrowsExchange,
   IconArrowsSort,
   IconBook,
   IconBulb,
+  IconChevronRight,
   IconClock,
   IconDatabase,
+  IconDots,
   IconFilter,
   IconGauge,
   IconGripVertical,
@@ -51,10 +50,9 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-import { ReleaseChip } from "@/components/pa/badges";
 import {
   BlockDataEditor,
   countryLabel,
@@ -68,6 +66,14 @@ import {
 } from "@/components/pa/playbook";
 import { ErrorState } from "@/components/pa/states";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Sheet,
   SheetContent,
@@ -84,6 +90,7 @@ export function meta() {
 
 interface Block {
   target: string;
+  title: string;
   kind: "entry" | "config";
   block: string | null;
   blockLabel: string;
@@ -140,8 +147,10 @@ const ICONS: Record<string, Icon> = {
   IconArrowsSort,
   IconBook,
   IconBulb,
+  IconChevronRight,
   IconClock,
   IconDatabase,
+  IconDots,
   IconFilter,
   IconGauge,
   IconLayoutBoard,
@@ -196,71 +205,62 @@ function summary(block: Block): ReactNode {
         : "Salesforce";
     case "crm_mapping":
       return "Open to map CRM properties";
-    default:
-      return block.body ? block.body.slice(0, 140) : null;
+    default: {
+      if (!block.body) return null;
+      // Message rules open with their own name; the card already shows it.
+      const lines = block.body.split("\n").filter((line) => line.trim());
+      const first = lines[0]?.trim().replace(/\.$/, "").toLowerCase();
+      const rest =
+        first && block.title.toLowerCase().startsWith(first)
+          ? lines.slice(1)
+          : lines;
+      return rest.join(" ").slice(0, 220);
+    }
   }
 }
 
-function PaletteTile({
-  item,
-  onAdd,
-}: {
-  item: PaletteItem;
-  onAdd: (item: PaletteItem) => void;
-}) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `palette:${item.type}`,
-    data: { palette: item.type },
-  });
+function Attention({ block }: { block: Block }) {
+  const notes = [
+    block.enforcement === "not_enforced" ? "Not enforced yet" : null,
+    block.pending.length > 0 ? `${block.pending.length} to confirm` : null,
+    block.openFindings.length > 0
+      ? block.openFindings.length === 1
+        ? block.openFindings[0]
+        : `${block.openFindings.length} issues`
+      : null,
+  ].filter(Boolean);
+  if (notes.length === 0) return null;
   return (
-    <li
-      ref={setNodeRef}
-      className={cn(
-        "flex items-start gap-2 rounded-md border border-border bg-card p-2 shadow-xs",
-        isDragging && "opacity-50",
-      )}
-    >
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        aria-label={`Drag ${item.label} into a section`}
-        className="mt-0.5 cursor-grab text-muted-foreground hover:text-foreground"
-      >
-        <BlockIcon name={item.icon} />
-      </button>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-foreground">
-          {item.label}
-        </div>
-        <p className="line-clamp-2 text-[12px] text-muted-foreground">
-          {item.description}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={() => onAdd(item)}
-        aria-label={`Add ${item.label}`}
-        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <IconPlus className="size-3.5" aria-hidden="true" />
-      </button>
-    </li>
+    <p className="mt-1 flex items-start gap-1 text-[12px] text-amber-700 dark:text-amber-400">
+      <IconAlertTriangle
+        className="mt-0.5 size-3.5 shrink-0"
+        aria-hidden="true"
+      />
+      <span>{notes.join(", ")}</span>
+    </p>
   );
 }
 
+const needsAttention = (block: Block) =>
+  block.enforcement === "not_enforced" ||
+  block.pending.length > 0 ||
+  block.openFindings.length > 0;
+
 function BlockCard({
   block,
+  sortable: canSort,
   onOpen,
 }: {
   block: Block;
+  sortable: boolean;
   onOpen: (block: Block) => void;
 }) {
   const sortable = useSortable({
     id: block.target,
     data: { section: block.section },
-    disabled: block.kind === "config",
+    disabled: !canSort || block.kind === "config",
   });
+  const preview = summary(block);
   return (
     <li
       ref={sortable.setNodeRef}
@@ -269,88 +269,45 @@ function BlockCard({
         transition: sortable.transition,
       }}
       className={cn(
-        "group flex items-start gap-2 rounded-md border border-border bg-card p-3 shadow-xs",
-        sortable.isDragging && "opacity-60",
+        "group relative flex items-start gap-1 border-b border-border last:border-b-0",
+        sortable.isDragging && "z-10 bg-card opacity-80 shadow-md",
       )}
     >
-      {block.kind === "entry" ? (
+      {canSort && block.kind === "entry" ? (
         <button
           type="button"
           {...sortable.attributes}
           {...sortable.listeners}
-          aria-label={`Drag ${block.target} to reorder`}
-          className="mt-0.5 cursor-grab text-muted-foreground opacity-60 group-hover:opacity-100"
+          aria-label={`Drag ${block.title} to reorder`}
+          className="mt-3.5 ml-1 cursor-grab rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
         >
           <IconGripVertical className="size-4" aria-hidden="true" />
         </button>
       ) : (
-        <span className="w-4" aria-hidden="true" />
+        <span className="ml-1 w-4 shrink-0" aria-hidden="true" />
       )}
       <button
         type="button"
         onClick={() => onOpen(block)}
-        className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-md px-2 py-3 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[13px] font-medium text-foreground">
-            {block.blockLabel}
-          </span>
-          <span className="font-mono text-[11.5px] text-muted-foreground">
-            {block.target}
-          </span>
-          <EnforcementChip enforcement={block.enforcement} />
-          <PendingChip count={block.pending.length} />
-          <TeamChip team={block.ownerTeam} />
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] font-medium text-foreground">
+            {block.title}
+          </div>
+          {preview ? (
+            <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground">
+              {preview}
+            </p>
+          ) : null}
+          <Attention block={block} />
         </div>
-        {summary(block) ? (
-          <p className="mt-1 line-clamp-2 text-[12.5px] text-muted-foreground">
-            {summary(block)}
-          </p>
-        ) : null}
-        {block.openFindings.length > 0 ? (
-          <p className="mt-1 text-[12px] text-amber-700 dark:text-amber-400">
-            {block.openFindings[0]}
-            {block.openFindings.length > 1
-              ? ` and ${block.openFindings.length - 1} more`
-              : ""}
-          </p>
-        ) : null}
+        <IconChevronRight
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground/60 group-hover:text-muted-foreground"
+          aria-hidden="true"
+        />
       </button>
     </li>
-  );
-}
-
-function SectionDrop({
-  section,
-  children,
-  active,
-}: {
-  section: { id: string; label: string; hint: string };
-  children: ReactNode;
-  active: boolean;
-}) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `section:${section.id}`,
-    data: { section: section.id },
-  });
-  return (
-    <section
-      ref={setNodeRef}
-      aria-label={section.label}
-      className={cn(
-        "rounded-lg border border-border bg-muted/20 p-3 transition-colors",
-        active && "border-dashed",
-        isOver && "border-foreground/40 bg-muted/60",
-      )}
-    >
-      <header className="mb-2">
-        <h2 className="text-[13px] font-semibold text-foreground">
-          {section.label}
-        </h2>
-        <p className="text-[12px] text-muted-foreground">{section.hint}</p>
-      </header>
-      {children}
-    </section>
   );
 }
 
@@ -362,9 +319,9 @@ export default function PlaybookRoute() {
   const query = useActionQuery("list-playbook", {});
   const propose = useActionMutation("propose-playbook-change");
   const update = useActionMutation("update-playbook-change");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [addFor, setAddFor] = useState<PaletteItem | null>(null);
+  const [adding, setAdding] = useState(false);
   const data = query.data as PlaybookView | undefined;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -375,6 +332,11 @@ export default function PlaybookRoute() {
   const canEdit = Boolean(data && (data.viewer.isAppOwner || data.viewer.role));
   const staging = propose.isPending || update.isPending;
 
+  const sections = data?.sections ?? [];
+  const requested = searchParams.get("section");
+  const current =
+    sections.find((section) => section.id === requested) ?? sections[0];
+
   const blocksById = useMemo(
     () =>
       new Map(
@@ -384,6 +346,12 @@ export default function PlaybookRoute() {
       ),
     [data],
   );
+
+  function select(id: string) {
+    const params = new URLSearchParams(searchParams);
+    params.set("section", id);
+    setSearchParams(params, { replace: true });
+  }
 
   /** Stage items into the viewer's open draft, or start one. */
   function stage(items: ItemInput[], message: string) {
@@ -407,38 +375,21 @@ export default function PlaybookRoute() {
       );
   }
 
-  function startNew(type: PaletteItem, section: SectionId) {
-    if (!canEdit) return toast.error("You need a playbook role to edit");
-    if (
-      type.singleton &&
-      data?.sections.some((s) =>
-        s.blocks.some((block) => block.block === type.type),
-      )
-    ) {
-      return toast.error(
-        `The playbook already has a ${type.label}. Open it to edit.`,
-      );
-    }
-    if (!type.sections.includes(section))
-      return toast.error(`A ${type.label} does not belong in that section`);
-    setEditing({ mode: "new", type, section });
+  /** Block types that can still be added to a section. */
+  function addable(sectionId: string) {
+    return (data?.palette ?? []).filter(
+      (type) =>
+        type.sections.includes(sectionId) &&
+        !(
+          type.singleton &&
+          sections.some((s) => s.blocks.some((b) => b.block === type.type))
+        ),
+    );
   }
 
   function onDragEnd(event: DragEndEvent) {
-    setDragging(null);
     const over = event.over;
     if (!over || !data) return;
-    const overSection =
-      (over.data.current?.section as SectionId | undefined) ?? undefined;
-    const paletteType = event.active.data.current?.palette as
-      | string
-      | undefined;
-    if (paletteType) {
-      const type = data.palette.find((item) => item.type === paletteType);
-      if (type && overSection) startNew(type, overSection);
-      return;
-    }
-    // Reordering blocks inside a section.
     const moved = blocksById.get(String(event.active.id));
     const target = blocksById.get(String(over.id));
     if (
@@ -464,18 +415,18 @@ export default function PlaybookRoute() {
         op: "update" as const,
         after: { ...block.raw, position: index },
       }));
-    if (items.length) stage(items, "Order staged in your draft");
+    if (items.length) stage(items, "New order staged in your draft");
   }
 
   if (query.isPending)
     return (
-      <div className="mx-auto max-w-[1400px] px-4 py-6 text-[13px] text-muted-foreground">
-        Loading the playbook...
+      <div className="mx-auto w-full max-w-[1100px] px-3 py-4 sm:px-4 md:px-6">
+        <div className="h-72 animate-pulse rounded-lg border border-border bg-card" />
       </div>
     );
-  if (!data) {
+  if (!data || !current) {
     return (
-      <div className="mx-auto max-w-[1400px] px-4 py-6">
+      <div className="mx-auto w-full max-w-[1100px] px-3 py-4 sm:px-4 md:px-6">
         <ErrorState
           title="Couldn't load the playbook"
           error={query.error}
@@ -485,19 +436,27 @@ export default function PlaybookRoute() {
     );
   }
 
+  const inReview = data.openChanges.filter(
+    (change) => change.id !== data.myDraft?.id,
+  );
+  const types = addable(current.id);
+  const entryIds = current.blocks
+    .filter((block) => block.kind === "entry")
+    .map((block) => block.target);
+
   return (
-    <div className="mx-auto grid w-full max-w-[1400px] gap-4 px-3 py-4 sm:px-4 md:px-6 md:py-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <ReleaseChip shortId={data.release.shortId} label="active" />
-        <PendingChip count={data.release.pendingConfirmations} />
-        <span className="text-[12.5px] text-muted-foreground">
-          {data.viewer.isAppOwner
-            ? "You are the app owner"
-            : data.viewer.role
-              ? `You are on ${TEAM_LABELS[data.viewer.role]}`
-              : "You can read the playbook; ask the app owner for a role to edit it"}
-        </span>
-        <div className="ml-auto flex flex-wrap gap-2">
+    <div className="mx-auto grid w-full max-w-[1100px] gap-5 px-3 py-4 sm:px-4 md:px-6 md:py-5">
+      <header className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[18px] font-semibold text-foreground">
+            Playbook
+          </h1>
+          <p className="mt-0.5 max-w-[60ch] text-[13px] text-muted-foreground">
+            How PA handles Contact Sales leads. Edits collect in your draft, and
+            the owning team approves them before they take effect.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           {data.myDraft ? (
             <Button asChild size="sm">
               <Link to={`/playbook/changes/${data.myDraft.id}`}>
@@ -506,115 +465,161 @@ export default function PlaybookRoute() {
               </Link>
             </Button>
           ) : null}
-          <Button asChild variant="outline" size="sm">
-            <Link to="/team">
-              <IconUsers className="size-4" aria-hidden="true" />
-              Playbook roles
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      {data.openChanges.filter((change) => change.id !== data.myDraft?.id)
-        .length > 0 ? (
-        <ul className="flex flex-wrap gap-2 text-[12.5px]">
-          {data.openChanges
-            .filter((change) => change.id !== data.myDraft?.id)
-            .map((change) => (
-              <li key={change.id}>
-                <Link
-                  to={`/playbook/changes/${change.id}`}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 hover:bg-muted"
-                >
-                  <ChangeStatus status={change.status} />
-                  {change.title}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" aria-label="More">
+                <IconDots className="size-4" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel className="text-[12px] font-normal text-muted-foreground">
+                Release {data.release.shortId}
+                {data.release.pendingConfirmations > 0
+                  ? `, ${data.release.pendingConfirmations} values to confirm`
+                  : ""}
+                <br />
+                {data.viewer.isAppOwner
+                  ? "You are the app owner"
+                  : data.viewer.role
+                    ? `You are on ${TEAM_LABELS[data.viewer.role]}`
+                    : "Read only. Ask the app owner for a role to edit."}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to="/team">
+                  <IconUsers className="size-4" aria-hidden="true" />
+                  Playbook roles
                 </Link>
-              </li>
-            ))}
-        </ul>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      {inReview.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-[12.5px]">
+          <span className="text-muted-foreground">In review</span>
+          {inReview.map((change) => (
+            <Link
+              key={change.id}
+              to={`/playbook/changes/${change.id}`}
+              className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-muted"
+            >
+              {change.title}
+              <ChangeStatus status={change.status} />
+            </Link>
+          ))}
+        </div>
       ) : null}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={(event: DragStartEvent) =>
-          setDragging(String(event.active.id))
-        }
-        onDragCancel={() => setDragging(null)}
-        onDragEnd={onDragEnd}
-      >
-        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside
-            aria-label="Block palette"
-            className="lg:sticky lg:top-4 lg:self-start"
-          >
-            <h2 className="mb-1 text-[13px] font-semibold text-foreground">
-              Blocks
-            </h2>
-            <p className="mb-2 text-[12px] text-muted-foreground">
-              Drag a block into a section, or use the plus.
-            </p>
-            <ul className="grid gap-1.5">
-              {data.palette.map((item) => (
-                <PaletteTile key={item.type} item={item} onAdd={setAddFor} />
-              ))}
-            </ul>
-          </aside>
-
-          <div className="grid gap-3">
-            {data.sections.map((section) => {
-              const entryIds = section.blocks
-                .filter((block) => block.kind === "entry")
-                .map((block) => block.target);
+      <div className="grid gap-5 md:grid-cols-[13rem_minmax(0,1fr)]">
+        <nav
+          aria-label="Playbook sections"
+          className="md:sticky md:top-4 md:self-start"
+        >
+          <ul className="-mx-1 flex gap-1 overflow-x-auto pb-1 md:mx-0 md:flex-col md:overflow-visible md:pb-0">
+            {sections.map((section) => {
+              const flagged = section.blocks.filter(needsAttention).length;
+              const active = section.id === current.id;
               return (
-                <SectionDrop
-                  key={section.id}
-                  section={section}
-                  active={Boolean(dragging?.startsWith("palette:"))}
-                >
-                  <SortableContext
-                    items={entryIds}
-                    strategy={verticalListSortingStrategy}
+                <li key={section.id} className="shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => select(section.id)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      active
+                        ? "bg-accent font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                    )}
                   >
-                    <ul className="grid gap-2">
-                      {section.blocks.map((block) => (
-                        <BlockCard
-                          key={block.target}
-                          block={block}
-                          onOpen={(item) =>
-                            setEditing({ mode: "edit", block: item })
-                          }
-                        />
-                      ))}
-                      {section.blocks.length === 0 ? (
-                        <li className="rounded-md border border-dashed border-border p-3 text-[12.5px] text-muted-foreground">
-                          Drop a block here.
-                        </li>
-                      ) : null}
-                    </ul>
-                  </SortableContext>
-                </SectionDrop>
+                    <span className="flex-1">{section.label}</span>
+                    {flagged > 0 ? (
+                      <span
+                        className="size-1.5 rounded-full bg-amber-500"
+                        title={`${flagged} need attention`}
+                      />
+                    ) : null}
+                    <span className="tabular-nums text-[12px] text-muted-foreground">
+                      {section.blocks.length}
+                    </span>
+                  </button>
+                </li>
               );
             })}
-          </div>
-        </div>
-        <DragOverlay>
-          {dragging?.startsWith("palette:") ? (
-            <div className="rounded-md border border-border bg-card px-3 py-2 text-[13px] font-medium shadow-lg">
-              {
-                data.palette.find((item) => `palette:${item.type}` === dragging)
-                  ?.label
-              }
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+          </ul>
+        </nav>
 
-      <AddToSection
-        item={addFor}
-        sections={data.sections}
-        onClose={() => setAddFor(null)}
-        onPick={(section) => addFor && startNew(addFor, section)}
+        <section aria-labelledby="section-title" className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <h2
+                id="section-title"
+                className="text-[15px] font-semibold text-foreground"
+              >
+                {current.label}
+              </h2>
+              <p className="text-[12.5px] text-muted-foreground">
+                {current.hint}
+              </p>
+            </div>
+            {canEdit && types.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  types.length === 1
+                    ? setEditing({
+                        mode: "new",
+                        type: types[0],
+                        section: current.id as SectionId,
+                      })
+                    : setAdding(true)
+                }
+              >
+                <IconPlus className="size-4" aria-hidden="true" />
+                Add block
+              </Button>
+            ) : null}
+          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext
+              items={entryIds}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="rounded-lg border border-border bg-card">
+                {current.blocks.map((block) => (
+                  <BlockCard
+                    key={block.target}
+                    block={block}
+                    sortable={canEdit}
+                    onOpen={(item) => setEditing({ mode: "edit", block: item })}
+                  />
+                ))}
+                {current.blocks.length === 0 ? (
+                  <li className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+                    Nothing in {current.label} yet.
+                  </li>
+                ) : null}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        </section>
+      </div>
+
+      <AddBlock
+        open={adding}
+        section={current}
+        types={types}
+        onClose={() => setAdding(false)}
+        onPick={(type) =>
+          setEditing({ mode: "new", type, section: current.id as SectionId })
+        }
       />
       <BlockSheet
         editing={editing}
@@ -631,45 +636,53 @@ export default function PlaybookRoute() {
   );
 }
 
-/** Keyboard and touch alternative to dragging from the palette. */
-function AddToSection({
-  item,
-  sections,
+/** Pick which kind of block to add to the open section. */
+function AddBlock({
+  open,
+  section,
+  types,
   onClose,
   onPick,
 }: {
-  item: PaletteItem | null;
-  sections: PlaybookView["sections"];
+  open: boolean;
+  section: { label: string };
+  types: PaletteItem[];
   onClose: () => void;
-  onPick: (section: SectionId) => void;
+  onPick: (type: PaletteItem) => void;
 }) {
   return (
-    <Sheet open={item !== null} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="right" className="w-full sm:max-w-sm">
         <SheetHeader>
-          <SheetTitle>Add {item?.label}</SheetTitle>
-          <SheetDescription>Choose the section it belongs in.</SheetDescription>
+          <SheetTitle>Add to {section.label}</SheetTitle>
+          <SheetDescription>Choose the kind of block.</SheetDescription>
         </SheetHeader>
         <ul className="grid gap-1.5 px-4">
-          {sections
-            .filter((section) => item?.sections.includes(section.id))
-            .map((section) => (
-              <li key={section.id}>
-                <button
-                  type="button"
-                  className="w-full rounded-md border border-border px-3 py-2 text-left text-[13px] hover:bg-muted"
-                  onClick={() => {
-                    onPick(section.id as SectionId);
-                    onClose();
-                  }}
-                >
-                  <div className="font-medium">{section.label}</div>
-                  <div className="text-[12px] text-muted-foreground">
-                    {section.hint}
-                  </div>
-                </button>
-              </li>
-            ))}
+          {types.map((type) => (
+            <li key={type.type}>
+              <button
+                type="button"
+                className="flex w-full items-start gap-2.5 rounded-md border border-border px-3 py-2.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  onPick(type);
+                  onClose();
+                }}
+              >
+                <BlockIcon
+                  name={type.icon}
+                  className="mt-0.5 text-muted-foreground"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium">
+                    {type.label}
+                  </span>
+                  <span className="block text-[12px] text-muted-foreground">
+                    {type.description}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
         </ul>
       </SheetContent>
     </Sheet>
@@ -746,9 +759,7 @@ function BlockForm({
   );
 
   const title =
-    editing.mode === "new"
-      ? `New ${type?.label ?? "block"}`
-      : `${existing!.blockLabel}: ${existing!.target}`;
+    editing.mode === "new" ? `New ${type?.label ?? "block"}` : existing!.title;
 
   function save() {
     if (!type) return;
@@ -838,6 +849,19 @@ function BlockForm({
           {type ? <BlockIcon name={type.icon} /> : null}
           {title}
         </SheetTitle>
+        {existing ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[12px] text-muted-foreground">
+              {existing.blockLabel}
+            </span>
+            <span className="font-mono text-[11.5px] text-muted-foreground">
+              {existing.target}
+            </span>
+            <EnforcementChip enforcement={existing.enforcement} />
+            <PendingChip count={existing.pending.length} />
+            <TeamChip team={existing.ownerTeam} />
+          </div>
+        ) : null}
         <SheetDescription>
           {type?.description} Owned by{" "}
           {
@@ -873,7 +897,8 @@ function BlockForm({
         {type && type.body !== "none" ? (
           <Field label={type.body === "required" ? "Text" : "Text (optional)"}>
             <textarea
-              className={cn(area, "min-h-24")}
+              className={cn(area, "min-h-24 leading-relaxed")}
+              rows={Math.min(28, Math.max(4, Math.ceil(body.length / 70) + 2))}
               value={body}
               onChange={(event) => setBody(event.target.value)}
             />

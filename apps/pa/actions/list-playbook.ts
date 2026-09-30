@@ -10,7 +10,12 @@ import { pendingFor } from "../server/core/playbook/resolve.js";
 import type { ReleaseEntry } from "../server/core/playbook/schema.js";
 import { activeRelease, repo } from "../server/lib/pa-context.js";
 import { actorOf, teamDirectory } from "../server/lib/playbook-service.js";
-import { BLOCK_TYPES, blockType, SECTIONS } from "../shared/playbook-blocks.js";
+import {
+  BLOCK_TYPES,
+  blockType,
+  entryTitle,
+  SECTIONS,
+} from "../shared/playbook-blocks.js";
 
 function enforcement(entry: ReleaseEntry): string {
   if (entry.status === "retired") return "retired";
@@ -52,6 +57,7 @@ export default defineAction({
         target: entry.id,
         kind: "entry" as const,
         block: entry.block ?? null,
+        title: entryTitle(entry.id),
         blockLabel: blockType(entry.block)?.label ?? "Entry",
         section: entry.section ?? "rules_of_engagement",
         position: entry.position ?? 0,
@@ -75,6 +81,7 @@ export default defineAction({
         target: "config.routing_pool",
         kind: "config" as const,
         block: "person_pool",
+        title: entryTitle("config.routing_pool"),
         blockLabel: "Round-robin pool",
         section: "routing",
         position: 99,
@@ -93,6 +100,7 @@ export default defineAction({
         target: "config.hubspot_mapping",
         kind: "config" as const,
         block: "crm_mapping",
+        title: entryTitle("config.hubspot_mapping"),
         blockLabel: "CRM field mapping",
         section: "crm",
         position: 99,

@@ -350,3 +350,41 @@ export function newEntryId(
   for (let n = 2; taken.has(id); n += 1) id = `${base}_${n}`;
   return id;
 }
+
+/** Plain names for the seeded blocks; anything else is named from its id. */
+const ENTRY_TITLES: Record<string, string> = {
+  "def.ql": "Qualified lead (QL)",
+  "def.sal": "Sales accepted lead (SAL)",
+  "def.recycle": "Recycle",
+  "def.disqualify": "Disqualify",
+  "rule.precheck.outcomes": "Pre-check outcomes",
+  "rule.precheck.restricted_countries": "Restricted countries",
+  "rule.routing.order": "Routing order",
+  "rule.routing.sal_stale_days": "When a SAL goes stale",
+  "rule.sla.first_touch": "First touch SLA",
+  "rule.sla.decision": "Decision deadline",
+  "rule.enterprise.bar": "Enterprise bar",
+  "msg.first_touch.structure": "First touch structure (TCQ)",
+  "msg.first_touch.voice": "Voice",
+  "msg.first_touch.questions": "Choosing questions",
+  "msg.first_touch.hq_content": "Highly Qualified Content",
+  "msg.first_touch.standard_content": "Standard Content",
+  "msg.first_touch.content_price_check": "Content price check",
+  "msg.first_touch.hq_code": "Highly Qualified Code",
+  "msg.first_touch.standard_code": "Standard Code",
+  "msg.agency.first_touch": "Agency",
+  "msg.first_touch.example": "Example, bad and better",
+  "kb.partner_program": "Partner program",
+  "kb.trial_path_partner_led": "Partner-led trial path",
+  "rule.crm.system": "CRM system",
+  "config.routing_pool": "Round-robin pool",
+  "config.hubspot_mapping": "CRM field mapping",
+};
+
+export function entryTitle(id: string): string {
+  const known = ENTRY_TITLES[id];
+  if (known) return known;
+  const last = id.split(".").pop() ?? id;
+  const words = last.replace(/[_-]+/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : id;
+}
