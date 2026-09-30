@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-30 (the xDR master instructions)
+
+- Each lead shows its Contact Sales class (Highly Qualified or Standard,
+  Content or Code, or agency) with the criteria behind it (D61).
+- The agent writes a lead brief before drafting: persona, deal role, the V2
+  read, the five Stage 1 gates with the next move for each gap, and the next
+  step. "Copy CRM note" formats it for HubSpot.
+- Drafts follow the project's formula for each class.
+
 ## 2026-09-30 (automatic intake and the decision loop)
 
 - New Contact Sales leads come in on their own, about a minute after they

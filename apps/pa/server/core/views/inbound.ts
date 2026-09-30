@@ -12,6 +12,12 @@ import type {
   ReceiptDetail,
   ReceiptSummary,
 } from "../../../shared/pa-views.js";
+import {
+  briefLabels,
+  crmNote,
+  GATE_LABELS,
+  leadBriefSchema,
+} from "../brief/index.js";
 import { readFirstTouchClock, nextWorkingInstant } from "../clocks/index.js";
 import {
   ENGAGEMENT_STATES,
@@ -32,6 +38,7 @@ import type {
   PrecheckResult,
   SignalEvaluation,
 } from "../precheck/index.js";
+import { contactSalesClass } from "../qualify/index.js";
 import type {
   EngagementRecord,
   PaRepository,
@@ -199,6 +206,66 @@ async function releaseFor(
   // Validated, not cast. This module also runs in the browser demo, so it
   // parses here instead of importing the server-only release store.
   return stored ? playbookReleaseSchema.parse(stored.content) : current;
+}
+
+const fieldOf = (fields: Record<string, unknown> | undefined, key: string) => {
+  const value = fields?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+};
+
+const numberOf = (value: string | null) => {
+  const parsed = value === null ? Number.NaN : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+/** "201-500" or "5,000+" to its lower bound, conservative for the 2,000 line. */
+const lowerBound = (value: string | null) => {
+  const match = value?.replace(/,/g, "").match(/\d+/);
+  return match ? Number(match[0]) : null;
+};
+
+const detailSnapshotCompany = (snapshot: unknown) =>
+  (
+    snapshot as
+      | {
+          company?: {
+            employees?: number | null;
+            annualRevenue?: number | null;
+          } | null;
+        }
+      | undefined
+  )?.company ?? null;
+
+async function briefView(
+  repo: PaRepository,
+  engagementId: string,
+  context: { company: string | null; contact: string; source: string },
+): Promise<EngagementDetail["brief"]> {
+  const record = await repo.getLeadBrief(engagementId);
+  if (!record) return null;
+  const parsed = leadBriefSchema.safeParse(record.brief);
+  if (!parsed.success) return null;
+  const brief = parsed.data;
+  return {
+    persona: briefLabels.PERSONA[brief.persona],
+    dealRole: briefLabels.ROLE[brief.deal_role],
+    useCase: briefLabels.USE_CASE[brief.use_case],
+    summary: brief.summary,
+    v2Orientation: brief.v2_orientation ?? null,
+    pathToEngineering: brief.path_to_engineering ?? null,
+    enterpriseSignals: brief.enterprise_signals,
+    gates: brief.gates.map((item) => ({
+      gate: item.gate,
+      label: GATE_LABELS[item.gate],
+      status: item.status,
+      evidence: item.evidence,
+      nextMove: item.next_move ?? null,
+    })),
+    gapsRisks: brief.gaps_risks,
+    nextStep: brief.next_step,
+    crmNote: crmNote(brief, context),
+    createdAt: record.createdAt,
+  };
 }
 
 function crmUrlOf(inbox: { payload: Record<string, unknown> } | null) {
@@ -677,6 +744,32 @@ export async function buildEngagementDetail(input: {
     draft,
     sla: slaView({ engagement, clock, events, submittedAt, now: input.now }),
     decision: decisionView(await repo.getDecision(engagement.id), input.now),
+    brief: await briefView(repo, engagement.id, {
+      company: latest?.companyName ?? null,
+      contact: [
+        contact?.name ?? latest?.name,
+        fieldOf(latest?.fields, "job_title"),
+      ]
+        .filter(Boolean)
+        .join(", "),
+      source: "Contact Sales",
+    }),
+    contactSalesClass:
+      triage.kind === "reply" || triage.kind === "review"
+        ? contactSalesClass({
+            message: latest?.message ?? null,
+            useCase: fieldOf(latest?.fields, "use_case"),
+            jobTitle: fieldOf(latest?.fields, "job_title"),
+            breeze: numberOf(fieldOf(latest?.fields, "breeze_fit_score")),
+            employees:
+              detailSnapshotCompany(detailSnapshot)?.employees ??
+              lowerBound(fieldOf(latest?.fields, "company_size")),
+            annualRevenue:
+              detailSnapshotCompany(detailSnapshot)?.annualRevenue ?? null,
+            productInterest: assessment?.productInterest ?? null,
+            agencySignal: Boolean(assessment?.agencySignal),
+          })
+        : null,
     salesCycle: salesCycleView({
       submittedAt: firstSubmission?.submittedAt ?? engagement.createdAt,
       verdict: scorecard?.verdict ?? null,

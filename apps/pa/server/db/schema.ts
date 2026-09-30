@@ -477,3 +477,16 @@ export const paDecisions = table(
   },
   (t) => [uniqueIndex("pa_decisions_engagement").on(t.engagementId)],
 );
+
+// The lead brief (D61): the agent's CRM-note read, every version kept.
+export const paLeadBriefs = table(
+  "pa_lead_briefs",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id").notNull(),
+    brief: json("brief").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("pa_lead_briefs_engagement").on(t.engagementId, t.createdAt)],
+);

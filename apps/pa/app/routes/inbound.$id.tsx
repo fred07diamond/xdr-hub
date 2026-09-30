@@ -35,7 +35,12 @@ import { ReceiptsDrawer } from "@/components/pa/receipts-drawer";
 import { ScorecardTable } from "@/components/pa/scorecard-table";
 import { EmptyState, ErrorState } from "@/components/pa/states";
 import { Timeline } from "@/components/pa/timeline";
-import { DecisionBar, DraftCard, TriageCard } from "@/components/pa/triage";
+import {
+  DecisionBar,
+  DraftCard,
+  LeadBriefCard,
+  TriageCard,
+} from "@/components/pa/triage";
 import { UntrustedText } from "@/components/pa/untrusted-text";
 import { Button } from "@/components/ui/button";
 import { useEngagement, useInboundBoard } from "@/hooks/use-pa-data";
@@ -668,6 +673,7 @@ export default function EngagementRoute() {
           <div className="mt-4 grid items-stretch gap-4 @min-[60rem]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <TriageCard
               triage={detail.triage}
+              contactSalesClass={detail.contactSalesClass}
               asked={{
                 text:
                   detail.assessment?.explicitQuestion ??
@@ -707,6 +713,11 @@ export default function EngagementRoute() {
             <DraftCard draft={detail.draft} onAsk={(kind) => askAgent(kind)} />
           </div>
 
+          {detail.contactSalesClass ? (
+            <div className="mt-4">
+              <LeadBriefCard brief={detail.brief} />
+            </div>
+          ) : null}
           <div className="mt-6 flex items-center justify-between gap-3">
             <h2 className="text-[12px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               Details

@@ -85,6 +85,11 @@ export function isIntakeAssignment(
   return assigned >= submitted - INTAKE_ASSIGNMENT_WINDOW_MS;
 }
 
+const num = (value: unknown) => {
+  const parsed = typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const str = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : null;
 
@@ -261,7 +266,7 @@ export class HubSpotCrmAdapter implements CrmPort {
       "hubspot_owner_id",
     );
     const raw = (await this.fetch(
-      `/crm/v3/objects/companies/${encodeURIComponent(companyId)}?properties=name,domain,lifecyclestage,hubspot_owner_assigneddate,${ownerField}`,
+      `/crm/v3/objects/companies/${encodeURIComponent(companyId)}?properties=name,domain,lifecyclestage,hubspot_owner_assigneddate,numberofemployees,industry,annualrevenue,${ownerField}`,
     )) as HubSpotObject;
     const lifecycle = canonicalStage(
       await this.lifecycleLabel(str(raw.properties.lifecyclestage)),
@@ -278,6 +283,9 @@ export class HubSpotCrmAdapter implements CrmPort {
       owner: intake ? null : owner,
       assignedOwner: intake ? owner : null,
       isCustomer: lifecycle === "customer",
+      employees: num(raw.properties.numberofemployees),
+      industry: str(raw.properties.industry),
+      annualRevenue: num(raw.properties.annualrevenue),
       fetchedAt: this.now().toISOString(),
     };
   }

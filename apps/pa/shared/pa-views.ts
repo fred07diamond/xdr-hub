@@ -306,6 +306,35 @@ export interface EngagementDetail {
   sla: SlaView;
   decision: DecisionView | null;
   salesCycle: SalesStageView[];
+  /** The agent's lead brief (D61), with the CRM note formatted for pasting. */
+  brief: {
+    persona: string;
+    dealRole: string;
+    useCase: string;
+    summary: string;
+    v2Orientation: string | null;
+    pathToEngineering: string | null;
+    enterpriseSignals: string[];
+    gates: Array<{
+      gate: string;
+      label: string;
+      status: "met" | "gap" | "unknown";
+      evidence: string;
+      nextMove: string | null;
+    }>;
+    gapsRisks: string[];
+    nextStep: string;
+    crmNote: string;
+    createdAt: string;
+  } | null;
+  /** The Contact Sales class PA suggests, with the criteria behind it (D61). */
+  contactSalesClass: {
+    approach: string;
+    label: string;
+    product: "content" | "code";
+    criteria: Array<{ label: string; met: boolean | null; evidence: string }>;
+    summary: string;
+  } | null;
   timeline: TimelineItem[];
   receipts: ReceiptSummary[];
 }

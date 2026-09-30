@@ -1112,3 +1112,33 @@ bottom. Revisit one only when its "revisit when" condition happens.
   minutes if work is still waiting. One agent run assesses, triages,
   drafts, and opens the decision for every lead in the queue.
 
+## D61. Triage and drafting follow the xDR master instructions
+
+- **Status:** Decided by Fred, 2026-09-30: his lead's Claude project for
+  qualifying inbound leads ("salvage what you can to draft and triage the
+  lead as best as possible").
+- **The Contact Sales class in code** (`server/core/qualify`): Content or
+  Code first (the form's use case, the message, the assessment), agencies
+  first, then the project's criteria. Highly Qualified Content is 2 of 3
+  (Breeze 7+ or enterprise scale, a detailed message with a specific
+  initiative, 2+ of the 5 Content questions answered); Highly Qualified Code
+  is all 3 (Breeze 5+ or enterprise scale, manager-level title, a specific
+  enterprise need), or 2 of 3 at enterprise scale. Each criterion shows as
+  met, not met, or unknown, with its evidence, on the classification card,
+  and the agent reads it. The price check needs known page views, which PA
+  does not have, so it never triggers from code.
+- **Data for it:** company employees, industry, and revenue from HubSpot;
+  title, Breeze, company size, use case, and the questionnaire from the form.
+- **The lead brief** (`pa_lead_briefs`, migration v9, `save-lead-brief`):
+  the project's CRM note as data: persona, deal role, use case, the V2 read,
+  the five Stage 1 gates each met, gap, or unknown with evidence and the
+  next move, enterprise signals, agency routing, gaps and risks, next step.
+  The agent writes it before the draft. "Copy CRM note" formats it the
+  project's way for the rep to paste into HubSpot; PA writes nothing there.
+- **The drafting skill** carries the project's formulas, question selection
+  logic, the peer test, what not to ask, voice, the fabrication line, and
+  flag-don't-block. Names of internal people, the portal id, and the price
+  anchor stay in the Sales handbook (PA's database), not in source.
+- **Not taken:** the project's live web and LinkedIn research, the 5-contact
+  multithreading add-on, and the Notion content database; they need sources
+  PA does not reach yet (workflow 2a).

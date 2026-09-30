@@ -61,6 +61,10 @@ export interface CrmCompany {
   /** As on the contact: an owner assigned for this submission, not prior. */
   assignedOwner?: CrmOwner | null;
   isCustomer: boolean;
+  /** Firmographics for the Contact Sales class (Sales handbook 03). */
+  employees?: number | null;
+  industry?: string | null;
+  annualRevenue?: number | null;
   fetchedAt: string;
 }
 

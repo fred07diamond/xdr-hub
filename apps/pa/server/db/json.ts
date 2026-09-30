@@ -20,6 +20,7 @@ export const JSON_COLUMNS = {
   playbookChangeItems: ["beforeValue", "afterValue"],
   suggestions: ["evidence"],
   decisions: ["options"],
+  briefs: ["brief"],
 } as const;
 
 export type JsonTable = keyof typeof JSON_COLUMNS;
@@ -41,6 +42,7 @@ const TABLE_NAMES: Record<JsonTable, string> = {
   playbookChangeItems: "pa_playbook_change_items",
   suggestions: "pa_suggestions",
   decisions: "pa_decisions",
+  briefs: "pa_lead_briefs",
 };
 
 /** Stringifies the table's JSON fields that are present. null and undefined pass through. */

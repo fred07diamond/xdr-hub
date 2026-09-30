@@ -4,6 +4,7 @@ import {
   type AssessmentRecord,
   type DraftRecord,
   type DecisionRecord,
+  type LeadBriefRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type ContactRecord,
@@ -38,6 +39,7 @@ interface Tables {
   scorecards: Map<string, ScorecardRecord>;
   drafts: Map<string, DraftRecord>;
   decisions: Map<string, DecisionRecord>;
+  briefs: Map<string, LeadBriefRecord>;
   handbook: Map<string, HandbookDocRecord>;
   handbookRevisions: Map<string, HandbookRevisionRecord>;
   releases: Map<string, ReleaseRecord>;
@@ -62,6 +64,7 @@ function emptyTables(): Tables {
     scorecards: new Map(),
     drafts: new Map(),
     decisions: new Map(),
+    briefs: new Map(),
     handbook: new Map(),
     handbookRevisions: new Map(),
     releases: new Map(),
@@ -386,6 +389,19 @@ export class MemoryRepository implements PaRepository {
       .filter((item) => item.docId === docId)
       .sort((a, b) => b.version - a.version)
       .map(copy);
+  }
+
+  async insertLeadBrief(record: LeadBriefRecord) {
+    this.tables.briefs.set(record.id, copy(record));
+  }
+  async getLeadBrief(engagementId: string) {
+    const found = [...this.tables.briefs.values()]
+      .filter((item) => item.engagementId === engagementId)
+      .sort(
+        (a, b) =>
+          b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+      )[0];
+    return found ? copy(found) : null;
   }
 
   async insertDecisionIfAbsent(record: DecisionRecord) {

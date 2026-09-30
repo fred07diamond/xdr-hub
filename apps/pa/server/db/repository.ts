@@ -17,6 +17,7 @@ import {
   type ScorecardRecord,
   type DraftRecord,
   type DecisionRecord,
+  type LeadBriefRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type SubmissionRecord,
@@ -54,6 +55,7 @@ const {
   paScorecards,
   paDrafts,
   paDecisions,
+  paLeadBriefs,
   paHandbookDocs,
   paHandbookRevisions,
   paSubmissions,
@@ -540,6 +542,23 @@ export class DrizzleRepository implements PaRepository {
       .where(eq(paHandbookRevisions.docId, docId))
       .orderBy(desc(paHandbookRevisions.version));
     return rows as HandbookRevisionRecord[];
+  }
+
+  async insertLeadBrief(record: LeadBriefRecord) {
+    await this.db
+      .insert(paLeadBriefs)
+      .values(encodeJson<any>("briefs", record));
+  }
+  async getLeadBrief(engagementId: string) {
+    const [row] = await this.db
+      .select()
+      .from(paLeadBriefs)
+      .where(eq(paLeadBriefs.engagementId, engagementId))
+      .orderBy(desc(paLeadBriefs.createdAt), desc(paLeadBriefs.id))
+      .limit(1);
+    return row
+      ? (decodeJson("briefs", row) as unknown as LeadBriefRecord)
+      : null;
   }
 
   async insertDecisionIfAbsent(record: DecisionRecord) {

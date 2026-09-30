@@ -185,6 +185,14 @@ export interface DecisionRecord {
   updatedAt: string;
 }
 
+export interface LeadBriefRecord {
+  id: string;
+  engagementId: string;
+  brief: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+}
+
 export type HandbookStatus = "index" | "current" | "legacy";
 
 export interface HandbookDocRecord {
@@ -501,6 +509,10 @@ export interface PaRepository extends PlaybookStore {
   insertHandbookRevision(record: HandbookRevisionRecord): Promise<void>;
   /** Newest first. */
   listHandbookRevisions(docId: string): Promise<HandbookRevisionRecord[]>;
+
+  insertLeadBrief(record: LeadBriefRecord): Promise<void>;
+  /** The newest brief for an engagement. */
+  getLeadBrief(engagementId: string): Promise<LeadBriefRecord | null>;
 
   insertDecisionIfAbsent(record: DecisionRecord): Promise<boolean>;
   getDecision(engagementId: string): Promise<DecisionRecord | null>;

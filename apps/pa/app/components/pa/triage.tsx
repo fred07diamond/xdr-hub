@@ -2,6 +2,7 @@
 // and the drafted reply. Everything else on the record sits behind "Details".
 import type {
   DecisionView,
+  EngagementDetail,
   DraftStatus,
   DraftSummary,
   DraftView,
@@ -13,6 +14,8 @@ import {
   IconCalendar,
   IconCheck,
   IconCopy,
+  IconMinus,
+  IconX,
   IconMessageCircleQuestion,
   IconPencil,
 } from "@tabler/icons-react";
@@ -322,10 +325,12 @@ export function TriageCard({
   triage,
   asked,
   facts,
+  contactSalesClass,
 }: {
   triage: TriageView;
   asked: { text: string | null; source: "question" | "message" | null };
   facts: Array<{ label: string; value: string }>;
+  contactSalesClass?: ContactSalesClassView | null;
 }) {
   return (
     <section
@@ -370,6 +375,9 @@ export function TriageCard({
             </p>
           )}
         </div>
+        {contactSalesClass ? (
+          <ContactSalesClassBlock value={contactSalesClass} />
+        ) : null}
         {facts.length > 0 ? (
           <dl className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px]">
             {facts.map((fact) => (
@@ -539,5 +547,184 @@ export function DecisionPill({ decision }: { decision: DecisionView | null }) {
     >
       {dueLabel(decision.dueAt).replace("Decide within", "Decide in")}
     </span>
+  );
+}
+
+type ContactSalesClassView = NonNullable<EngagementDetail["contactSalesClass"]>;
+type BriefView = NonNullable<EngagementDetail["brief"]>;
+
+const MET_ICON = {
+  true: { icon: IconCheck, className: "text-primary", label: "Met" },
+  false: { icon: IconX, className: "text-muted-foreground", label: "Not met" },
+  null: {
+    icon: IconMinus,
+    className: "text-muted-foreground",
+    label: "Unknown",
+  },
+} as const;
+
+/** The Contact Sales class and why (D61): shown on the classification card. */
+export function ContactSalesClassBlock({
+  value,
+}: {
+  value: ContactSalesClassView;
+}) {
+  return (
+    <div className="rounded-md border border-border px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11.5px] font-medium text-muted-foreground">
+          Contact Sales class
+        </p>
+        <span className="rounded-[5px] bg-secondary px-1.5 py-0.5 text-[12px] font-medium text-foreground">
+          {value.label}
+        </span>
+      </div>
+      <ul className="mt-2 space-y-1">
+        {value.criteria.map((item) => {
+          const style = MET_ICON[String(item.met) as "true" | "false" | "null"];
+          const Icon = style.icon;
+          return (
+            <li key={item.label} className="flex gap-2 text-[12.5px]">
+              <Icon
+                className={cn("mt-0.5 size-3.5 shrink-0", style.className)}
+                strokeWidth={2}
+                aria-label={style.label}
+              />
+              <span className="min-w-0">
+                <span className="text-foreground">{item.label}</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {item.evidence}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">
+        {value.summary}
+      </p>
+    </div>
+  );
+}
+
+const GATE_STYLE = {
+  met: { label: "Met", className: "bg-primary-soft text-primary" },
+  gap: { label: "Gap", className: "bg-warning-soft text-warning-foreground" },
+  unknown: { label: "Unknown", className: "bg-muted text-muted-foreground" },
+} as const;
+
+/** The lead brief (D61): the CRM note and Stage 1 gate read, for the rep. */
+export function LeadBriefCard({ brief }: { brief: BriefView | null }) {
+  if (!brief)
+    return (
+      <section
+        aria-label="Lead brief"
+        className="rounded-lg border border-dashed border-border bg-card px-4 py-3 text-[13px] text-muted-foreground"
+      >
+        The lead brief (persona, V2 read, and the five Stage 1 gates) is written
+        by the agent right before it drafts the reply.
+      </section>
+    );
+  const met = brief.gates.filter((gate) => gate.status === "met").length;
+  return (
+    <section
+      aria-label="Lead brief"
+      className="rounded-lg border border-border bg-card shadow-xs"
+    >
+      <header className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <h2 className="text-[13px] font-semibold text-foreground">
+          Lead brief
+          <span className="ml-2 font-normal text-muted-foreground">
+            {met} of 5 Stage 1 gates met
+          </span>
+        </h2>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            void navigator.clipboard
+              .writeText(brief.crmNote)
+              .then(() =>
+                toast.success("CRM note copied. Paste it into HubSpot."),
+              )
+              .catch(() => toast.error("Couldn't copy the note"))
+          }
+        >
+          <IconCopy className="size-4" aria-hidden="true" />
+          Copy CRM note
+        </Button>
+      </header>
+      <div className="grid gap-4 px-4 py-4 @min-[60rem]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="space-y-3 text-[13px]">
+          <p className="leading-relaxed text-foreground">{brief.summary}</p>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+            <dt className="text-muted-foreground">Persona</dt>
+            <dd className="text-foreground">{brief.persona}</dd>
+            <dt className="text-muted-foreground">Deal role</dt>
+            <dd className="text-foreground">{brief.dealRole}</dd>
+            <dt className="text-muted-foreground">Use case</dt>
+            <dd className="text-foreground">{brief.useCase}</dd>
+            {brief.pathToEngineering ? (
+              <>
+                <dt className="text-muted-foreground">Path to eng</dt>
+                <dd className="text-foreground">{brief.pathToEngineering}</dd>
+              </>
+            ) : null}
+            {brief.v2Orientation ? (
+              <>
+                <dt className="text-muted-foreground">V2 read</dt>
+                <dd className="text-foreground">{brief.v2Orientation}</dd>
+              </>
+            ) : null}
+          </dl>
+          <div>
+            <p className="text-[11.5px] font-medium text-muted-foreground">
+              Next step
+            </p>
+            <p className="text-foreground">{brief.nextStep}</p>
+          </div>
+          {brief.gapsRisks.length > 0 ? (
+            <div>
+              <p className="text-[11.5px] font-medium text-muted-foreground">
+                Gaps and risks
+              </p>
+              <ul className="list-disc pl-4 text-foreground">
+                {brief.gapsRisks.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+        <ul className="space-y-2">
+          {brief.gates.map((gate) => (
+            <li
+              key={gate.gate}
+              className="rounded-md border border-border px-3 py-2 text-[12.5px]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium text-foreground">
+                  {gate.label}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium",
+                    GATE_STYLE[gate.status].className,
+                  )}
+                >
+                  {GATE_STYLE[gate.status].label}
+                </span>
+              </div>
+              <p className="mt-0.5 text-muted-foreground">{gate.evidence}</p>
+              {gate.nextMove ? (
+                <p className="mt-0.5 text-foreground">Next. {gate.nextMove}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }

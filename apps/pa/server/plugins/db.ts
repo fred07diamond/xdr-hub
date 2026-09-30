@@ -440,6 +440,18 @@ CREATE TABLE IF NOT EXISTS pa_decisions (
 CREATE UNIQUE INDEX IF NOT EXISTS pa_decisions_engagement ON pa_decisions (engagement_id)
 `;
 
+// Additive: the lead brief (D61), the agent's CRM-note read of each lead.
+export const leadBriefs = `
+CREATE TABLE IF NOT EXISTS pa_lead_briefs (
+  id TEXT PRIMARY KEY,
+  engagement_id TEXT NOT NULL,
+  brief TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pa_lead_briefs_engagement ON pa_lead_briefs (engagement_id, created_at)
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -455,6 +467,7 @@ export const PA_MIGRATIONS = [
   { version: 6, name: "pa-draft-source", sql: draftSource },
   { version: 7, name: "pa-sales-handbook", sql: salesHandbook },
   { version: 8, name: "pa-rep-decisions", sql: repDecisions },
+  { version: 9, name: "pa-lead-briefs", sql: leadBriefs },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {

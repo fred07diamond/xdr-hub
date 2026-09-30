@@ -62,6 +62,7 @@ not import its instructions, verdicts, or thresholds into PA.
 | `get-inbound-context`                    | Bounded context for agent steps; message as quoted data                        |
 | `save-message-assessment`                | Save the assessment once per submission (validated; workspace admins until M1) |
 | `save-draft`                             | Save a first-touch draft; linted, proposed only, never sent (D49)              |
+| `save-lead-brief`                        | Save the lead brief: persona, V2 read, five Stage 1 gates, next step (D61)     |
 | `list-handbook`, `get-handbook-doc`      | Read and search the Sales handbook (D53); reference, the playbook wins         |
 | `pull-contact-sales`                     | Read new Contact Sales submissions from HubSpot and triage them (D54)          |
 | `list-agent-work`                        | Leads waiting for an assessment or a draft; work them oldest first (D54)       |
