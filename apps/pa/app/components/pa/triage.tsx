@@ -188,19 +188,28 @@ export function DraftCard({
   draft,
   onAsk,
   sent,
+  embedded = false,
 }: {
   draft: DraftView;
   onAsk: (kind: "revise" | "draft") => void;
   /** The email already sent from HubSpot after the form (D64). */
   sent?: ReactNode;
+  /** Inside another card (the first touch): no frame or header of its own. */
+  embedded?: boolean;
 }) {
   const hasDraft = draft.status === "ready" || draft.status === "needs_edit";
   return (
     <section
       aria-label="Drafted reply"
-      className="flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-xs"
+      className={cn(
+        "flex min-w-0 flex-col",
+        !embedded && "rounded-lg border border-border bg-card shadow-xs",
+      )}
     >
-      <header className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+      <header
+        hidden={embedded}
+        className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2"
+      >
         <h2 className="text-[13px] font-semibold text-foreground">
           Drafted reply
         </h2>

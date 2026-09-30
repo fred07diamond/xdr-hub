@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cleanBody,
   fetchContactHistory,
   firstTouchAfter,
 } from "../../server/core/crm/history.js";
@@ -45,6 +46,17 @@ const fetch: HubSpotFetch = async (path) => {
     };
   throw new Error(`unexpected ${path}`);
 };
+
+describe("cleanBody", () => {
+  it("keeps paragraphs, writes a doubled link once, and drops the reply chain", () => {
+    const text = cleanBody(
+      "<p>Hey Sam!</p><p>Thanks for the note.&nbsp;Two quick things.</p><p>Here's my calendar: https://meetings.example.com/rep/intro: https://meetings.example.com/rep/intro</p>\nOn Tue, Sep 30, 2026 at 9:00 AM Sam <sam@example.com> wrote:\n> the original form",
+    );
+    expect(text).toBe(
+      "Hey Sam!\nThanks for the note. Two quick things.\nHere's my calendar: https://meetings.example.com/rep/intro",
+    );
+  });
+});
 
 describe("fetchContactHistory", () => {
   it("reads emails newest first, strips HTML, and reports what it could not read", async () => {

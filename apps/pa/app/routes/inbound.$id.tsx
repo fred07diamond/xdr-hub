@@ -31,7 +31,7 @@ import { CitationChips, FlagBadge, OwnerChip } from "@/components/pa/badges";
 import { SalesCycle, SlaDetail } from "@/components/pa/clock";
 import {
   ContactHistoryCard,
-  SentEmail,
+  FirstTouchCard,
   useContactHistory,
   type HistoryResult,
 } from "@/components/pa/contact-history";
@@ -789,15 +789,26 @@ export default function EngagementRoute() {
                   : []),
               ]}
             />
-            <DraftCard
-              draft={detail.draft}
-              onAsk={(kind) => askAgent(kind)}
-              sent={
-                historyData?.firstTouch ? (
-                  <SentEmail email={historyData.firstTouch} />
-                ) : null
-              }
-            />
+            {historyData?.firstTouch ? (
+              <FirstTouchCard
+                email={historyData.firstTouch}
+                lead={detail.draft.to}
+              >
+                {detail.draft.status === "ready" ||
+                detail.draft.status === "needs_edit" ? (
+                  <DraftCard
+                    embedded
+                    draft={detail.draft}
+                    onAsk={(kind) => askAgent(kind)}
+                  />
+                ) : null}
+              </FirstTouchCard>
+            ) : (
+              <DraftCard
+                draft={detail.draft}
+                onAsk={(kind) => askAgent(kind)}
+              />
+            )}
           </div>
 
           {detail.lead.crmUrl ? (

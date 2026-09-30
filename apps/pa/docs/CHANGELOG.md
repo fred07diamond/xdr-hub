@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-30 (first touch view)
+
+- When the first email already went out from HubSpot, the lead shows it as
+  "First touch, sent from HubSpot": To, From, Sent, Subject, and the body
+  with its paragraphs and short links. PA's own draft sits underneath,
+  collapsed, for comparison (D64).
+- Email text in the contact history keeps its paragraphs, shows each link
+  once, and leaves out the quoted reply chain.
+
 ## 2026-09-30 (contact history)
 
 - Every lead shows its contact history from HubSpot: emails sent and

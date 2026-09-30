@@ -85,6 +85,47 @@ const clean = (value: unknown, max = 600) => {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}...` : text;
 };
 
+const ENTITIES: Record<string, string> = {
+  "&nbsp;": " ",
+  "&amp;": "&",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&apos;": "'",
+  "&lt;": "<",
+  "&gt;": ">",
+};
+
+/**
+ * An email body as readable plain text: paragraphs kept, HTML and entities
+ * gone, a link written twice ("url: url") once, and the quoted reply chain
+ * dropped so only the new message shows.
+ */
+export function cleanBody(value: unknown, max = 4000): string | null {
+  if (typeof value !== "string") return null;
+  let text = value
+    .replace(/\r\n?/g, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(
+      /&(nbsp|amp|quot|#39|apos|lt|gt);/g,
+      (entity) => ENTITIES[entity] ?? entity,
+    );
+  // The reply chain: "On Tue, Sep 30, ... wrote:" and everything after it.
+  text = text.split(/\n\s*On .{4,120}wrote:\s*\n/)[0];
+  text = text.split(/\n-{2,}\s*Original Message\s*-{2,}/i)[0];
+  // A link HubSpot renders as its text and its href.
+  text = text.replace(/(https?:\/\/\S+?)[:\s]+\1/g, "$1");
+  text = text
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!text) return null;
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}...` : text;
+}
+
 function toItem(
   kind: Exclude<HistoryKind, "dobby">,
   raw: { id: string; properties: Record<string, unknown> },
@@ -99,7 +140,7 @@ function toItem(
       direction: direction === "INCOMING_EMAIL" ? "inbound" : "outbound",
       at,
       title: clean(p.hs_email_subject, 200),
-      preview: clean(p.hs_email_text ?? p.hs_body_preview),
+      preview: cleanBody(p.hs_email_text ?? p.hs_body_preview),
       from: clean(p.hs_email_from_email, 200),
       to: clean(p.hs_email_to_email, 400),
       status: clean(p.hs_email_status, 40),
@@ -115,7 +156,7 @@ function toItem(
           : "outbound",
       at,
       title: clean(p.hs_call_title, 200),
-      preview: clean(p.hs_call_body),
+      preview: cleanBody(p.hs_call_body, 1500),
       from: null,
       to: null,
       status: clean(p.hs_call_disposition, 60),
@@ -127,7 +168,7 @@ function toItem(
       direction: null,
       at,
       title: clean(p.hs_meeting_title, 200),
-      preview: clean(p.hs_meeting_body),
+      preview: cleanBody(p.hs_meeting_body, 1500),
       from: null,
       to: null,
       status: clean(p.hs_meeting_outcome, 60),
@@ -138,7 +179,7 @@ function toItem(
     direction: null,
     at,
     title: null,
-    preview: clean(p.hs_note_body),
+    preview: cleanBody(p.hs_note_body, 1500),
     from: null,
     to: null,
     status: null,
@@ -190,7 +231,7 @@ export async function fetchContactHistory(
     const contact = (await fetch(
       `/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=dobby_message_1`,
     )) as { properties?: Record<string, unknown> };
-    const dobby = clean(contact.properties?.dobby_message_1, 1200);
+    const dobby = cleanBody(contact.properties?.dobby_message_1, 2000);
     if (dobby)
       items.push({
         id: "dobby",
