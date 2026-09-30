@@ -177,6 +177,14 @@ export function OwnerChip({
       <span className="min-w-0 truncate text-[13px] text-foreground">
         {owner.name}
       </span>
+      {!owner.inPa && !compact ? (
+        <span
+          className="shrink-0 rounded-[4px] border border-border px-1 text-[10.5px] text-muted-foreground"
+          title="The HubSpot owner. They have no PA profile yet, so there is no SLA timer."
+        >
+          HubSpot
+        </span>
+      ) : null}
       {owner.isMe && !compact ? (
         <span className="shrink-0 rounded-[4px] bg-secondary px-1 text-[10.5px] font-medium text-muted-foreground">
           You

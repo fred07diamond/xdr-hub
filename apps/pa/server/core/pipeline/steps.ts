@@ -447,7 +447,12 @@ const crmSnapshot: PipelineStep = {
   },
   async run(deps, state) {
     const identity = need(state.identity, "identity");
-    const snapshot = await takeCrmSnapshot(deps.crm, identity.email, iso(deps));
+    const snapshot = await takeCrmSnapshot(
+      deps.crm,
+      identity.email,
+      iso(deps),
+      state.submission?.submittedAt,
+    );
     state.snapshot = snapshot;
     const receipt = newReceipt(deps, state, "crm_snapshot", {
       ruleResults: toJson({ snapshot }),
@@ -731,7 +736,11 @@ const route: PipelineStep = {
       decisionHours: decision.params.hours,
       settledReason:
         settled?.clockReason ||
-        (ownerProfile ? undefined : "No clock: no human owner assigned yet"),
+        (ownerProfile
+          ? undefined
+          : result.owner
+            ? `No SLA timer: ${result.owner.displayName ?? result.owner.email} has no PA profile yet`
+            : "No clock: no human owner assigned yet"),
     });
     const citations = uniqueCitations([
       ...result.citations,
@@ -937,7 +946,10 @@ const draft: PipelineStep = {
     const owner = engagement.ownerUserId
       ? await deps.repo.getProfile(engagement.ownerUserId)
       : null;
-    const ownerFirstName = firstName(owner?.displayName);
+    // The HubSpot owner signs when they have no PA profile yet.
+    const ownerFirstName = firstName(
+      owner?.displayName ?? state.routing?.owner?.displayName ?? null,
+    );
     if (!plan.needed) {
       const receipt = newReceipt(deps, state, "draft", {
         ruleResults: { needed: false, reason: plan.reason },

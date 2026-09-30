@@ -38,6 +38,12 @@ export interface CrmContact {
   lifecycle: LifecycleStage | null;
   lifecycleRaw: string | null;
   owner: CrmOwner | null;
+  /**
+   * An owner assigned at or after this submission: the CRM's own intake
+   * assignment for this lead, not prior ownership (D57). Never makes a lead
+   * "owned"; routing uses it as the lead's owner.
+   */
+  assignedOwner?: CrmOwner | null;
   lastActivityAt: string | null;
   isCustomer: boolean;
   isChurned: boolean;
@@ -50,6 +56,8 @@ export interface CrmCompany {
   domain: string | null;
   name: string | null;
   owner: CrmOwner | null;
+  /** As on the contact: an owner assigned for this submission, not prior. */
+  assignedOwner?: CrmOwner | null;
   isCustomer: boolean;
   fetchedAt: string;
 }
@@ -80,9 +88,10 @@ export interface CrmChange {
 
 export interface CrmPort {
   readonly system: CrmSystem;
-  findContactByEmail(email: string): Promise<CrmContact | null>;
+  /** `asOf` is the submission time: ownership after it is not prior ownership. */
+  findContactByEmail(email: string, asOf?: string): Promise<CrmContact | null>;
   getContact(ref: CrmRef): Promise<CrmContact>;
-  getCompanyForContact(ref: CrmRef): Promise<CrmCompany | null>;
+  getCompanyForContact(ref: CrmRef, asOf?: string): Promise<CrmCompany | null>;
   listOpenDeals(company: CrmRef): Promise<CrmDeal[]>;
   listOwners(): Promise<CrmOwner[]>;
   /** M2: sent emails are logged after human approval. */
@@ -105,8 +114,9 @@ export async function takeCrmSnapshot(
   crm: CrmPort,
   email: string,
   fetchedAt: string,
+  asOf?: string,
 ): Promise<CrmSnapshot> {
-  const contact = await crm.findContactByEmail(email);
+  const contact = await crm.findContactByEmail(email, asOf);
   if (!contact) {
     return {
       source: crm.system,
@@ -116,7 +126,7 @@ export async function takeCrmSnapshot(
       openDeals: [],
     };
   }
-  const company = await crm.getCompanyForContact(contact.ref);
+  const company = await crm.getCompanyForContact(contact.ref, asOf);
   const openDeals = company ? await crm.listOpenDeals(company.ref) : [];
   return { source: crm.system, fetchedAt, contact, company, openDeals };
 }

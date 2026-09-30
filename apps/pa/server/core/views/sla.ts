@@ -185,14 +185,20 @@ export function salesCycleView(input: {
   triageKind: TriageKind;
   events: EventRecord[];
 }): SalesStageView[] {
+  // This portal's lifecycle labels (D54, D57): QL, SAL, S0, S1 map onto the cycle.
   const lifecycle = (input.crmLifecycle ?? "").toLowerCase();
-  const crmSalOrLater = [
-    "sal",
-    "sql",
-    "opportunity",
-    "customer",
-    "evangelist",
-  ].includes(lifecycle);
+  const CRM_STAGE_RANK: Record<string, number> = {
+    ql: 1,
+    sal: 2,
+    sql: 3,
+    s0: 3,
+    opportunity: 6,
+    s1: 6,
+    customer: 6,
+    evangelist: 6,
+  };
+  const crmRank = CRM_STAGE_RANK[lifecycle] ?? 0;
+  const inHubSpot = `HubSpot lifecycle: ${input.crmLifecycle}`;
   const bookedAt =
     input.events.find(
       (item) =>
@@ -211,13 +217,10 @@ export function salesCycleView(input: {
   };
   if (input.verdict === "ql")
     reached.ql = { at: input.scoredAt, note: "Suggested by the scorecard" };
-  if (crmSalOrLater) {
-    reached.ql ??= { at: null, note: "Already in HubSpot" };
-    reached.sal = {
-      at: null,
-      note: `HubSpot lifecycle: ${input.crmLifecycle}`,
-    };
-  }
+  if (crmRank >= 1) reached.ql ??= { at: null, note: inHubSpot };
+  if (crmRank >= 2) reached.sal = { at: null, note: inHubSpot };
+  if (crmRank >= 3) reached.s0 = { at: null, note: inHubSpot };
+  if (crmRank >= 6) reached.s1 = { at: null, note: inHubSpot };
   const sal = salAt(input.events);
   if (sal) reached.sal = { at: sal, note: "Marked by the owner" };
   if (bookedAt) reached.nbm_booked = { at: bookedAt, note: null };

@@ -1023,3 +1023,26 @@ bottom. Revisit one only when its "revisit when" condition happens.
   `/account-info/v3/details`), on the board and the lead page; rows pulled
   earlier get the link on the next pull.
 - A live lead the agent has not read yet says "Waiting for the agent".
+
+## D57. Ownership is read as of the submission; HubSpot owners show by name
+
+- **Status:** Fixed, 2026-09-30, from Fred's question on a lead that showed
+  "Existing owner" but "Unassigned".
+- **What "existing owner" means:** the contact or its company already had an
+  owner in HubSpot before this submission, so the lead belongs to that
+  person and gets no cold reply (G3).
+- **Bug 1:** HubSpot's own Contact Sales handling assigns an owner (and logs
+  activity) minutes after the form. PA read HubSpot after that, so a brand
+  new lead could look owned. Now an owner whose `hubspot_owner_assigneddate`
+  is within 30 minutes before the submission, or after it, is the intake
+  assignment: it never makes the lead owned; routing follows it as the new
+  lead's owner ("assigned in HubSpot for this submission"), and the draft is
+  signed with their name. The 30 minutes cover HubSpot stamping the
+  submission time a few minutes after the form.
+- **Bug 2:** an owner with no PA profile showed as "Unassigned". The owner
+  now shows by name with a "HubSpot" tag; the SLA timer says the owner has
+  no PA profile yet.
+- **Bug 3:** the sales cycle ignored HubSpot's own stages. A HubSpot
+  lifecycle of QL, SAL, S0, or S1 now marks those stages done.
+- **Leads already triaged** keep their first snapshot; a new submission
+  from the same contact is read the new way.

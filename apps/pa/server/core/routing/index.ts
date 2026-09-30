@@ -383,6 +383,28 @@ export function routeEngagement(input: {
         citations: uniqueCitations(citations),
       };
     } else if (step === "round_robin") {
+      // The CRM already assigned this new lead at intake (D57): in shadow,
+      // that assignment is the real one, so PA follows it.
+      const assigned =
+        input.snapshot.contact?.assignedOwner ??
+        input.snapshot.company?.assignedOwner ??
+        null;
+      if (assigned) {
+        evaluated.push({
+          step,
+          matched: true,
+          detail: `Assigned in the CRM for this submission to ${assigned.email}`,
+        });
+        return {
+          ...base,
+          route: step,
+          owner: ownerFrom(assigned, input.profiles),
+          ownerSource: "crm_contact_owner",
+          reasonCode: "crm_intake_assignment",
+          reason: `New lead, assigned in HubSpot to ${assigned.name ?? assigned.email} for this submission`,
+          citations: uniqueCitations(citations),
+        };
+      }
       if (pool.source === "synthetic_dev_pool") {
         openItems.push({
           code: "routing_pool_empty",

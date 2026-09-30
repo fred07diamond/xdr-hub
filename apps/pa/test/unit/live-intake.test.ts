@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalStage,
   HubSpotCrmAdapter,
+  isIntakeAssignment,
   type HubSpotFetch,
 } from "../../server/core/crm/hubspot-adapter.js";
 import {
@@ -244,5 +245,74 @@ describe("the live pipeline waits for the agent", () => {
       events.filter((event) => event.type === "agent.work_requested"),
     ).toHaveLength(1);
     expect((await repo.getInbox(row.id))?.status).toBe("done");
+  });
+});
+
+describe("ownership as of the submission (D57)", () => {
+  const submitted = "2026-09-30T16:06:34.000Z";
+
+  it("treats an owner assigned around or after the submission as the intake assignment", () => {
+    expect(isIntakeAssignment("2026-09-30T16:02:00.000Z", submitted)).toBe(
+      true,
+    );
+    expect(isIntakeAssignment("2026-09-30T16:10:00.000Z", submitted)).toBe(
+      true,
+    );
+    expect(isIntakeAssignment("2026-09-24T13:25:38.000Z", submitted)).toBe(
+      false,
+    );
+    expect(isIntakeAssignment(null, submitted)).toBe(false);
+  });
+
+  it("keeps a prior company owner as owned, and a fresh contact owner as assigned", async () => {
+    const clock = fixedClock();
+    const fetch: HubSpotFetch = async (path) => {
+      if (path === "/crm/v3/objects/contacts/search")
+        return {
+          results: [
+            {
+              id: "c1",
+              properties: {
+                email: "dan@example.com",
+                lifecyclestage: "9000003",
+                hubspot_owner_id: "o1",
+                hubspot_owner_assigneddate: "2026-09-30T16:03:00.000Z",
+              },
+            },
+          ],
+        };
+      if (path.startsWith("/crm/v3/properties/contacts/lifecyclestage"))
+        return { options: [{ value: "9000003", label: "QL" }] };
+      if (path.startsWith("/crm/v3/owners/"))
+        return {
+          id: "o1",
+          email: "rep@example.com",
+          firstName: "Riley",
+          lastName: "Rep",
+        };
+      if (path.includes("/contacts/c1/associations/companies"))
+        return { results: [{ toObjectId: "k1" }] };
+      if (path.startsWith("/crm/v3/objects/companies/k1"))
+        return {
+          id: "k1",
+          properties: {
+            name: "Example Co",
+            hubspot_owner_id: "o1",
+            hubspot_owner_assigneddate: "2026-09-24T13:25:38.000Z",
+          },
+        };
+      return { results: [] };
+    };
+    const adapter = new HubSpotCrmAdapter(fetch, {}, clock.now);
+    const contact = await adapter.findContactByEmail(
+      "dan@example.com",
+      submitted,
+    );
+    expect(contact?.owner).toBeNull();
+    expect(contact?.assignedOwner?.email).toBe("rep@example.com");
+    expect(contact?.lifecycle).toBe("ql");
+    const company = await adapter.getCompanyForContact(contact!.ref, submitted);
+    expect(company?.owner?.name).toBe("Riley Rep");
+    expect(company?.assignedOwner).toBeNull();
   });
 });

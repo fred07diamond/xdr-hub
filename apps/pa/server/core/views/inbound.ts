@@ -83,14 +83,29 @@ function citationView(
 function ownerView(
   profile: UserProfileRecord | undefined,
   viewer: Viewer,
+  crmOwner: { email: string; displayName: string | null } | null = null,
 ): OwnerView | null {
-  if (!profile) return null;
-  return {
-    id: profile.id,
-    name: profile.displayName,
-    email: profile.email,
-    isMe: Boolean(viewer.userId && profile.userId === viewer.userId),
-  };
+  if (profile)
+    return {
+      id: profile.id,
+      name: profile.displayName,
+      email: profile.email,
+      isMe: Boolean(viewer.userId && profile.userId === viewer.userId),
+      inPa: true,
+    };
+  // The HubSpot owner routing chose, when they have no PA profile yet.
+  if (crmOwner?.email)
+    return {
+      id: `crm:${crmOwner.email}`,
+      name: crmOwner.displayName ?? crmOwner.email,
+      email: crmOwner.email,
+      isMe: Boolean(
+        viewer.userId &&
+        viewer.userId.toLowerCase() === crmOwner.email.toLowerCase(),
+      ),
+      inPa: false,
+    };
+  return null;
 }
 
 function clockView(input: {
@@ -235,13 +250,13 @@ async function buildRow(
   const drafts = await repo.listDrafts(engagement.id);
   const leadName = contact?.name ?? latest?.name ?? null;
   const inbox = latest ? await repo.getInbox(latest.inboxId) : null;
-  const ownerDisplay = ownerView(owner, viewer);
+  const ownerDisplay = ownerView(owner, viewer, routing?.owner ?? null);
   const draft = draftView({
     engagement,
     precheckOutcome,
     draft: drafts[drafts.length - 1] ?? null,
     lead: { name: leadName, email },
-    ownerName: owner?.displayName ?? null,
+    ownerName: ownerDisplay?.name ?? null,
     cite: (citation) => citationView(pinned, citation),
     entryVersion: (id) =>
       pinned.entries.find((entry) => entry.id === id)?.version ?? null,
@@ -252,7 +267,7 @@ async function buildRow(
     signal: (precheckReceipt?.ruleResults.signal as string | null) ?? null,
     verdict: scorecard?.verdict ?? null,
     routeReason: engagement.routeReason,
-    ownerName: owner?.displayName ?? null,
+    ownerName: ownerDisplay?.name ?? null,
     ownerIsMe: Boolean(ownerDisplay?.isMe),
     draftStatus: draft.status,
     awaitingAgent: !assessment && inbox?.source === "hubspot",
@@ -596,14 +611,14 @@ export async function buildEngagementDetail(input: {
   });
 
   const drafts = await repo.listDrafts(engagement.id);
-  const ownerDisplay = ownerView(owner, input.viewer);
+  const ownerDisplay = ownerView(owner, input.viewer, routing?.owner ?? null);
   const inbox = latest ? await repo.getInbox(latest.inboxId) : null;
   const draft = draftView({
     engagement,
     precheckOutcome: precheck?.outcome ?? null,
     draft: drafts[drafts.length - 1] ?? null,
     lead: { name: contact?.name ?? latest?.name ?? null, email },
-    ownerName: owner?.displayName ?? null,
+    ownerName: ownerDisplay?.name ?? null,
     cite: cv,
     entryVersion: (id) =>
       pinned.entries.find((entry) => entry.id === id)?.version ?? null,
@@ -614,7 +629,7 @@ export async function buildEngagementDetail(input: {
     signal: precheck?.signal ?? null,
     verdict: scorecard?.verdict ?? null,
     routeReason: engagement.routeReason,
-    ownerName: owner?.displayName ?? null,
+    ownerName: ownerDisplay?.name ?? null,
     ownerIsMe: Boolean(ownerDisplay?.isMe),
     draftStatus: draft.status,
     awaitingAgent: !assessment && inbox?.source === "hubspot",

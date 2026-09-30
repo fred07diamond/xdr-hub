@@ -51,12 +51,22 @@ export default defineAction({
     const owner = engagement.ownerUserId
       ? await repository.getProfile(engagement.ownerUserId)
       : null;
+    const routeReceipt = submission
+      ? await repository.findReceipt("route", submission.id)
+      : null;
+    const routedOwner = (
+      routeReceipt?.ruleResults.routing as
+        | { owner?: { displayName?: string | null } | null }
+        | undefined
+    )?.owner;
     const { engagementId: _engagement, ...input } = args;
     const lint = lintDraft({
       draft: input,
       release,
       explicitQuestion: assessment?.explicitQuestion ?? null,
-      ownerFirstName: firstName(owner?.displayName),
+      ownerFirstName: firstName(
+        owner?.displayName ?? routedOwner?.displayName ?? null,
+      ),
     });
     const at = now().toISOString();
     const receiptId = newId();

@@ -88,6 +88,8 @@ export interface OwnerView {
   name: string;
   email: string;
   isMe: boolean;
+  /** False for a HubSpot owner who has no PA profile yet (no SLA timer). */
+  inPa: boolean;
 }
 
 /**

@@ -67,6 +67,24 @@ interface HubSpotObject {
   properties: Record<string, string | null | undefined>;
 }
 
+/**
+ * An owner assigned within this window before the submission, or after it,
+ * is the CRM's intake assignment for this lead. The submission time HubSpot
+ * records runs a few minutes behind the form, so the window is generous.
+ */
+export const INTAKE_ASSIGNMENT_WINDOW_MS = 30 * 60_000;
+
+export function isIntakeAssignment(
+  assignedAt: string | null,
+  asOf: string | undefined,
+): boolean {
+  if (!assignedAt || !asOf) return false;
+  const assigned = Date.parse(assignedAt);
+  const submitted = Date.parse(asOf);
+  if (Number.isNaN(assigned) || Number.isNaN(submitted)) return false;
+  return assigned >= submitted - INTAKE_ASSIGNMENT_WINDOW_MS;
+}
+
 const str = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : null;
 
@@ -146,7 +164,10 @@ export class HubSpotCrmAdapter implements CrmPort {
     return owner;
   }
 
-  private async toContact(raw: HubSpotObject): Promise<CrmContact> {
+  private async toContact(
+    raw: HubSpotObject,
+    asOf?: string,
+  ): Promise<CrmContact> {
     const fields = this.contactFields;
     const props = raw.properties;
     const lifecycleRaw = await this.lifecycleLabel(
@@ -156,13 +177,19 @@ export class HubSpotCrmAdapter implements CrmPort {
     const name = [str(props.firstname), str(props.lastname)]
       .filter(Boolean)
       .join(" ");
+    const owner = await this.owner(str(props[fields.owner]));
+    const intake = isIntakeAssignment(
+      str(props.hubspot_owner_assigneddate),
+      asOf,
+    );
     return {
       ref: { system: "hubspot", id: raw.id },
       email: (str(props.email) ?? "").toLowerCase(),
       name: name || null,
       lifecycle,
       lifecycleRaw,
-      owner: await this.owner(str(props[fields.owner])),
+      owner: intake ? null : owner,
+      assignedOwner: intake ? owner : null,
       lastActivityAt: str(props[fields.lastActivity]),
       isCustomer: lifecycle === "customer",
       isChurned: false,
@@ -181,10 +208,14 @@ export class HubSpotCrmAdapter implements CrmPort {
       fields.owner,
       fields.lastActivity,
       "last_active_in_builder",
+      "hubspot_owner_assigneddate",
     ];
   }
 
-  async findContactByEmail(email: string): Promise<CrmContact | null> {
+  async findContactByEmail(
+    email: string,
+    asOf?: string,
+  ): Promise<CrmContact | null> {
     const result = (await this.fetch("/crm/v3/objects/contacts/search", {
       method: "POST",
       body: JSON.stringify({
@@ -200,7 +231,7 @@ export class HubSpotCrmAdapter implements CrmPort {
       }),
     })) as { results?: HubSpotObject[] };
     const found = result.results?.[0];
-    return found ? this.toContact(found) : null;
+    return found ? this.toContact(found, asOf) : null;
   }
 
   async getContact(ref: CrmRef): Promise<CrmContact> {
@@ -217,7 +248,10 @@ export class HubSpotCrmAdapter implements CrmPort {
     return (result.results ?? []).map((item) => String(item.toObjectId));
   }
 
-  async getCompanyForContact(ref: CrmRef): Promise<CrmCompany | null> {
+  async getCompanyForContact(
+    ref: CrmRef,
+    asOf?: string,
+  ): Promise<CrmCompany | null> {
     const [companyId] = await this.associated("contacts", ref.id, "companies");
     if (!companyId) return null;
     const ownerField = this.field(
@@ -225,16 +259,22 @@ export class HubSpotCrmAdapter implements CrmPort {
       "hubspot_owner_id",
     );
     const raw = (await this.fetch(
-      `/crm/v3/objects/companies/${encodeURIComponent(companyId)}?properties=name,domain,lifecyclestage,${ownerField}`,
+      `/crm/v3/objects/companies/${encodeURIComponent(companyId)}?properties=name,domain,lifecyclestage,hubspot_owner_assigneddate,${ownerField}`,
     )) as HubSpotObject;
     const lifecycle = canonicalStage(
       await this.lifecycleLabel(str(raw.properties.lifecyclestage)),
+    );
+    const owner = await this.owner(str(raw.properties[ownerField]));
+    const intake = isIntakeAssignment(
+      str(raw.properties.hubspot_owner_assigneddate),
+      asOf,
     );
     return {
       ref: { system: "hubspot", id: raw.id },
       domain: str(raw.properties.domain),
       name: str(raw.properties.name),
-      owner: await this.owner(str(raw.properties[ownerField])),
+      owner: intake ? null : owner,
+      assignedOwner: intake ? owner : null,
       isCustomer: lifecycle === "customer",
       fetchedAt: this.now().toISOString(),
     };
