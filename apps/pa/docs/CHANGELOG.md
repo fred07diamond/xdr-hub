@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-30 (contact history)
+
+- Every lead shows its contact history from HubSpot: emails sent and
+  received, calls, meetings, notes, and Dobby's message (D64).
+- When someone already emailed the lead from HubSpot, PA shows that email in
+  the draft card, marks first contact done on the SLA timer, and stops
+  drafting a first touch.
+
 ## 2026-09-30 (refresh)
 
 - "Refresh from HubSpot" on a lead and "Refresh all leads" on the board

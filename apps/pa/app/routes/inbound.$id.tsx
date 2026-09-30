@@ -29,6 +29,12 @@ import { toast } from "sonner";
 
 import { CitationChips, FlagBadge, OwnerChip } from "@/components/pa/badges";
 import { SalesCycle, SlaDetail } from "@/components/pa/clock";
+import {
+  ContactHistoryCard,
+  SentEmail,
+  useContactHistory,
+  type HistoryResult,
+} from "@/components/pa/contact-history";
 import { DemoNotice } from "@/components/pa/demo";
 import { EvaluationList, OpenItems } from "@/components/pa/evaluations";
 import { BOARD_TABS } from "@/components/pa/inbound-board";
@@ -470,6 +476,11 @@ export default function EngagementRoute() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const decide = useActionMutation("decide-lead");
   const refresh = useActionMutation("refresh-lead");
+  const history = useContactHistory(
+    id,
+    !demo && Boolean(engagement.data?.lead.crmUrl),
+  );
+  const historyData = history.data as HistoryResult | undefined;
   const intake = useActionQuery("get-intake-status", {}, { enabled: !demo });
   const canDecide =
     !demo &&
@@ -778,9 +789,22 @@ export default function EngagementRoute() {
                   : []),
               ]}
             />
-            <DraftCard draft={detail.draft} onAsk={(kind) => askAgent(kind)} />
+            <DraftCard
+              draft={detail.draft}
+              onAsk={(kind) => askAgent(kind)}
+              sent={
+                historyData?.firstTouch ? (
+                  <SentEmail email={historyData.firstTouch} />
+                ) : null
+              }
+            />
           </div>
 
+          {detail.lead.crmUrl ? (
+            <div className="mt-4">
+              <ContactHistoryCard query={history} />
+            </div>
+          ) : null}
           {detail.contactSalesClass ? (
             <div className="mt-4">
               <LeadBriefCard brief={detail.brief} />

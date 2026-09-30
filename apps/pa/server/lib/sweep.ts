@@ -1,6 +1,7 @@
 // One pass of the minute poll (D58): intake, agent wake-up, decision deadlines.
 import { checkDecisionDeadlines } from "./decisions.js";
 import {
+  detectFirstTouches,
   processRefreshQueue,
   ensureInboundAgent,
   INTAKE_CORRELATION,
@@ -29,6 +30,8 @@ export async function runInboundSweep(owner: {
   });
   // Refresh requests (D63) before counting work, so refreshed leads are woken too.
   const refresh = await processRefreshQueue(15_000);
+  // First touches sent from HubSpot (D64), so PA stops drafting for them.
+  const history = await detectFirstTouches();
   const repository = repo();
   const work = await listAgentWork(repository, 50);
   // Checked every minute, so a change to the agent's instructions or model
@@ -72,6 +75,7 @@ export async function runInboundSweep(owner: {
     ...pulled,
     agentWork: work.length,
     refresh,
+    history,
     agentSetup,
     agent,
     org: Boolean(owner.orgId),

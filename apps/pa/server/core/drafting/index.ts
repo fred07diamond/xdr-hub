@@ -221,6 +221,12 @@ export function draftPlan(input: {
         reason: "No reply: logged for the weekly spot check.",
       };
   }
+  if (input.state === "first_touch_sent")
+    return {
+      needed: false,
+      reason:
+        "No draft needed: the first email already went out from HubSpot. See the contact history.",
+    };
   // A routed lead with no owner yet (an empty round-robin pool) still gets a
   // draft, signed with a placeholder, so nobody starts from a blank page.
   if (input.state !== "awaiting_first_touch" && input.state !== "routed") {

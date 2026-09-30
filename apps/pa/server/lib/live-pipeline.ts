@@ -11,6 +11,11 @@ import {
 import { hubspotFetchWithTimeout } from "@xdr-hub/shared/server";
 
 import {
+  fetchContactHistory,
+  firstTouchAfter,
+  type HistoryItem,
+} from "../core/crm/history.js";
+import {
   HubSpotCrmAdapter,
   type HubSpotFetch,
   type HubSpotMapping,
@@ -28,6 +33,7 @@ import {
 } from "../core/intake/hubspot.js";
 import {
   assertTransition,
+  canTransition,
   type EngagementState,
 } from "../core/objects/index.js";
 import { runPipeline } from "../core/pipeline/runner.js";
@@ -482,4 +488,149 @@ export async function processRefreshQueue(budgetMs = 20_000) {
     }
   }
   return { refreshed, remaining: queued.length - refreshed };
+}
+
+/** The HubSpot contact behind a live engagement's latest submission. */
+export async function contactOf(engagementId: string) {
+  const repository = repo();
+  const submissions =
+    await repository.listSubmissionsForEngagement(engagementId);
+  const latest = submissions[submissions.length - 1];
+  if (!latest) return null;
+  const inbox = await repository.getInbox(latest.inboxId);
+  const contactId =
+    typeof inbox?.payload.crm_contact_id === "string"
+      ? inbox.payload.crm_contact_id
+      : null;
+  return contactId
+    ? { contactId, submittedAt: latest.submittedAt, inboxId: latest.inboxId }
+    : null;
+}
+
+/**
+ * Records a first touch sent from HubSpot (D64): the SLA timer's contact
+ * milestone is met, the lead moves to first touch sent, and PA stops
+ * drafting a first touch for it.
+ */
+export async function recordFirstTouch(
+  engagementId: string,
+  email: HistoryItem,
+) {
+  const repository = repo();
+  let engagement = await repository.getEngagement(engagementId);
+  if (!engagement || engagement.firstTouchAt || !email.at) return false;
+  const at = now().toISOString();
+  const path: EngagementState[] =
+    engagement.state === "routed"
+      ? ["awaiting_first_touch", "first_touch_sent"]
+      : ["first_touch_sent"];
+  engagement = await repository.updateEngagement(
+    engagement.id,
+    { firstTouchAt: email.at, updatedAt: at },
+    engagement.version,
+  );
+  for (const to of path) {
+    const from = engagement.state as EngagementState;
+    if (!canTransition(from, to)) break;
+    engagement = await repository.updateEngagement(
+      engagement.id,
+      { state: to, updatedAt: at },
+      engagement.version,
+    );
+    await repository.appendEvent({
+      id: newId(),
+      engagementId: engagement.id,
+      correlationId: engagement.id,
+      type: "state.changed",
+      actor: "system:hubspot-history",
+      payload: { from, to, via: "first_touch_detected" },
+      receiptId: null,
+      occurredAt: at,
+    });
+  }
+  await repository.appendEvent({
+    id: newId(),
+    engagementId: engagement.id,
+    correlationId: engagement.id,
+    type: "first_touch.detected",
+    actor: "system:hubspot-history",
+    payload: {
+      sent_at: email.at,
+      subject: email.title,
+      from: email.from,
+    },
+    receiptId: null,
+    occurredAt: at,
+  });
+  return true;
+}
+
+const HISTORY_RECHECK_MS = 10 * 60_000;
+const WATCHED_STATES = new Set([
+  "routed",
+  "awaiting_first_touch",
+  "attached",
+  "ql",
+]);
+
+/** Checks open live leads for a first touch sent from HubSpot, a few per minute. */
+export async function detectFirstTouches(budgetMs = 10_000, limit = 8) {
+  const repository = repo();
+  const started = Date.now();
+  let checked = 0;
+  let detected = 0;
+  for (const row of await repository.listInboxBySource(
+    HUBSPOT_SOURCE,
+    ["done"],
+    500,
+  )) {
+    if (checked >= limit || Date.now() - started > budgetMs) break;
+    const submission = await repository.getSubmissionByInbox(row.id);
+    if (!submission?.engagementId) continue;
+    const engagement = await repository.getEngagement(submission.engagementId);
+    if (
+      !engagement ||
+      engagement.firstTouchAt ||
+      !WATCHED_STATES.has(engagement.state)
+    )
+      continue;
+    const events = await repository.listEvents(engagement.id);
+    const last = [...events]
+      .reverse()
+      .find((item) => item.type === "history.checked");
+    if (
+      last &&
+      now().getTime() - Date.parse(last.occurredAt) < HISTORY_RECHECK_MS
+    )
+      continue;
+    const contactId =
+      typeof row.payload.crm_contact_id === "string"
+        ? row.payload.crm_contact_id
+        : null;
+    if (!contactId) continue;
+    checked += 1;
+    try {
+      const history = await fetchContactHistory(hubspotFetch, contactId, {
+        perType: 10,
+      });
+      const sent = firstTouchAfter(history, submission.submittedAt);
+      await repository.appendEvent({
+        id: newId(),
+        engagementId: engagement.id,
+        correlationId: engagement.id,
+        type: "history.checked",
+        actor: "system:hubspot-history",
+        payload: { items: history.items.length, first_touch: Boolean(sent) },
+        receiptId: null,
+        occurredAt: now().toISOString(),
+      });
+      if (sent && (await recordFirstTouch(engagement.id, sent))) detected += 1;
+    } catch (error) {
+      console.warn(
+        "[pa] History check failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return { checked, detected };
 }

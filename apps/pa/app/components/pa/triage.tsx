@@ -187,9 +187,12 @@ function Header({ label, value }: { label: string; value: ReactNode }) {
 export function DraftCard({
   draft,
   onAsk,
+  sent,
 }: {
   draft: DraftView;
   onAsk: (kind: "revise" | "draft") => void;
+  /** The email already sent from HubSpot after the form (D64). */
+  sent?: ReactNode;
 }) {
   const hasDraft = draft.status === "ready" || draft.status === "needs_edit";
   return (
@@ -210,9 +213,16 @@ export function DraftCard({
               {draft.approach.label}
             </span>
           ) : null}
-          <DraftStatusChip status={draft.status} />
+          {sent && !hasDraft ? (
+            <span className="inline-flex h-[22px] items-center rounded-[5px] bg-primary-soft px-1.5 text-[11.5px] font-medium text-primary">
+              Sent from HubSpot
+            </span>
+          ) : (
+            <DraftStatusChip status={draft.status} />
+          )}
         </div>
       </header>
+      {sent}
       {hasDraft ? (
         <>
           <div className="divide-y divide-border border-b border-border">
@@ -300,7 +310,7 @@ export function DraftCard({
             ) : null}
           </div>
         </>
-      ) : (
+      ) : sent ? null : (
         <div className="flex flex-1 flex-col items-start gap-3 px-4 py-5">
           <p className="text-[13.5px] leading-relaxed text-muted-foreground">
             {draft.note}

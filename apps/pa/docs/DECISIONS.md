@@ -1185,3 +1185,22 @@ bottom. Revisit one only when its "revisit when" condition happens.
   status `refresh`); the minute poll refreshes a batch each minute and wakes
   the agent. Decided leads are left alone; a single decided lead can still
   be refreshed after a confirmation.
+
+## D64. Contact history from HubSpot, and first touches sent from HubSpot
+
+- **Status:** Decided by Fred, 2026-09-30: a lead "was actioned in HubSpot,
+  but then the draft disappeared. Instead of just disappearing, add the
+  contact history, showing the email(s) that was sent and any previous
+  contact points."
+- **Contact history** (`get-contact-history`, read-only): the contact's
+  emails (subject, direction, sender, text), calls, meetings, and notes
+  through the v4 associations and batch reads, plus Dobby's Contact Sales
+  message (`dobby_message_1`), newest first, on every live lead. Anything
+  the token cannot read (for example a missing email scope) is named.
+- **First touch from HubSpot:** the minute poll checks a few open leads a
+  minute (each at most every 10 minutes). An email we sent after the form
+  marks the first touch: the SLA timer's contact milestone is met, the lead
+  moves to first touch sent, and PA stops drafting a first touch for it. The
+  draft card shows that email ("Already contacted from HubSpot").
+- **The agent reads the history** before drafting or revising, so it never
+  repeats what was already sent.

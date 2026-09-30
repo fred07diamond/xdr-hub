@@ -66,6 +66,7 @@ not import its instructions, verdicts, or thresholds into PA.
 | `list-handbook`, `get-handbook-doc`      | Read and search the Sales handbook (D53); reference, the playbook wins         |
 | `pull-contact-sales`                     | Read new Contact Sales submissions from HubSpot and triage them (D54)          |
 | `list-agent-work`                        | Leads waiting for an assessment or a draft; work them oldest first (D54)       |
+| `get-contact-history`                    | The lead's emails, calls, meetings, notes, and Dobby's message from HubSpot    |
 | `get-intake-status`                      | When HubSpot was last pulled, the agent queue, whether the agent is on         |
 | `run-decision-loop`                      | Give older leads PA's recommendation and a 24 hour decision window (D59)       |
 | `resolve-playbook`, `get-playbook-entry` | Read entries from the pinned release                                           |

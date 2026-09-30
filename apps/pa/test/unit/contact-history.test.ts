@@ -1,0 +1,81 @@
+// Contact history from HubSpot (D64), against a fake portal.
+import { describe, expect, it } from "vitest";
+
+import {
+  fetchContactHistory,
+  firstTouchAfter,
+} from "../../server/core/crm/history.js";
+import type { HubSpotFetch } from "../../server/core/crm/hubspot-adapter.js";
+import { draftPlan } from "../../server/core/drafting/index.js";
+
+const fetch: HubSpotFetch = async (path) => {
+  if (path.includes("/associations/emails"))
+    return { results: [{ toObjectId: 1 }, { toObjectId: 2 }] };
+  if (path.includes("/associations/calls"))
+    throw new Error("HubSpot error (403): missing scope");
+  if (path.includes("/associations/")) return { results: [] };
+  if (path === "/crm/v3/objects/emails/batch/read")
+    return {
+      results: [
+        {
+          id: "1",
+          properties: {
+            hs_timestamp: "2026-09-30T16:20:00.000Z",
+            hs_email_direction: "EMAIL",
+            hs_email_subject: "Your landing pages",
+            hs_email_text: "<p>Hi Sam,&nbsp;thanks for reaching out.</p>",
+            hs_email_status: "SENT",
+            hs_email_from_email: "rep@example.com",
+          },
+        },
+        {
+          id: "2",
+          properties: {
+            hs_timestamp: "2026-09-29T10:00:00.000Z",
+            hs_email_direction: "INCOMING_EMAIL",
+            hs_email_subject: "Question",
+            hs_email_text: "Older note from the lead",
+          },
+        },
+      ],
+    };
+  if (path.includes("properties=dobby_message_1"))
+    return {
+      properties: { dobby_message_1: "Hi Sam, thanks for your interest." },
+    };
+  throw new Error(`unexpected ${path}`);
+};
+
+describe("fetchContactHistory", () => {
+  it("reads emails newest first, strips HTML, and reports what it could not read", async () => {
+    const history = await fetchContactHistory(fetch, "c1");
+    const emails = history.items.filter((item) => item.kind === "email");
+    expect(emails.map((item) => item.direction)).toEqual([
+      "outbound",
+      "inbound",
+    ]);
+    expect(emails[0].preview).toBe("Hi Sam, thanks for reaching out.");
+    expect(history.items.some((item) => item.kind === "dobby")).toBe(true);
+    expect(history.unavailable.map((item) => item.kind)).toEqual(["call"]);
+  });
+
+  it("finds the first email we sent after the form", async () => {
+    const history = await fetchContactHistory(fetch, "c1");
+    expect(firstTouchAfter(history, "2026-09-30T16:00:00.000Z")?.title).toBe(
+      "Your landing pages",
+    );
+    expect(firstTouchAfter(history, "2026-09-30T17:00:00.000Z")).toBeNull();
+  });
+});
+
+describe("drafting after a HubSpot first touch", () => {
+  it("does not draft a first touch once one was sent", () => {
+    const plan = draftPlan({
+      state: "first_touch_sent",
+      precheck: "continue",
+      hasOwner: true,
+    });
+    expect(plan.needed).toBe(false);
+    expect(plan.reason).toMatch(/already went out from HubSpot/);
+  });
+});

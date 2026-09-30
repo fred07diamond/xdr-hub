@@ -24,6 +24,10 @@ the move that fills each gap.
   company size, Breeze score, title), the CRM snapshot (lifecycle, owners,
   open deals, firmographics), the scorecard, and `contactSalesClass`, PA's
   suggested class with the criteria behind it.
+- `get-contact-history`: every email, call, meeting, and note on the
+  contact in HubSpot, and Dobby's message. If an email already went out
+  after the form (`firstTouch`), do not draft a first touch; say so, and if
+  asked for a follow-up, build on what was sent instead of repeating it.
 - `resolve-playbook` and `get-playbook-entry` for `msg.first_touch.structure`,
   `msg.agency.first_touch`, and knowledge entries that answer the question.
 - The Sales handbook (`get-handbook-doc`): `03-lead-routing-and-playbooks`
