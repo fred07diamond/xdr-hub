@@ -66,6 +66,7 @@ not import its instructions, verdicts, or thresholds into PA.
 | `pull-contact-sales`                     | Read new Contact Sales submissions from HubSpot and triage them (D54)          |
 | `list-agent-work`                        | Leads waiting for an assessment or a draft; work them oldest first (D54)       |
 | `get-intake-status`                      | When HubSpot was last pulled, the agent queue, whether the agent is on         |
+| `run-decision-loop`                      | Give older leads PA's recommendation and a 24 hour decision window (D59)       |
 | `resolve-playbook`, `get-playbook-entry` | Read entries from the pinned release                                           |
 | `get-pa-status`                          | Mode and current playbook release                                              |
 | `replay-submission`                      | Replay one synthetic case, or all of them, in shadow (admin)                   |
@@ -80,7 +81,8 @@ People only, hidden from the agent: `review-playbook-change`,
 `publish-playbook-change`, `update-suggestion`, `enable-playbook-review`,
 `list-crm-connections`, `set-crm-credential`, `test-crm-connection`,
 `remove-crm-credential`, `update-handbook-doc`, `import-handbook-docs`,
-`enable-inbound-agent`.
+`enable-inbound-agent`, `decide-lead` (the rep's decision; the agent may
+recommend but never decides).
 
 Planned, not built yet (do not call): `approve-draft`,
 `edit-draft`, `send-first-touch`, `reassign-engagement`, `record-correction`

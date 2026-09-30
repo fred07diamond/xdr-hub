@@ -452,3 +452,28 @@ export const paHandbookRevisions = table(
     uniqueIndex("pa_handbook_revisions_doc_version").on(t.docId, t.version),
   ],
 );
+
+// The rep decision loop (D59): one decision per engagement.
+export const paDecisions = table(
+  "pa_decisions",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id").notNull(),
+    kind: text("kind").notNull(),
+    options: json("options").notNull().default("[]"),
+    recommendation: text("recommendation").notNull(),
+    recommendationReason: text("recommendation_reason").notNull(),
+    question: text("question"),
+    ownerEmail: text("owner_email"),
+    dueAt: text("due_at").notNull(),
+    status: text("status").notNull().default("open"),
+    choice: text("choice"),
+    note: text("note"),
+    decidedBy: text("decided_by"),
+    decidedAt: text("decided_at"),
+    slaMissedAt: text("sla_missed_at"),
+    version: integer("version").notNull().default(1),
+    ...stamps,
+  },
+  (t) => [uniqueIndex("pa_decisions_engagement").on(t.engagementId)],
+);

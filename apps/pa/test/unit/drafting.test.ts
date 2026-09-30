@@ -54,8 +54,25 @@ describe("draftPlan", () => {
       draftPlan({ state: "closed", precheck: "continue", hasOwner: true })
         .needed,
     ).toBe(false);
+    // An owned account's lead is drafted for its owner; an open deal or an
+    // existing customer is not.
+    expect(
+      draftPlan({
+        state: "attached",
+        precheck: "attach_to_owner",
+        signal: "owned_account",
+        hasOwner: true,
+      }).needed,
+    ).toBe(true);
+    expect(
+      draftPlan({
+        state: "attached",
+        precheck: "attach_to_owner",
+        signal: "existing_deal_or_customer",
+        hasOwner: true,
+      }).needed,
+    ).toBe(false);
     for (const precheck of [
-      "attach_to_owner",
       "route_to_support",
       "self_serve_thank_you",
       "ignore_logged",
@@ -170,7 +187,12 @@ describe("the demo board, as a PA sees it", () => {
     expect(riley.triage.kind).toBe("review");
     expect(riley.draft.status).toBe("ready");
 
-    expect(byName.get("Marcus Lee")!.triage.kind).toBe("owner");
+    // Every lead has an owner, so an owned account is classified by the lead
+    // itself; the open deal and the customer are their own classes (D59).
+    expect(byName.get("Marcus Lee")!.triage.label).toBe("Qualified lead");
+    expect(byName.get("Marcus Lee")!.triage.why).toMatch(/Owned account/);
+    expect(byName.get("Ines Duarte")!.triage.label).toBe("Open deal");
+    expect(byName.get("Elena Petrova")!.triage.label).toBe("Existing customer");
     expect(byName.get("Sam Whitfield")!.triage.label).toBe("Support request");
     expect(byName.get("Leo Brandt")!.triage.label).toBe("Vendor pitch");
     expect(byName.get("test")!.triage.label).toBe("Spam or test");

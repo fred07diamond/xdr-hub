@@ -29,6 +29,7 @@ export function IntakeBar({ onPulled }: { onPulled: () => void }) {
   const status = useActionQuery("get-intake-status", {});
   const pull = useActionMutation("pull-contact-sales");
   const enable = useActionMutation("enable-inbound-agent");
+  const backfill = useActionMutation("run-decision-loop");
   const data = status.data as IntakeStatus | undefined;
   if (!data) return null;
   const last = data.lastPull;
@@ -63,6 +64,34 @@ export function IntakeBar({ onPulled }: { onPulled: () => void }) {
         >
           <IconRobot className="size-4" aria-hidden="true" />
           Turn on the inbound agent
+        </Button>
+      ) : null}
+      {data.canPull ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={backfill.isPending}
+          title="Give older leads PA's recommendation and a 24 hour decision window. New leads get this on their own."
+          onClick={() =>
+            backfill.mutate(
+              {},
+              {
+                onSuccess: (raw) => {
+                  const result = raw as { created: number };
+                  toast.success(
+                    result.created > 0
+                      ? `${result.created} older ${result.created === 1 ? "lead is" : "leads are"} ready for a decision.`
+                      : "Every lead that needs a decision already has one.",
+                  );
+                  onPulled();
+                },
+                onError: (error) => toast.error(actionErrorMessage(error)),
+              },
+            )
+          }
+        >
+          {backfill.isPending ? "Running..." : "Decide on older leads"}
         </Button>
       ) : null}
       {data.canPull ? (

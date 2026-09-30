@@ -3,6 +3,7 @@ import {
   type AccountRecord,
   type AssessmentRecord,
   type DraftRecord,
+  type DecisionRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type ContactRecord,
@@ -36,6 +37,7 @@ interface Tables {
   assessments: Map<string, AssessmentRecord>;
   scorecards: Map<string, ScorecardRecord>;
   drafts: Map<string, DraftRecord>;
+  decisions: Map<string, DecisionRecord>;
   handbook: Map<string, HandbookDocRecord>;
   handbookRevisions: Map<string, HandbookRevisionRecord>;
   releases: Map<string, ReleaseRecord>;
@@ -59,6 +61,7 @@ function emptyTables(): Tables {
     assessments: new Map(),
     scorecards: new Map(),
     drafts: new Map(),
+    decisions: new Map(),
     handbook: new Map(),
     handbookRevisions: new Map(),
     releases: new Map(),
@@ -383,6 +386,39 @@ export class MemoryRepository implements PaRepository {
       .filter((item) => item.docId === docId)
       .sort((a, b) => b.version - a.version)
       .map(copy);
+  }
+
+  async insertDecisionIfAbsent(record: DecisionRecord) {
+    for (const existing of this.tables.decisions.values())
+      if (existing.engagementId === record.engagementId) return false;
+    this.tables.decisions.set(record.id, copy(record));
+    return true;
+  }
+  async getDecision(engagementId: string) {
+    for (const existing of this.tables.decisions.values())
+      if (existing.engagementId === engagementId) return copy(existing);
+    return null;
+  }
+  async listOpenDecisions() {
+    return [...this.tables.decisions.values()]
+      .filter((item) => item.status === "open")
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
+      .map(copy);
+  }
+  async updateDecision(
+    id: string,
+    patch: Partial<DecisionRecord>,
+    expectedVersion: number,
+  ) {
+    return copy(
+      bumpVersioned(
+        this.tables.decisions,
+        id,
+        patch,
+        expectedVersion,
+        "Decision",
+      ),
+    );
   }
 
   async insertDraft(record: DraftRecord) {

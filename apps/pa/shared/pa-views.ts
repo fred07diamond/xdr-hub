@@ -163,9 +163,27 @@ export interface BoardRow {
   triage: TriageView;
   draft: DraftSummary;
   sla: SlaView;
+  decision: DecisionView | null;
 }
 
-export type BoardTab = "mine" | "team" | "at_risk" | "breached";
+export type BoardTab = "mine" | "team" | "decide" | "at_risk" | "breached";
+
+/** The rep's decision on a lead (workflow 2b, D59). */
+export interface DecisionView {
+  status: "open" | "decided";
+  kind: "standard" | "meeting_booked";
+  options: Array<{ code: string; label: string }>;
+  recommendation: { code: string; label: string };
+  reason: string;
+  question: string | null;
+  dueAt: string;
+  overdue: boolean;
+  slaMissedAt: string | null;
+  choice: { code: string; label: string } | null;
+  note: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}
 
 export interface BoardResult {
   rows: BoardRow[];
@@ -286,6 +304,7 @@ export interface EngagementDetail {
   triage: TriageView;
   draft: DraftView;
   sla: SlaView;
+  decision: DecisionView | null;
   salesCycle: SalesStageView[];
   timeline: TimelineItem[];
   receipts: ReceiptSummary[];

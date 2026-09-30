@@ -18,6 +18,15 @@
       "language": "en",
       "used_entry_ids": ["msg.first_touch.structure"],
       "question_handling": "no_question"
+    },
+    "agency-already-sal": {
+      "subject": "The Enterprise trial for your client",
+      "approach": "agency",
+      "body": "Hi,\n\nThanks for reaching out about an Enterprise trial for your client. We work with a lot of agencies, and our partnerships team can help set it up.\n\nSo I can set up the right trial, who is the client, and what do they want to build? I'll confirm the next step once I know.\n\nThanks,\n\n{owner_first_name}",
+      "cta": "reply",
+      "language": "en",
+      "used_entry_ids": ["msg.first_touch.structure", "msg.agency.first_touch"],
+      "question_handling": "will_confirm"
     }
   }
 }

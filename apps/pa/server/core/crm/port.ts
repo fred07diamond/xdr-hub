@@ -45,6 +45,8 @@ export interface CrmContact {
    */
   assignedOwner?: CrmOwner | null;
   lastActivityAt: string | null;
+  /** When their last meeting was booked (the owner's link on the site). */
+  meetingBookedAt?: string | null;
   isCustomer: boolean;
   isChurned: boolean;
   productSignal: string | null;

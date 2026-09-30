@@ -35,7 +35,7 @@ export default defineAction({
       .optional()
       .describe("Sales handbook doc to open with view handbook"),
     tab: z
-      .enum(["mine", "team", "at_risk", "breached"])
+      .enum(["mine", "team", "decide", "at_risk", "breached"])
       .optional()
       .describe("Board tab"),
     state: z.string().optional().describe("Board state filter"),

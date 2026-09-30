@@ -162,6 +162,29 @@ export interface DraftRecord {
   updatedAt: string;
 }
 
+export interface DecisionRecord {
+  id: string;
+  engagementId: string;
+  /** standard: accept, decline, research. meeting_booked: what to do with the meeting. */
+  kind: "standard" | "meeting_booked";
+  options: string[];
+  recommendation: string;
+  recommendationReason: string;
+  /** A question flagged for the rep, when PA cannot tell (workflow 1b). */
+  question: string | null;
+  ownerEmail: string | null;
+  dueAt: string;
+  status: "open" | "decided";
+  choice: string | null;
+  note: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  slaMissedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type HandbookStatus = "index" | "current" | "legacy";
 
 export interface HandbookDocRecord {
@@ -478,6 +501,15 @@ export interface PaRepository extends PlaybookStore {
   insertHandbookRevision(record: HandbookRevisionRecord): Promise<void>;
   /** Newest first. */
   listHandbookRevisions(docId: string): Promise<HandbookRevisionRecord[]>;
+
+  insertDecisionIfAbsent(record: DecisionRecord): Promise<boolean>;
+  getDecision(engagementId: string): Promise<DecisionRecord | null>;
+  listOpenDecisions(): Promise<DecisionRecord[]>;
+  updateDecision(
+    id: string,
+    patch: Partial<DecisionRecord>,
+    expectedVersion: number,
+  ): Promise<DecisionRecord>;
 
   insertDraft(record: DraftRecord): Promise<void>;
   /** Oldest first; the last one is the current draft. */

@@ -144,14 +144,25 @@ export interface DraftPlan {
 export function draftPlan(input: {
   state: EngagementState | string;
   precheck: PrecheckOutcome | string | null;
+  /** The pre-check signal; owned accounts get a draft for their owner. */
+  signal?: string | null;
   hasOwner: boolean;
 }): DraftPlan {
   switch (input.precheck) {
     case "attach_to_owner":
+      // An owned account's lead still gets a reply, drafted for its owner
+      // (workflow 1b to 2b). Open deals and existing customers do not.
+      if (input.signal === "existing_deal_or_customer")
+        return {
+          needed: false,
+          reason:
+            "No cold reply: an open deal or an existing customer goes to their AE.",
+        };
+      if (input.state !== "attached")
+        return { needed: false, reason: "No draft: the lead has moved on." };
       return {
-        needed: false,
-        reason:
-          "No cold reply: this contact already has an owner, who picks up the new ask in the existing conversation.",
+        needed: true,
+        reason: "A reply is due, drafted for the account owner.",
       };
     case "route_to_support":
       return {

@@ -1046,3 +1046,52 @@ bottom. Revisit one only when its "revisit when" condition happens.
   lifecycle of QL, SAL, S0, or S1 now marks those stages done.
 - **Leads already triaged** keep their first snapshot; a new submission
   from the same contact is read the new way.
+
+## D58. The minute poll: new leads come in on their own
+
+- **Status:** Decided by Fred, 2026-09-30: "the app should automatically
+  pull in the new leads that come in immediately so it should monitor for
+  new leads." Resolves D34 for intake and deadlines.
+- **Choice:** a Netlify scheduled function at the workspace root
+  (`netlify/functions/pa-intake-poll.mts`, every minute) makes a signed call
+  (HMAC-SHA256 of the timestamp with `A2A_SECRET`, fresh within five
+  minutes) to `/pa/api/internal/intake-poll`. PA then, as the workspace
+  owner (`WORKSPACE_OWNER_EMAIL`): pulls the last 6 hours of Contact Sales
+  submissions (read-only; the inbox key dedupes), wakes the inbound agent
+  when a new lead arrived or work has waited 10 minutes, and checks decision
+  deadlines. No model call on the fixed path.
+- **Why not the framework's recurring-jobs sweep:** in 0.176.4 it only runs
+  agent jobs; there is no hook for app code (verified in
+  `dist/server/agent-chat-plugin.js`).
+- **Latency:** about a minute after HubSpot stamps the submission. A HubSpot
+  workflow webhook (D5) would be instant but is a CRM change.
+
+## D59. The rep decision loop, and no "existing owner" class
+
+- **Status:** Decided by Fred, 2026-09-30: remove "the confusing classifier
+  of Existing owner, because there is always an owner"; run the rep decision
+  loop automatically for new leads, with a button for older leads. The
+  timeout records and alerts only; sending stays drafts only (D39).
+- **Classification:** an owned account is classified by the lead itself
+  (Qualified lead, routed to the account owner) and gets a draft for its
+  owner. An open deal is "Open deal" (to the AE, not a PA play). An existing
+  customer with no open deal is "Existing customer" with the workflow 1b
+  question flagged: same team (redirect to AE and CSM) or another BU
+  (expansion).
+- **The loop (workflow 2b):** every lead routed to a rep (pre-check continue,
+  owned accounts, existing customers without a deal) gets one decision in
+  `pa_decisions` (migration v8) with PA's recommendation, a reason, and a
+  due time 24 hours from the submission (`rule.sla.decision`). Choices:
+  accept and sequence (to SAL in PA), decline and recycle, research more
+  (stays open, note kept); with a meeting booked after the form
+  (`engagements_last_meeting_booked`), take it, disqualify, bring in an AE,
+  or route elsewhere; for customers, customer redirect (4d, its own exit,
+  reportable). Every choice is recorded against the recommendation.
+- **Timeout:** the minute poll marks the miss once and notifies the rep and
+  the app owner. Nothing executes (Fred's answer, 2026-09-30).
+- **Older leads:** "Decide on older leads" gives each lead without a
+  decision one, due 24 hours from the click, so old leads are not all late.
+- **PA only:** decisions change PA's state; HubSpot is not written.
+- **Recommendation today** is deterministic from the scorecard and flags;
+  the Scorecard Agent's written recommendation (workflow 1c, 2a) replaces
+  the reason text when deep research lands.

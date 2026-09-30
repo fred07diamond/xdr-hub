@@ -415,6 +415,31 @@ CREATE TABLE IF NOT EXISTS pa_handbook_revisions (
 CREATE UNIQUE INDEX IF NOT EXISTS pa_handbook_revisions_doc_version ON pa_handbook_revisions (doc_id, version)
 `;
 
+// Additive: the rep decision loop (D59), one decision per engagement.
+export const repDecisions = `
+CREATE TABLE IF NOT EXISTS pa_decisions (
+  id TEXT PRIMARY KEY,
+  engagement_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  options TEXT NOT NULL DEFAULT '[]',
+  recommendation TEXT NOT NULL,
+  recommendation_reason TEXT NOT NULL,
+  question TEXT,
+  owner_email TEXT,
+  due_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  choice TEXT,
+  note TEXT,
+  decided_by TEXT,
+  decided_at TEXT,
+  sla_missed_at TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pa_decisions_engagement ON pa_decisions (engagement_id)
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -429,6 +454,7 @@ export const PA_MIGRATIONS = [
   { version: 5, name: "pa-crm-schema-snapshot", sql: crmSchemaSnapshot },
   { version: 6, name: "pa-draft-source", sql: draftSource },
   { version: 7, name: "pa-sales-handbook", sql: salesHandbook },
+  { version: 8, name: "pa-rep-decisions", sql: repDecisions },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {

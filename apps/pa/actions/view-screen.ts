@@ -16,7 +16,7 @@ import {
 import { isDemoId } from "../shared/demo.js";
 import type { BoardTab } from "../shared/pa-views.js";
 
-const TABS: BoardTab[] = ["mine", "team", "at_risk", "breached"];
+const TABS: BoardTab[] = ["mine", "team", "decide", "at_risk", "breached"];
 
 export default defineAction({
   description:

@@ -1,6 +1,7 @@
 // The two things a PA reads first on every lead (D49): how it was classified,
 // and the drafted reply. Everything else on the record sits behind "Details".
 import type {
+  DecisionView,
   DraftStatus,
   DraftSummary,
   DraftView,
@@ -15,7 +16,7 @@ import {
   IconMessageCircleQuestion,
   IconPencil,
 } from "@tabler/icons-react";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -389,5 +390,154 @@ export function TriageCard({
         </p>
       </footer>
     </section>
+  );
+}
+
+function dueLabel(dueAt: string, now = Date.now()) {
+  const minutes = Math.round((Date.parse(dueAt) - now) / 60_000);
+  if (minutes <= 0) return "Past the 24 hour SLA";
+  if (minutes < 60) return `Decide within ${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `Decide within ${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
+}
+
+/** The rep's decision (workflow 2b, D59): PA's recommendation and the choices. */
+export function DecisionBar({
+  decision,
+  onDecide,
+  pending,
+  onAsk,
+  canDecide,
+}: {
+  decision: DecisionView;
+  onDecide: (choice: string, note: string | null) => void;
+  pending: boolean;
+  onAsk: () => void;
+  canDecide: boolean;
+}) {
+  const [note, setNote] = useState("");
+  if (decision.status === "decided" && decision.choice) {
+    return (
+      <section
+        aria-label="Decision"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-4 py-3 text-[13px] shadow-xs"
+      >
+        <IconCheck className="size-4 text-primary" aria-hidden="true" />
+        <span className="font-medium text-foreground">
+          Decided: {decision.choice.label}
+        </span>
+        <span className="text-muted-foreground">
+          {decision.decidedBy?.replace(/^user:/, "")}
+          {decision.choice.code !== decision.recommendation.code
+            ? ` · PA recommended ${decision.recommendation.label.toLowerCase()}`
+            : " · as PA recommended"}
+          {decision.slaMissedAt ? " · after the SLA" : ""}
+        </span>
+        {decision.note ? (
+          <span className="w-full text-muted-foreground">
+            Note. {decision.note}
+          </span>
+        ) : null}
+      </section>
+    );
+  }
+  const overdue = decision.overdue;
+  return (
+    <section
+      aria-label="Your decision"
+      className={cn(
+        "rounded-lg border bg-card shadow-xs",
+        overdue ? "border-destructive/40" : "border-border",
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[11.5px] font-medium text-muted-foreground">
+            {decision.kind === "meeting_booked"
+              ? "A meeting is booked. What should happen with it?"
+              : "Your decision"}
+            {" · "}
+            <span
+              className={cn(
+                overdue ? "text-destructive-strong" : "text-foreground/80",
+              )}
+            >
+              {dueLabel(decision.dueAt)}
+            </span>
+          </p>
+          <p className="mt-0.5 text-[14px] text-foreground">
+            PA recommends{" "}
+            <span className="font-semibold">
+              {decision.recommendation.label.toLowerCase()}
+            </span>
+            . {decision.reason}
+          </p>
+          {decision.question ? (
+            <p className="mt-1 rounded-md bg-warning-soft px-2.5 py-1.5 text-[12.5px] text-warning-foreground">
+              {decision.question}
+            </p>
+          ) : null}
+        </div>
+        <Button type="button" size="sm" variant="ghost" onClick={onAsk}>
+          <IconMessageCircleQuestion className="size-4" aria-hidden="true" />
+          Pressure-test with the agent
+        </Button>
+      </div>
+      {canDecide ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+          {decision.options.map((option) => (
+            <Button
+              key={option.code}
+              type="button"
+              size="sm"
+              variant={
+                option.code === decision.recommendation.code
+                  ? "default"
+                  : "outline"
+              }
+              disabled={pending}
+              onClick={() => onDecide(option.code, note.trim() || null)}
+            >
+              {option.label}
+            </Button>
+          ))}
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Note (optional)"
+            maxLength={1000}
+            aria-label="Decision note"
+            className="h-8 min-w-[12rem] flex-1 rounded-md border border-input bg-background px-2.5 text-[13px] shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      ) : null}
+      <p className="border-t border-border px-4 py-2 text-[11.5px] text-muted-foreground">
+        Recorded in PA only; HubSpot is not changed and nothing is sent. Past 24
+        hours the miss is recorded and flagged; nothing happens on its own.
+      </p>
+    </section>
+  );
+}
+
+export function DecisionPill({ decision }: { decision: DecisionView | null }) {
+  if (!decision) return null;
+  if (decision.status === "decided")
+    return (
+      <span className="text-[11.5px] text-muted-foreground">
+        {decision.choice?.label}
+      </span>
+    );
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 items-center rounded-[4px] px-1.5 text-[11px] font-medium",
+        decision.overdue
+          ? "bg-destructive-soft text-destructive-strong"
+          : "bg-secondary text-foreground",
+      )}
+      title={`PA recommends ${decision.recommendation.label.toLowerCase()}`}
+    >
+      {dueLabel(decision.dueAt).replace("Decide within", "Decide in")}
+    </span>
   );
 }

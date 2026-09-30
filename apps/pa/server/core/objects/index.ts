@@ -36,14 +36,15 @@ const CLOSE_PATHS: EngagementState[] = ["recycled", "disqualified", "closed"];
 const TRANSITIONS: Record<EngagementState, readonly EngagementState[]> = {
   new: ["prechecked"],
   prechecked: ["routed", "attached", "disqualified", "closed"],
-  routed: ["awaiting_first_touch", ...CLOSE_PATHS],
+  // ql from routed and attached: the rep accepts in the decision loop (D59).
+  routed: ["awaiting_first_touch", "ql", ...CLOSE_PATHS],
   awaiting_first_touch: ["first_touch_sent", "ql", ...CLOSE_PATHS],
   first_touch_sent: ["replied", "meeting_booked", "ql", "sal", ...CLOSE_PATHS],
   replied: ["meeting_booked", "ql", "sal", ...CLOSE_PATHS],
   meeting_booked: ["ql", "sal", ...CLOSE_PATHS],
   ql: ["sal", ...CLOSE_PATHS],
   sal: ["closed"],
-  attached: ["first_touch_sent", "closed"],
+  attached: ["first_touch_sent", "ql", ...CLOSE_PATHS],
   recycled: ["closed"],
   disqualified: ["closed"],
   closed: [],

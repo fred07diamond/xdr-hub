@@ -941,6 +941,7 @@ const draft: PipelineStep = {
     const plan = draftPlan({
       state: engagement.state,
       precheck: state.precheck?.outcome ?? null,
+      signal: state.precheck?.signal ?? null,
       hasOwner: Boolean(engagement.ownerUserId),
     });
     const owner = engagement.ownerUserId

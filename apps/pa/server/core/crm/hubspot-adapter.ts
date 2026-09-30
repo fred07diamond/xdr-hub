@@ -191,6 +191,7 @@ export class HubSpotCrmAdapter implements CrmPort {
       owner: intake ? null : owner,
       assignedOwner: intake ? owner : null,
       lastActivityAt: str(props[fields.lastActivity]),
+      meetingBookedAt: str(props.engagements_last_meeting_booked),
       isCustomer: lifecycle === "customer",
       isChurned: false,
       productSignal: str(props.last_active_in_builder),
@@ -209,6 +210,7 @@ export class HubSpotCrmAdapter implements CrmPort {
       fields.lastActivity,
       "last_active_in_builder",
       "hubspot_owner_assigneddate",
+      "engagements_last_meeting_booked",
     ];
   }
 

@@ -16,6 +16,7 @@ import {
   type ReleaseRecord,
   type ScorecardRecord,
   type DraftRecord,
+  type DecisionRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type SubmissionRecord,
@@ -52,6 +53,7 @@ const {
   paReceipts,
   paScorecards,
   paDrafts,
+  paDecisions,
   paHandbookDocs,
   paHandbookRevisions,
   paSubmissions,
@@ -538,6 +540,57 @@ export class DrizzleRepository implements PaRepository {
       .where(eq(paHandbookRevisions.docId, docId))
       .orderBy(desc(paHandbookRevisions.version));
     return rows as HandbookRevisionRecord[];
+  }
+
+  async insertDecisionIfAbsent(record: DecisionRecord) {
+    const rows = await this.db
+      .insert(paDecisions)
+      .values(encodeJson<any>("decisions", record))
+      .onConflictDoNothing({ target: paDecisions.engagementId })
+      .returning({ id: paDecisions.id });
+    return rows.length > 0;
+  }
+  async getDecision(engagementId: string) {
+    const [row] = await this.db
+      .select()
+      .from(paDecisions)
+      .where(eq(paDecisions.engagementId, engagementId))
+      .limit(1);
+    return row
+      ? (decodeJson("decisions", row) as unknown as DecisionRecord)
+      : null;
+  }
+  async listOpenDecisions() {
+    const rows = await this.db
+      .select()
+      .from(paDecisions)
+      .where(eq(paDecisions.status, "open"))
+      .orderBy(asc(paDecisions.dueAt));
+    return rows.map(
+      (row) => decodeJson("decisions", row) as unknown as DecisionRecord,
+    );
+  }
+  async updateDecision(
+    id: string,
+    patch: Partial<DecisionRecord>,
+    expectedVersion: number,
+  ) {
+    const { id: _id, version: _version, ...rest } = patch;
+    const [row] = await this.db
+      .update(paDecisions)
+      .set({
+        ...encodeJson<any>("decisions", rest),
+        version: expectedVersion + 1,
+      })
+      .where(
+        and(eq(paDecisions.id, id), eq(paDecisions.version, expectedVersion)),
+      )
+      .returning();
+    if (!row)
+      throw new VersionConflictError(
+        `Decision ${id} changed underneath this update`,
+      );
+    return decodeJson("decisions", row) as unknown as DecisionRecord;
   }
 
   async insertDraft(record: DraftRecord) {

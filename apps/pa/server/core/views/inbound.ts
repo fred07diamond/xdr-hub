@@ -50,7 +50,7 @@ import {
   stateLabel,
 } from "./labels.js";
 import { salesCycleView, slaView } from "./sla.js";
-import { draftSummary, draftView, triageFor } from "./triage.js";
+import { decisionView, draftSummary, draftView, triageFor } from "./triage.js";
 
 const CLOCK_RANK: Record<ClockView["status"], number> = {
   breached: 0,
@@ -251,9 +251,22 @@ async function buildRow(
   const leadName = contact?.name ?? latest?.name ?? null;
   const inbox = latest ? await repo.getInbox(latest.inboxId) : null;
   const ownerDisplay = ownerView(owner, viewer, routing?.owner ?? null);
+  const snapshotReceipt = latest
+    ? await repo.findReceipt("crm_snapshot", latest.id)
+    : null;
+  const hasOpenDeal =
+    (
+      (
+        snapshotReceipt?.ruleResults.snapshot as
+          | { openDeals?: unknown[] }
+          | undefined
+      )?.openDeals ?? []
+    ).length > 0;
+  const signal = (precheckReceipt?.ruleResults.signal as string | null) ?? null;
   const draft = draftView({
     engagement,
     precheckOutcome,
+    signal,
     draft: drafts[drafts.length - 1] ?? null,
     lead: { name: leadName, email },
     ownerName: ownerDisplay?.name ?? null,
@@ -264,7 +277,9 @@ async function buildRow(
   const triage = triageFor({
     engagement,
     precheckOutcome,
-    signal: (precheckReceipt?.ruleResults.signal as string | null) ?? null,
+    signal,
+    hasOpenDeal,
+    intent: assessment?.intent ?? null,
     verdict: scorecard?.verdict ?? null,
     routeReason: engagement.routeReason,
     ownerName: ownerDisplay?.name ?? null,
@@ -286,6 +301,7 @@ async function buildRow(
     triage,
     draft: draftSummary(draft),
     sla: slaView({ engagement, clock, events, submittedAt, now }),
+    decision: decisionView(await repo.getDecision(engagement.id), now),
     state: engagement.state,
     stateLabel: stateLabel(engagement.state),
     hidden: inbox?.status === "skipped",
@@ -380,11 +396,13 @@ export async function buildInboundBoard(input: {
   const counts: Record<BoardTab, number> = {
     mine: rows.filter((row) => row.owner?.isMe).length,
     team: rows.length,
+    decide: rows.filter((row) => row.decision?.status === "open").length,
     at_risk: rows.filter((row) => row.sla.status === "at_risk").length,
     breached: rows.filter((row) => row.sla.status === "breached").length,
   };
   const byTab = rows.filter((row) => {
     if (input.tab === "mine") return Boolean(row.owner?.isMe);
+    if (input.tab === "decide") return row.decision?.status === "open";
     if (input.tab === "at_risk") return row.sla.status === "at_risk";
     if (input.tab === "breached") return row.sla.status === "breached";
     return true;
@@ -613,9 +631,13 @@ export async function buildEngagementDetail(input: {
   const drafts = await repo.listDrafts(engagement.id);
   const ownerDisplay = ownerView(owner, input.viewer, routing?.owner ?? null);
   const inbox = latest ? await repo.getInbox(latest.inboxId) : null;
+  const detailSnapshot = lastOf("crm_snapshot")?.ruleResults.snapshot as
+    | { openDeals?: unknown[] }
+    | undefined;
   const draft = draftView({
     engagement,
     precheckOutcome: precheck?.outcome ?? null,
+    signal: precheck?.signal ?? null,
     draft: drafts[drafts.length - 1] ?? null,
     lead: { name: contact?.name ?? latest?.name ?? null, email },
     ownerName: ownerDisplay?.name ?? null,
@@ -627,6 +649,8 @@ export async function buildEngagementDetail(input: {
     engagement,
     precheckOutcome: precheck?.outcome ?? null,
     signal: precheck?.signal ?? null,
+    hasOpenDeal: (detailSnapshot?.openDeals ?? []).length > 0,
+    intent: assessment?.intent ?? null,
     verdict: scorecard?.verdict ?? null,
     routeReason: engagement.routeReason,
     ownerName: ownerDisplay?.name ?? null,
@@ -652,6 +676,7 @@ export async function buildEngagementDetail(input: {
     triage,
     draft,
     sla: slaView({ engagement, clock, events, submittedAt, now: input.now }),
+    decision: decisionView(await repo.getDecision(engagement.id), input.now),
     salesCycle: salesCycleView({
       submittedAt: firstSubmission?.submittedAt ?? engagement.createdAt,
       verdict: scorecard?.verdict ?? null,

@@ -1,5 +1,10 @@
 import { sendToAgentChat } from "@agent-native/core/client/agent-chat";
-import { setClientAppState } from "@agent-native/core/client/hooks";
+import {
+  actionErrorMessage,
+  setClientAppState,
+  useActionMutation,
+  useActionQuery,
+} from "@agent-native/core/client/hooks";
 import {
   useSetHeaderActions,
   useSetPageTitle,
@@ -19,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { toast } from "sonner";
 
 import { CitationChips, FlagBadge, OwnerChip } from "@/components/pa/badges";
 import { SalesCycle, SlaDetail } from "@/components/pa/clock";
@@ -29,7 +35,7 @@ import { ReceiptsDrawer } from "@/components/pa/receipts-drawer";
 import { ScorecardTable } from "@/components/pa/scorecard-table";
 import { EmptyState, ErrorState } from "@/components/pa/states";
 import { Timeline } from "@/components/pa/timeline";
-import { DraftCard, TriageCard } from "@/components/pa/triage";
+import { DecisionBar, DraftCard, TriageCard } from "@/components/pa/triage";
 import { UntrustedText } from "@/components/pa/untrusted-text";
 import { Button } from "@/components/ui/button";
 import { useEngagement, useInboundBoard } from "@/hooks/use-pa-data";
@@ -435,6 +441,11 @@ export default function EngagementRoute() {
     index >= 0 && index < queue.length - 1 ? queue[index + 1].id : null;
   const suffix = fromTab ? `?tab=${fromTab}` : "";
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const decide = useActionMutation("decide-lead");
+  const intake = useActionQuery("get-intake-status", {}, { enabled: !demo });
+  const canDecide =
+    !demo &&
+    Boolean((intake.data as { canPull?: boolean } | undefined)?.canPull);
   const [receiptId, setReceiptId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -623,6 +634,37 @@ export default function EngagementRoute() {
             </div>
           ) : null}
           <RecordHeader detail={detail} />
+          {detail.decision ? (
+            <div className="mt-4">
+              <DecisionBar
+                decision={detail.decision}
+                canDecide={canDecide}
+                pending={decide.isPending}
+                onAsk={() => askAgent("general")}
+                onDecide={(choice, note) =>
+                  decide.mutate(
+                    {
+                      engagementId: detail.id,
+                      choice: choice as Parameters<
+                        typeof decide.mutate
+                      >[0]["choice"],
+                      note,
+                    },
+                    {
+                      onSuccess: () => {
+                        toast.success(
+                          "Decision recorded in PA. HubSpot is not changed.",
+                        );
+                        void engagement.refetch();
+                      },
+                      onError: (error) =>
+                        toast.error(actionErrorMessage(error)),
+                    },
+                  )
+                }
+              />
+            </div>
+          ) : null}
           <div className="mt-4 grid items-stretch gap-4 @min-[60rem]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <TriageCard
               triage={detail.triage}

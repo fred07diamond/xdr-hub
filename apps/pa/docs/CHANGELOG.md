@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-30 (automatic intake and the decision loop)
+
+- New Contact Sales leads come in on their own, about a minute after they
+  submit. No button needed (D58).
+- Every lead routed to a rep gets a decision with PA's recommendation:
+  accept and sequence, decline and recycle, or research more, or what to do
+  with a booked meeting. 24 hours to decide; a miss is recorded and flagged,
+  nothing happens on its own. "Decide on older leads" covers leads from
+  before (D59).
+- "Existing owner" is gone as a classification. Owned accounts are
+  classified by the lead and get a draft for their owner; open deals and
+  existing customers have their own labels.
+
 ## 2026-09-30 (real leads)
 
 - PA pulls real Contact Sales submissions from HubSpot (read-only) and runs

@@ -1,3 +1,4 @@
+import { ensureDecision } from "../decisions/index.js";
 import { InvalidTransitionError } from "../objects/index.js";
 import { VersionConflictError, type InboxRecord } from "../repo/types.js";
 import { STEPS, type PipelineStep } from "./steps.js";
@@ -233,5 +234,16 @@ export async function runPipeline(
     receiptId: null,
     occurredAt: now,
   });
+  // The rep decision loop (D59): a lead routed to a rep gets its decision.
+  if (state.engagement) {
+    try {
+      await ensureDecision(deps, state.engagement.id);
+    } catch (error) {
+      console.warn(
+        "[pa] Could not create the lead decision:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
   return summary(deps, inboxId, "done", results);
 }

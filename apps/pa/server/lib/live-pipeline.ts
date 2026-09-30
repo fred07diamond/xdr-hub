@@ -183,6 +183,8 @@ export async function listAgentWork(
     const plan = draftPlan({
       state: engagement.state,
       precheck: (precheck?.ruleResults.outcome as string | undefined) ?? null,
+      signal:
+        (precheck?.ruleResults.signal as string | null | undefined) ?? null,
       hasOwner: Boolean(engagement.ownerUserId),
     });
     if (

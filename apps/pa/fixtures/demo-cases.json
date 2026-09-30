@@ -408,6 +408,15 @@
         "product_interest": "unknown",
         "language": "en",
         "explicit_question": "Can you send over the security questionnaire answers?"
+      },
+      "draft": {
+        "subject": "Security questionnaire answers",
+        "approach": "hq_code",
+        "body": "Hi Marcus,\n\nThanks for following up after last month's demo. I'll confirm the security questionnaire answers with our team and send them over this week.\n\nWould [time options] work for 30 minutes to walk through anything open?\n\nThanks,\n\n{owner_first_name}",
+        "cta": "meeting",
+        "language": "en",
+        "used_entry_ids": ["msg.first_touch.structure"],
+        "question_handling": "will_confirm"
       }
     },
     {

@@ -3,10 +3,12 @@
 // and the tests all say the same thing.
 import type {
   CitationView,
+  DecisionView,
   DraftSummary,
   DraftView,
   TriageView,
 } from "../../../shared/pa-views.js";
+import { CHOICE_LABELS, type Choice } from "../decisions/index.js";
 import {
   APPROACH_LABELS,
   CALENDAR_LINK_TOKEN,
@@ -15,7 +17,11 @@ import {
   type LintResult,
 } from "../drafting/index.js";
 import { VERDICT_LABELS, type Verdict } from "../objects/index.js";
-import type { DraftRecord, EngagementRecord } from "../repo/types.js";
+import type {
+  DecisionRecord,
+  DraftRecord,
+  EngagementRecord,
+} from "../repo/types.js";
 
 const SIGNAL_LABELS: Record<string, string> = {
   support_request: "Support request",
@@ -53,6 +59,8 @@ export function triageFor(input: {
   draftStatus: DraftSummary["status"];
   /** A live lead whose message the agent has not read yet. */
   awaitingAgent?: boolean;
+  hasOpenDeal?: boolean;
+  intent?: string | null;
 }): TriageView {
   const verdictLabel = input.verdict
     ? (VERDICT_LABELS[input.verdict as Verdict] ?? input.verdict)
@@ -81,16 +89,35 @@ export function triageFor(input: {
 
   switch (input.precheckOutcome) {
     case "attach_to_owner":
+      // Every lead has an owner (D59), so ownership is routing, not a class.
+      if (input.signal === "existing_deal_or_customer" && input.hasOpenDeal)
+        return {
+          kind: "elsewhere",
+          label: "Open deal",
+          verdictLabel,
+          why: `An open deal is in progress, so it goes to the deal owner${owner ? `, ${owner}` : ""}. Not a PA play.`,
+          action: "The AE follows up.",
+        };
+      if (input.signal === "existing_deal_or_customer")
+        return {
+          kind: "review",
+          label: "Existing customer",
+          verdictLabel,
+          why: `Routed to ${owner ?? "the account owner"}. PA cannot tell whether they are on the team already using Builder or a different team.`,
+          action:
+            "Check their team: redirect to the AE and CSM, or treat it as an expansion lead.",
+        };
       return {
-        kind: "owner",
-        label: owner ? `Existing owner: ${owner}` : "Existing owner",
-        verdictLabel,
-        why:
-          reason ||
-          "This contact already has an owner in the CRM, so the new ask goes to them.",
+        kind: "reply",
+        label:
+          input.intent === "sales" || !input.intent
+            ? "Qualified lead"
+            : "Needs a look",
+        verdictLabel: null,
+        why: `Owned account, routed to ${owner ?? "the account owner"}.`,
         action: input.ownerIsMe
-          ? "This is yours: answer the new ask in your existing conversation. No cold reply."
-          : `${owner ?? "The owner"} answers in the existing conversation. No cold reply.`,
+          ? "Yours: review the draft and decide."
+          : `${owner ?? "The owner"} reviews the draft and decides.`,
       };
     case "route_to_support":
       return {
@@ -183,6 +210,7 @@ function preview(body: string, max = 160) {
 export function draftView(input: {
   engagement: EngagementRecord;
   precheckOutcome: string | null;
+  signal?: string | null;
   draft: DraftRecord | null;
   lead: { name: string | null; email: string };
   ownerName: string | null;
@@ -221,6 +249,7 @@ export function draftView(input: {
     const plan = draftPlan({
       state: input.engagement.state,
       precheck: input.precheckOutcome,
+      signal: input.signal ?? null,
       hasOwner: Boolean(input.engagement.ownerUserId),
     });
     return plan.needed
@@ -281,3 +310,31 @@ export function draftSummary(view: DraftView): DraftSummary {
 }
 
 export { CALENDAR_LINK_TOKEN };
+
+const choice = (code: string) => ({
+  code,
+  label: CHOICE_LABELS[code as Choice] ?? code,
+});
+
+export function decisionView(
+  record: DecisionRecord | null,
+  now: Date,
+): DecisionView | null {
+  if (!record) return null;
+  return {
+    status: record.status,
+    kind: record.kind,
+    options: record.options.map(choice),
+    recommendation: choice(record.recommendation),
+    reason: record.recommendationReason,
+    question: record.question,
+    dueAt: record.dueAt,
+    overdue:
+      record.status === "open" && Date.parse(record.dueAt) <= now.getTime(),
+    slaMissedAt: record.slaMissedAt,
+    choice: record.choice ? choice(record.choice) : null,
+    note: record.note,
+    decidedBy: record.decidedBy,
+    decidedAt: record.decidedAt,
+  };
+}

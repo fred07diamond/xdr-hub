@@ -116,7 +116,7 @@ describe("synthetic replay through the pipeline", () => {
     );
   });
 
-  it("drafts only new, routed leads, lints every draft, and never notifies", async () => {
+  it("drafts new leads and owned accounts, lints every draft, and never notifies", async () => {
     const results = await replay();
     const drafted: string[] = [];
     for (const result of results) {
@@ -134,7 +134,12 @@ describe("synthetic replay through the pipeline", () => {
         expect(drafts[0].body).not.toContain("{owner_first_name}");
       }
     }
-    expect(drafted.sort()).toEqual(["direct-new-unowned", "injection-attempt"]);
+    // The owned agency lead is drafted for its owner (D59); the open deal is not.
+    expect(drafted.sort()).toEqual([
+      "agency-already-sal",
+      "direct-new-unowned",
+      "injection-attempt",
+    ]);
   });
 
   it("writes a receipt for every deterministic step, pinned to the release", async () => {
