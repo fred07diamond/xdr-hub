@@ -8,6 +8,7 @@ import {
   INTAKE_CORRELATION,
   listAgentWork,
 } from "../server/lib/live-pipeline.js";
+import { rememberWorkspaceOrg } from "../server/lib/owner-context.js";
 import { isPaAdmin, repo } from "../server/lib/pa-context.js";
 
 export default defineAction({
@@ -17,6 +18,9 @@ export default defineAction({
   http: { method: "GET" },
   readOnly: true,
   run: async (_args, ctx) => {
+    // The board loads this for every signed-in viewer: remember the org so
+    // the background poll can act for it (D60).
+    await rememberWorkspaceOrg(ctx?.orgId);
     const repository = repo();
     const events = await repository.listEventsByCorrelation(INTAKE_CORRELATION);
     const last = [...events]

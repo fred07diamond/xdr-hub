@@ -1095,3 +1095,20 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - **Recommendation today** is deterministic from the scorecard and flags;
   the Scorecard Agent's written recommendation (workflow 1c, 2a) replaces
   the reason text when deep research lands.
+
+## D60. The agent runs on its own, right after a lead arrives
+
+- **Status:** Fixed, 2026-09-30. Fred: "the message is not drafting
+  automatically, the entire decision making and evaluation should happen
+  immediately after the lead comes in."
+- **Cause (from the poll logs):** the minute poll found the leads and 11 of
+  them waited for the agent, but it never woke it (`agent: skipped`). The
+  owner lookup returned no organization, and the agent only existed after
+  someone clicked "Turn on the inbound agent".
+- **Fix:** the board remembers the workspace organization from any
+  signed-in viewer, and the poll falls back to it (a failed lookup is no
+  longer cached). The poll turns the inbound agent on itself when it is
+  missing, wakes it the minute a new lead arrives, and again after three
+  minutes if work is still waiting. One agent run assesses, triages,
+  drafts, and opens the decision for every lead in the queue.
+
