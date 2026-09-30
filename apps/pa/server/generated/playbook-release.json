@@ -1,0 +1,419 @@
+{
+  "schema": 1,
+  "release_notes": "Seed from the Contact Sales workflow doc and Qualification Matrix",
+  "entries": [
+    {
+      "id": "def.ql",
+      "type": "definition",
+      "owner": "RevOps",
+      "version": 1,
+      "status": "active",
+      "body": "A real person at a real company with a legitimate sales request that passed pre-check.",
+      "source": "Contact Sales workflow doc, step 1b",
+      "owner_team": "revops",
+      "block": "definition",
+      "section": "definitions",
+      "position": 0
+    },
+    {
+      "id": "def.sal",
+      "type": "definition",
+      "owner": "RevOps",
+      "version": 1,
+      "status": "active",
+      "body": "A lead the owning rep has accepted after the QL to SAL decision (step 2b).",
+      "owner_team": "revops",
+      "block": "definition",
+      "section": "definitions",
+      "position": 1
+    },
+    {
+      "id": "def.recycle",
+      "type": "definition",
+      "owner": "RevOps",
+      "version": 1,
+      "status": "active",
+      "body": "Not ready now; returned to nurture with a reason and a re-entry trigger.",
+      "owner_team": "revops",
+      "block": "definition",
+      "section": "definitions",
+      "position": 2
+    },
+    {
+      "id": "def.disqualify",
+      "type": "definition",
+      "owner": "RevOps",
+      "version": 1,
+      "status": "active",
+      "body": "Not a sales opportunity; closed with a reason logged for the weekly spot check.",
+      "owner_team": "revops",
+      "block": "definition",
+      "section": "definitions",
+      "position": 3
+    },
+    {
+      "id": "rule.precheck.outcomes",
+      "type": "rule",
+      "owner": "RevOps",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": null,
+      "params": {
+        "support_request": "route_to_support",
+        "educational": "self_serve_thank_you",
+        "selling_to_us": "ignore_logged",
+        "junk_or_fake": "ignore_logged",
+        "restricted_country": "disqualify_logged",
+        "existing_deal_or_customer": "attach_to_owner",
+        "owned_account": "attach_to_owner",
+        "active_conversation": "attach_to_owner"
+      },
+      "rationale": "Pre-check runs before research so the lead lands with the right person instead of being worked cold.",
+      "owner_team": "revops",
+      "block": "precheck_outcomes",
+      "section": "rules_of_engagement",
+      "position": 0,
+      "extra": {
+        "open_work_policy": "new_work_only"
+      }
+    },
+    {
+      "id": "rule.precheck.restricted_countries",
+      "type": "rule",
+      "owner": "RevOps with Legal",
+      "version": 1,
+      "precedence": 1,
+      "status": "active",
+      "body": null,
+      "params": {
+        "countries": []
+      },
+      "owner_team": "revops",
+      "block": "country_list",
+      "section": "rules_of_engagement",
+      "position": 1
+    },
+    {
+      "id": "rule.routing.order",
+      "type": "rule",
+      "owner": "Sales leadership",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": null,
+      "params": {
+        "order": [
+          "existing_active_owner",
+          "deal_or_customer_owner",
+          "agency_partner_rep",
+          "round_robin"
+        ],
+        "agency_partner_rep": "TODO",
+        "round_robin_pool": "config/routing-pool.yaml"
+      },
+      "owner_team": "revops",
+      "block": "routing_order",
+      "section": "routing",
+      "position": 0
+    },
+    {
+      "id": "rule.routing.sal_stale_days",
+      "type": "rule",
+      "owner": "RevOps",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": null,
+      "params": {
+        "days": 90
+      },
+      "owner_team": "revops",
+      "block": "threshold",
+      "section": "routing",
+      "position": 1
+    },
+    {
+      "id": "rule.sla.first_touch",
+      "type": "rule",
+      "owner": "RevOps and PA lead",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": null,
+      "params": {
+        "minutes": 30,
+        "clock": "owner_working_hours",
+        "reminder_at_fraction": 0.75,
+        "breach_notify": "pa_lead"
+      },
+      "source": "Sales handbook, 03 Lead routing: Contact Sales responds within 30 minutes",
+      "owner_team": "both",
+      "block": "clock",
+      "section": "clocks",
+      "position": 0
+    },
+    {
+      "id": "rule.sla.decision",
+      "type": "rule",
+      "owner": "RevOps",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": null,
+      "params": {
+        "hours": 24
+      },
+      "source": "Contact Sales workflow doc, step 2b",
+      "owner_team": "revops",
+      "block": "clock",
+      "section": "clocks",
+      "position": 1
+    },
+    {
+      "id": "rule.enterprise.bar",
+      "type": "rule",
+      "owner": "Sales leadership",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": null,
+      "params": {
+        "code_min_seats": 20
+      },
+      "rationale": "Size the buying entity. For an agency buying for an unnamed client, enterprise fit is unknown until the client is named.",
+      "owner_team": "revops",
+      "block": "threshold",
+      "section": "qualification",
+      "position": 0
+    },
+    {
+      "id": "msg.first_touch.structure",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Follow the Sales handbook's email playbook (05) and Contact Sales handling (03).\nClassify the lead first: Highly Qualified Content, Standard Content, Highly Qualified Code, Standard Code, or the Content price check.\nTCQ: acknowledge the specific request in their message (trigger), connect it to Builder in a sentence (connection), then the ask (question).\nContact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two 30 minute time options, written as [time options]. Standard leads get the qualifying questions first and a soft offer to find time.\nNever pitch a demo as the first call; call it an intro, walkthrough, or working session.\nNever disclose pricing, except the Content price check. Never invent a fact, metric, or customer quote.\nPlain, casual voice, under 75 words when possible. No em dashes, no colons, a casual sign-off, signed with the owner's first name.\nSay Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.\n",
+      "params": {
+        "min_words": 25,
+        "target_words": 75,
+        "max_words": 130,
+        "no_colons": true,
+        "banned_chars": [
+          "—",
+          "–"
+        ],
+        "banned_terms": [
+          "Builder.io",
+          "Fusion",
+          "Publish"
+        ],
+        "banned_phrases": [
+          "I hope this email finds you well",
+          "just circling back",
+          "likely under some time pressure",
+          "I'm sure you're busy",
+          "Best regards",
+          "Kind regards",
+          "Warm regards",
+          "Sincerely",
+          "demo our platform",
+          "Would you be open to a quick call",
+          "What's driving your interest"
+        ]
+      },
+      "source": "Sales handbook, 05 Email playbook and 03 Contact Sales form handling",
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 0
+    },
+    {
+      "id": "msg.agency.first_touch",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Acknowledge that they are evaluating for a client. Offer the partner path when relevant. Ask who the client is and what they want to build, in service of setting up the right trial or call.",
+      "scope": {
+        "relationship_state": "agency"
+      },
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 1
+    },
+    {
+      "id": "kb.partner_program",
+      "type": "knowledge",
+      "owner": "PMM",
+      "version": 1,
+      "status": "active",
+      "body": "Builder runs an agency partner program. Agencies apply to become featured partners and get revenue share on referred leads, technical resources, and training.",
+      "sources": [
+        "https://www.builder.io/m/partners/apply"
+      ],
+      "review_by": "2026-12-31",
+      "owner_team": "pa_team",
+      "block": "knowledge",
+      "section": "knowledge",
+      "position": 0
+    },
+    {
+      "id": "kb.trial_path_partner_led",
+      "type": "knowledge",
+      "owner": "PMM",
+      "version": 1,
+      "status": "missing",
+      "body": null,
+      "owner_team": "pa_team",
+      "block": "knowledge",
+      "section": "knowledge",
+      "position": 1
+    },
+    {
+      "id": "rule.crm.system",
+      "type": "rule",
+      "owner": "RevOps",
+      "version": 1,
+      "status": "active",
+      "body": null,
+      "params": {
+        "system": "hubspot"
+      },
+      "rationale": "PA reads CRM data through a port; this picks the adapter. HubSpot is the only one built.",
+      "owner_team": "revops",
+      "block": "crm_system",
+      "section": "crm",
+      "position": 0
+    }
+  ],
+  "config": {
+    "routing_pool": {
+      "pool": []
+    },
+    "hubspot_mapping": {
+      "contact": {
+        "lifecycle_stage": "lifecyclestage",
+        "owner": "hubspot_owner_id",
+        "ql_score": "TODO",
+        "product_signal": "TODO"
+      },
+      "company": {
+        "owner": "hubspot_owner_id",
+        "fit_score": "TODO",
+        "tier": "TODO"
+      },
+      "lifecycle_values": {
+        "sal": "TODO"
+      },
+      "forms": {
+        "contact_sales_form_id": "TODO"
+      }
+    }
+  },
+  "pending_confirmation": [
+    {
+      "source": "playbook/inbound-v1.yaml",
+      "entry_id": "rule.precheck.restricted_countries",
+      "path": "params.countries",
+      "value": [],
+      "note": "TODO RevOps supplies the list"
+    },
+    {
+      "source": "playbook/inbound-v1.yaml",
+      "entry_id": "rule.routing.order",
+      "path": "params.agency_partner_rep",
+      "value": "TODO",
+      "note": "user email of the partner rep"
+    },
+    {
+      "source": "playbook/inbound-v1.yaml",
+      "entry_id": "rule.routing.sal_stale_days",
+      "path": "params.days",
+      "value": 90,
+      "note": "TODO confirm"
+    },
+    {
+      "source": "playbook/inbound-v1.yaml",
+      "entry_id": "kb.trial_path_partner_led",
+      "path": "status",
+      "value": "missing",
+      "note": "TODO PMM: how an agency or partner gets an Enterprise trial for a client evaluation"
+    },
+    {
+      "source": "config/routing-pool.yaml",
+      "entry_id": null,
+      "path": "pool",
+      "value": [],
+      "note": "TODO list of PA emails"
+    },
+    {
+      "source": "config/hubspot-mapping.yaml",
+      "entry_id": null,
+      "path": "contact.ql_score",
+      "value": "TODO",
+      "note": "the \"QL Score - Contact\" property"
+    },
+    {
+      "source": "config/hubspot-mapping.yaml",
+      "entry_id": null,
+      "path": "contact.product_signal",
+      "value": "TODO",
+      "note": "the \"Active in Builder\" property"
+    },
+    {
+      "source": "config/hubspot-mapping.yaml",
+      "entry_id": null,
+      "path": "company.fit_score",
+      "value": "TODO",
+      "note": "the \"Company Fit Score\" property"
+    },
+    {
+      "source": "config/hubspot-mapping.yaml",
+      "entry_id": null,
+      "path": "company.tier",
+      "value": "TODO",
+      "note": "the \"Company Tier\" property"
+    },
+    {
+      "source": "config/hubspot-mapping.yaml",
+      "entry_id": null,
+      "path": "lifecycle_values.sal",
+      "value": "TODO",
+      "note": "internal value of the SAL stage"
+    },
+    {
+      "source": "config/hubspot-mapping.yaml",
+      "entry_id": null,
+      "path": "forms.contact_sales_form_id",
+      "value": "TODO",
+      "note": "Value is TODO"
+    }
+  ],
+  "unrecognized_keys": [
+    {
+      "entry_id": "rule.precheck.outcomes",
+      "key": "open_work_policy",
+      "value": "new_work_only"
+    }
+  ],
+  "id": "5479a2c40b84187c07b5751e2b673d3597a61e9813db836c5f2e6f55a7a1e828",
+  "short_id": "5479a2c4",
+  "sources": [
+    {
+      "path": "playbook/inbound-v1.yaml",
+      "sha256": "7ec422ac2da776f7fa19ead983d41cd04cdba0b1996b3eaad68264f1cabb9b04"
+    },
+    {
+      "path": "config/routing-pool.yaml",
+      "sha256": "2488f8cae07a0ce6b95eaefaa8c6dec14c6899910e66197c3404cbfb7fb32aa2"
+    },
+    {
+      "path": "config/hubspot-mapping.yaml",
+      "sha256": "a9e90b0034606159649d53923c7631a58acaebf32004ae65eefda1c626a54d42"
+    }
+  ]
+}

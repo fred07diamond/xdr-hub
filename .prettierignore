@@ -9,6 +9,8 @@ build/
 
 apps/*/.agents/
 apps/*/.generated/
+# PA playbook release: content-hashed, compared byte for byte (apps/pa D24)
+apps/pa/server/generated/
 apps/*/.netlify/
 apps/*/.output/
 apps/*/.react-router/

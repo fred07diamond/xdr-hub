@@ -1,0 +1,15 @@
+# CRM adapter mapping for HubSpot. Owned by RevOps. No secrets here.
+# Confirm every internal property name with the properties API in M0.
+contact:
+  lifecycle_stage: lifecyclestage
+  owner: hubspot_owner_id
+  ql_score: TODO # the "QL Score - Contact" property
+  product_signal: TODO # the "Active in Builder" property
+company:
+  owner: hubspot_owner_id
+  fit_score: TODO # the "Company Fit Score" property
+  tier: TODO # the "Company Tier" property
+lifecycle_values:
+  sal: TODO # internal value of the SAL stage
+forms:
+  contact_sales_form_id: TODO

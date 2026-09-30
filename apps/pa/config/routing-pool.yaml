@@ -1,0 +1,3 @@
+# Round-robin pool for unowned inbound. Owned by the PA lead.
+# Working hours come from each user's profile in the app.
+pool: [] # TODO list of PA emails

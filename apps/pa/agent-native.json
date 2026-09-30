@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "onboarding": {
+    "firstRun": {
+      "development": "connect",
+      "production": "connect-and-integrations"
+    }
+  },
+  "doctor": {
+    "failOnBuild": false,
+    "dbToolScopingDenylist": {
+      "pa_inbox": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_submissions": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_accounts": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_contacts": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_engagements": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_events": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_assessments": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_scorecards": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_drafts": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_receipts": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_outbox": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_notifications": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_provider_calls": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_playbook_releases": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_labels": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_corrections": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_user_profiles": "Team-shared PA queue data by design (one Product Advocate team). The PA agent runs with frameworkTools.database off and reads only through PA actions. Pending Fred review, 2026-09-30.",
+      "pa_release_labels": "Team-shared PA playbook data by design (one PA team and RevOps). The PA agent runs with frameworkTools.database off and reads only through PA actions (D44).",
+      "pa_playbook_changes": "Team-shared PA playbook data by design (one PA team and RevOps). The PA agent runs with frameworkTools.database off and reads only through PA actions (D44).",
+      "pa_playbook_change_items": "Team-shared PA playbook data by design (one PA team and RevOps). The PA agent runs with frameworkTools.database off and reads only through PA actions (D44).",
+      "pa_playbook_approvals": "Team-shared PA playbook data by design (one PA team and RevOps). The PA agent runs with frameworkTools.database off and reads only through PA actions (D44).",
+      "pa_suggestions": "Team-shared PA playbook data by design (one PA team and RevOps). The PA agent runs with frameworkTools.database off and reads only through PA actions (D44).",
+      "pa_crm_schema": "Team-shared CRM property definitions (names, types, options; no record data). The PA agent reads it only through PA actions (D48).",
+      "pa_handbook_docs": "Team-shared Sales handbook for the one Product Advocate team (D53); read through list-handbook and get-handbook-doc, edited only by PA role holders through update-handbook-doc. The PA agent runs with frameworkTools.database off. Pending Fred review, 2026-09-30.",
+      "pa_handbook_revisions": "Team-shared Sales handbook for the one Product Advocate team (D53); read through list-handbook and get-handbook-doc, edited only by PA role holders through update-handbook-doc. The PA agent runs with frameworkTools.database off. Pending Fred review, 2026-09-30."
+    }
+  }
+}

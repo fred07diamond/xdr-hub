@@ -1,0 +1,92 @@
+{
+  "note": "Synthetic property definitions in the shape of GET /crm/v3/properties/{object}. Invented, not a real portal.",
+  "contacts": [
+    {
+      "name": "lifecyclestage",
+      "label": "Lifecycle Stage",
+      "type": "enumeration",
+      "fieldType": "radio",
+      "groupName": "contactinformation",
+      "hubspotDefined": true,
+      "options": [
+        { "label": "Lead", "value": "lead" },
+        {
+          "label": "Marketing Qualified Lead",
+          "value": "marketingqualifiedlead"
+        },
+        { "label": "Sales Accepted Lead", "value": "1234567" },
+        { "label": "Customer", "value": "customer" }
+      ]
+    },
+    {
+      "name": "hubspot_owner_id",
+      "label": "Contact owner",
+      "type": "enumeration",
+      "fieldType": "select",
+      "groupName": "sales_properties",
+      "hubspotDefined": true,
+      "referencedObjectType": "OWNER",
+      "options": []
+    },
+    {
+      "name": "notes_last_updated",
+      "label": "Last Activity Date",
+      "type": "datetime",
+      "fieldType": "date",
+      "groupName": "sales_properties",
+      "hubspotDefined": true,
+      "modificationMetadata": { "readOnlyValue": true }
+    },
+    {
+      "name": "active_in_builder",
+      "label": "Active in Builder",
+      "type": "bool",
+      "fieldType": "booleancheckbox",
+      "groupName": "product",
+      "hubspotDefined": false
+    },
+    {
+      "name": "firstname",
+      "label": "First Name",
+      "type": "string",
+      "fieldType": "text",
+      "groupName": "contactinformation",
+      "hubspotDefined": true
+    },
+    {
+      "name": "old_field",
+      "label": "Old field",
+      "type": "string",
+      "fieldType": "text",
+      "archived": true
+    }
+  ],
+  "companies": [
+    {
+      "name": "hubspot_owner_id",
+      "label": "Company owner",
+      "type": "enumeration",
+      "fieldType": "select",
+      "hubspotDefined": true,
+      "referencedObjectType": "OWNER",
+      "options": []
+    },
+    {
+      "name": "numberofemployees",
+      "label": "Number of Employees",
+      "type": "number",
+      "fieldType": "number",
+      "hubspotDefined": true
+    }
+  ],
+  "deals": [
+    {
+      "name": "dealstage",
+      "label": "Deal Stage",
+      "type": "enumeration",
+      "fieldType": "radio",
+      "hubspotDefined": true,
+      "options": []
+    }
+  ]
+}

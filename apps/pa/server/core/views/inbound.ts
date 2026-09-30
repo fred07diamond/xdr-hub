@@ -1,0 +1,802 @@
+import type {
+  AnswerView,
+  BoardResult,
+  BoardRow,
+  BoardTab,
+  CitationView,
+  ClockView,
+  EngagementDetail,
+  EvaluationView,
+  OpenItemView,
+  OwnerView,
+  ReceiptDetail,
+  ReceiptSummary,
+} from "../../../shared/pa-views.js";
+import { readFirstTouchClock, nextWorkingInstant } from "../clocks/index.js";
+import {
+  ENGAGEMENT_STATES,
+  RELATIONSHIP_LABELS,
+  VERDICT_LABELS,
+  type RelationshipState,
+  type Verdict,
+} from "../objects/index.js";
+import { profileHours } from "../pipeline/steps.js";
+import { rule } from "../playbook/resolve.js";
+import {
+  playbookReleaseSchema,
+  type Citation,
+  type PlaybookRelease,
+} from "../playbook/schema.js";
+import type {
+  OpenItem,
+  PrecheckResult,
+  SignalEvaluation,
+} from "../precheck/index.js";
+import type {
+  EngagementRecord,
+  PaRepository,
+  ReceiptRecord,
+  UserProfileRecord,
+} from "../repo/types.js";
+import type { RoutingResult } from "../routing/index.js";
+import type { ScorecardAnswer, ScorecardResult } from "../scorecard/index.js";
+import {
+  eventDetail,
+  eventLabel,
+  OWNER_SOURCE_LABELS,
+  precheckLabel,
+  RECEIPT_LABELS,
+  routeLabel,
+  stateLabel,
+} from "./labels.js";
+import { salesCycleView, slaView } from "./sla.js";
+import { draftSummary, draftView, triageFor } from "./triage.js";
+
+const CLOCK_RANK: Record<ClockView["status"], number> = {
+  breached: 0,
+  at_risk: 1,
+  running: 2,
+  not_started: 3,
+  met: 4,
+  none: 5,
+};
+
+export interface Viewer {
+  userId: string | null;
+  canReplay: boolean;
+}
+
+function citationView(
+  release: PlaybookRelease,
+  citation: Citation,
+): CitationView {
+  const unconfirmed = release.pending_confirmation.some(
+    (item) => item.entry_id === citation.id,
+  );
+  return {
+    id: citation.id,
+    version: citation.version,
+    ...(unconfirmed ? { unconfirmed } : {}),
+  };
+}
+
+function ownerView(
+  profile: UserProfileRecord | undefined,
+  viewer: Viewer,
+): OwnerView | null {
+  if (!profile) return null;
+  return {
+    id: profile.id,
+    name: profile.displayName,
+    email: profile.email,
+    isMe: Boolean(viewer.userId && profile.userId === viewer.userId),
+  };
+}
+
+function clockView(input: {
+  engagement: EngagementRecord;
+  owner: UserProfileRecord | undefined;
+  submittedAt: string;
+  release: PlaybookRelease;
+  now: Date;
+  noClockReason: string | null;
+}): ClockView {
+  const sla = rule(input.release, "rule.sla.first_touch");
+  const base = {
+    reminderFraction: sla.params.reminder_at_fraction,
+    ownerTimezone: input.owner?.timezone ?? null,
+  };
+  if (!input.engagement.firstTouchDueAt || !input.owner) {
+    const reason = input.noClockReason ?? "No clock: no human owner";
+    return {
+      ...base,
+      status: "none",
+      summary: reason,
+      reason,
+      dueAt: null,
+      startsAt: null,
+      fraction: null,
+      remainingMinutes: null,
+      elapsedMinutes: null,
+      totalMinutes: null,
+    };
+  }
+  const hours = profileHours(input.owner);
+  const startsAt = nextWorkingInstant(
+    new Date(input.submittedAt),
+    hours,
+  ).toISOString();
+  const reading = readFirstTouchClock({
+    dueAt: input.engagement.firstTouchDueAt,
+    startsAt,
+    firstTouchAt: input.engagement.firstTouchAt,
+    now: input.now,
+    hours,
+    totalMinutes: sla.params.minutes,
+    reminderFraction: sla.params.reminder_at_fraction,
+  });
+  const summaries: Record<ClockView["status"], string> = {
+    none: "No clock",
+    not_started: `Starts at ${input.owner.displayName}'s next working hour`,
+    running: `${reading.remainingMinutes} working minutes left`,
+    at_risk: `At risk: ${reading.remainingMinutes} working minutes left`,
+    breached: "Breached: first touch overdue",
+    met: "First touch sent",
+  };
+  return {
+    ...base,
+    status: reading.status,
+    summary: summaries[reading.status],
+    reason: `${sla.params.minutes} working minutes in ${input.owner.displayName}'s hours (${sla.entry.id} v${sla.entry.version})`,
+    dueAt: input.engagement.firstTouchDueAt,
+    startsAt,
+    fraction: reading.fraction,
+    remainingMinutes: reading.remainingMinutes,
+    elapsedMinutes: reading.elapsedMinutes,
+    totalMinutes: reading.totalMinutes,
+  };
+}
+
+async function noClockReason(repo: PaRepository, engagement: EngagementRecord) {
+  if (engagement.firstTouchDueAt) return null;
+  const events = await repo.listEvents(engagement.id);
+  const event = [...events]
+    .reverse()
+    .find((item) => item.type === "clock.not_applicable");
+  return event
+    ? String(event.payload.reason ?? "No clock")
+    : "No clock yet: not routed";
+}
+
+function excerpt(text: string | null, max = 140): string | null {
+  if (!text) return null;
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}...` : clean;
+}
+
+async function releaseFor(
+  repo: PaRepository,
+  id: string,
+  current: PlaybookRelease,
+): Promise<PlaybookRelease> {
+  if (id === current.id) return current;
+  const stored = await repo.getRelease(id);
+  // Validated, not cast. This module also runs in the browser demo, so it
+  // parses here instead of importing the server-only release store.
+  return stored ? playbookReleaseSchema.parse(stored.content) : current;
+}
+
+async function buildRow(
+  repo: PaRepository,
+  engagement: EngagementRecord,
+  profiles: Map<string, UserProfileRecord>,
+  viewer: Viewer,
+  release: PlaybookRelease,
+  now: Date,
+): Promise<BoardRow> {
+  const contact = await repo.getContact(engagement.contactId);
+  const submissions = await repo.listSubmissionsForEngagement(engagement.id);
+  const latest = submissions[submissions.length - 1];
+  const assessment = latest
+    ? await repo.getAssessmentForSubmission(latest.id)
+    : null;
+  const scorecards = await repo.listScorecards(engagement.id);
+  const scorecard = scorecards[scorecards.length - 1];
+  const events = await repo.listEvents(engagement.id);
+  const lastEvent = [...events]
+    .reverse()
+    .find(
+      (event) => !["pipeline.completed", "step.skipped"].includes(event.type),
+    );
+  const routeReceipt = latest
+    ? await repo.findReceipt("route", latest.id)
+    : null;
+  const routing = routeReceipt?.ruleResults.routing as
+    | RoutingResult
+    | undefined;
+  const owner = engagement.ownerUserId
+    ? profiles.get(engagement.ownerUserId)
+    : undefined;
+  const email = contact?.email ?? latest?.email ?? "";
+  const domain = email.slice(email.lastIndexOf("@") + 1);
+  const pinned = await releaseFor(repo, engagement.playbookReleaseId, release);
+  const precheckReceipt = latest
+    ? await repo.findReceipt("precheck", latest.id)
+    : null;
+  const precheckOutcome =
+    (precheckReceipt?.ruleResults.outcome as string | undefined) ?? null;
+  const drafts = await repo.listDrafts(engagement.id);
+  const leadName = contact?.name ?? latest?.name ?? null;
+  const ownerDisplay = ownerView(owner, viewer);
+  const draft = draftView({
+    engagement,
+    precheckOutcome,
+    draft: drafts[drafts.length - 1] ?? null,
+    lead: { name: leadName, email },
+    ownerName: owner?.displayName ?? null,
+    cite: (citation) => citationView(pinned, citation),
+    entryVersion: (id) =>
+      pinned.entries.find((entry) => entry.id === id)?.version ?? null,
+  });
+  const triage = triageFor({
+    engagement,
+    precheckOutcome,
+    signal: (precheckReceipt?.ruleResults.signal as string | null) ?? null,
+    verdict: scorecard?.verdict ?? null,
+    routeReason: engagement.routeReason,
+    ownerName: owner?.displayName ?? null,
+    ownerIsMe: Boolean(ownerDisplay?.isMe),
+    draftStatus: draft.status,
+  });
+  const submittedAt = latest?.submittedAt ?? engagement.createdAt;
+  const clock = clockView({
+    engagement,
+    owner,
+    submittedAt,
+    release: pinned,
+    now,
+    noClockReason: await noClockReason(repo, engagement),
+  });
+  return {
+    id: engagement.id,
+    triage,
+    draft: draftSummary(draft),
+    sla: slaView({ engagement, clock, events, submittedAt, now }),
+    state: engagement.state,
+    stateLabel: stateLabel(engagement.state),
+    lead: {
+      name: leadName,
+      email,
+      company: latest?.companyName ?? null,
+      domain,
+      personalDomain: engagement.accountId === null,
+      country:
+        typeof latest?.fields.country === "string"
+          ? latest.fields.country
+          : null,
+    },
+    asked: assessment?.explicitQuestion ?? excerpt(latest?.message ?? null),
+    askedSource: assessment?.explicitQuestion
+      ? "explicit_question"
+      : latest?.message
+        ? "message_excerpt"
+        : null,
+    route: {
+      code: routing?.route ?? null,
+      label: routeLabel(routing?.route ?? null),
+      reason: engagement.routeReason,
+    },
+    owner: ownerDisplay,
+    ownerSourceLabel: engagement.ownerSource
+      ? (OWNER_SOURCE_LABELS[engagement.ownerSource] ?? engagement.ownerSource)
+      : null,
+    clock,
+    verdict: scorecard
+      ? {
+          code: scorecard.verdict,
+          label:
+            VERDICT_LABELS[scorecard.verdict as Verdict] ?? scorecard.verdict,
+          suggested: true,
+        }
+      : null,
+    lastEvent: lastEvent
+      ? {
+          type: lastEvent.type,
+          label: eventDetail(lastEvent) ?? eventLabel(lastEvent.type),
+          at: lastEvent.occurredAt,
+        }
+      : null,
+    flagged: engagement.reviewFlags.length > 0,
+    submittedAt: latest?.submittedAt ?? engagement.createdAt,
+  };
+}
+
+export function sortRows(rows: BoardRow[]): BoardRow[] {
+  return [...rows].sort((a, b) => {
+    const rank = CLOCK_RANK[a.sla.status] - CLOCK_RANK[b.sla.status];
+    if (rank !== 0) return rank;
+    const due = (row: BoardRow) =>
+      row.sla.phase === "sal" ? row.sla.sal.dueAt : row.sla.contact.dueAt;
+    const aDue = due(a);
+    const bDue = due(b);
+    if (aDue && bDue && aDue !== bDue) return aDue.localeCompare(bDue);
+    return (
+      b.submittedAt.localeCompare(a.submittedAt) || a.id.localeCompare(b.id)
+    );
+  });
+}
+
+export async function buildInboundBoard(input: {
+  repo: PaRepository;
+  release: PlaybookRelease;
+  viewer: Viewer;
+  tab: BoardTab;
+  state: string | null;
+  now: Date;
+}): Promise<BoardResult> {
+  const profiles = new Map(
+    (await input.repo.listProfiles()).map((profile) => [profile.id, profile]),
+  );
+  const engagements = await input.repo.listEngagements();
+  const rows: BoardRow[] = [];
+  for (const engagement of engagements) {
+    rows.push(
+      await buildRow(
+        input.repo,
+        engagement,
+        profiles,
+        input.viewer,
+        input.release,
+        input.now,
+      ),
+    );
+  }
+  const counts: Record<BoardTab, number> = {
+    mine: rows.filter((row) => row.owner?.isMe).length,
+    team: rows.length,
+    at_risk: rows.filter((row) => row.sla.status === "at_risk").length,
+    breached: rows.filter((row) => row.sla.status === "breached").length,
+  };
+  const byTab = rows.filter((row) => {
+    if (input.tab === "mine") return Boolean(row.owner?.isMe);
+    if (input.tab === "at_risk") return row.sla.status === "at_risk";
+    if (input.tab === "breached") return row.sla.status === "breached";
+    return true;
+  });
+  const states = ENGAGEMENT_STATES.map((state) => ({
+    state,
+    label: stateLabel(state),
+    count: byTab.filter((row) => row.state === state).length,
+  })).filter((item) => item.count > 0);
+  const filtered = input.state
+    ? byTab.filter((row) => row.state === input.state)
+    : byTab;
+  const viewerProfile = input.viewer.userId
+    ? [...profiles.values()].find(
+        (profile) => profile.userId === input.viewer.userId,
+      )
+    : undefined;
+  return {
+    rows: sortRows(filtered),
+    counts,
+    states,
+    total: rows.length,
+    viewer: {
+      profileName: viewerProfile?.displayName ?? null,
+      canReplay: input.viewer.canReplay,
+    },
+    release: {
+      id: input.release.id,
+      shortId: input.release.short_id,
+      pendingConfirmations: input.release.pending_confirmation.length,
+    },
+    mode: "shadow",
+    generatedAt: input.now.toISOString(),
+  };
+}
+
+function evaluations(items: SignalEvaluation[]): EvaluationView[] {
+  return items.map((item) => ({
+    name: item.signal,
+    matched: item.matched,
+    detail: item.basis,
+  }));
+}
+
+function openItems(
+  release: PlaybookRelease,
+  items: OpenItem[],
+): OpenItemView[] {
+  return items.map((item) => ({
+    code: item.code,
+    detail: item.detail,
+    entry: item.entry ? citationView(release, item.entry) : null,
+  }));
+}
+
+function nextStepFor(input: {
+  engagement: EngagementRecord;
+  precheck: PrecheckResult | null;
+  scorecard: ScorecardResult | null;
+  agency: boolean;
+  endClientNamed: boolean;
+  hasQuestion: boolean;
+  release: PlaybookRelease;
+}): { text: string; entries: Citation[] } {
+  const find = (id: string) =>
+    input.release.entries.find((entry) => entry.id === id);
+  const cite = (...ids: string[]) =>
+    ids
+      .map((id) => find(id))
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .map((entry) => ({ id: entry.id, version: entry.version }));
+  if (input.engagement.reviewFlags.length > 0) {
+    return {
+      text: "Review the flagged message before any outreach. Nothing in it was followed; the suggested verdict stays a suggestion.",
+      entries: cite("def.recycle"),
+    };
+  }
+  switch (input.engagement.state) {
+    case "attached":
+      if (input.agency && !input.endClientNamed) {
+        return {
+          text: "Answer their question and ask who the client is and what they want to build. No cold draft: the owner already has this relationship.",
+          entries: cite("msg.agency.first_touch", "msg.first_touch.structure"),
+        };
+      }
+      return {
+        text: input.hasQuestion
+          ? "The owner answers the new ask on the existing relationship. No cold draft."
+          : "The owner follows up on the existing relationship. No cold draft.",
+        entries: cite("msg.first_touch.structure", "rule.precheck.outcomes"),
+      };
+    case "awaiting_first_touch":
+      return {
+        text: input.hasQuestion
+          ? "Send a first touch that answers their question first, with the calendar link as the one call to action."
+          : "Send a first touch with the calendar link as the one call to action.",
+        entries: cite("msg.first_touch.structure", "rule.sla.first_touch"),
+      };
+    case "closed":
+      return {
+        text:
+          input.engagement.outcome === "routed_to_support"
+            ? "Support owns this request. No sales action."
+            : "Closed. No sales action.",
+        entries: cite("rule.precheck.outcomes"),
+      };
+    case "disqualified":
+      return {
+        text:
+          input.engagement.outcome === "self_serve_thank_you"
+            ? "No sales action. The self-serve thank-you template ships in M2."
+            : "No sales action. Logged for the weekly spot check.",
+        entries: cite("rule.precheck.outcomes", "def.disqualify"),
+      };
+    default:
+      return {
+        text: "Waiting for the pipeline to finish routing this lead.",
+        entries: [],
+      };
+  }
+}
+
+function answerView(answer: ScorecardAnswer): AnswerView {
+  return {
+    question: answer.question,
+    label: answer.label,
+    answer: answer.answer,
+    known: answer.known,
+    source: answer.source,
+    asOf: answer.as_of,
+    confidence: answer.confidence,
+    conflicts: answer.conflicts ?? [],
+  };
+}
+
+function receiptSummary(receipt: ReceiptRecord): string {
+  const results = receipt.ruleResults as Record<string, any>;
+  switch (receipt.kind) {
+    case "normalize":
+      return results.untrusted?.flagged
+        ? `Identity resolved; message flagged (${results.untrusted.matches.length} matches)`
+        : `Identity resolved; engagement ${results.engagement_action === "created" ? "created" : "attached"}`;
+    case "crm_snapshot": {
+      const snapshot = results.snapshot;
+      const contact = snapshot?.contact;
+      return contact
+        ? `${snapshot.source}: ${contact.lifecycleRaw ?? "no lifecycle"}, owner ${contact.owner?.email ?? "none"}, ${snapshot.openDeals.length} open deals`
+        : `${snapshot?.source ?? "crm"}: no contact found`;
+    }
+    case "assess_message":
+    case "save_message_assessment":
+      return `Validation ${results.validation}; source ${String(results.source ?? "agent").replace(/_/g, " ")}`;
+    case "precheck":
+      return `${precheckLabel(results.outcome)}${results.signal ? ` via ${String(results.signal).replace(/_/g, " ")}` : ""}`;
+    case "route":
+      return `${routeLabel(results.routing?.route ?? null)}${results.applied === false ? " (not applied)" : ""}`;
+    case "draft":
+      return results.needed === false
+        ? String(results.reason ?? "No draft needed")
+        : results.lint?.ok
+          ? "Draft proposed; passes the message rules"
+          : `Draft proposed; ${results.lint?.problems?.length ?? 0} lint problems`;
+    case "score":
+      return `Suggested verdict ${VERDICT_LABELS[results.verdict as Verdict] ?? results.verdict}`;
+    default:
+      return receipt.kind;
+  }
+}
+
+export async function buildEngagementDetail(input: {
+  repo: PaRepository;
+  release: PlaybookRelease;
+  viewer: Viewer;
+  engagementId: string;
+  now: Date;
+}): Promise<EngagementDetail | null> {
+  const repo = input.repo;
+  const engagement = await repo.getEngagement(input.engagementId);
+  if (!engagement) return null;
+  const pinned = await releaseFor(
+    repo,
+    engagement.playbookReleaseId,
+    input.release,
+  );
+  const profiles = new Map(
+    (await repo.listProfiles()).map((profile) => [profile.id, profile]),
+  );
+  const owner = engagement.ownerUserId
+    ? profiles.get(engagement.ownerUserId)
+    : undefined;
+  const contact = await repo.getContact(engagement.contactId);
+  const submissions = await repo.listSubmissionsForEngagement(engagement.id);
+  const latest = submissions[submissions.length - 1];
+  const assessment = latest
+    ? await repo.getAssessmentForSubmission(latest.id)
+    : null;
+  const receipts = await repo.listReceipts(engagement.id);
+  const lastOf = (kind: string) =>
+    [...receipts].reverse().find((receipt) => receipt.kind === kind);
+  const precheckReceipt = lastOf("precheck");
+  const routeReceipt = lastOf("route");
+  const scoreReceipt = lastOf("score");
+  const precheck = (precheckReceipt?.ruleResults ??
+    null) as PrecheckResult | null;
+  const routing = (routeReceipt?.ruleResults.routing ??
+    null) as RoutingResult | null;
+  const clocks = routeReceipt?.ruleResults.clocks as
+    | { decision?: { applies: boolean; dueAt: string | null; reason: string } }
+    | undefined;
+  const scorecard = (scoreReceipt?.ruleResults ??
+    null) as ScorecardResult | null;
+  const scorecards = await repo.listScorecards(engagement.id);
+  const events = await repo.listEvents(engagement.id);
+  const email = contact?.email ?? latest?.email ?? "";
+  const cv = (citation: Citation) => citationView(pinned, citation);
+  const step = nextStepFor({
+    engagement,
+    precheck,
+    scorecard,
+    agency: Boolean(assessment?.agencySignal),
+    endClientNamed: Boolean(assessment?.endClientNamed),
+    hasQuestion: Boolean(assessment?.explicitQuestion),
+    release: pinned,
+  });
+
+  const drafts = await repo.listDrafts(engagement.id);
+  const ownerDisplay = ownerView(owner, input.viewer);
+  const draft = draftView({
+    engagement,
+    precheckOutcome: precheck?.outcome ?? null,
+    draft: drafts[drafts.length - 1] ?? null,
+    lead: { name: contact?.name ?? latest?.name ?? null, email },
+    ownerName: owner?.displayName ?? null,
+    cite: cv,
+    entryVersion: (id) =>
+      pinned.entries.find((entry) => entry.id === id)?.version ?? null,
+  });
+  const triage = triageFor({
+    engagement,
+    precheckOutcome: precheck?.outcome ?? null,
+    signal: precheck?.signal ?? null,
+    verdict: scorecard?.verdict ?? null,
+    routeReason: engagement.routeReason,
+    ownerName: owner?.displayName ?? null,
+    ownerIsMe: Boolean(ownerDisplay?.isMe),
+    draftStatus: draft.status,
+  });
+
+  const submittedAt = latest?.submittedAt ?? engagement.createdAt;
+  const clock = clockView({
+    engagement,
+    owner,
+    submittedAt,
+    release: pinned,
+    now: input.now,
+    noClockReason: await noClockReason(repo, engagement),
+  });
+  const snapshotReceipt = lastOf("crm_snapshot");
+  const firstSubmission = submissions[0];
+
+  return {
+    id: engagement.id,
+    triage,
+    draft,
+    sla: slaView({ engagement, clock, events, submittedAt, now: input.now }),
+    salesCycle: salesCycleView({
+      submittedAt: firstSubmission?.submittedAt ?? engagement.createdAt,
+      verdict: scorecard?.verdict ?? null,
+      scoredAt: scorecards[scorecards.length - 1]?.createdAt ?? null,
+      crmLifecycle:
+        (
+          snapshotReceipt?.ruleResults.snapshot as
+            | { contact?: { lifecycleRaw?: string | null } | null }
+            | undefined
+        )?.contact?.lifecycleRaw ?? null,
+      triageKind: triage.kind,
+      events,
+    }),
+    state: engagement.state,
+    stateLabel: stateLabel(engagement.state),
+    mode: engagement.mode,
+    createdAt: engagement.createdAt,
+    lead: {
+      name: contact?.name ?? latest?.name ?? null,
+      email,
+      company: latest?.companyName ?? null,
+      domain: email.slice(email.lastIndexOf("@") + 1),
+      personalDomain: engagement.accountId === null,
+      country:
+        typeof latest?.fields.country === "string"
+          ? latest.fields.country
+          : null,
+    },
+    owner: ownerDisplay,
+    ownerSourceLabel: engagement.ownerSource
+      ? (OWNER_SOURCE_LABELS[engagement.ownerSource] ?? engagement.ownerSource)
+      : null,
+    relationship: {
+      code: engagement.relationshipState,
+      label: engagement.relationshipState
+        ? (RELATIONSHIP_LABELS[
+            engagement.relationshipState as RelationshipState
+          ] ?? engagement.relationshipState)
+        : null,
+    },
+    clock,
+    decisionClock: {
+      applies: Boolean(clocks?.decision?.applies),
+      dueAt: clocks?.decision?.dueAt ?? null,
+      reason: clocks?.decision?.reason ?? "No decision clock",
+    },
+    release: {
+      id: pinned.id,
+      shortId: pinned.short_id,
+      isCurrent: pinned.id === input.release.id,
+    },
+    flags: engagement.reviewFlags.map((flag) => ({
+      code: flag.code,
+      detail: flag.detail,
+      at: flag.at,
+    })),
+    submissions: submissions.map((submission) => ({
+      id: submission.id,
+      submittedAt: submission.submittedAt,
+      message: submission.message,
+      flags: submission.flags,
+    })),
+    assessment: assessment
+      ? {
+          id: assessment.id,
+          intent: assessment.intent,
+          agencySignal: assessment.agencySignal,
+          endClientNamed: assessment.endClientNamed,
+          productInterest: assessment.productInterest,
+          language: assessment.language,
+          explicitQuestion: assessment.explicitQuestion,
+          evidenceQuotes: assessment.evidenceQuotes,
+          source: assessment.source,
+          createdAt: assessment.createdAt,
+        }
+      : null,
+    nextStep: { text: step.text, entries: step.entries.map(cv) },
+    precheck: precheck
+      ? {
+          outcome: precheck.outcome,
+          outcomeLabel: precheckLabel(precheck.outcome),
+          signal: precheck.signal,
+          evaluated: evaluations(precheck.evaluated),
+          openItems: openItems(pinned, precheck.openItems),
+          entries: precheck.citations.map(cv),
+        }
+      : null,
+    route: routing
+      ? {
+          code: routing.route,
+          label: routeLabel(routing.route),
+          reason: routing.reason,
+          evaluated: routing.evaluated.map((item) => ({
+            name: item.step,
+            matched: item.matched,
+            detail: item.detail,
+          })),
+          openItems: openItems(pinned, routing.openItems),
+          entries: (routeReceipt?.entryVersions ?? routing.citations).map(cv),
+          poolSource: routing.pool.source,
+        }
+      : null,
+    scorecard: scorecard
+      ? {
+          verdict: scorecard.verdict,
+          verdictLabel: VERDICT_LABELS[scorecard.verdict] ?? scorecard.verdict,
+          version: scorecards[scorecards.length - 1]?.version ?? 1,
+          reasonCodes: scorecard.reasonCodes.map((reason) => ({
+            code: reason.code,
+            detail: reason.detail,
+            entry: cv(reason.entry),
+          })),
+          answers: scorecard.answers.map(answerView),
+          hypothesis: scorecard.hypothesis
+            ? {
+                entity: scorecard.hypothesis.entity,
+                statement: scorecard.hypothesis.statement,
+                entry: cv(scorecard.hypothesis.entry),
+              }
+            : null,
+          notes: scorecard.notes,
+        }
+      : null,
+    timeline: events
+      .filter((event) => event.type !== "pipeline.completed")
+      .map((event) => ({
+        id: event.id,
+        type: event.type,
+        label: eventLabel(event.type),
+        detail: eventDetail(event),
+        actor: event.actor,
+        at: event.occurredAt,
+        receiptId: event.receiptId,
+      })),
+    receipts: receipts.map(
+      (receipt): ReceiptSummary => ({
+        id: receipt.id,
+        kind: receipt.kind,
+        label: RECEIPT_LABELS[receipt.kind] ?? receipt.kind,
+        createdAt: receipt.createdAt,
+        entries: receipt.entryVersions.map(cv),
+        summary: receiptSummary(receipt),
+      }),
+    ),
+  };
+}
+
+export async function buildReceiptDetail(input: {
+  repo: PaRepository;
+  release: PlaybookRelease;
+  receiptId: string;
+}): Promise<ReceiptDetail | null> {
+  const receipt = await input.repo.getReceipt(input.receiptId);
+  if (!receipt) return null;
+  const pinned = await releaseFor(
+    input.repo,
+    receipt.playbookReleaseId,
+    input.release,
+  );
+  return {
+    id: receipt.id,
+    kind: receipt.kind,
+    label: RECEIPT_LABELS[receipt.kind] ?? receipt.kind,
+    engagementId: receipt.engagementId,
+    submissionId: receipt.submissionId,
+    createdAt: receipt.createdAt,
+    release: { id: pinned.id, shortId: pinned.short_id },
+    entries: receipt.entryVersions.map((citation) =>
+      citationView(pinned, citation),
+    ),
+    ruleResults: receipt.ruleResults,
+    inputs: receipt.inputs,
+    agentRunId: receipt.agentRunId,
+    model: receipt.model,
+  };
+}

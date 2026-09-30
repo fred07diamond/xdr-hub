@@ -1,0 +1,101 @@
+// Live intake controls on the board (D54): when leads were last pulled from
+// HubSpot, what is waiting on the agent, and the two buttons that matter.
+import {
+  actionErrorMessage,
+  useActionMutation,
+  useActionQuery,
+} from "@agent-native/core/client/hooks";
+import { IconCloudDownload, IconRobot } from "@tabler/icons-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { formatRelative } from "@/lib/format";
+
+interface IntakeStatus {
+  lastPull: {
+    at: string;
+    by: string;
+    found?: number;
+    new?: number;
+    failed?: number;
+  } | null;
+  agentWork: number;
+  agentEnabled: boolean | null;
+  canPull: boolean;
+  isAppOwner: boolean;
+}
+
+export function IntakeBar({ onPulled }: { onPulled: () => void }) {
+  const status = useActionQuery("get-intake-status", {});
+  const pull = useActionMutation("pull-contact-sales");
+  const enable = useActionMutation("enable-inbound-agent");
+  const data = status.data as IntakeStatus | undefined;
+  if (!data) return null;
+  const last = data.lastPull;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+      <span>
+        {last
+          ? `HubSpot pulled ${formatRelative(last.at)}, ${last.new ?? 0} new`
+          : "No leads pulled from HubSpot yet"}
+        {data.agentWork > 0 ? ` · ${data.agentWork} waiting for the agent` : ""}
+      </span>
+      {data.isAppOwner && data.agentEnabled === false ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={enable.isPending}
+          onClick={() =>
+            enable.mutate(
+              {},
+              {
+                onSuccess: () => {
+                  toast.success(
+                    "Inbound agent on: it pulls leads and drafts replies every 30 minutes. Nothing is sent.",
+                  );
+                  void status.refetch();
+                },
+                onError: (error) => toast.error(actionErrorMessage(error)),
+              },
+            )
+          }
+        >
+          <IconRobot className="size-4" aria-hidden="true" />
+          Turn on the inbound agent
+        </Button>
+      ) : null}
+      {data.canPull ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={pull.isPending}
+          onClick={() =>
+            pull.mutate(
+              {},
+              {
+                onSuccess: (raw) => {
+                  const result = raw as {
+                    found: number;
+                    new: number;
+                    agentWork: number;
+                  };
+                  toast.success(
+                    `${result.new} new of ${result.found} recent Contact Sales submissions.${result.agentWork > 0 ? ` ${result.agentWork} waiting for the agent to read and draft.` : ""}`,
+                  );
+                  void status.refetch();
+                  onPulled();
+                },
+                onError: (error) => toast.error(actionErrorMessage(error)),
+              },
+            )
+          }
+        >
+          <IconCloudDownload className="size-4" aria-hidden="true" />
+          {pull.isPending ? "Pulling..." : "Pull new leads"}
+        </Button>
+      ) : null}
+    </div>
+  );
+}

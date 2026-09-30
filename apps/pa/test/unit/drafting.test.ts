@@ -1,0 +1,195 @@
+// Drafting (SPEC 5.5, D49): which leads get a draft, the deterministic lint,
+// and the one-glance summary a PA reads first.
+import { describe, expect, it } from "vitest";
+
+import { buildDemoData } from "../../server/core/demo/index.js";
+import {
+  draftPlan,
+  lintDraft,
+  type DraftInput,
+} from "../../server/core/drafting/index.js";
+import { seedRelease } from "../../server/core/playbook/release.js";
+
+const good: DraftInput = {
+  subject: "Your marketing site move",
+  body: [
+    "Hi Priya,",
+    "Thanks for reaching out about moving your marketing site. I'll confirm the SSO details with our team and send them over tomorrow.",
+    "Would [time options] work for 30 minutes to walk through your setup?",
+    "Thanks,",
+    "Dana",
+  ].join("\n\n"),
+  approach: "hq_content",
+  cta: "meeting",
+  language: "en",
+  used_entry_ids: ["msg.first_touch.structure"],
+  question_handling: "will_confirm",
+};
+
+const lint = (draft: Partial<DraftInput>, question: string | null = "Q?") =>
+  lintDraft({
+    draft: { ...good, ...draft },
+    release: seedRelease,
+    explicitQuestion: question,
+    ownerFirstName: "Dana",
+  });
+
+const codes = (draft: Partial<DraftInput>, question?: string | null) =>
+  lint(draft, question).problems.map((problem) => problem.code);
+
+describe("draftPlan", () => {
+  it("drafts a new, routed lead, with or without an owner yet", () => {
+    expect(
+      draftPlan({
+        state: "awaiting_first_touch",
+        precheck: "continue",
+        hasOwner: true,
+      }).needed,
+    ).toBe(true);
+    expect(
+      draftPlan({ state: "routed", precheck: "continue", hasOwner: false })
+        .needed,
+    ).toBe(true);
+    expect(
+      draftPlan({ state: "closed", precheck: "continue", hasOwner: true })
+        .needed,
+    ).toBe(false);
+    for (const precheck of [
+      "attach_to_owner",
+      "route_to_support",
+      "self_serve_thank_you",
+      "ignore_logged",
+      "disqualify_logged",
+    ]) {
+      const plan = draftPlan({ state: "attached", precheck, hasOwner: true });
+      expect(plan.needed, precheck).toBe(false);
+      expect(plan.reason, precheck).toMatch(/^No /);
+    }
+  });
+});
+
+describe("lintDraft", () => {
+  it("passes a draft that follows the message rules", () => {
+    const result = lint({});
+    expect(result.problems).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.notChecked.length).toBeGreaterThan(0);
+    expect(result.warnings).toEqual([]);
+    // Times and links are not punctuation colons.
+    expect(
+      codes({
+        body: good.body.replace("[time options]", "Tuesday at 10:30am ET"),
+      }),
+    ).not.toContain("colon");
+  });
+
+  it("catches each rule", () => {
+    expect(
+      codes({ body: good.body.replace("Thanks for", "Thanks — for") }),
+    ).toContain("dash");
+    expect(codes({ body: "Hi,\n\nShort.\n\nDana" })).toContain("word_range");
+    expect(codes({ subject: "Pricing: the details" })).toContain("colon");
+    for (const term of ["Builder.io", "Fusion", "Publish"])
+      expect(
+        codes({ body: good.body.replace("SSO details", `${term} details`) }),
+        term,
+      ).toContain("banned_term");
+    expect(
+      codes({ body: good.body.replace("SSO details", "publishing details") }),
+    ).not.toContain("banned_term");
+    expect(
+      codes({ body: good.body.replace("SSO details", "price (around 25k)") }),
+    ).toContain("pricing");
+    expect(
+      codes({
+        approach: "content_price_check",
+        body: good.body.replace("SSO details", "price (around 25k)"),
+      }),
+    ).not.toContain("pricing");
+    expect(
+      codes({ body: good.body.replace("Thanks,", "Best regards,") }),
+    ).toContain("banned_phrase");
+    expect(
+      codes({
+        body: good.body.replace(
+          "Thanks for",
+          "I hope this email finds you well. Thanks for",
+        ),
+      }),
+    ).toContain("banned_phrase");
+    expect(
+      codes({
+        body: `${good.body}\nhttps://example.com/a and https://example.com/b`,
+      }),
+    ).toContain("calls_to_action");
+    expect(
+      codes({ body: good.body.replace("[time options]", "some time") }),
+    ).toContain("calendar_link");
+    expect(codes({ question_handling: "no_question" })).toContain("question");
+    expect(
+      codes({
+        question_handling: "will_confirm",
+        body: good.body.replace("confirm the SSO", "look into the SSO"),
+      }),
+    ).toContain("question");
+    expect(codes({ used_entry_ids: ["kb.made_up"] })).toContain(
+      "unknown_entry",
+    );
+    expect(codes({ body: good.body.replace("Dana", "The team") })).toContain(
+      "signature",
+    );
+  });
+
+  it("does not ask for an answer when there was no question", () => {
+    expect(codes({ question_handling: "no_question" }, null)).not.toContain(
+      "question",
+    );
+  });
+});
+
+describe("the demo board, as a PA sees it", () => {
+  it("gives every lead a classification and shows a draft only where a reply is due", async () => {
+    const demo = await buildDemoData({ now: new Date("2026-09-30T20:00:00Z") });
+    expect(demo.failures).toEqual([]);
+    const board = await demo.board("team", null);
+    const byName = new Map(board.rows.map((row) => [row.lead.name, row]));
+
+    const priya = byName.get("Priya Natarajan")!;
+    expect(priya.triage.kind).toBe("reply");
+    expect(priya.triage.label).toBe("Qualified lead");
+    expect(priya.triage.why).toMatch(/round robin to PA/);
+    expect(priya.draft.status).toBe("ready");
+    expect(priya.draft.preview).not.toMatch(/^Hi /);
+
+    // The recorded residency draft breaks the message rules on purpose.
+    const hannah = byName.get("Hannah Weiss")!;
+    expect(hannah.draft.status).toBe("needs_edit");
+    expect(hannah.triage.action).toMatch(/fix it/);
+
+    const riley = byName.get("Riley Moss")!;
+    expect(riley.triage.kind).toBe("review");
+    expect(riley.draft.status).toBe("ready");
+
+    expect(byName.get("Marcus Lee")!.triage.kind).toBe("owner");
+    expect(byName.get("Sam Whitfield")!.triage.label).toBe("Support request");
+    expect(byName.get("Leo Brandt")!.triage.label).toBe("Vendor pitch");
+    expect(byName.get("test")!.triage.label).toBe("Spam or test");
+
+    for (const row of board.rows) {
+      if (row.triage.kind !== "reply" && row.triage.kind !== "review")
+        expect(row.draft.status, row.lead.name ?? "").toBe("not_needed");
+      expect(row.triage.why, row.lead.name ?? "").not.toMatch(/[—–]/);
+    }
+
+    const detail = await demo.engagement(hannah.id);
+    expect(
+      detail?.draft.problems.map((problem) => problem.code).sort(),
+    ).toEqual([
+      "banned_phrase",
+      "banned_phrase",
+      "banned_phrase",
+      "calls_to_action",
+      "colon",
+    ]);
+  });
+});

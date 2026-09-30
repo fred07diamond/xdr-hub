@@ -1,0 +1,154 @@
+/* Self-hosted via @fontsource-variable/inter — no render-blocking Google Fonts request */
+@import "@fontsource-variable/inter";
+
+@import "tailwindcss";
+@import "@agent-native/core/styles/agent-native.css";
+@import "@agent-native/toolkit/styles.css";
+@import "@agent-native/toolkit/editor.css";
+
+@source "./**/*.{ts,tsx}";
+
+/* Tokens are HSL channels ("H S% L%"); the framework theme wraps them in hsl(). */
+:root {
+  --background: 216 22% 97%;
+  --foreground: 220 20% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 20% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 20% 11%;
+  --primary: 161 52% 27%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 218 16% 93.5%;
+  --secondary-foreground: 220 20% 14%;
+  --muted: 218 16% 95%;
+  --muted-foreground: 219 10% 42%;
+  --accent: 218 16% 94%;
+  --accent-foreground: 220 20% 11%;
+  --destructive: 0 70% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 218 14% 88.5%;
+  --input: 218 14% 85%;
+  --ring: 161 45% 34%;
+  --radius: 0.5rem;
+  --sidebar-background: 218 20% 95%;
+  --sidebar-foreground: 219 10% 38%;
+  --sidebar-primary: 220 20% 11%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 218 16% 90%;
+  --sidebar-accent-foreground: 220 20% 11%;
+  --sidebar-border: 218 14% 88%;
+  --sidebar-ring: 161 45% 34%;
+
+  --warning: 35 92% 44%;
+  --warning-foreground: 30 88% 28%;
+  --warning-soft: 42 92% 93%;
+  --destructive-soft: 0 82% 96%;
+  --destructive-strong: 0 72% 38%;
+  --primary-soft: 158 36% 93%;
+  --ink: 220 22% 14%;
+  --ink-foreground: 0 0% 100%;
+  --rail: 218 14% 90%;
+  --rail-fill: 220 12% 46%;
+
+  --pa-nav-width: 15rem;
+  --font-mono-pa:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+}
+
+.dark {
+  --background: 220 18% 7%;
+  --foreground: 216 16% 91%;
+  --card: 220 16% 10%;
+  --card-foreground: 216 16% 91%;
+  --popover: 220 16% 11%;
+  --popover-foreground: 216 16% 91%;
+  --primary: 160 46% 33%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 15%;
+  --secondary-foreground: 216 16% 91%;
+  --muted: 220 14% 13%;
+  --muted-foreground: 218 10% 62%;
+  --accent: 220 14% 15%;
+  --accent-foreground: 216 16% 91%;
+  --destructive: 0 72% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 13% 18%;
+  --input: 220 13% 22%;
+  --ring: 160 42% 46%;
+  --sidebar-background: 220 20% 5.5%;
+  --sidebar-foreground: 218 10% 60%;
+  --sidebar-primary: 216 16% 91%;
+  --sidebar-primary-foreground: 220 20% 8%;
+  --sidebar-accent: 220 14% 12.5%;
+  --sidebar-accent-foreground: 216 16% 93%;
+  --sidebar-border: 220 13% 14%;
+  --sidebar-ring: 160 42% 46%;
+
+  --warning: 38 90% 54%;
+  --warning-foreground: 40 92% 66%;
+  --warning-soft: 36 55% 13%;
+  --destructive-soft: 0 48% 14%;
+  --destructive-strong: 0 80% 70%;
+  --primary-soft: 160 30% 13%;
+  --ink: 216 16% 88%;
+  --ink-foreground: 220 20% 8%;
+  --rail: 220 13% 19%;
+  --rail-fill: 218 10% 62%;
+}
+
+@theme inline {
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-warning-soft: hsl(var(--warning-soft));
+  --color-destructive-soft: hsl(var(--destructive-soft));
+  --color-destructive-strong: hsl(var(--destructive-strong));
+  --color-primary-soft: hsl(var(--primary-soft));
+  --color-ink: hsl(var(--ink));
+  --color-ink-foreground: hsl(var(--ink-foreground));
+  --color-rail: hsl(var(--rail));
+  --color-rail-fill: hsl(var(--rail-fill));
+  --font-mono: var(--font-mono-pa);
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter Variable", "Inter", sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Form text is rendered as data: preserve line breaks, never interpret. */
+.pa-untrusted {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Selection is graphite; pine stays reserved for the primary action. */
+.pa-check {
+  border-color: hsl(var(--input));
+  background: hsl(var(--card));
+}
+
+.pa-check[data-state="checked"],
+.pa-check[data-state="indeterminate"] {
+  border-color: hsl(var(--ink));
+  background: hsl(var(--ink));
+  color: hsl(var(--ink-foreground));
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.24);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.36);
+}

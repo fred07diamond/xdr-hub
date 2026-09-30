@@ -1,0 +1,229 @@
+# Playbook v1 seed for the Inbound slice (2026-09-29).
+# Rules are evaluated in code; guidance is loaded for agent steps.
+# Every entry has an owner and an owner_team (pa_team, revops, or both) that
+# approves its changes in the app (D44). TODO values need that owner's confirmation before M1.
+release_notes: "Seed from the Contact Sales workflow doc and Qualification Matrix"
+entries:
+  - id: def.ql
+    block: definition
+    section: definitions
+    position: 0
+    type: definition
+    owner: RevOps
+    owner_team: revops
+    version: 1
+    body: "A real person at a real company with a legitimate sales request that passed pre-check."
+    source: "Contact Sales workflow doc, step 1b"
+  - id: def.sal
+    block: definition
+    section: definitions
+    position: 1
+    type: definition
+    owner: RevOps
+    owner_team: revops
+    version: 1
+    body: "A lead the owning rep has accepted after the QL to SAL decision (step 2b)."
+  - id: def.recycle
+    block: definition
+    section: definitions
+    position: 2
+    type: definition
+    owner: RevOps
+    owner_team: revops
+    version: 1
+    body: "Not ready now; returned to nurture with a reason and a re-entry trigger."
+  - id: def.disqualify
+    block: definition
+    section: definitions
+    position: 3
+    type: definition
+    owner: RevOps
+    owner_team: revops
+    version: 1
+    body: "Not a sales opportunity; closed with a reason logged for the weekly spot check."
+
+  - id: rule.precheck.outcomes
+    block: precheck_outcomes
+    section: rules_of_engagement
+    position: 0
+    type: rule
+    owner: RevOps
+    owner_team: revops
+    precedence: 2
+    version: 1
+    params:
+      support_request: route_to_support
+      educational: self_serve_thank_you
+      selling_to_us: ignore_logged
+      junk_or_fake: ignore_logged
+      restricted_country: disqualify_logged
+      existing_deal_or_customer: attach_to_owner
+      owned_account: attach_to_owner
+      active_conversation: attach_to_owner
+    rationale: "Pre-check runs before research so the lead lands with the right person instead of being worked cold."
+    open_work_policy: new_work_only
+  - id: rule.precheck.restricted_countries
+    block: country_list
+    section: rules_of_engagement
+    position: 1
+    type: rule
+    owner: RevOps with Legal
+    owner_team: revops
+    precedence: 1
+    version: 1
+    params:
+      countries: [] # TODO RevOps supplies the list
+  - id: rule.routing.order
+    block: routing_order
+    section: routing
+    position: 0
+    type: rule
+    owner: Sales leadership
+    owner_team: revops
+    precedence: 2
+    version: 1
+    params:
+      order:
+        [
+          existing_active_owner,
+          deal_or_customer_owner,
+          agency_partner_rep,
+          round_robin,
+        ]
+      agency_partner_rep: TODO # user email of the partner rep
+      round_robin_pool: config/routing-pool.yaml
+  - id: rule.routing.sal_stale_days
+    block: threshold
+    section: routing
+    position: 1
+    type: rule
+    owner: RevOps
+    owner_team: revops
+    precedence: 2
+    version: 1
+    params:
+      days: 90 # TODO confirm
+  - id: rule.sla.first_touch
+    block: clock
+    section: clocks
+    position: 0
+    type: rule
+    owner: RevOps and PA lead
+    owner_team: both
+    precedence: 2
+    version: 1
+    params:
+      minutes: 30
+      clock: owner_working_hours
+      reminder_at_fraction: 0.75
+      breach_notify: pa_lead
+    source: "Sales handbook, 03 Lead routing: Contact Sales responds within 30 minutes"
+  - id: rule.sla.decision
+    block: clock
+    section: clocks
+    position: 1
+    type: rule
+    owner: RevOps
+    owner_team: revops
+    precedence: 2
+    version: 1
+    params:
+      hours: 24
+    source: "Contact Sales workflow doc, step 2b"
+  - id: rule.enterprise.bar
+    block: threshold
+    section: qualification
+    position: 0
+    type: rule
+    owner: Sales leadership
+    owner_team: revops
+    precedence: 2
+    version: 1
+    params:
+      code_min_seats: 20
+    rationale: "Size the buying entity. For an agency buying for an unnamed client, enterprise fit is unknown until the client is named."
+
+  - id: msg.first_touch.structure
+    block: message_rule
+    section: messaging
+    position: 0
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    body: |
+      Follow the Sales handbook's email playbook (05) and Contact Sales handling (03).
+      Classify the lead first: Highly Qualified Content, Standard Content, Highly Qualified Code, Standard Code, or the Content price check.
+      TCQ: acknowledge the specific request in their message (trigger), connect it to Builder in a sentence (connection), then the ask (question).
+      Contact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two 30 minute time options, written as [time options]. Standard leads get the qualifying questions first and a soft offer to find time.
+      Never pitch a demo as the first call; call it an intro, walkthrough, or working session.
+      Never disclose pricing, except the Content price check. Never invent a fact, metric, or customer quote.
+      Plain, casual voice, under 75 words when possible. No em dashes, no colons, a casual sign-off, signed with the owner's first name.
+      Say Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.
+    params:
+      min_words: 25
+      target_words: 75
+      max_words: 130
+      no_colons: true
+      banned_chars: ["\u2014", "\u2013"]
+      banned_terms: ["Builder.io", "Fusion", "Publish"]
+      banned_phrases:
+        - "I hope this email finds you well"
+        - "just circling back"
+        - "likely under some time pressure"
+        - "I'm sure you're busy"
+        - "Best regards"
+        - "Kind regards"
+        - "Warm regards"
+        - "Sincerely"
+        - "demo our platform"
+        - "Would you be open to a quick call"
+        - "What's driving your interest"
+    source: "Sales handbook, 05 Email playbook and 03 Contact Sales form handling"
+  - id: msg.agency.first_touch
+    block: message_rule
+    section: messaging
+    position: 1
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    scope:
+      relationship_state: agency
+    body: "Acknowledge that they are evaluating for a client. Offer the partner path when relevant. Ask who the client is and what they want to build, in service of setting up the right trial or call."
+
+  - id: kb.partner_program
+    block: knowledge
+    section: knowledge
+    position: 0
+    type: knowledge
+    owner: PMM
+    owner_team: pa_team
+    version: 1
+    body: "Builder runs an agency partner program. Agencies apply to become featured partners and get revenue share on referred leads, technical resources, and training."
+    sources: ["https://www.builder.io/m/partners/apply"]
+    review_by: 2026-12-31
+  - id: kb.trial_path_partner_led
+    block: knowledge
+    section: knowledge
+    position: 1
+    type: knowledge
+    owner: PMM
+    owner_team: pa_team
+    version: 1
+    status: missing # TODO PMM: how an agency or partner gets an Enterprise trial for a client evaluation
+    body: null
+
+  - id: rule.crm.system
+    block: crm_system
+    section: crm
+    position: 0
+    type: rule
+    owner: RevOps
+    owner_team: revops
+    version: 1
+    params:
+      system: hubspot
+    rationale: "PA reads CRM data through a port; this picks the adapter. HubSpot is the only one built."

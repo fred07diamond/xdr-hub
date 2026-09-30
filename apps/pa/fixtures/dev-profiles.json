@@ -1,0 +1,56 @@
+{
+  "note": "Synthetic people for local and shadow replays only. The builder.io owner addresses come from the seed fixture; the example.com addresses are reserved for documentation. config/routing-pool.yaml is empty, so round robin uses dev_pool until the PA lead supplies the real pool.",
+  "local_dev_user": "dev@local.test",
+  "profiles": [
+    {
+      "email": "pa.one@builder.io",
+      "display_name": "PA One",
+      "timezone": "America/Los_Angeles",
+      "working_hours": {
+        "days": [1, 2, 3, 4, 5],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "roles": ["pa", "admin"],
+      "in_round_robin": true,
+      "link_local_dev_user": true
+    },
+    {
+      "email": "pa.two@pa-dev.example.com",
+      "display_name": "PA Two",
+      "timezone": "America/New_York",
+      "working_hours": {
+        "days": [1, 2, 3, 4, 5],
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "roles": ["pa"],
+      "in_round_robin": true
+    },
+    {
+      "email": "ae.one@builder.io",
+      "display_name": "AE One",
+      "timezone": "America/Chicago",
+      "working_hours": {
+        "days": [1, 2, 3, 4, 5],
+        "start": "08:30",
+        "end": "17:30"
+      },
+      "roles": ["ae"],
+      "in_round_robin": false
+    },
+    {
+      "email": "csm.one@builder.io",
+      "display_name": "CSM One",
+      "timezone": "Europe/London",
+      "working_hours": {
+        "days": [1, 2, 3, 4, 5],
+        "start": "09:00",
+        "end": "17:30"
+      },
+      "roles": ["csm"],
+      "in_round_robin": false
+    }
+  ],
+  "dev_pool": ["pa.one@builder.io", "pa.two@pa-dev.example.com"]
+}

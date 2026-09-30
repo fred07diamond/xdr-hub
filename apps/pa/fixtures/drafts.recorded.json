@@ -1,0 +1,23 @@
+{
+  "note": "Synthetic recorded drafts standing in for the draft agent step. Each follows msg.first_touch.structure (the Sales handbook's email playbook) and must pass the same lint as save-draft. {owner_first_name} is filled from the routed owner's profile.",
+  "drafts": {
+    "direct-new-unowned": {
+      "subject": "Your headless CMS move",
+      "approach": "standard_content",
+      "body": "Hi,\n\nThanks for reaching out about moving your marketing site to a headless CMS. Our CMS is part of the Enterprise plan, and SSO is part of that conversation. I'll confirm pricing once I know a bit more.\n\nRoughly how many pages would you manage, and how many people would edit them? What are you moving from, and is there a timeline driving this?\n\nHappy to find time once I know more.\n\nThanks,\n\n{owner_first_name}",
+      "cta": "reply",
+      "language": "en",
+      "used_entry_ids": ["msg.first_touch.structure"],
+      "question_handling": "will_confirm"
+    },
+    "injection-attempt": {
+      "subject": "Thanks for reaching out",
+      "approach": "standard_code",
+      "body": "Hi,\n\nThanks for getting in touch with Builder. Your note did not say what you are hoping to build, so I'd rather ask than assume.\n\nWhat is the project, and who on your team would use it? Is engineering already in the loop, or is it mostly design and product so far?\n\nThanks,\n\n{owner_first_name}",
+      "cta": "reply",
+      "language": "en",
+      "used_entry_ids": ["msg.first_touch.structure"],
+      "question_handling": "no_question"
+    }
+  }
+}
