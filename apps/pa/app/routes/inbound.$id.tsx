@@ -793,16 +793,7 @@ export default function EngagementRoute() {
               <FirstTouchCard
                 email={historyData.firstTouch}
                 lead={detail.draft.to}
-              >
-                {detail.draft.status === "ready" ||
-                detail.draft.status === "needs_edit" ? (
-                  <DraftCard
-                    embedded
-                    draft={detail.draft}
-                    onAsk={(kind) => askAgent(kind)}
-                  />
-                ) : null}
-              </FirstTouchCard>
+              />
             ) : (
               <DraftCard
                 draft={detail.draft}

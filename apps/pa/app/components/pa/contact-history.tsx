@@ -4,7 +4,6 @@ import { useActionQuery } from "@agent-native/core/client/hooks";
 import {
   IconArrowDownLeft,
   IconCheck,
-  IconChevronDown,
   IconArrowUpRight,
   IconCalendarEvent,
   IconMail,
@@ -232,16 +231,14 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
 
 /**
  * The first touch that already went out from HubSpot (D64), shown the way a
- * draft is: an email, with PA's own draft tucked underneath for comparison.
+ * draft is: an email. PA's own draft is not shown once this went out.
  */
 export function FirstTouchCard({
   email,
   lead,
-  children,
 }: {
   email: HistoryItem;
   lead: { name: string | null; email: string };
-  children?: ReactNode;
 }) {
   return (
     <section
@@ -294,18 +291,6 @@ export function FirstTouchCard({
         First contact is marked done on the SLA timer. PA does not draft another
         first touch for this lead.
       </p>
-      {children ? (
-        <details className="group border-t border-border">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12.5px] font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            <IconChevronDown
-              className="size-4 -rotate-90 text-muted-foreground transition-transform group-open:rotate-0"
-              aria-hidden="true"
-            />
-            PA's draft, not sent
-          </summary>
-          <div className="border-t border-border">{children}</div>
-        </details>
-      ) : null}
     </section>
   );
 }
