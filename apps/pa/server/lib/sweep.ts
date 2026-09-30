@@ -28,7 +28,9 @@ export async function runInboundSweep(owner: {
   });
   const repository = repo();
   const work = await listAgentWork(repository, 50);
-  const agentSetup = work.length > 0 ? await ensureInboundAgent(owner) : "idle";
+  // Checked every minute, so a change to the agent's instructions or model
+  // reaches the running automation without anyone pressing a button.
+  const agentSetup = await ensureInboundAgent(owner);
   let agent = "skipped";
   if (work.length > 0) {
     const events = await repository.listEventsByCorrelation(INTAKE_CORRELATION);

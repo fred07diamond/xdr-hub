@@ -6,6 +6,7 @@ import {
   defineAutomation,
   listAutomationDefinitions,
   queueAutomationRunNow,
+  updateAutomation,
 } from "@agent-native/core/triggers";
 import { hubspotFetchWithTimeout } from "@xdr-hub/shared/server";
 
@@ -14,7 +15,7 @@ import {
   type HubSpotFetch,
   type HubSpotMapping,
 } from "../core/crm/hubspot-adapter.js";
-import { draftPlan } from "../core/drafting/index.js";
+import { DRAFT_RULES_VERSION, draftPlan } from "../core/drafting/index.js";
 import {
   enqueueSubmissions,
   excludeSubmissions,
@@ -28,6 +29,11 @@ import type { PaRepository } from "../core/repo/types.js";
 import { activeRelease, newId, now, repo } from "./pa-context.js";
 
 export const INBOUND_AGENT = "pa-inbound-agent";
+/**
+ * Drafting is writing, so the inbound agent runs on Claude Sonnet, not the
+ * workspace's fast default (D62; SPEC 5.4 asked for Sonnet for drafts).
+ */
+export const INBOUND_AGENT_MODEL = "claude-sonnet-5";
 
 export const INBOUND_AGENT_BODY = `You are PA's inbound agent, in shadow mode. You never send email and never write to HubSpot.
 1. Call pull-contact-sales once (defaults) to take in new Contact Sales submissions.
@@ -199,10 +205,16 @@ export async function listAgentWork(
         (precheck?.ruleResults.signal as string | null | undefined) ?? null,
       hasOwner: Boolean(engagement.ownerUserId),
     });
-    if (
-      plan.needed &&
-      (await repository.listDrafts(engagement.id)).length === 0
-    )
+    const drafts = await repository.listDrafts(engagement.id);
+    const latest = drafts[drafts.length - 1];
+    // A draft under older rules is redone while the lead is undecided (D62).
+    const stale =
+      Boolean(latest) &&
+      Number(
+        (latest?.lint as { rulesVersion?: number } | null)?.rulesVersion ?? 1,
+      ) < DRAFT_RULES_VERSION &&
+      (await repository.getDecision(engagement.id))?.status !== "decided";
+    if (plan.needed && (!latest || stale))
       work.push({
         engagementId: engagement.id,
         step: "draft",
@@ -244,12 +256,30 @@ export async function wakeInboundAgent(ctx: {
 export async function ensureInboundAgent(owner: {
   userEmail: string;
   orgId?: string;
-}): Promise<"exists" | "created" | "no_org" | "failed"> {
+}): Promise<"exists" | "created" | "updated" | "no_org" | "failed"> {
   if (!owner.orgId) return "no_org";
   const actor = { userEmail: owner.userEmail, orgId: owner.orgId, appId: "pa" };
   try {
-    const existing = await listAutomationDefinitions(actor, "organization");
-    if (existing.some((item) => item.name === INBOUND_AGENT)) return "exists";
+    const existing = (
+      await listAutomationDefinitions(actor, "organization")
+    ).find((item) => item.name === INBOUND_AGENT);
+    if (existing) {
+      // Keep the running agent on the current instructions and model (D62).
+      const meta = existing.meta as { model?: string | null };
+      if (
+        existing.body.trim() !== INBOUND_AGENT_BODY.trim() ||
+        meta.model !== INBOUND_AGENT_MODEL
+      ) {
+        await updateAutomation(actor, {
+          name: INBOUND_AGENT,
+          scope: "organization",
+          body: INBOUND_AGENT_BODY,
+          model: INBOUND_AGENT_MODEL,
+        });
+        return "updated";
+      }
+      return "exists";
+    }
     await defineAutomation(actor, {
       name: INBOUND_AGENT,
       scope: "organization",
@@ -257,6 +287,7 @@ export async function ensureInboundAgent(owner: {
       schedule: "*/30 * * * *",
       timezone: "America/Los_Angeles",
       body: INBOUND_AGENT_BODY,
+      model: INBOUND_AGENT_MODEL,
       domain: "pa",
     });
     return "created";

@@ -156,7 +156,8 @@ entries:
       Follow the Sales handbook's email playbook (05) and Contact Sales handling (03).
       Classify the lead first: Highly Qualified Content, Standard Content, Highly Qualified Code, Standard Code, or the Content price check.
       TCQ: acknowledge the specific request in their message (trigger), connect it to Builder in a sentence (connection), then the ask (question).
-      Contact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two 30 minute time options, written as [time options]. Standard leads get the qualifying questions first and a soft offer to find time.
+      Contact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two days for 30 minutes (for example Wednesday or Thursday), no calendar link. Standard leads get 2 or 3 qualifying questions first and a soft offer to find time.
+      The trigger quotes their own words from the message or a form answer; the connection ties it to teams like theirs; the ask is about their world, never their interest in us.
       Never pitch a demo as the first call; call it an intro, walkthrough, or working session.
       Never disclose pricing, except the Content price check. Never invent a fact, metric, or customer quote.
       Plain, casual voice, under 75 words when possible. No em dashes, no colons, a casual sign-off, signed with the owner's first name.
@@ -180,6 +181,20 @@ entries:
         - "demo our platform"
         - "Would you be open to a quick call"
         - "What's driving your interest"
+        - "can help teams"
+        - "can help you"
+        - "best-fit"
+        - "best fit approach"
+        - "get back to you"
+        - "our platform"
+        - "unlock"
+        - "seamless"
+        - "leverage"
+        - "empower"
+        - "game-changer"
+        - "cutting-edge"
+        - "Want to see a demo"
+        - "Do you have 15 minutes"
     source: "Sales handbook, 05 Email playbook and 03 Contact Sales form handling"
   - id: msg.agency.first_touch
     block: message_rule

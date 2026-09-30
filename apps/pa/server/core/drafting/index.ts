@@ -79,6 +79,34 @@ export const draftInputSchema = z.object({
     .array(z.string().min(1))
     .max(20)
     .describe("Playbook message and knowledge entries the draft relies on"),
+  rubric: z
+    .object({
+      trigger: z
+        .string()
+        .trim()
+        .min(3)
+        .max(300)
+        .describe(
+          "TCQ trigger: their exact words from the message or a form answer that the email opens on. Copied verbatim, not paraphrased.",
+        ),
+      connection: z
+        .string()
+        .trim()
+        .min(3)
+        .max(300)
+        .describe(
+          'TCQ connection: the sentence tying it to teams like theirs, e.g. "teams like yours usually..."',
+        ),
+      ask: z
+        .string()
+        .trim()
+        .min(3)
+        .max(300)
+        .describe(
+          "TCQ question: the question or the time offer, about their world, never their interest in us",
+        ),
+    })
+    .describe("The TCQ parts of the draft, checked against the form (D62)"),
   question_handling: z
     .enum(QUESTION_HANDLING)
     .describe(
@@ -101,6 +129,12 @@ const messageRuleParams = z
 
 export type DraftStatus = "proposed" | "needs_edit";
 
+/**
+ * The version of the draft rules. A draft saved under older rules is
+ * redrafted while its lead is still undecided (D62).
+ */
+export const DRAFT_RULES_VERSION = 2;
+
 export interface LintProblem {
   code:
     | "dash"
@@ -114,7 +148,11 @@ export interface LintProblem {
     | "colon"
     | "banned_term"
     | "pricing"
-    | "length";
+    | "length"
+    | "trigger"
+    | "connection"
+    | "content_enterprise"
+    | "questions";
   message: string;
 }
 
@@ -124,6 +162,7 @@ export interface LintResult {
   /** Handbook preferences that do not block, such as the 75 word target. */
   warnings: LintProblem[];
   approach: Approach;
+  rulesVersion: number;
   wordCount: number;
   questionHandling: QuestionHandling;
   /** Rules that code cannot check yet, shown so nobody assumes they were. */
@@ -215,6 +254,8 @@ export function lintDraft(input: {
   release: PlaybookRelease;
   explicitQuestion: string | null;
   ownerFirstName: string | null;
+  /** The message and form answers the trigger must come from (D62). */
+  sourceText?: string | null;
 }): LintResult {
   const { draft, release } = input;
   const params = messageRuleParams.parse(
@@ -304,14 +345,87 @@ export function lintDraft(input: {
     });
   }
   const bodyLower = draft.body.toLowerCase();
+  const weekdays = new Set(
+    bodyLower.match(
+      /\b(monday|tuesday|wednesday|thursday|friday|lunes|martes|mi[eé]rcoles|jueves|viernes)\b/g,
+    ) ?? [],
+  );
   if (
     draft.cta === "meeting" &&
-    !bodyLower.includes(TIME_OPTIONS_TOKEN) &&
-    !bodyLower.includes(CALENDAR_LINK_TOKEN)
+    weekdays.size < 2 &&
+    !bodyLower.includes(TIME_OPTIONS_TOKEN)
   ) {
     problems.push({
       code: "calendar_link",
-      message: `The call to action is a meeting, but there are no time options (${TIME_OPTIONS_TOKEN}) or calendar link.`,
+      message:
+        "The call to action is a meeting, but it does not offer two days (for example Wednesday or Thursday).",
+    });
+  }
+
+  // TCQ (D62). Trigger: their own words, used in the email.
+  const normalize = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[^\p{L}\p{N}' ]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  if (input.sourceText !== undefined) {
+    const trigger = normalize(draft.rubric.trigger);
+    const source = normalize(input.sourceText ?? "");
+    if (!source.includes(trigger)) {
+      problems.push({
+        code: "trigger",
+        message:
+          "The trigger is not their words. Quote the specific thing they wrote in the message or a form answer.",
+      });
+    } else {
+      const keyWords = trigger.split(" ").filter((word) => word.length >= 5);
+      const used = keyWords.filter((word) =>
+        normalize(draft.body).includes(word),
+      );
+      if (keyWords.length > 0 && used.length < Math.min(2, keyWords.length)) {
+        problems.push({
+          code: "trigger",
+          message:
+            "The email does not open on the trigger. Reference what they actually wrote.",
+        });
+      }
+    }
+  }
+  if (
+    !/\b(teams like|companies like|other (\w+ )?teams|a lot of (\w+ )?teams|most (\w+ )?teams|equipos como|empresas como)\b/i.test(
+      draft.body,
+    ) &&
+    draft.approach !== "hq_content"
+  ) {
+    warnings.push({
+      code: "connection",
+      message:
+        'No peer connection. Tie it to teams like theirs ("teams like yours usually...").',
+    });
+  }
+  if (
+    (draft.approach === "hq_content" ||
+      draft.approach === "standard_content") &&
+    !/\benterprise\b/i.test(draft.body)
+  ) {
+    problems.push({
+      code: "content_enterprise",
+      message:
+        "A Content lead should hear, in one line, that the CMS is part of the Enterprise plan.",
+    });
+  }
+  const questionMarks = (draft.body.match(/\?/g) ?? []).length;
+  if (
+    (draft.approach === "standard_content" ||
+      draft.approach === "standard_code") &&
+    questionMarks < 2
+  ) {
+    problems.push({
+      code: "questions",
+      message:
+        "A Standard lead gets 2 or 3 qualifying questions before the soft offer to find time.",
     });
   }
 
@@ -320,15 +434,6 @@ export function lintDraft(input: {
       problems.push({
         code: "question",
         message: "They asked a question, and the draft does not answer it.",
-      });
-    } else if (
-      draft.question_handling === "will_confirm" &&
-      !/\bconfirm/i.test(draft.body)
-    ) {
-      problems.push({
-        code: "question",
-        message:
-          "The draft does not answer their question and has no line saying what will be confirmed.",
       });
     }
   }
@@ -365,10 +470,29 @@ export function lintDraft(input: {
     problems,
     warnings,
     approach: draft.approach,
+    rulesVersion: DRAFT_RULES_VERSION,
     wordCount: count,
     questionHandling: draft.question_handling,
-    notChecked: ["Customer names need an approved reference entry"],
+    notChecked: [
+      "Customer names need an approved reference entry",
+      "Whether the questions pass the peer test",
+    ],
   };
+}
+
+/** What a TCQ trigger may quote: the message and every form answer. */
+export function triggerSource(submission: {
+  message: string | null;
+  fields: Record<string, unknown>;
+  companyName?: string | null;
+}): string {
+  return [
+    submission.message ?? "",
+    submission.companyName ?? "",
+    ...Object.values(submission.fields).filter(
+      (value): value is string => typeof value === "string",
+    ),
+  ].join("\n");
 }
 
 export const firstName = (displayName: string | null | undefined) =>

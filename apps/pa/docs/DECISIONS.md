@@ -1142,3 +1142,29 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - **Not taken:** the project's live web and LinkedIn research, the 5-contact
   multithreading add-on, and the Notion content database; they need sources
   PA does not reach yet (workflow 2a).
+
+## D62. Drafts are held to the TCQ rubric, on a writing model
+
+- **Status:** Decided by Fred, 2026-09-30, on a draft that "does not follow
+  any guidelines or rubric", with the team's TCQ email generator.
+- **What went wrong:** the trigger paraphrased the form, the connection was
+  a product pitch ("Builder's visual CMS can help teams"), a filler line
+  ("I'll confirm the best-fit approach and get back to you") was there only
+  because PA's own lint demanded the word "confirm", the question was an
+  interrogation, Enterprise-only was missing. The agent also ran on the
+  workspace's fast default model.
+- **Rubric in code:** every draft saves its TCQ parts (`rubric.trigger`,
+  `connection`, `ask`). The lint blocks a trigger that is not the lead's own
+  words from the message or a form answer, or that the email does not use;
+  a Content draft that does not say the CMS is part of the Enterprise plan;
+  a Standard draft with fewer than two questions; a meeting without two days
+  offered; pitch and filler phrases ("can help teams", "best-fit", "get back
+  to you", "our platform", "unlock", "leverage"). No peer connection is a
+  warning. The "must say confirm" rule is gone.
+- **Days, not slots:** meetings offer two days (for example Wednesday or
+  Thursday), no calendar link, per the team's project memory.
+- **Model:** the inbound agent runs on `claude-sonnet-5` (SPEC 5.4 asked for
+  Sonnet for drafting). The minute poll keeps the running automation's
+  instructions and model current.
+- **Existing drafts:** draft rules are versioned; an undecided lead whose
+  draft predates version 2 goes back to the agent's queue and is redrafted.

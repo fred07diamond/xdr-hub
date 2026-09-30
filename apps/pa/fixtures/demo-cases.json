@@ -94,11 +94,16 @@
       "draft": {
         "subject": "Replatforming your storefront content",
         "approach": "standard_content",
-        "body": "Hi Priya,\n\nThanks for reaching out about replatforming your storefront content for your marketers. Our CMS is part of the Enterprise plan, so pricing depends on scale. I'll confirm it once I know a bit more.\n\nRoughly how many pages would you manage? What are you moving from today, and is there a timeline or launch driving this?\n\nHappy to find time once I know more.\n\nThanks,\n\n{owner_first_name}",
+        "body": "Hi Priya,\n\nSaw you're replatforming your storefront content so your marketers can work in a visual CMS. Teams like yours usually want marketers shipping pages without waiting on engineering.\n\nOur CMS is part of the Enterprise plan, and pricing depends on scale. Roughly how many pages would you manage, and what are you moving from today? Any launch date driving this?\n\nThanks,\n\n{owner_first_name}",
         "cta": "reply",
         "language": "en",
         "used_entry_ids": ["msg.first_touch.structure"],
-        "question_handling": "will_confirm"
+        "rubric": {
+          "trigger": "replatforming our storefront content",
+          "connection": "Teams like yours usually want marketers shipping pages without waiting on engineering",
+          "ask": "Roughly how many pages would you manage, and what are you moving from today?"
+        },
+        "question_handling": "answered"
       }
     },
     {
@@ -189,13 +194,18 @@
         "explicit_question": "¿Tienen soporte para localización y SSO?"
       },
       "draft": {
-        "subject": "Localización y SSO para su sitio",
+        "subject": "Su sitio en tres idiomas",
         "approach": "standard_content",
-        "body": "Hola Tomás,\n\nGracias por escribirnos sobre su sitio en tres idiomas. Nuestro CMS es parte del plan Enterprise, que incluye SSO. Voy a confirmar el detalle de localización con el equipo.\n\n¿Cuántas páginas manejarían y cuántas personas las editarían? ¿Qué usan hoy y hay alguna fecha que los impulse?\n\nCon gusto buscamos un horario después.\n\nSaludos,\n\n{owner_first_name}",
+        "body": "Hola Tomás,\n\nVi que están evaluando Builder para su sitio en tres idiomas. Equipos como el suyo suelen querer que marketing publique sin esperar a ingeniería.\n\nNuestro CMS es parte del plan Enterprise, que incluye SSO y localización. ¿Cuántas páginas manejarían y quién las editaría? ¿Qué usan hoy?\n\nSaludos,\n\n{owner_first_name}",
         "cta": "reply",
         "language": "es",
         "used_entry_ids": ["msg.first_touch.structure"],
-        "question_handling": "will_confirm"
+        "rubric": {
+          "trigger": "nuestro sitio en tres idiomas",
+          "connection": "Equipos como el suyo suelen querer que marketing publique sin esperar a ingeniería",
+          "ask": "¿Cuántas páginas manejarían y quién las editaría?"
+        },
+        "question_handling": "answered"
       }
     },
     {
@@ -259,11 +269,16 @@
       "draft": {
         "subject": "Figma designs to landing pages",
         "approach": "standard_code",
-        "body": "Hi Grace,\n\nThanks for reaching out about building landing pages from your Figma designs with Builder. A pilot is a fair ask, and I'll confirm what we can offer.\n\nDoes the work today get rebuilt by engineering before it ships? And is engineering already in the loop on this, or mostly design and marketing so far?\n\nLet me know and we can find time to dig in.\n\nThanks,\n\n{owner_first_name}",
+        "body": "Hi Grace,\n\nSaw your team wants to generate landing pages from Figma designs. Teams like yours usually find the rebuild after handoff is what slows things down, and a pilot is a fair place to start.\n\nDoes engineering rebuild that work today before it ships? And is engineering already in the loop, or mostly design and marketing so far?\n\nLet me know and we can find time to dig in.\n\nThanks,\n\n{owner_first_name}",
         "cta": "reply",
         "language": "en",
         "used_entry_ids": ["msg.first_touch.structure"],
-        "question_handling": "will_confirm"
+        "rubric": {
+          "trigger": "generate landing pages from Figma designs",
+          "connection": "Teams like yours usually find the rebuild after handoff is what slows things down",
+          "ask": "Does engineering rebuild that work today before it ships?"
+        },
+        "question_handling": "answered"
       }
     },
     {
@@ -302,6 +317,11 @@
         "cta": "meeting",
         "language": "en",
         "used_entry_ids": ["msg.first_touch.structure"],
+        "rubric": {
+          "trigger": "moving lots of sites",
+          "connection": "Builder can help teams with residency",
+          "ask": "book a call"
+        },
         "question_handling": "answered"
       }
     },
@@ -337,7 +357,7 @@
       "draft": {
         "subject": "Your hospitality client project",
         "approach": "agency",
-        "body": "Hi Daniel,\n\nThanks for reaching out. We work with a lot of agencies, and our partnerships team can help with partner pricing and a sandbox for the prototype.\n\nSo I can pull in the right people, roughly how large is your client's organization, and where are they headquartered? I'll confirm the setup once I know.\n\nThanks,\n\n{owner_first_name}",
+        "body": "Hi Daniel,\n\nThanks for reaching out about the new site you're building for a client in the hospitality space. We work with a lot of agency teams, and our partnerships team can help with partner pricing and a sandbox.\n\nSo I can pull in the right people, roughly how large is your client, and where are they headquartered?\n\nThanks,\n\n{owner_first_name}",
         "cta": "reply",
         "language": "en",
         "used_entry_ids": [
@@ -345,7 +365,12 @@
           "msg.agency.first_touch",
           "kb.partner_program"
         ],
-        "question_handling": "will_confirm"
+        "rubric": {
+          "trigger": "building a new site for a client in the hospitality space",
+          "connection": "We work with a lot of agency teams",
+          "ask": "roughly how large is your client, and where are they headquartered?"
+        },
+        "question_handling": "answered"
       }
     },
     {
@@ -376,10 +401,15 @@
       "draft": {
         "subject": "Thanks for reaching out",
         "approach": "standard_code",
-        "body": "Hi Riley,\n\nThanks for getting in touch with Builder. Your note did not say what you are hoping to build, so I'd rather ask than assume.\n\nWhat is the project, and who on your team would use it? Is engineering already in the loop, or is it mostly design and product so far?\n\nThanks,\n\n{owner_first_name}",
+        "body": "Hi Riley,\n\nThanks for getting in touch from Unknown Holdings. Your note did not say what you are hoping to build, so I'd rather ask than assume. Teams like yours usually start with one project.\n\nWhat is it, and who on your team would use it? Is engineering in the loop yet?\n\nThanks,\n\n{owner_first_name}",
         "cta": "reply",
         "language": "en",
         "used_entry_ids": ["msg.first_touch.structure"],
+        "rubric": {
+          "trigger": "Unknown Holdings",
+          "connection": "Teams like yours usually start with one project",
+          "ask": "What is it, and who on your team would use it?"
+        },
         "question_handling": "no_question"
       }
     },
@@ -412,10 +442,15 @@
       "draft": {
         "subject": "Security questionnaire answers",
         "approach": "hq_code",
-        "body": "Hi Marcus,\n\nThanks for following up after last month's demo. I'll confirm the security questionnaire answers with our team and send them over this week.\n\nWould [time options] work for 30 minutes to walk through anything open?\n\nThanks,\n\n{owner_first_name}",
+        "body": "Hi Marcus,\n\nThanks for following up after last month's demo. I'll send over the security questionnaire answers this week. Teams like yours usually want security sorted before the next session.\n\nWould Wednesday or Thursday work for 30 minutes to go through anything open?\n\nThanks,\n\n{owner_first_name}",
         "cta": "meeting",
         "language": "en",
         "used_entry_ids": ["msg.first_touch.structure"],
+        "rubric": {
+          "trigger": "send over the security questionnaire answers",
+          "connection": "Teams like yours usually want security sorted before the next session",
+          "ask": "Would Wednesday or Thursday work for 30 minutes?"
+        },
         "question_handling": "will_confirm"
       }
     },
@@ -477,10 +512,15 @@
       "draft": {
         "subject": "Restarting your evaluation",
         "approach": "hq_code",
-        "body": "Hi Noor,\n\nThanks for coming back to us, and congrats on getting the budget approved. Happy to restart the evaluation.\n\nWould [time options] work for 30 minutes to pick up where things left off?\n\nThanks,\n\n{owner_first_name}",
+        "body": "Hi Noor,\n\nGood to hear the budget is approved and you want to restart the evaluation. Teams like yours usually pick up fastest with a short working session on where things stand.\n\nWould Wednesday or Thursday work for 30 minutes? Is engineering still in the loop, or has the team changed?\n\nThanks,\n\n{owner_first_name}",
         "cta": "meeting",
         "language": "en",
         "used_entry_ids": ["msg.first_touch.structure"],
+        "rubric": {
+          "trigger": "budget approved now and want to restart the evaluation",
+          "connection": "Teams like yours usually pick up fastest with a short working session",
+          "ask": "Would Wednesday or Thursday work for 30 minutes?"
+        },
         "question_handling": "answered"
       }
     }

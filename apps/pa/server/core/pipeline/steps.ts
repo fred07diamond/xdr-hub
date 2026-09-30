@@ -9,6 +9,7 @@ import {
   draftPlan,
   firstName,
   lintDraft,
+  triggerSource,
 } from "../drafting/index.js";
 import { resolveIdentity, type ResolvedIdentity } from "../identity/index.js";
 import {
@@ -984,6 +985,7 @@ const draft: PipelineStep = {
       release: deps.release,
       explicitQuestion: state.assessment?.explicitQuestion ?? null,
       ownerFirstName,
+      sourceText: triggerSource(submission),
     });
     const used = deps.release.entries
       .filter((entry) => parsed.data.used_entry_ids.includes(entry.id))

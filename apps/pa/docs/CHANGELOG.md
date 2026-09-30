@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-30 (TCQ rubric)
+
+- Drafts are checked against the TCQ rubric: the trigger must be the lead's
+  own words, no product pitch or filler, Enterprise-only for Content, real
+  questions for Standard leads, two days for a meeting (D62).
+- The agent drafts on Claude Sonnet, and undecided leads with older drafts
+  are redrafted automatically.
+
 ## 2026-09-30 (the xDR master instructions)
 
 - Each lead shows its Contact Sales class (Highly Qualified or Standard,

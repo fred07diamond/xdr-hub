@@ -14,8 +14,8 @@ const good: DraftInput = {
   subject: "Your marketing site move",
   body: [
     "Hi Priya,",
-    "Thanks for reaching out about moving your marketing site. I'll confirm the SSO details with our team and send them over tomorrow.",
-    "Would [time options] work for 30 minutes to walk through your setup?",
+    "Saw you're moving your marketing site to a headless CMS. Our CMS is part of the Enterprise plan, and I'll send the SSO details over tomorrow.",
+    "Would Wednesday or Thursday work for 30 minutes to walk through your setup?",
     "Thanks,",
     "Dana",
   ].join("\n\n"),
@@ -23,8 +23,16 @@ const good: DraftInput = {
   cta: "meeting",
   language: "en",
   used_entry_ids: ["msg.first_touch.structure"],
+  rubric: {
+    trigger: "moving our marketing site to a headless CMS",
+    connection: "Our CMS is part of the Enterprise plan",
+    ask: "Would Wednesday or Thursday work for 30 minutes?",
+  },
   question_handling: "will_confirm",
 };
+
+const SOURCE =
+  "We are moving our marketing site to a headless CMS. Can you share whether you support SSO?";
 
 const lint = (draft: Partial<DraftInput>, question: string | null = "Q?") =>
   lintDraft({
@@ -32,6 +40,7 @@ const lint = (draft: Partial<DraftInput>, question: string | null = "Q?") =>
     release: seedRelease,
     explicitQuestion: question,
     ownerFirstName: "Dana",
+    sourceText: SOURCE,
   });
 
 const codes = (draft: Partial<DraftInput>, question?: string | null) =>
@@ -95,14 +104,17 @@ describe("lintDraft", () => {
     // Times and links are not punctuation colons.
     expect(
       codes({
-        body: good.body.replace("[time options]", "Tuesday at 10:30am ET"),
+        body: good.body.replace(
+          "Wednesday or Thursday",
+          "Wednesday at 10:30am or Thursday",
+        ),
       }),
     ).not.toContain("colon");
   });
 
   it("catches each rule", () => {
     expect(
-      codes({ body: good.body.replace("Thanks for", "Thanks — for") }),
+      codes({ body: good.body.replace("Saw you're", "Saw — you're") }),
     ).toContain("dash");
     expect(codes({ body: "Hi,\n\nShort.\n\nDana" })).toContain("word_range");
     expect(codes({ subject: "Pricing: the details" })).toContain("colon");
@@ -129,8 +141,8 @@ describe("lintDraft", () => {
     expect(
       codes({
         body: good.body.replace(
-          "Thanks for",
-          "I hope this email finds you well. Thanks for",
+          "Saw you're",
+          "I hope this email finds you well. Saw you're",
         ),
       }),
     ).toContain("banned_phrase");
@@ -140,15 +152,37 @@ describe("lintDraft", () => {
       }),
     ).toContain("calls_to_action");
     expect(
-      codes({ body: good.body.replace("[time options]", "some time") }),
+      codes({ body: good.body.replace("Wednesday or Thursday", "sometime") }),
     ).toContain("calendar_link");
     expect(codes({ question_handling: "no_question" })).toContain("question");
+    // TCQ (D62): the trigger is their words, used in the email.
+    expect(
+      codes({ rubric: { ...good.rubric, trigger: "evaluating CMS options" } }),
+    ).toContain("trigger");
     expect(
       codes({
-        question_handling: "will_confirm",
-        body: good.body.replace("confirm the SSO", "look into the SSO"),
+        body: good.body.replace(
+          "Saw you're moving your marketing site to a headless CMS.",
+          "Thanks for reaching out.",
+        ),
       }),
-    ).toContain("question");
+    ).toContain("trigger");
+    expect(
+      codes({
+        body: good.body.replace("part of the Enterprise plan", "a paid plan"),
+      }),
+    ).toContain("content_enterprise");
+    expect(codes({ approach: "standard_content", cta: "reply" })).toContain(
+      "questions",
+    );
+    expect(
+      codes({
+        body: good.body.replace(
+          "and I'll send",
+          "Builder can help teams, and I'll send",
+        ),
+      }),
+    ).toContain("banned_phrase");
     expect(codes({ used_entry_ids: ["kb.made_up"] })).toContain(
       "unknown_entry",
     );
@@ -210,8 +244,12 @@ describe("the demo board, as a PA sees it", () => {
       "banned_phrase",
       "banned_phrase",
       "banned_phrase",
+      "calendar_link",
       "calls_to_action",
       "colon",
+      "content_enterprise",
+      "questions",
+      "trigger",
     ]);
   });
 });

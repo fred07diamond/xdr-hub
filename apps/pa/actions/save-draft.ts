@@ -5,6 +5,7 @@ import {
   draftInputSchema,
   firstName,
   lintDraft,
+  triggerSource,
 } from "../server/core/drafting/index.js";
 import { loadRelease } from "../server/core/playbook/store.js";
 import { newId, now, repo } from "../server/lib/pa-context.js";
@@ -67,6 +68,7 @@ export default defineAction({
       ownerFirstName: firstName(
         owner?.displayName ?? routedOwner?.displayName ?? null,
       ),
+      sourceText: submission ? triggerSource(submission) : null,
     });
     const at = now().toISOString();
     const receiptId = newId();

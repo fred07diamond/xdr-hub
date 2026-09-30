@@ -194,7 +194,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Follow the Sales handbook's email playbook (05) and Contact Sales handling (03).\nClassify the lead first: Highly Qualified Content, Standard Content, Highly Qualified Code, Standard Code, or the Content price check.\nTCQ: acknowledge the specific request in their message (trigger), connect it to Builder in a sentence (connection), then the ask (question).\nContact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two 30 minute time options, written as [time options]. Standard leads get the qualifying questions first and a soft offer to find time.\nNever pitch a demo as the first call; call it an intro, walkthrough, or working session.\nNever disclose pricing, except the Content price check. Never invent a fact, metric, or customer quote.\nPlain, casual voice, under 75 words when possible. No em dashes, no colons, a casual sign-off, signed with the owner's first name.\nSay Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.\n",
+      "body": "Follow the Sales handbook's email playbook (05) and Contact Sales handling (03).\nClassify the lead first: Highly Qualified Content, Standard Content, Highly Qualified Code, Standard Code, or the Content price check.\nTCQ: acknowledge the specific request in their message (trigger), connect it to Builder in a sentence (connection), then the ask (question).\nContact Sales is the only source where a meeting belongs in the first touch. Highly Qualified leads get two days for 30 minutes (for example Wednesday or Thursday), no calendar link. Standard leads get 2 or 3 qualifying questions first and a soft offer to find time.\nThe trigger quotes their own words from the message or a form answer; the connection ties it to teams like theirs; the ask is about their world, never their interest in us.\nNever pitch a demo as the first call; call it an intro, walkthrough, or working session.\nNever disclose pricing, except the Content price check. Never invent a fact, metric, or customer quote.\nPlain, casual voice, under 75 words when possible. No em dashes, no colons, a casual sign-off, signed with the owner's first name.\nSay Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.\n",
       "params": {
         "min_words": 25,
         "target_words": 75,
@@ -220,7 +220,21 @@
           "Sincerely",
           "demo our platform",
           "Would you be open to a quick call",
-          "What's driving your interest"
+          "What's driving your interest",
+          "can help teams",
+          "can help you",
+          "best-fit",
+          "best fit approach",
+          "get back to you",
+          "our platform",
+          "unlock",
+          "seamless",
+          "leverage",
+          "empower",
+          "game-changer",
+          "cutting-edge",
+          "Want to see a demo",
+          "Do you have 15 minutes"
         ]
       },
       "source": "Sales handbook, 05 Email playbook and 03 Contact Sales form handling",
@@ -400,12 +414,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "5479a2c40b84187c07b5751e2b673d3597a61e9813db836c5f2e6f55a7a1e828",
-  "short_id": "5479a2c4",
+  "id": "98af1321001967b4e26db73b8e43316c38e03e6c722d97f859fb4d52440f55a5",
+  "short_id": "98af1321",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "7ec422ac2da776f7fa19ead983d41cd04cdba0b1996b3eaad68264f1cabb9b04"
+      "sha256": "cf410cc7747867c94928f54c62299479f2e3cadf91d001611c98fe889b2a9aec"
     },
     {
       "path": "config/routing-pool.yaml",

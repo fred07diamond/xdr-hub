@@ -1,32 +1,47 @@
 {
   "note": "Synthetic recorded drafts standing in for the draft agent step. Each follows msg.first_touch.structure (the Sales handbook's email playbook) and must pass the same lint as save-draft. {owner_first_name} is filled from the routed owner's profile.",
   "drafts": {
+    "agency-already-sal": {
+      "subject": "An Enterprise trial for your client",
+      "approach": "agency",
+      "body": "Hi Ravi,\n\nThanks for requesting an Enterprise trial version for your client. We work with a lot of agency teams, and our partnerships team can set that up.\n\nSo I can set up the right trial, who is the client, and roughly how large are they?\n\nThanks,\n\n{owner_first_name}",
+      "cta": "reply",
+      "language": "en",
+      "used_entry_ids": ["msg.first_touch.structure", "msg.agency.first_touch"],
+      "rubric": {
+        "trigger": "requesting for Enterprise trial version",
+        "connection": "We work with a lot of agency teams",
+        "ask": "who is the client, and roughly how large are they?"
+      },
+      "question_handling": "answered"
+    },
     "direct-new-unowned": {
-      "subject": "Your headless CMS move",
+      "subject": "Your move to a headless CMS",
       "approach": "standard_content",
-      "body": "Hi,\n\nThanks for reaching out about moving your marketing site to a headless CMS. Our CMS is part of the Enterprise plan, and SSO is part of that conversation. I'll confirm pricing once I know a bit more.\n\nRoughly how many pages would you manage, and how many people would edit them? What are you moving from, and is there a timeline driving this?\n\nHappy to find time once I know more.\n\nThanks,\n\n{owner_first_name}",
+      "body": "Hi Maya,\n\nSaw you're moving your marketing site to a headless CMS. Teams like yours usually want marketing publishing without waiting on engineering.\n\nOur CMS is part of the Enterprise plan, and SSO comes with it. Pricing depends on scale, so roughly how many pages would you manage, and how many people would edit them? What are you moving from?\n\nThanks,\n\n{owner_first_name}",
       "cta": "reply",
       "language": "en",
       "used_entry_ids": ["msg.first_touch.structure"],
-      "question_handling": "will_confirm"
+      "rubric": {
+        "trigger": "moving our marketing site to a headless CMS",
+        "connection": "Teams like yours usually want marketing publishing without waiting on engineering",
+        "ask": "roughly how many pages would you manage, and how many people would edit them?"
+      },
+      "question_handling": "answered"
     },
     "injection-attempt": {
       "subject": "Thanks for reaching out",
       "approach": "standard_code",
-      "body": "Hi,\n\nThanks for getting in touch with Builder. Your note did not say what you are hoping to build, so I'd rather ask than assume.\n\nWhat is the project, and who on your team would use it? Is engineering already in the loop, or is it mostly design and product so far?\n\nThanks,\n\n{owner_first_name}",
+      "body": "Hi Pat,\n\nThanks for getting in touch from Unknown Ltd. Your note did not say what you are hoping to build, so I'd rather ask than assume. Teams like yours usually start with one project.\n\nWhat is it, and who on your team would use it? Is engineering in the loop yet?\n\nThanks,\n\n{owner_first_name}",
       "cta": "reply",
       "language": "en",
       "used_entry_ids": ["msg.first_touch.structure"],
+      "rubric": {
+        "trigger": "Unknown Ltd",
+        "connection": "Teams like yours usually start with one project",
+        "ask": "What is it, and who on your team would use it?"
+      },
       "question_handling": "no_question"
-    },
-    "agency-already-sal": {
-      "subject": "The Enterprise trial for your client",
-      "approach": "agency",
-      "body": "Hi,\n\nThanks for reaching out about an Enterprise trial for your client. We work with a lot of agencies, and our partnerships team can help set it up.\n\nSo I can set up the right trial, who is the client, and what do they want to build? I'll confirm the next step once I know.\n\nThanks,\n\n{owner_first_name}",
-      "cta": "reply",
-      "language": "en",
-      "used_entry_ids": ["msg.first_touch.structure", "msg.agency.first_touch"],
-      "question_handling": "will_confirm"
     }
   }
 }
