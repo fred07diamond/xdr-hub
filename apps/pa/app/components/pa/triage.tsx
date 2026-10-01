@@ -215,11 +215,14 @@ function DraftReasoning({ draft }: { draft: DraftView }) {
       </div>
     ) : null;
   return (
-    <details className="group border-t border-border bg-muted/30" open>
+    <details className="group border-t border-border bg-muted/30">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-[12.5px] font-medium text-foreground">
         Why it reads this way
         <span className="text-[11.5px] font-normal text-muted-foreground group-open:hidden">
           Show
+        </span>
+        <span className="hidden text-[11.5px] font-normal text-muted-foreground group-open:inline">
+          Hide
         </span>
       </summary>
       <dl className="grid gap-2.5 px-4 pb-4">
