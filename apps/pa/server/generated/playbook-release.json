@@ -162,7 +162,7 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": "A commercial account is a company with max_employees employees or fewer.\nOwned by an AE in HubSpot: route to that AE owner.\nNot owned by an AE, max_employees employees or fewer: route to the Commercial AE.\nNot owned by an AE, more than max_employees employees: round robin to the next Enterprise AE. The pick is saved, so the lead keeps its AE.\nAn unknown employee count goes to the enterprise round robin and is flagged to check.\nThe Commercial AE and the Enterprise AEs are set on the Team page.\n",
+      "body": "A commercial account is a company with max_employees employees or fewer.\nOwned by an AE in HubSpot: route to that AE owner.\nNot owned by an AE, max_employees employees or fewer: route to the Commercial AE.\nNot owned by an AE, more than max_employees employees: round robin to the next Enterprise AE. The pick is saved, so the lead keeps its AE.\nAn unknown employee count goes to the enterprise round robin and is flagged to check.\nThe Commercial AE and the Enterprise AEs are set in Settings, Organization, under Lead routing.\n",
       "params": {
         "max_employees": 8000
       },
@@ -620,12 +620,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "c7f2ca4175091c4af27fa0265922fe3dcca5d9089c48cf29f8155e6781e1d34c",
-  "short_id": "c7f2ca41",
+  "id": "d3055b644ed5e4fc7b5c3026f995caeae799ed705a9ad43847fb6fa584c3cba3",
+  "short_id": "d3055b64",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "58f405849f1d3d65dd5656868e51d1d25ce11cf6012d25899d6b03bbe19977e9"
+      "sha256": "88acd489bb33bf560cf1877e816038afef46cdd950276d7b94c8336a2bf2a480"
     },
     {
       "path": "config/routing-pool.yaml",

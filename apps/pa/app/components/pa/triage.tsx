@@ -687,9 +687,12 @@ export function LeadRouteBlock({
                 />
                 <span>
                   {gap}{" "}
-                  {/Team page/.test(gap) ? (
-                    <Link to="/team" className="underline underline-offset-2">
-                      Open Team
+                  {/Settings, Organization/.test(gap) ? (
+                    <Link
+                      to="/settings/organization#lead-routing"
+                      className="underline underline-offset-2"
+                    >
+                      Open lead routing
                     </Link>
                   ) : null}
                 </span>

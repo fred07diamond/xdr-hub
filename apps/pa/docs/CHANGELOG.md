@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01 (lead routing settings)
+
+- Settings, Organization has a Lead routing section: set the Commercial AE,
+  add Enterprise AEs for the round robin, and keep each PA's meeting link,
+  in one place (D79).
+
 ## 2026-10-01 (AE routing)
 
 - Exceptional leads: owned by an AE goes to that AE; not owned and 8,000

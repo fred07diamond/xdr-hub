@@ -190,7 +190,7 @@ function meetingWith(
   const name = person.name ?? saved?.displayName ?? null;
   if (!link)
     gaps.push(
-      `No meeting link for ${name ?? person.email}. Add it on the Team page.`,
+      `No meeting link for ${name ?? person.email}. Add it in Settings, Organization.`,
     );
   return { email: person.email.toLowerCase(), name, role, link };
 }
@@ -327,8 +327,8 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     if (!ae) {
       gaps.push(
         missing === "commercial_ae"
-          ? "No commercial AE for this commercial account. Set one on the Team page."
-          : "No enterprise AEs for the round robin. Add one on the Team page.",
+          ? "No commercial AE for this commercial account. Set one in Settings, Organization."
+          : "No enterprise AEs for the round robin. Add one in Settings, Organization.",
       );
       return { ...result(route, source, why), needs: missing ?? null };
     }

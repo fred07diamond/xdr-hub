@@ -1,7 +1,7 @@
 import { TeamPage } from "@agent-native/core/client/org";
 import { PLAYBOOK_ROLES } from "@shared/playbook-roles";
 
-import { PeopleEditor } from "@/components/pa/people-editor";
+import { RoutingSettings } from "@/components/pa/routing-settings";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -15,7 +15,9 @@ export default function TeamRoute() {
   return (
     <>
       <TeamPage title="Team and playbook roles" appRoles={PLAYBOOK_ROLES} />
-      <PeopleEditor />
+      <div className="px-3 pb-8 sm:px-4 md:px-6">
+        <RoutingSettings />
+      </div>
     </>
   );
 }

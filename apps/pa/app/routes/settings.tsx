@@ -11,6 +11,7 @@ import {
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
 import { useMemo } from "react";
 
+import { RoutingSettings } from "@/components/pa/routing-settings";
 import { APP_TITLE } from "@/lib/app-config";
 
 export function meta() {
@@ -66,6 +67,7 @@ export default function SettingsRoute() {
             showTitle={false}
             createOrgDescription={t("pages.teamCreateOrgDescription")}
           />
+          <RoutingSettings />
         </div>
       }
     />

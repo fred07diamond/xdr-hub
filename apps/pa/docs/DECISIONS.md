@@ -1483,3 +1483,17 @@ bottom. Revisit one only when its "revisit when" condition happens.
   Commercial AE, and CSM. The pod AE column is gone; stored pod AEs are no
   longer used. With no Enterprise AE or no Commercial AE set, the lead's
   Route box asks once for one.
+
+## D79. Lead routing lives in Settings, Organization (2026-10-01)
+
+- Fred: "there needs to be a section in the organization tab in settings
+  where I can input this information easily. Currently it is a bit messy."
+- Settings, Organization now has a **Lead routing** section under the team,
+  laid out the way the rule reads (D78): the Commercial AE, the Enterprise
+  AEs in the round robin (with how many leads each was given), the PAs'
+  meeting links, and owners seen on leads who are not set up yet. Each
+  person can be added, edited (name and meeting link), or removed from
+  routing. The Team page shows the same section.
+- It replaces the earlier people list, whose pod AE column and mixed list
+  of everyone seen made it hard to read. Lead pages link here when someone
+  or a meeting link is missing.
