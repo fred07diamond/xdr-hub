@@ -678,6 +678,19 @@ export async function buildInboundBoard(input: {
   const people = await input.repo.listPeople();
   const rows: BoardRow[] = [];
   for (const engagement of engagements) {
+    // A refresh closes the lead's earlier run (D63); those runs are never
+    // shown, so skip them before any work (D84). Building them was most of
+    // the board's database load.
+    if (engagement.state === "closed" && engagement.outcome === "refreshed")
+      continue;
+    // So are leads the intake found were not Contact Sales; two cached reads
+    // tell, instead of a whole row.
+    const submissions = await input.repo.listSubmissionsForEngagement(
+      engagement.id,
+    );
+    const latest = submissions[submissions.length - 1];
+    const inbox = latest ? await input.repo.getInbox(latest.inboxId) : null;
+    if (inbox?.status === "skipped") continue;
     const { hidden, ...row } = await buildRow(
       input.repo,
       engagement,

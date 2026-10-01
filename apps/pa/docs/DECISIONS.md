@@ -1564,3 +1564,14 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - PA re-reads the lifecycle of open, undecided leads every 30 minutes
   (event `crm.lifecycle_checked`, read only), so later changes in HubSpot
   show without a refresh.
+
+## D84. The board skips runs it never shows (2026-10-01)
+
+- Fred hit "You do not have access to this workspace app" on the board
+  again. The list was back to about 2,500 database operations and 4 to 6
+  seconds per load, refreshed every 30 seconds, which is when the
+  framework's 2.5 second access check to Dispatch times out (D74).
+- Most of it was runs nobody sees: every refresh (D63), including the
+  automatic 10 and 60 minute reads (D70), closes the lead's earlier run,
+  and the board built a full row for each before hiding it. It now skips
+  refreshed runs and leads hidden as not Contact Sales before any work.
