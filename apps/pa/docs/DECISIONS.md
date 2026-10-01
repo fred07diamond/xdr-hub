@@ -1399,3 +1399,22 @@ bottom. Revisit one only when its "revisit when" condition happens.
   has no AE at all (no account AE, no pod AE), the Route box asks once "Who
   is <PA>'s AE?": pick or type the AE and their link; it is saved as the
   PA's pod AE, so their next enterprise leads route there.
+
+## D74. A page load reads each record once, and a failed access check is retried (2026-10-01)
+
+- Fred hit "Couldn't load this lead. You do not have access to this
+  workspace app." His access was fine. On every request the framework asks
+  Dispatch whether the user may use PA, with a 2.5 second timeout, and
+  fails closed; a slow answer reads as "no access".
+- PA made that more likely: the inbound list (which the lead page also
+  loads, for next and previous) took 5 to 6 seconds and about 2,600
+  database reads, because the class, the route, and the live
+  recommendation (D66, D67, D69) each re-read the same records per lead.
+- Each board and lead build now reads through a per-request cache
+  (`withReadCache`), so a record is read once per page load. Results are
+  copies, and failed reads are not cached.
+- The board and lead queries retry a transient access, auth, or network
+  error up to three times before showing it.
+- Not changed: the framework's access check itself. Caching its positive
+  answers would need a framework patch, which the repo allows only for a
+  confirmed upstream bug; that is a follow-up if the error comes back.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (lead page reliability)
+
+- The inbound list and lead page load much faster: each record is read
+  once per page load instead of many times (D74).
+- A brief "You do not have access to this workspace app" error is retried
+  automatically instead of breaking the lead page.
+
 ## 2026-10-01 (first touch and AE setup)
 
 - A first email that replies to the form notification ("re: your request")

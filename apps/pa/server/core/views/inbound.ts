@@ -45,6 +45,7 @@ import type {
   PrecheckResult,
   SignalEvaluation,
 } from "../precheck/index.js";
+import { withReadCache } from "../repo/read-cache.js";
 import type {
   EngagementRecord,
   PaRepository,
@@ -510,6 +511,7 @@ export async function buildInboundBoard(input: {
   state: string | null;
   now: Date;
 }): Promise<BoardResult> {
+  input = { ...input, repo: withReadCache(input.repo) };
   const profiles = new Map(
     (await input.repo.listProfiles()).map((profile) => [profile.id, profile]),
   );
@@ -715,7 +717,7 @@ export async function buildEngagementDetail(input: {
   engagementId: string;
   now: Date;
 }): Promise<EngagementDetail | null> {
-  const repo = input.repo;
+  const repo = withReadCache(input.repo);
   const engagement = await repo.getEngagement(input.engagementId);
   if (!engagement) return null;
   const pinned = await releaseFor(

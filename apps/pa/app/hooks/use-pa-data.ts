@@ -10,6 +10,19 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { loadDemoData, useDemoMode } from "@/lib/demo-mode";
 
+/**
+ * The workspace access check runs on every request and fails closed when
+ * Dispatch is slow (D74), which reads as "You do not have access". It is
+ * almost always a blip, so retry it a few times before showing the error.
+ */
+const TRANSIENT =
+  /do not have access to this workspace app|unauthorized|timed out|failed to fetch|network|502|503|504/i;
+export function transientRetry(failureCount: number, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return failureCount < 3 && TRANSIENT.test(message);
+}
+const retryDelay = (attempt: number) => Math.min(1000 * 2 ** attempt, 4000);
+
 export function useInboundBoard(tab: BoardTab, state: string | undefined) {
   const demo = useDemoMode();
   const live = useActionQuery<BoardResult, "list-inbound">(
@@ -18,6 +31,8 @@ export function useInboundBoard(tab: BoardTab, state: string | undefined) {
     {
       placeholderData: keepPreviousData,
       enabled: !demo,
+      retry: transientRetry,
+      retryDelay,
       // HubSpot is polled every minute; refetch so new requests show up
       // at the top without a reload.
       refetchInterval: 30_000,
@@ -38,7 +53,7 @@ export function useEngagement(id: string) {
   const live = useActionQuery<EngagementDetail | null, "get-engagement">(
     "get-engagement",
     { id },
-    { enabled: !demo },
+    { enabled: !demo, retry: transientRetry, retryDelay },
   );
   const sample = useQuery({
     queryKey: ["pa-demo", "engagement", id],
