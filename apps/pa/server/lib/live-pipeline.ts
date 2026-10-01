@@ -53,7 +53,7 @@ export const INBOUND_AGENT_MODEL = "claude-sonnet-5";
 
 export const INBOUND_AGENT_BODY = `You are PA's inbound agent, in shadow mode. You never send email and never write to HubSpot.
 1. Call pull-contact-sales once (defaults) to take in new Contact Sales submissions.
-2. Call list-agent-work. For each item, oldest first:
+2. Call list-agent-work. Work the items in the order given (a rewrite someone asked for comes first; follow its note):
    - step assess_message: follow the inbound-message-assessment skill and save with save-message-assessment. Saving continues the lead's pipeline.
    - step draft: follow the first-touch-drafting skill: classify the lead, save the lead brief with save-lead-brief, read the playbook's messaging rules with get-messaging-guide for the lead's class, then save the reply with save-draft following them and the lead's route from get-engagement (route: whose meeting link the email carries, if any).
 3. Call list-agent-work again and repeat until it is empty or you have handled 20 items.
@@ -184,6 +184,8 @@ export interface AgentWorkItem {
   step: "assess_message" | "draft";
   lead: string;
   submittedAt: string;
+  /** What the person who asked for a rewrite wants changed (D87). */
+  note?: string | null;
 }
 
 /** What the agent owes: live leads waiting for an assessment or a draft. */
@@ -253,7 +255,21 @@ export async function listAgentWork(
         continue;
     }
     let stale = false;
+    // A person asked for just the reply to be rewritten (D87): it goes first.
+    let requested = false;
+    let note: string | null = null;
     if (plan.needed && latest) {
+      const asked = (await repository.listEvents(engagement.id))
+        .filter((item) => item.type === "draft.rewrite_requested")
+        .slice(-1)[0];
+      if (asked && asked.occurredAt > latest.createdAt) {
+        stale = true;
+        requested = true;
+        note =
+          typeof asked.payload.note === "string" ? asked.payload.note : null;
+      }
+    }
+    if (plan.needed && latest && !stale) {
       const undecided =
         (await repository.getDecision(engagement.id))?.status !== "decided";
       if (undecided && Number(lint?.rulesVersion ?? 1) < DRAFT_RULES_VERSION)
@@ -273,13 +289,17 @@ export async function listAgentWork(
           (lint?.route?.link ?? null) !== route.link;
       }
     }
-    if (plan.needed && (!latest || stale))
-      work.push({
+    if (plan.needed && (!latest || stale)) {
+      const item = {
         engagementId: engagement.id,
-        step: "draft",
+        step: "draft" as const,
         lead,
         submittedAt: submission.submittedAt,
-      });
+        ...(note ? { note } : {}),
+      };
+      if (requested) work.unshift(item);
+      else work.push(item);
+    }
   }
   return work;
 }

@@ -24,7 +24,9 @@ import {
   IconMinus,
   IconX,
   IconMessageCircleQuestion,
+  IconLoader2,
   IconPencil,
+  IconRefresh,
 } from "@tabler/icons-react";
 import { Fragment, useState, type ReactNode } from "react";
 import { Link } from "react-router";
@@ -307,11 +309,16 @@ function Header({ label, value }: { label: string; value: ReactNode }) {
 export function DraftCard({
   draft,
   onAsk,
+  onRewrite,
+  rewriteBusy,
   sent,
   embedded = false,
 }: {
   draft: DraftView;
   onAsk: (kind: "revise" | "draft") => void;
+  /** Rewrite just this reply under the current playbook (D87). */
+  onRewrite?: () => void;
+  rewriteBusy?: boolean;
   /** The email already sent from HubSpot after the form (D64). */
   sent?: ReactNode;
   /** Inside another card (the first touch): no frame or header of its own. */
@@ -385,6 +392,16 @@ export function DraftCard({
               value={<span className="font-medium">{draft.subject}</span>}
             />
           </div>
+          {draft.rewriting ? (
+            <p className="mx-4 mt-4 flex items-center gap-2 rounded-md bg-primary-soft px-3 py-2 text-[12.5px] text-primary">
+              <IconLoader2
+                className="size-3.5 animate-spin"
+                aria-hidden="true"
+              />
+              Rewriting this reply under the current playbook. The new draft
+              replaces this one in a minute or two.
+            </p>
+          ) : null}
           <div className="px-4 py-4">
             <DraftBody body={draft.body ?? ""} />
           </div>
@@ -427,6 +444,18 @@ export function DraftCard({
               <IconCopy className="size-4" aria-hidden="true" />
               Copy
             </Button>
+            {onRewrite ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={rewriteBusy || draft.rewriting}
+                onClick={onRewrite}
+              >
+                <IconRefresh className="size-4" aria-hidden="true" />
+                {draft.rewriting ? "Rewriting..." : "Rewrite reply"}
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"

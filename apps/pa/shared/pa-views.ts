@@ -163,6 +163,8 @@ export interface DraftView extends DraftSummary {
   id: string | null;
   /** The AE looped in on the email for an exceptional lead (D72). */
   cc: string | null;
+  /** Someone asked for the reply to be rewritten and it is not back yet (D87). */
+  rewriting: boolean;
   /** The TCQ parts and why the agent wrote it this way (D85). */
   rubric: { trigger: string; connection: string; ask: string } | null;
   reasoning: {

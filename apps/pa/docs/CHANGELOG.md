@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (rewrite reply)
+
+- A Rewrite reply button rewrites just the drafted reply, first in the
+  agent's queue, without re-running the lead (D87).
+- Message rules and other playbook blocks updated in PA's code now reach
+  the live playbook, except entries someone edited in the app.
+
 ## 2026-10-01 (acknowledgment)
 
 - Every draft opens by thanking the person for reaching out and naming what

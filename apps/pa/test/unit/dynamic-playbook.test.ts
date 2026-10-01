@@ -259,6 +259,41 @@ describe("checks", () => {
   });
 });
 
+describe("code upgrades of a published playbook (D87)", () => {
+  it("takes code changes in untouched entries and new blocks, keeps edits", async () => {
+    const { upgradeFromSeed } =
+      await import("../../server/core/playbook/store.js");
+    const structure = seedRelease.entries.find(
+      (entry) => entry.id === "msg.first_touch.structure",
+    )!;
+    const voice = seedRelease.entries.find(
+      (entry) => entry.id === "msg.first_touch.voice",
+    )!;
+    const published = {
+      ...seedRelease,
+      id: "f".repeat(64),
+      short_id: "ffffffff",
+      entries: seedRelease.entries
+        .filter((entry) => entry.id !== "def.partnership_ask")
+        .map((entry) =>
+          entry.id === structure.id
+            ? { ...entry, body: "An older structure rule." }
+            : entry.id === voice.id
+              ? { ...entry, body: "Edited in the app.", version: 2 }
+              : entry,
+        ),
+    };
+    const upgraded = upgradeFromSeed(published, seedRelease)!;
+    const byId = new Map(upgraded.entries.map((entry) => [entry.id, entry]));
+    expect(byId.get(structure.id)?.body).toBe(structure.body);
+    expect(byId.get(voice.id)?.body).toBe("Edited in the app.");
+    expect(byId.has("def.partnership_ask")).toBe(true);
+    expect(upgraded.id).not.toBe(published.id);
+    // Nothing left to take: no further upgrade.
+    expect(upgradeFromSeed(upgraded, seedRelease)).toBeNull();
+  });
+});
+
 describe("seed upgrades", () => {
   it("replaces an untouched seed import with a newer seed, and never a published release", async () => {
     const repo = new MemoryRepository();

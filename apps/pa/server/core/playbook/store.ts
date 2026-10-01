@@ -70,6 +70,68 @@ export async function loadRelease(
   return release;
 }
 
+// Releases already checked against this seed for a code upgrade (D87).
+const upgradeChecked = new Set<string>();
+
+/**
+ * Brings a published release up to date with PA's code (D87): an entry
+ * nobody edited in the app (still version 1) takes the seed's current
+ * content, and blocks the seed added are added. Edited entries, retired
+ * entries, blocks added in the app, and config stay as they are. Null when
+ * nothing would change.
+ */
+export function upgradeFromSeed(
+  active: PlaybookRelease,
+  seed: PlaybookRelease,
+): PlaybookRelease | null {
+  const seedById = new Map(seed.entries.map((entry) => [entry.id, entry]));
+  const activeIds = new Set(active.entries.map((entry) => entry.id));
+  const taken = new Set<string>();
+  const entries = active.entries.map((entry) => {
+    const fresh = seedById.get(entry.id);
+    if (!fresh || entry.version !== 1 || entry.status === "retired")
+      return entry;
+    if (canonicalJson(fresh) === canonicalJson(entry)) return entry;
+    taken.add(entry.id);
+    return fresh;
+  });
+  for (const entry of seed.entries)
+    if (!activeIds.has(entry.id)) {
+      entries.push(entry);
+      taken.add(entry.id);
+    }
+  if (taken.size === 0) return null;
+  const content = releaseContentSchema.parse({
+    schema: 1,
+    release_notes:
+      `${active.release_notes} Updated from PA's code: ${[...taken].sort().join(", ")}.`.slice(
+        0,
+        2000,
+      ),
+    entries,
+    config: active.config,
+    pending_confirmation: [
+      ...active.pending_confirmation.filter(
+        (item) => !item.entry_id || !taken.has(item.entry_id),
+      ),
+      ...seed.pending_confirmation.filter(
+        (item) => item.entry_id && taken.has(item.entry_id),
+      ),
+    ],
+    unrecognized_keys: [
+      ...active.unrecognized_keys.filter((key) => !taken.has(key.entry_id)),
+      ...seed.unrecognized_keys.filter((key) => taken.has(key.entry_id)),
+    ],
+  });
+  const id = sha256Hex(canonicalJson(content));
+  return playbookReleaseSchema.parse({
+    ...content,
+    id,
+    short_id: id.slice(0, 8),
+    sources: [{ path: `seed:${seed.short_id}`, sha256: seed.id }],
+  });
+}
+
 /** The release new engagements pin. Imports the seed on first use. */
 export async function activeRelease(
   repo: PaRepository,
@@ -128,6 +190,35 @@ export async function activeReleaseWithImport(
       if (!(error instanceof VersionConflictError)) throw error;
       label = (await repo.getLabel(ACTIVE_LABEL)) ?? label;
     }
+  }
+  if (
+    label.releaseId !== seedRelease.id &&
+    !upgradeChecked.has(`${label.releaseId}:${seedRelease.id}`)
+  ) {
+    // A published playbook still gets what PA's code changed in entries
+    // nobody edited in the app, and new blocks (D87).
+    const current = await loadRelease(repo, label.releaseId);
+    const upgraded = current ? upgradeFromSeed(current, seedRelease) : null;
+    if (upgraded) {
+      const at = now.toISOString();
+      await repo.insertReleaseIfAbsent(
+        toReleaseRecord(upgraded, ACTIVE_LABEL, at),
+      );
+      try {
+        label = await repo.moveLabel(
+          ACTIVE_LABEL,
+          {
+            releaseId: upgraded.id,
+            movedBy: "system:seed-upgrade",
+            movedAt: at,
+          },
+          label.version,
+        );
+      } catch (error) {
+        if (!(error instanceof VersionConflictError)) throw error;
+        label = (await repo.getLabel(ACTIVE_LABEL)) ?? label;
+      }
+    } else upgradeChecked.add(`${label.releaseId}:${seedRelease.id}`);
   }
   const release = await loadRelease(repo, label.releaseId);
   if (!release)

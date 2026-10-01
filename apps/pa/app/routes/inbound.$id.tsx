@@ -492,6 +492,7 @@ export default function EngagementRoute() {
   const decide = useActionMutation("decide-lead");
   const refresh = useActionMutation("refresh-lead");
   const setRoute = useActionMutation("set-lead-route");
+  const rewrite = useActionMutation("rewrite-reply");
   const history = useContactHistory(
     id,
     !demo && Boolean(engagement.data?.lead.crmUrl),
@@ -502,6 +503,15 @@ export default function EngagementRoute() {
     !demo &&
     Boolean((intake.data as { canPull?: boolean } | undefined)?.canPull);
   const [receiptId, setReceiptId] = useState<string | null>(null);
+
+  // While a reply is being rewritten, check for the new draft (D87).
+  const rewriting = Boolean(detail?.draft.rewriting);
+  const refetchEngagement = engagement.refetch;
+  useEffect(() => {
+    if (!rewriting) return;
+    const timer = setInterval(() => void refetchEngagement(), 8000);
+    return () => clearInterval(timer);
+  }, [rewriting, refetchEngagement]);
 
   useEffect(() => {
     void setClientAppState(
@@ -847,6 +857,25 @@ export default function EngagementRoute() {
               <DraftCard
                 draft={detail.draft}
                 onAsk={(kind) => askAgent(kind)}
+                onRewrite={
+                  canDecide && detail.draft.id
+                    ? () =>
+                        rewrite.mutate(
+                          { engagementId: detail.id },
+                          {
+                            onSuccess: () => {
+                              toast.success(
+                                "Rewriting the reply. It shows here in a minute or two.",
+                              );
+                              void engagement.refetch();
+                            },
+                            onError: (error) =>
+                              toast.error(actionErrorMessage(error)),
+                          },
+                        )
+                    : undefined
+                }
+                rewriteBusy={rewrite.isPending}
               />
             )}
           </div>

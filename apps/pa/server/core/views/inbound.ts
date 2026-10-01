@@ -1028,7 +1028,15 @@ export async function buildEngagementDetail(input: {
           reasoning: null,
           note: stepBack.note,
         }
-      : draft,
+      : {
+          ...draft,
+          // Asked to rewrite after the latest draft (D87): show it is coming.
+          rewriting: events.some(
+            (item) =>
+              item.type === "draft.rewrite_requested" &&
+              item.occurredAt > (draft.createdAt ?? ""),
+          ),
+        },
     sla: slaView({
       engagement: timed,
       clock,

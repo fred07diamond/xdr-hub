@@ -245,6 +245,7 @@ export function draftView(input: {
   const empty = {
     id: null,
     cc: null,
+    rewriting: false,
     rubric: null,
     reasoning: null,
     body: null,

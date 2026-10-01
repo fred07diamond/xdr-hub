@@ -1620,3 +1620,24 @@ bottom. Revisit one only when its "revisit when" condition happens.
   playbook show it (with placeholder names, and without a garbled sentence
   in the pasted example). `DRAFT_RULES_VERSION` is 7, so undecided drafts
   are rewritten.
+
+## D87. Code updates reach a published playbook, and a reply can be rewritten on its own (2026-10-01)
+
+- Fred: the draft "is not updating still... I just need to update the
+  messaging and then reply... I might need a button to just update the
+  drafted reply."
+- **Why the rules did not apply:** production runs a playbook someone
+  published in the app. New message rules from PA's code (D85, D86) only
+  replaced an untouched seed import, so production kept the older rules:
+  the draft checks used the old word range and phrases, and the agent read
+  the old messaging blocks.
+- **Code upgrades:** when the active release is a published one, PA
+  publishes an upgrade (`system:seed-upgrade`) that takes the code's current
+  content for every entry nobody edited in the app (still version 1) and
+  adds new blocks. Entries edited in the app, retired entries, blocks added
+  in the app, and config stay as they are. Changes in review that were
+  based on the older release ask to run their checks again.
+- **Rewrite reply:** a button on the drafted reply (`rewrite-reply`, people
+  only) puts that lead first in the agent's queue, with an optional note,
+  and wakes the agent now. Only the reply is rewritten. The card says it is
+  rewriting and refreshes until the new draft is in.
