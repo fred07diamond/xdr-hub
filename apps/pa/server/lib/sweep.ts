@@ -4,6 +4,7 @@ import {
   detectFirstTouches,
   processRefreshQueue,
   assignEnterpriseAes,
+  syncLifecycles,
   queueFollowUpRefreshes,
   ensureInboundAgent,
   INTAKE_CORRELATION,
@@ -34,6 +35,8 @@ export async function runInboundSweep(owner: {
   const followUps = await queueFollowUpRefreshes();
   // Refresh requests (D63) before counting work, so refreshed leads are woken too.
   const refresh = { ...(await processRefreshQueue(15_000)), followUps };
+  // HubSpot's lifecycle for open leads (D83), so the SLA timer matches it.
+  const lifecycle = await syncLifecycles();
   // The enterprise round robin's picks (D78), before drafts are written.
   const assigned = await assignEnterpriseAes();
   // First touches sent from HubSpot (D64), so PA stops drafting for them.
@@ -83,6 +86,7 @@ export async function runInboundSweep(owner: {
     refresh,
     history,
     assigned,
+    lifecycle,
     agentSetup,
     agent,
     org: Boolean(owner.orgId),

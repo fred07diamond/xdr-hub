@@ -97,6 +97,70 @@ describe("slaView", () => {
   });
 });
 
+describe("the SLA timer follows HubSpot (D83)", () => {
+  it("counts a first touch even when no clock ran", () => {
+    const sla = slaView({
+      engagement: engagement({
+        firstTouchAt: "2026-09-30T17:20:00.000Z",
+      }),
+      clock: { ...clock("none"), reason: "No clock: no human owner" },
+      events: [],
+      submittedAt,
+      now,
+    });
+    expect(sla.contact.status).toBe("met");
+    expect(sla.phase).toBe("sal");
+  });
+
+  it("ends at the stage HubSpot has: SAL, recycled, or disqualified", () => {
+    const contacted = engagement({ firstTouchAt: "2026-09-30T17:20:00.000Z" });
+    const cases = [
+      ["sal", "Contacted and SAL", "SAL in HubSpot"],
+      ["recycle", "Contacted and recycled", "Recycled in HubSpot"],
+      ["disqualified", "Contacted and disqualified", "Disqualified in HubSpot"],
+    ] as const;
+    for (const [stage, label, salLabel] of cases) {
+      const sla = slaView({
+        engagement: contacted,
+        clock: clock("met"),
+        events: [],
+        submittedAt,
+        now,
+        crmStage: stage,
+      });
+      expect(sla.phase).toBe("done");
+      expect(sla.label).toBe(label);
+      expect(sla.sal.label).toBe(salLabel);
+    }
+    // Recycled before anyone contacted them: no contact countdown either.
+    const early = slaView({
+      engagement: engagement(),
+      clock: clock("running"),
+      events: [],
+      submittedAt,
+      now,
+      crmStage: "recycle",
+    });
+    expect(early.label).toBe("Recycled in HubSpot");
+  });
+
+  it("reads HubSpot's lifecycle labels", async () => {
+    const { hubspotStage, latestLifecycle } =
+      await import("../../server/core/crm/lifecycle.js");
+    expect(hubspotStage("Recycle")).toBe("recycle");
+    expect(hubspotStage("SAL")).toBe("sal");
+    expect(hubspotStage("S0")).toBe("sal");
+    expect(hubspotStage("Disqualified")).toBe("disqualified");
+    expect(hubspotStage("QL")).toBeNull();
+    expect(
+      latestLifecycle(
+        [{ type: "crm.lifecycle_checked", payload: { lifecycle: "Recycle" } }],
+        "QL",
+      ),
+    ).toBe("Recycle");
+  });
+});
+
 describe("salesCycleView", () => {
   const base = {
     submittedAt,

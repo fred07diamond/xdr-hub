@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (SLA follows HubSpot)
+
+- The SLA timer matches HubSpot: a lead recycled, made SAL, or disqualified
+  in HubSpot shows that, and its decision shows as decided in HubSpot
+  instead of counting down (D83).
+- PA checks each open lead's HubSpot stage every 30 minutes.
+
 ## 2026-10-01 (partnerships and badge colors)
 
 - A Partnerships role in Lead routing. An exceptional company asking about a

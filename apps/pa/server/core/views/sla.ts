@@ -10,6 +10,7 @@ import {
   type SlaView,
   type TriageKind,
 } from "../../../shared/pa-views.js";
+import type { HubSpotStage } from "../crm/lifecycle.js";
 import type { EngagementRecord, EventRecord } from "../repo/types.js";
 
 const MINUTE = 60_000;
@@ -35,7 +36,21 @@ export function salAt(events: EventRecord[]): string | null {
   return event?.occurredAt ?? null;
 }
 
-function contactMilestone(clock: ClockView, contactedAt: string | null) {
+function contactMilestone(
+  clock: ClockView,
+  contactedAt: string | null,
+  salesLead: boolean,
+) {
+  // A first touch on a sales lead counts even when no clock ran, for example
+  // an owner with no PA working hours (D83).
+  if (contactedAt && (clock.status !== "none" || salesLead))
+    return {
+      applies: true,
+      status: "met",
+      dueAt: clock.dueAt,
+      doneAt: contactedAt,
+      label: "Contacted",
+    } satisfies SlaMilestone;
   const label: Record<ClockView["status"], string> = {
     none: clock.reason,
     not_started: "Contact clock starts at the owner's next working hour",
@@ -59,8 +74,24 @@ function salMilestone(input: {
   submittedAt: string;
   reminderFraction: number;
   now: Date;
+  crmStage?: HubSpotStage;
 }): SlaMilestone & { fraction: number | null } {
   const dueAt = input.engagement.decisionDueAt;
+  // HubSpot has already moved the lead on (D83): the decision is made there.
+  if (!input.salReachedAt && input.crmStage)
+    return {
+      applies: true,
+      status: "met",
+      dueAt,
+      doneAt: null,
+      label:
+        input.crmStage === "sal"
+          ? "SAL in HubSpot"
+          : input.crmStage === "recycle"
+            ? "Recycled in HubSpot"
+            : "Disqualified in HubSpot",
+      fraction: 1,
+    };
   if (input.salReachedAt) {
     return {
       applies: true,
@@ -111,15 +142,35 @@ export function slaView(input: {
   events: EventRecord[];
   submittedAt: string;
   now: Date;
+  /** The lead's stage in HubSpot now (D83). */
+  crmStage?: HubSpotStage;
 }): SlaView {
-  const contact = contactMilestone(input.clock, input.engagement.firstTouchAt);
+  // HubSpot's stage settles the timer only for a lead that had one (D83); a
+  // support request from a customer has no SLA to settle.
+  const timed = Boolean(
+    input.engagement.decisionDueAt || input.engagement.firstTouchDueAt,
+  );
+  input = { ...input, crmStage: timed ? (input.crmStage ?? null) : null };
+  const contact = contactMilestone(
+    input.clock,
+    input.engagement.firstTouchAt,
+    Boolean(input.engagement.decisionDueAt || input.crmStage),
+  );
   const sal = salMilestone({
     engagement: input.engagement,
     salReachedAt: salAt(input.events),
     submittedAt: input.submittedAt,
     reminderFraction: input.clock.reminderFraction,
     now: input.now,
+    crmStage: input.crmStage,
   });
+  const settled = input.crmStage
+    ? {
+        sal: "SAL",
+        recycle: "recycled",
+        disqualified: "disqualified",
+      }[input.crmStage]
+    : null;
   const { fraction: salFraction, ...salView } = sal;
   const base = {
     contact,
@@ -136,7 +187,7 @@ export function slaView(input: {
       fraction: null,
     };
   }
-  if (contact.applies && contact.status !== "met") {
+  if (contact.applies && contact.status !== "met" && !settled) {
     return {
       ...base,
       phase: "contact",
@@ -159,6 +210,18 @@ export function slaView(input: {
       fraction: salFraction,
     };
   }
+  if (settled)
+    return {
+      ...base,
+      phase: "done",
+      status: "met",
+      label:
+        contact.status === "met"
+          ? `Contacted and ${settled}`
+          : `${settled[0].toUpperCase()}${settled.slice(1)} in HubSpot`,
+      detail: `HubSpot has the lead as ${settled}, so the SAL decision is made there.`,
+      fraction: 1,
+    };
   return {
     ...base,
     phase: "done",

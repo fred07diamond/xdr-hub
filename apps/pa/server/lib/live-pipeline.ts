@@ -16,6 +16,10 @@ import {
   type HubSpotFetch,
   type HubSpotMapping,
 } from "../core/crm/hubspot-adapter.js";
+import {
+  LIFECYCLE_EVENT,
+  lifecycleOfEngagement,
+} from "../core/crm/lifecycle.js";
 import { DRAFT_RULES_VERSION, draftPlan } from "../core/drafting/index.js";
 import {
   CONTACT_SALES_PROPERTIES,
@@ -658,6 +662,73 @@ export async function assignEnterpriseAes(limit = 10): Promise<number> {
     }
   }
   return assigned;
+}
+
+/**
+ * Re-reads the HubSpot lifecycle of open leads every 30 minutes (D83), so a
+ * lead made SAL, recycled, or disqualified in HubSpot reads the same in PA's
+ * SLA timer and decision without a full refresh.
+ */
+const LIFECYCLE_RECHECK_MS = 30 * 60_000;
+
+export async function syncLifecycles(limit = 8, budgetMs = 8_000) {
+  const repository = repo();
+  const started = Date.now();
+  const deps = await liveDeps();
+  let checked = 0;
+  let changed = 0;
+  for (const row of await repository.listInboxBySource(
+    HUBSPOT_SOURCE,
+    ["done"],
+    300,
+  )) {
+    if (checked >= limit || Date.now() - started > budgetMs) break;
+    const contactId =
+      typeof row.payload.crm_contact_id === "string"
+        ? row.payload.crm_contact_id
+        : null;
+    if (!contactId) continue;
+    const submission = await repository.getSubmissionByInbox(row.id);
+    if (!submission?.engagementId) continue;
+    const engagement = await repository.getEngagement(submission.engagementId);
+    if (!engagement || engagement.state === "closed") continue;
+    if ((await repository.getDecision(engagement.id))?.status === "decided")
+      continue;
+    const events = await repository.listEvents(engagement.id);
+    const last = [...events]
+      .reverse()
+      .find((item) => item.type === LIFECYCLE_EVENT);
+    if (
+      last &&
+      now().getTime() - Date.parse(last.occurredAt) < LIFECYCLE_RECHECK_MS
+    )
+      continue;
+    checked += 1;
+    try {
+      const contact = await deps.crm.getContact({
+        system: "hubspot",
+        id: contactId,
+      });
+      const before = await lifecycleOfEngagement(repository, engagement.id);
+      if (before !== contact.lifecycleRaw) changed += 1;
+      await repository.appendEvent({
+        id: newId(),
+        engagementId: engagement.id,
+        correlationId: engagement.id,
+        type: LIFECYCLE_EVENT,
+        actor: "system:hubspot-lifecycle",
+        payload: { lifecycle: contact.lifecycleRaw, before },
+        receiptId: null,
+        occurredAt: now().toISOString(),
+      });
+    } catch (error) {
+      console.warn(
+        "[pa] Lifecycle check failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return { checked, changed };
 }
 
 /** One batch of queued refreshes, within a time budget. */

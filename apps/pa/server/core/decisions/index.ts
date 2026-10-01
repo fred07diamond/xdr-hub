@@ -1,3 +1,4 @@
+import { hubspotStage, lifecycleOfEngagement } from "../crm/lifecycle.js";
 // The rep decision loop (workflow 2b, D59). Every lead PA qualifies for a rep
 // gets one decision: accept and sequence, decline and recycle, or research
 // more. With a meeting already booked, the decision is what to do with the
@@ -495,6 +496,13 @@ export async function markMissedDeadlines(
   const missed: DecisionRecord[] = [];
   for (const decision of await deps.repo.listOpenDecisions()) {
     if (decision.slaMissedAt || Date.parse(decision.dueAt) > now.getTime())
+      continue;
+    // Decided in HubSpot already (SAL, recycle, disqualify): not a miss (D83).
+    if (
+      hubspotStage(
+        await lifecycleOfEngagement(deps.repo, decision.engagementId),
+      )
+    )
       continue;
     const updated = await deps.repo.updateDecision(
       decision.id,

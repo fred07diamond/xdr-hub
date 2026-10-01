@@ -1546,3 +1546,21 @@ bottom. Revisit one only when its "revisit when" condition happens.
   color: Exceptional green, Requires discovery blue, Suggest recycle amber,
   Partnership recycle orange, AE-owned violet, customer and open deal
   indigo, Check before replying rose, and the non-sales exits stay neutral.
+
+## D83. The SLA timer follows HubSpot's stage (2026-10-01)
+
+- Fred: a lead already recycled in HubSpot still showed "No SLA" and an open
+  decision ("Decide within 22h"). "Make sure the SLA timer matches the stage
+  in HubSpot."
+- The SAL milestone now reads HubSpot's lifecycle: SAL or later is "SAL in
+  HubSpot", Recycle is "Recycled in HubSpot", Disqualified or Excluded is
+  "Disqualified in HubSpot". The timer ends there ("Contacted and
+  recycled"), with no contact countdown left. It applies only to leads that
+  had an SLA, so a customer's support request stays "No SLA".
+- A first touch counts on a sales lead even when no clock ran (an owner
+  with no PA working hours), so a contacted lead no longer reads "No SLA".
+- An open decision on a lead HubSpot already moved on shows as decided in
+  HubSpot, and the missed SLA sweep skips it.
+- PA re-reads the lifecycle of open, undecided leads every 30 minutes
+  (event `crm.lifecycle_checked`, read only), so later changes in HubSpot
+  show without a refresh.

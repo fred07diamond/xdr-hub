@@ -22,6 +22,11 @@ import {
   leadBriefSchema,
 } from "../brief/index.js";
 import { readFirstTouchClock, nextWorkingInstant } from "../clocks/index.js";
+import {
+  hubspotStage,
+  latestLifecycle,
+  type HubSpotStage,
+} from "../crm/lifecycle.js";
 import { currentAdvice } from "../decisions/index.js";
 import {
   classOfSubmission,
@@ -409,8 +414,28 @@ async function liveDecision(
   engagement: EngagementRecord,
   release: PlaybookRelease,
   now: Date,
+  crmStage: HubSpotStage = null,
 ) {
   const record = await repo.getDecision(engagement.id);
+  // HubSpot already moved the lead on (D83): the decision was made there.
+  if (record?.status === "open" && crmStage) {
+    const view = decisionView(record, now);
+    if (!view) return null;
+    const choice =
+      crmStage === "sal"
+        ? { code: "accept", label: "SAL in HubSpot" }
+        : crmStage === "recycle"
+          ? { code: "decline", label: "Recycled in HubSpot" }
+          : { code: "disqualify", label: "Disqualified in HubSpot" };
+    return {
+      ...view,
+      status: "decided" as const,
+      overdue: false,
+      choice,
+      decidedBy: "HubSpot",
+      decidedAt: null,
+    };
+  }
   const advice =
     record?.status === "open"
       ? await currentAdvice(repo, engagement, release)
@@ -523,6 +548,16 @@ async function buildRow(
     people,
   );
   const stepBack = stepBackOf(leadRoute);
+  const crmStage = hubspotStage(
+    latestLifecycle(
+      events,
+      (
+        snapshotReceipt?.ruleResults.snapshot as
+          | { contact?: { lifecycleRaw?: string | null } | null }
+          | undefined
+      )?.contact?.lifecycleRaw,
+    ),
+  );
   const timed = stepBack ? untimed(engagement) : engagement;
   const clock = clockView({
     engagement: timed,
@@ -549,11 +584,18 @@ async function buildRow(
             note: stepBack.note,
           }
         : draftSummary(draft)),
-    sla: slaView({ engagement: timed, clock, events, submittedAt, now }),
+    sla: slaView({
+      engagement: timed,
+      clock,
+      events,
+      submittedAt,
+      now,
+      crmStage,
+    }),
     decision:
       stepBack && !stepBack.keepDecision
         ? null
-        : await liveDecision(repo, engagement, release, now),
+        : await liveDecision(repo, engagement, release, now, crmStage),
     state: engagement.state,
     stateLabel: stateLabel(engagement.state),
     hidden: inbox?.status === "skipped",
@@ -931,6 +973,15 @@ export async function buildEngagementDetail(input: {
   );
   const stepBack = stepBackOf(leadRoute);
   const triage = stepBack ? stepBack.triage : triageRaw;
+  const crmLifecycle = latestLifecycle(
+    events,
+    (
+      lastOf("crm_snapshot")?.ruleResults.snapshot as
+        | { contact?: { lifecycleRaw?: string | null } | null }
+        | undefined
+    )?.contact?.lifecycleRaw,
+  );
+  const crmStage = hubspotStage(crmLifecycle);
   const timed = stepBack ? untimed(engagement) : engagement;
   const clock = clockView({
     engagement: timed,
@@ -969,11 +1020,18 @@ export async function buildEngagementDetail(input: {
       events,
       submittedAt,
       now: input.now,
+      crmStage,
     }),
     decision:
       stepBack && !stepBack.keepDecision
         ? null
-        : await liveDecision(repo, engagement, input.release, input.now),
+        : await liveDecision(
+            repo,
+            engagement,
+            input.release,
+            input.now,
+            crmStage,
+          ),
     brief: await briefView(repo, engagement.id, {
       company: latest?.companyName ?? null,
       contact: [
@@ -997,12 +1055,7 @@ export async function buildEngagementDetail(input: {
       submittedAt: firstSubmission?.submittedAt ?? engagement.createdAt,
       verdict: scorecard?.verdict ?? null,
       scoredAt: scorecards[scorecards.length - 1]?.createdAt ?? null,
-      crmLifecycle:
-        (
-          snapshotReceipt?.ruleResults.snapshot as
-            | { contact?: { lifecycleRaw?: string | null } | null }
-            | undefined
-        )?.contact?.lifecycleRaw ?? null,
+      crmLifecycle,
       triageKind: triage.kind,
       events,
       decisionChoice: (await repo.getDecision(engagement.id))?.choice ?? null,
