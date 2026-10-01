@@ -43,12 +43,7 @@ import { ReceiptsDrawer } from "@/components/pa/receipts-drawer";
 import { ScorecardTable } from "@/components/pa/scorecard-table";
 import { EmptyState, ErrorState } from "@/components/pa/states";
 import { Timeline } from "@/components/pa/timeline";
-import {
-  DecisionBar,
-  DraftCard,
-  LeadBriefCard,
-  TriageCard,
-} from "@/components/pa/triage";
+import { DraftCard, LeadBriefCard, TriageCard } from "@/components/pa/triage";
 import { UntrustedText } from "@/components/pa/untrusted-text";
 import { Button } from "@/components/ui/button";
 import { useEngagement, useInboundBoard } from "@/hooks/use-pa-data";
@@ -489,7 +484,6 @@ export default function EngagementRoute() {
     ? `?${boardQuery({ tab: fromTab, sort, within })}`
     : "";
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const decide = useActionMutation("decide-lead");
   const refresh = useActionMutation("refresh-lead");
   const setRoute = useActionMutation("set-lead-route");
   const rewrite = useActionMutation("rewrite-reply");
@@ -744,37 +738,6 @@ export default function EngagementRoute() {
                 : undefined
             }
           />
-          {detail.decision ? (
-            <div className="mt-4">
-              <DecisionBar
-                decision={detail.decision}
-                canDecide={canDecide}
-                pending={decide.isPending}
-                onAsk={() => askAgent("general")}
-                onDecide={(choice, note) =>
-                  decide.mutate(
-                    {
-                      engagementId: detail.id,
-                      choice: choice as Parameters<
-                        typeof decide.mutate
-                      >[0]["choice"],
-                      note,
-                    },
-                    {
-                      onSuccess: () => {
-                        toast.success(
-                          "Decision recorded in PA. HubSpot is not changed.",
-                        );
-                        void engagement.refetch();
-                      },
-                      onError: (error) =>
-                        toast.error(actionErrorMessage(error)),
-                    },
-                  )
-                }
-              />
-            </div>
-          ) : null}
           <div className="mt-4 grid items-stretch gap-4 @min-[60rem]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <TriageCard
               triage={detail.triage}

@@ -36,12 +36,11 @@ import { cn } from "@/lib/utils";
 
 import { OwnerChip } from "./badges";
 import { SlaCell } from "./clock";
-import { DecisionPill, DraftPreview, TriageBadge } from "./triage";
+import { DraftPreview, TriageBadge } from "./triage";
 
 export const BOARD_TABS: Array<{ id: BoardTab; label: string }> = [
   { id: "mine", label: "Mine" },
   { id: "team", label: "Team" },
-  { id: "decide", label: "Needs decision" },
   { id: "at_risk", label: "At risk" },
   { id: "breached", label: "Breached" },
 ];
@@ -469,9 +468,6 @@ export function BoardTable({
                 <OwnerChip owner={row.owner} compact />
                 <div className="mt-1.5">
                   <SlaCell sla={row.sla} />
-                </div>
-                <div className="mt-1">
-                  <DecisionPill decision={row.decision} />
                 </div>
               </td>
             </tr>

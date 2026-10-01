@@ -1653,3 +1653,16 @@ bottom. Revisit one only when its "revisit when" condition happens.
   the one clarification email route (D71) and PA recommends decline and
   recycle. A short real question still gets discovery.
 - The line is `thin_message_words` in the playbook's qualification block.
+
+## D89. Decisions happen in HubSpot, not in PA (2026-10-01)
+
+- Fred: "having the decision be made in the app is redundant because all of
+  it should happen in HubSpot. Remove this."
+- The lead page no longer has the decision bar (accept, decline, research,
+  the countdown, pressure-test). The board drops the "Needs decision" tab,
+  the "Decide in" pills, and the "Decide on older leads" button.
+- PA follows HubSpot's stage instead (D83): SAL, Recycle, or Disqualified
+  there shows on the sales cycle and the SLA timer. PA's view of the lead
+  (its class, route, and draft) still says what it suggests.
+- The decision records stay in the database (nothing is deleted), but
+  nothing in the app asks for one.

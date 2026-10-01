@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01 (no decisions in PA)
+
+- The decision bar is gone from leads, and the Needs decision tab, decision
+  pills, and Decide on older leads button are gone from the board.
+  Decisions are made in HubSpot, and PA follows HubSpot's stage (D89).
+
 ## 2026-10-01 (thin messages)
 
 - A very short message with no question and next to no signal (for example
