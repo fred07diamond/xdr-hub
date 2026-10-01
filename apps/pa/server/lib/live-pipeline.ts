@@ -244,7 +244,9 @@ export async function listAgentWork(
         engagement,
         { people: routing.people },
       );
-      if (route.route === "ae_owned") continue;
+      // A partnership ask that recycles gets no email either (D81).
+      if (route.route === "ae_owned" || route.route === "partnership_recycle")
+        continue;
     }
     let stale = false;
     if (plan.needed && latest) {

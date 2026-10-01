@@ -1516,3 +1516,33 @@ bottom. Revisit one only when its "revisit when" condition happens.
   member list. Lead routing is now its own Settings tab
   (`/settings/lead-routing`), the Organization tab opens with a card that
   links to it, and the Team page shows it first. Lead pages link to the tab.
+
+## D81. Partnership asks: exceptional to Partnerships, anything less recycles (2026-10-01)
+
+- Fred: "Whenever an exceptional company comes in asking for a partnership
+  then we route to partnerships. Anything less than exceptional is a
+  recycle."
+- A new Lead routing role, **Partnerships**. A partnership ask is spotted
+  in the message (partnership, reseller, affiliate or referral partner,
+  co-marketing or co-selling, alliance, technology, integration, or
+  channel partner); a plain "partner" is not enough. The company's tier is
+  judged as for any lead, agency or not (D67).
+- Exceptional: **Route to Partnerships**. The Partnerships contact is on CC,
+  named, and their meeting link is the ask; PA recommends accept. With no
+  Partnerships contact set, the lead asks once for one.
+- Less than exceptional: **Recycle: partnership ask**. No email, no SLA,
+  and PA recommends decline and recycle.
+- An account owned by an AE is still left to HubSpot first (D80). A lead
+  PA already treats as a vendor pitch (selling to us) stays ignored.
+- The playbook has a "Partnership ask" definition and a messaging block for
+  the email.
+
+## D82. One color per classification (2026-10-01)
+
+- Fred: "Can you change some colors here? also remove the dot next to the
+  word. I need to be able to differentiate between the different
+  classifications."
+- The board and record badges drop the dot, and each class has its own
+  color: Exceptional green, Requires discovery blue, Suggest recycle amber,
+  Partnership recycle orange, AE-owned violet, customer and open deal
+  indigo, Check before replying rose, and the non-sales exits stay neutral.

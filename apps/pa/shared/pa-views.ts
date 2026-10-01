@@ -126,7 +126,7 @@ export interface LeadRouteView {
   meetingWith: {
     email: string;
     name: string | null;
-    role: "ae" | "pa";
+    role: "ae" | "pa" | "partnerships";
     link: string | null;
   } | null;
   gaps: string[];
@@ -137,7 +137,7 @@ export interface LeadRouteView {
   /** Commercial or enterprise, from the company's employees (D77). */
   segment: "commercial" | "enterprise" | null;
   /** Who is missing to finish the route, so the lead page asks once. */
-  needs: "commercial_ae" | "enterprise_ae" | null;
+  needs: "commercial_ae" | "enterprise_ae" | "partnerships" | null;
   /** The enterprise round robin: given and saved, or next up (D78). */
   roundRobin: "assigned" | "pending" | null;
 }

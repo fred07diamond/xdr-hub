@@ -232,6 +232,50 @@ describe("leadRouteFor", () => {
     expect(missing.gaps[0]).toMatch(/No commercial AE/);
   });
 
+  it("routes an exceptional partnership ask to Partnerships, and recycles the rest (D81)", () => {
+    const withPartners = [
+      ...people,
+      person("partners@example.com", "partnerships"),
+    ];
+    const exceptional = leadRouteFor({
+      ...base,
+      people: withPartners,
+      partnershipAsk: true,
+      partnershipTier: "exceptional",
+    });
+    expect(exceptional.route).toBe("partnerships");
+    expect(exceptional.meetingWith?.email).toBe("partners@example.com");
+    expect(draftRouteOf(exceptional)).toMatchObject({
+      needsLink: true,
+      cc: "partners@example.com",
+    });
+    const less = leadRouteFor({
+      ...base,
+      people: withPartners,
+      partnershipAsk: true,
+      partnershipTier: "discovery",
+    });
+    expect(less.route).toBe("partnership_recycle");
+    expect(draftRouteOf(less).needsLink).toBe(false);
+    // No Partnerships contact yet: say so, and ask for one.
+    const missing = leadRouteFor({
+      ...base,
+      partnershipAsk: true,
+      partnershipTier: "exceptional",
+    });
+    expect(missing.needs).toBe("partnerships");
+    // An AE-owned account is still left to HubSpot first.
+    expect(
+      leadRouteFor({
+        ...base,
+        people: withPartners,
+        partnershipAsk: true,
+        partnershipTier: "exceptional",
+        accountOwner: { email: "account-ae@example.com", name: "Alex" },
+      }).route,
+    ).toBe("ae_owned");
+  });
+
   it("follows the playbook's routing rule", () => {
     const route = leadRouteFor({
       ...base,

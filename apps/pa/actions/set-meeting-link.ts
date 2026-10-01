@@ -17,7 +17,10 @@ export default defineAction({
       .url()
       .refine((value) => value.startsWith("https://"), "Use an https link"),
     displayName: z.string().trim().max(120).nullable().optional(),
-    role: z.enum(["pa", "ae", "commercial_ae", "csm"]).nullable().optional(),
+    role: z
+      .enum(["pa", "ae", "commercial_ae", "partnerships", "csm"])
+      .nullable()
+      .optional(),
     podAeFor: z
       .string()
       .trim()

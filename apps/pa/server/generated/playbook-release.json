@@ -173,6 +173,20 @@
       "position": 1
     },
     {
+      "id": "def.partnership_ask",
+      "type": "definition",
+      "owner": "Sales leadership",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": "A partnership ask is a lead asking to partner with Builder: a partnership, reseller, affiliate or referral partner, co-marketing or co-selling, an alliance, or a technology, integration, or channel partner. A plain mention of \"partner\" is not enough.\nAn exceptional company (the Exceptional or requires discovery block) asking about a partnership routes to Partnerships, set in Settings, Lead routing. Partnerships is looped in on the email with their meeting link.\nAnything less than exceptional is a recycle: no email, and PA recommends decline and recycle.\nAn account owned by an AE is still left to HubSpot first.\n",
+      "rationale": "Fred, 2026-10-01: an exceptional company asking for a partnership routes to partnerships; anything less is a recycle.",
+      "owner_team": "both",
+      "block": "definition",
+      "section": "definitions",
+      "position": 4
+    },
+    {
       "id": "rule.sla.first_touch",
       "type": "rule",
       "owner": "RevOps and PA lead",
@@ -452,6 +466,23 @@
       "position": 9
     },
     {
+      "id": "msg.first_touch.partnerships",
+      "type": "message_rule",
+      "owner": "PMM and enablement",
+      "version": 1,
+      "precedence": 4,
+      "status": "active",
+      "body": "Partnership ask.\nAn exceptional company asking to partner. Thank them and answer what they asked in a line. Introduce the Partnerships contact by name (PA adds them on CC) and say what the call is for, in their terms (what they want to build or sell together). Then their meeting link on its own line. At most one question.\n",
+      "source": "Fred, 2026-10-01",
+      "scope": {
+        "route": "partnerships"
+      },
+      "owner_team": "pa_team",
+      "block": "message_rule",
+      "section": "messaging",
+      "position": 11
+    },
+    {
       "id": "msg.first_touch.example",
       "type": "message_rule",
       "owner": "PMM and enablement",
@@ -620,12 +651,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "3a4fd140e402b30d76b7d004645ba5a9770472c61d94f50744cea6c1522e3789",
-  "short_id": "3a4fd140",
+  "id": "68741015be8ef3773b5e97793b95df3f44a9b869cfdf42376d9c244a1c7b04f9",
+  "short_id": "68741015",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "67ae1e456d2139059e87ba0c7f37a96656468681b163e4123838ea03028dff5e"
+      "sha256": "2bcec5e58479bb1f234bda6da1aa39e6eea8992e9a5006a9b8a96ac00a9b12b0"
     },
     {
       "path": "config/routing-pool.yaml",

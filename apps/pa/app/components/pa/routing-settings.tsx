@@ -12,6 +12,7 @@ import {
   IconBuildingSkyscraper,
   IconBuildingStore,
   IconExternalLink,
+  IconHeartHandshake,
   IconPlus,
   IconUser,
   IconUserQuestion,
@@ -22,7 +23,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
-type Role = "pa" | "ae" | "commercial_ae" | "csm";
+type Role = "pa" | "ae" | "commercial_ae" | "partnerships" | "csm";
 
 interface Person {
   email: string;
@@ -285,6 +286,7 @@ export function RoutingSettings() {
   const commercial = people.filter((person) => person.role === "commercial_ae");
   const enterprise = people.filter((person) => person.role === "ae");
   const pas = people.filter((person) => person.role === "pa");
+  const partners = people.filter((person) => person.role === "partnerships");
   const unset = people.filter((person) => !person.role);
 
   return (
@@ -369,6 +371,36 @@ export function RoutingSettings() {
           </SettingsGroup>
 
           <SettingsGroup
+            title="Partnerships"
+            description="An exceptional company asking about a partnership. Anything less recycles with no email."
+          >
+            {partners.length === 0 ? (
+              <Empty>
+                Not set. Exceptional partnership asks wait until one is added.
+              </Empty>
+            ) : (
+              partners.map((person) => (
+                <PersonRow
+                  key={person.email}
+                  person={person}
+                  role="partnerships"
+                  icon={<IconHeartHandshake className="size-4" />}
+                  canEdit={canEdit}
+                  onChanged={refresh}
+                />
+              ))
+            )}
+            {partners.length === 0 ? (
+              <AddPerson
+                role="partnerships"
+                label="Set the Partnerships contact"
+                canEdit={canEdit}
+                onChanged={refresh}
+              />
+            ) : null}
+          </SettingsGroup>
+
+          <SettingsGroup
             title="Product Advocates"
             description="Their meeting link goes in the email when the PA takes the call."
           >
@@ -450,6 +482,7 @@ function UnsetRow({
             <option value="pa">Product Advocate</option>
             <option value="ae">Enterprise AE</option>
             <option value="commercial_ae">Commercial AE</option>
+            <option value="partnerships">Partnerships</option>
           </select>
         ) : null
       }

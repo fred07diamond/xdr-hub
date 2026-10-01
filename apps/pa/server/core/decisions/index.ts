@@ -73,6 +73,8 @@ export interface DecisionInputs {
   ownerEmail: string | null;
   /** Intent score at or under the playbook's recycle line (D67). */
   suggestRecycle?: { score: number } | null;
+  /** The lead's route (D81): a partnership ask is recommended by its tier. */
+  route?: string | null;
   /** The lead's qualification (D67), which the recommendation follows. */
   qualification?: {
     tier: "exceptional" | "discovery" | null;
@@ -152,6 +154,25 @@ export function recommend(input: DecisionInputs): {
       options,
       recommendation: "research",
       reason: "An existing customer. PA cannot tell which team they are on.",
+      question,
+    };
+  // A partnership ask (D81): exceptional goes to Partnerships, less recycles.
+  if (input.route === "partnership_recycle")
+    return {
+      kind: "standard",
+      options,
+      recommendation: "decline",
+      reason:
+        "A partnership ask from a company that is not exceptional. Decline and recycle; no email goes out.",
+      question,
+    };
+  if (input.route === "partnerships")
+    return {
+      kind: "standard",
+      options,
+      recommendation: "accept",
+      reason:
+        "An exceptional company asking about a partnership. Accept and route to Partnerships.",
       question,
     };
   if (input.suggestRecycle && input.precheckOutcome !== "attach_to_owner")
@@ -256,6 +277,9 @@ export async function decisionInputs(
     ownerEmail: owner?.email ?? routedOwner?.email ?? null,
     suggestRecycle: recycleSignal(latest.fields, release),
     qualification: await qualificationOf(repo, latest, snapshot, release),
+    route: release
+      ? (await routeForEngagement(repo, release, engagement)).route
+      : null,
   };
 }
 

@@ -144,6 +144,21 @@ entries:
     params:
       max_employees: 8000
     rationale: "Fred, 2026-10-01: 8k or less and unowned by an AE goes to the Commercial AE; 8k+ and unowned round robins to an Enterprise AE. Owned by an AE: nothing happens in PA; HubSpot's workflow emails them."
+  - id: def.partnership_ask
+    block: definition
+    section: definitions
+    position: 4
+    type: definition
+    owner: Sales leadership
+    owner_team: both
+    precedence: 2
+    version: 1
+    body: |
+      A partnership ask is a lead asking to partner with Builder: a partnership, reseller, affiliate or referral partner, co-marketing or co-selling, an alliance, or a technology, integration, or channel partner. A plain mention of "partner" is not enough.
+      An exceptional company (the Exceptional or requires discovery block) asking about a partnership routes to Partnerships, set in Settings, Lead routing. Partnerships is looped in on the email with their meeting link.
+      Anything less than exceptional is a recycle: no email, and PA recommends decline and recycle.
+      An account owned by an AE is still left to HubSpot first.
+    rationale: "Fred, 2026-10-01: an exceptional company asking for a partnership routes to partnerships; anything less is a recycle."
   - id: rule.sla.first_touch
     block: clock
     section: clocks
@@ -405,6 +420,21 @@ entries:
       For a lead that suggests a recycle (no intent score, or 0 to 1). One short email, not a sequence and no meeting link.
       Thank them, answer anything they asked in a line (a call or pricing can be set up once it is clear what they need), then ask one or two questions that clarify who they are and what they want to do with Builder.
       Under 60 words. If they do not reply, the lead recycles.
+    source: "Fred, 2026-10-01"
+  - id: msg.first_touch.partnerships
+    block: message_rule
+    section: messaging
+    position: 11
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
+    scope:
+      route: partnerships
+    body: |
+      Partnership ask.
+      An exceptional company asking to partner. Thank them and answer what they asked in a line. Introduce the Partnerships contact by name (PA adds them on CC) and say what the call is for, in their terms (what they want to build or sell together). Then their meeting link on its own line. At most one question.
     source: "Fred, 2026-10-01"
   - id: msg.first_touch.example
     block: message_rule

@@ -36,21 +36,37 @@ import { cn } from "@/lib/utils";
 import { CitationChips } from "./badges";
 
 const KIND_STYLES: Record<TriageKind, string> = {
-  reply: "bg-primary-soft text-primary ring-primary/25",
-  review: "bg-warning-soft text-warning-foreground ring-warning/40",
+  reply: "bg-teal-500/10 text-teal-800 ring-teal-600/25 dark:text-teal-300",
+  review: "bg-rose-500/10 text-rose-800 ring-rose-600/25 dark:text-rose-300",
   owner: "bg-secondary text-foreground ring-border",
-  elsewhere: "bg-transparent text-muted-foreground ring-border",
+  elsewhere:
+    "bg-slate-500/10 text-slate-700 ring-slate-500/25 dark:text-slate-300",
   closed: "bg-transparent text-muted-foreground ring-border",
   pending: "bg-muted text-muted-foreground ring-border",
 };
 
-const KIND_DOTS: Record<TriageKind, string> = {
-  reply: "bg-primary",
-  review: "bg-warning",
-  owner: "bg-foreground/60",
-  elsewhere: "border border-muted-foreground/60",
-  closed: "border border-muted-foreground/60",
-  pending: "bg-muted-foreground/50",
+/**
+ * One color per classification, so each reads at a glance on the board
+ * (Fred, 2026-10-01). Labels are PA's own fixed set; anything else falls
+ * back to its kind.
+ */
+const LABEL_STYLES: Record<string, string> = {
+  Exceptional:
+    "bg-emerald-500/12 text-emerald-800 ring-emerald-600/30 dark:text-emerald-300",
+  "Requires discovery":
+    "bg-sky-500/12 text-sky-800 ring-sky-600/30 dark:text-sky-300",
+  "Suggest recycle":
+    "bg-amber-500/14 text-amber-900 ring-amber-600/35 dark:text-amber-300",
+  "Partnership ask, recycle":
+    "bg-orange-500/12 text-orange-800 ring-orange-600/30 dark:text-orange-300",
+  "AE-owned account":
+    "bg-violet-500/12 text-violet-800 ring-violet-600/30 dark:text-violet-300",
+  "Existing customer":
+    "bg-indigo-500/12 text-indigo-800 ring-indigo-600/30 dark:text-indigo-300",
+  "Open deal":
+    "bg-indigo-500/12 text-indigo-800 ring-indigo-600/30 dark:text-indigo-300",
+  "Check before replying":
+    "bg-rose-500/12 text-rose-800 ring-rose-600/30 dark:text-rose-300",
 };
 
 export function TriageBadge({
@@ -63,15 +79,11 @@ export function TriageBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-[22px] max-w-full items-center gap-1.5 whitespace-nowrap rounded-[5px] px-2 text-[12px] font-medium leading-none ring-1 ring-inset",
-        KIND_STYLES[triage.kind],
+        "inline-flex h-[22px] max-w-full items-center whitespace-nowrap rounded-[5px] px-2 text-[12px] font-medium leading-none ring-1 ring-inset",
+        LABEL_STYLES[triage.label] ?? KIND_STYLES[triage.kind],
         className,
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn("size-1.5 shrink-0 rounded-full", KIND_DOTS[triage.kind])}
-      />
       <span className="truncate">{triage.label}</span>
     </span>
   );
@@ -472,10 +484,11 @@ function AeSetupField({
 }: {
   pa: NonNullable<LeadRouteView["paOwner"]> | null;
   onSaved?: () => void;
-  /** enterprise_ae: adds an AE to the round robin (D78). commercial_ae: the commercial AE (D77). */
-  mode?: "enterprise_ae" | "commercial_ae";
+  /** enterprise_ae: adds an AE to the round robin (D78). commercial_ae: the commercial AE (D77). partnerships: the Partnerships contact (D81). */
+  mode?: "enterprise_ae" | "commercial_ae" | "partnerships";
 }) {
   const commercial = mode === "commercial_ae";
+  const partnerships = mode === "partnerships";
   const save = useActionMutation("set-meeting-link");
   const people = useActionQuery("list-people", {});
   const aes = (
@@ -492,9 +505,11 @@ function AeSetupField({
         | undefined
     )?.people ?? []
   ).filter((person) =>
-    commercial
-      ? person.role === "commercial_ae" || person.role === "ae"
-      : person.role === "ae",
+    partnerships
+      ? person.role === "partnerships"
+      : commercial
+        ? person.role === "commercial_ae" || person.role === "ae"
+        : person.role === "ae",
   );
   const [email, setEmail] = useState("");
   const [link, setLink] = useState("");
@@ -513,15 +528,21 @@ function AeSetupField({
             email: email.trim().toLowerCase(),
             meetingLink: (needsLink ? link : known!.meetingLink!).trim(),
             displayName: known?.displayName ?? null,
-            role: commercial ? "commercial_ae" : "ae",
+            role: partnerships
+              ? "partnerships"
+              : commercial
+                ? "commercial_ae"
+                : "ae",
             podAeFor: null,
           },
           {
             onSuccess: () => {
               toast.success(
-                commercial
-                  ? "Saved. Exceptional leads at commercial accounts now route to this AE."
-                  : "Saved. This AE is in the enterprise round robin now.",
+                partnerships
+                  ? "Saved. Exceptional partnership asks now route to them."
+                  : commercial
+                    ? "Saved. Exceptional leads at commercial accounts now route to this AE."
+                    : "Saved. This AE is in the enterprise round robin now.",
               );
               onSaved?.();
             },
@@ -531,12 +552,18 @@ function AeSetupField({
       }}
     >
       <p className="text-[12px] font-medium text-foreground">
-        {commercial ? "Who is the commercial AE?" : "Add an enterprise AE"}
+        {partnerships
+          ? "Who handles partnerships?"
+          : commercial
+            ? "Who is the commercial AE?"
+            : "Add an enterprise AE"}
       </p>
       <p className="text-[11.5px] text-muted-foreground">
-        {commercial
-          ? "Asked once. Saved as the Commercial AE and used for every exceptional lead at a commercial account."
-          : "Asked once. No enterprise AEs are set up yet; this one joins the round robin for accounts over the commercial line with no AE owner."}
+        {partnerships
+          ? "Asked once. Saved as the Partnerships contact and used for every exceptional partnership ask."
+          : commercial
+            ? "Asked once. Saved as the Commercial AE and used for every exceptional lead at a commercial account."
+            : "Asked once. No enterprise AEs are set up yet; this one joins the round robin for accounts over the commercial line with no AE owner."}
       </p>
       <div className="mt-1.5 grid gap-1.5">
         <input
@@ -595,10 +622,14 @@ export function LeadRouteBlock({
   const askForAe = Boolean(
     !who && value.needs === "enterprise_ae" && onLinkSaved,
   );
+  const askForPartners = Boolean(
+    !who && value.needs === "partnerships" && onLinkSaved,
+  );
   const hidden = (gap: string) =>
     (askForLink && /No meeting link/.test(gap)) ||
     (askForAe && /No enterprise AEs/.test(gap)) ||
-    (askForCommercial && /No commercial AE/.test(gap));
+    (askForCommercial && /No commercial AE/.test(gap)) ||
+    (askForPartners && /No Partnerships contact/.test(gap));
   return (
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -664,6 +695,13 @@ export function LeadRouteBlock({
       ) : null}
       {askForAe ? (
         <AeSetupField pa={value.paOwner} onSaved={onLinkSaved} />
+      ) : null}
+      {askForPartners ? (
+        <AeSetupField
+          pa={value.paOwner}
+          onSaved={onLinkSaved}
+          mode="partnerships"
+        />
       ) : null}
       {askForCommercial ? (
         <AeSetupField
@@ -1025,8 +1063,10 @@ export function ContactSalesClassBlock({
             value.tier === "exceptional"
               ? "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300"
               : value.suggestRecycle
-                ? "bg-amber-500/12 text-amber-800 dark:text-amber-300"
-                : "bg-secondary text-foreground",
+                ? "bg-amber-500/14 text-amber-900 dark:text-amber-300"
+                : value.tier === "discovery"
+                  ? "bg-sky-500/12 text-sky-800 dark:text-sky-300"
+                  : "bg-secondary text-foreground",
           )}
         >
           {value.label}

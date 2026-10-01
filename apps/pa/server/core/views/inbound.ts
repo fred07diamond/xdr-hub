@@ -283,6 +283,8 @@ const FIXED_ROUTES = new Set([
   "customer_team",
   "deal_ae",
   "ae_owned",
+  "partnerships",
+  "partnership_recycle",
 ]);
 
 function leadRouteView(route: LeadRouteResult): LeadRouteView {
@@ -361,6 +363,39 @@ function aeOwnedTriage(route: LeadRouteView): TriageView {
     why: route.reason,
     action: "Nothing to do in PA. HubSpot's workflow emails them.",
   };
+}
+
+const PARTNERSHIP_RECYCLE_NOTE =
+  "No draft: a partnership ask from a company that is not exceptional recycles.";
+
+/** A partnership ask that is not exceptional (D81): recycle, no email. */
+function partnershipRecycleTriage(route: LeadRouteView): TriageView {
+  return {
+    kind: "closed",
+    label: "Partnership ask, recycle",
+    verdictLabel: null,
+    why: route.reason,
+    action: "Decline and recycle it. No email goes out.",
+  };
+}
+
+/** How the board and record treat a route that needs no work from PA. */
+function stepBackOf(route: LeadRouteView | null) {
+  if (route?.route === "ae_owned")
+    return {
+      triage: aeOwnedTriage(route),
+      note: AE_OWNED_NOTE,
+      noClock: "No SLA: owned by an AE, HubSpot emails them",
+      keepDecision: false,
+    };
+  if (route?.route === "partnership_recycle")
+    return {
+      triage: partnershipRecycleTriage(route),
+      note: PARTNERSHIP_RECYCLE_NOTE,
+      noClock: "No SLA: a partnership ask that recycles",
+      keepDecision: true,
+    };
+  return null;
 }
 
 const untimed = (engagement: EngagementRecord): EngagementRecord => ({
@@ -487,7 +522,7 @@ async function buildRow(
     triage.kind,
     people,
   );
-  const stepBack = leadRoute?.route === "ae_owned";
+  const stepBack = stepBackOf(leadRoute);
   const timed = stepBack ? untimed(engagement) : engagement;
   const clock = clockView({
     engagement: timed,
@@ -496,12 +531,12 @@ async function buildRow(
     release: pinned,
     now,
     noClockReason: stepBack
-      ? "No SLA: owned by an AE, HubSpot emails them"
+      ? stepBack.noClock
       : await noClockReason(repo, engagement),
   });
   return {
     id: engagement.id,
-    triage: stepBack && leadRoute ? aeOwnedTriage(leadRoute) : triage,
+    triage: stepBack ? stepBack.triage : triage,
     leadRoute,
     draft:
       sentSummary(events, engagement) ??
@@ -511,13 +546,14 @@ async function buildRow(
             subject: null,
             preview: null,
             problemCount: 0,
-            note: AE_OWNED_NOTE,
+            note: stepBack.note,
           }
         : draftSummary(draft)),
     sla: slaView({ engagement: timed, clock, events, submittedAt, now }),
-    decision: stepBack
-      ? null
-      : await liveDecision(repo, engagement, release, now),
+    decision:
+      stepBack && !stepBack.keepDecision
+        ? null
+        : await liveDecision(repo, engagement, release, now),
     state: engagement.state,
     stateLabel: stateLabel(engagement.state),
     hidden: inbox?.status === "skipped",
@@ -893,8 +929,8 @@ export async function buildEngagementDetail(input: {
     engagement,
     triageRaw.kind,
   );
-  const stepBack = leadRoute?.route === "ae_owned";
-  const triage = stepBack && leadRoute ? aeOwnedTriage(leadRoute) : triageRaw;
+  const stepBack = stepBackOf(leadRoute);
+  const triage = stepBack ? stepBack.triage : triageRaw;
   const timed = stepBack ? untimed(engagement) : engagement;
   const clock = clockView({
     engagement: timed,
@@ -903,7 +939,7 @@ export async function buildEngagementDetail(input: {
     release: pinned,
     now: input.now,
     noClockReason: stepBack
-      ? "No SLA: owned by an AE, HubSpot emails them"
+      ? stepBack.noClock
       : await noClockReason(repo, engagement),
   });
   const snapshotReceipt = lastOf("crm_snapshot");
@@ -924,7 +960,7 @@ export async function buildEngagementDetail(input: {
           problems: [],
           problemCount: 0,
           cc: null,
-          note: AE_OWNED_NOTE,
+          note: stepBack.note,
         }
       : draft,
     sla: slaView({
@@ -934,9 +970,10 @@ export async function buildEngagementDetail(input: {
       submittedAt,
       now: input.now,
     }),
-    decision: stepBack
-      ? null
-      : await liveDecision(repo, engagement, input.release, input.now),
+    decision:
+      stepBack && !stepBack.keepDecision
+        ? null
+        : await liveDecision(repo, engagement, input.release, input.now),
     brief: await briefView(repo, engagement.id, {
       company: latest?.companyName ?? null,
       contact: [

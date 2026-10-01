@@ -195,7 +195,7 @@ export interface LeadBriefRecord {
   createdAt: string;
 }
 
-export type PersonRole = "pa" | "ae" | "commercial_ae" | "csm";
+export type PersonRole = "pa" | "ae" | "commercial_ae" | "partnerships" | "csm";
 
 /** An enterprise AE given to a lead by round robin (D78). */
 export interface AeAssignmentRecord {

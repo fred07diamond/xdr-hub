@@ -4,6 +4,7 @@ import type { CrmSnapshot } from "../crm/port.js";
 import type { PlaybookRelease } from "../playbook/schema.js";
 import {
   contactSalesClass,
+  isPartnershipAsk,
   qualifyThresholds,
   type ContactSalesClass,
 } from "../qualify/index.js";
@@ -47,6 +48,7 @@ export function classOfSubmission(input: {
   assessment: AssessmentRecord | null | undefined;
   snapshot: Partial<CrmSnapshot> | null | undefined;
   release?: PlaybookRelease | null;
+  skipAgency?: boolean;
 }): ContactSalesClass {
   const fields = input.submission?.fields;
   const company = input.snapshot?.company ?? null;
@@ -63,6 +65,7 @@ export function classOfSubmission(input: {
     budgetStatus: fieldOf(fields, "budget_status"),
     signupContacts: company?.signupContacts ?? null,
     thresholds: qualifyThresholds(input.release),
+    skipAgency: input.skipAgency,
   });
 }
 
@@ -197,6 +200,16 @@ export async function routeForEngagement(
     byClass: routeByClass(release),
     override: override?.route ?? null,
     suggestRecycle: Boolean(cls?.suggestRecycle),
+    partnershipAsk: isPartnershipAsk(latest?.message),
+    partnershipTier: isPartnershipAsk(latest?.message)
+      ? classOfSubmission({
+          submission: latest,
+          assessment,
+          snapshot,
+          release,
+          skipAgency: true,
+        }).tier
+      : null,
     employees:
       snapshot?.company?.employees ??
       lowerBound(fieldOf(latest?.fields, "company_size")),

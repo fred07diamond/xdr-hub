@@ -13,6 +13,8 @@ export const LEAD_ROUTES = [
   "agency",
   "customer_team",
   "deal_ae",
+  "partnerships",
+  "partnership_recycle",
   "ae_owned",
   "no_sales_email",
 ] as const;
@@ -34,6 +36,8 @@ export const LEAD_ROUTE_LABELS: Record<LeadRoute, string> = {
   agency: "Agency path",
   customer_team: "Their AE and CSM",
   deal_ae: "The deal's AE",
+  partnerships: "Route to Partnerships",
+  partnership_recycle: "Recycle: partnership ask",
   ae_owned: "Owned by an AE",
   no_sales_email: "No sales email",
 };
@@ -54,6 +58,10 @@ export const LEAD_ROUTE_EMAIL: Record<LeadRoute, string> = {
     "Connect them with their AE and CSM. Not a PA play, no meeting link.",
   deal_ae:
     "An open deal is in progress: introduce the deal's AE with their meeting link.",
+  partnerships:
+    "Loop in Partnerships (CC'd): name them, say what the call is for, then their meeting link on its own line.",
+  partnership_recycle:
+    "A partnership ask that is not exceptional. No email; it recycles.",
   ae_owned:
     "Owned by an AE in HubSpot. HubSpot's workflow emails them, so PA does nothing.",
   no_sales_email: "No sales email.",
@@ -86,7 +94,7 @@ export interface RoutePerson {
 export interface MeetingWith {
   email: string;
   name: string | null;
-  role: "ae" | "pa";
+  role: "ae" | "pa" | "partnerships";
   link: string | null;
 }
 
@@ -104,7 +112,7 @@ export interface LeadRouteResult {
   /** Commercial or enterprise, from the company's employees (D77). */
   segment: Segment | null;
   /** Who is missing to finish the route, so the lead page can ask once. */
-  needs?: "commercial_ae" | "enterprise_ae" | null;
+  needs?: "commercial_ae" | "enterprise_ae" | "partnerships" | null;
   /** The enterprise round robin: given and saved, or next up (D78). */
   roundRobin?: "assigned" | "pending" | null;
 }
@@ -131,6 +139,10 @@ export interface LeadRouteInput {
   employees?: number | null;
   /** At or under this many employees is a commercial account (playbook). */
   commercialMaxEmployees?: number | null;
+  /** They asked to partner with Builder (D81). */
+  partnershipAsk?: boolean;
+  /** Their tier judged as a company, agency or not, for a partnership ask. */
+  partnershipTier?: "exceptional" | "discovery" | null;
   /** The enterprise round robin (D78): the AE this lead was given, or next up. */
   enterprise?: { assigned: RoutePerson | null; next: RoutePerson | null };
 }
@@ -187,7 +199,7 @@ const nameOf = (person: RoutePerson | PersonRecord) =>
 
 function meetingWith(
   person: RoutePerson,
-  role: "ae" | "pa",
+  role: "ae" | "pa" | "partnerships",
   people: Map<string, PersonRecord>,
   gaps: string[],
 ): MeetingWith {
@@ -298,6 +310,39 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
       "crm",
       `${nameOf(owner)} owns the account in HubSpot. HubSpot's workflow emails them; nothing to do in PA.`,
     );
+  // A partnership ask (D81): exceptional goes to Partnerships, anything less
+  // recycles.
+  if (input.partnershipAsk) {
+    if (input.partnershipTier !== "exceptional")
+      return result(
+        "partnership_recycle",
+        "playbook",
+        "They asked about a partnership, and the company is not exceptional, so it recycles.",
+      );
+    const contact = [...people.values()]
+      .filter((person) => person.role === "partnerships")
+      .sort((a, b) => a.email.localeCompare(b.email))[0];
+    if (!contact) {
+      gaps.push(
+        "No Partnerships contact set. Add one in Settings, Lead routing.",
+      );
+      return {
+        ...result(
+          "partnerships",
+          "playbook",
+          "An exceptional company asking about a partnership.",
+        ),
+        needs: "partnerships",
+      };
+    }
+    const who = { email: contact.email, name: contact.displayName };
+    return result(
+      "partnerships",
+      "playbook",
+      `An exceptional company asking about a partnership. ${nameOf(who)} handles partnerships.`,
+      meetingWith(who, "partnerships", people, gaps),
+    );
+  }
   if (
     owner &&
     !ownerRole &&
@@ -385,6 +430,7 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
 }
 
 const LINK_ROUTES = new Set<LeadRoute>([
+  "partnerships",
   "route_to_ae",
   "pa_meeting",
   "deal_ae",
@@ -392,9 +438,12 @@ const LINK_ROUTES = new Set<LeadRoute>([
 
 /** The route as the draft lint checks it. */
 export function draftRouteOf(route: LeadRouteResult) {
+  // The AE, or the Partnerships contact (D81), is looped in on the email.
   const ae =
-    route.meetingWith?.role === "ae" &&
-    (route.route === "route_to_ae" || route.route === "deal_ae")
+    (route.meetingWith?.role === "ae" &&
+      (route.route === "route_to_ae" || route.route === "deal_ae")) ||
+    (route.meetingWith?.role === "partnerships" &&
+      route.route === "partnerships")
       ? route.meetingWith
       : null;
   return {

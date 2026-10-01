@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   contactSalesClass,
+  isPartnershipAsk,
   type QualifyInput,
 } from "../../server/core/qualify/index.js";
 
@@ -111,5 +112,21 @@ describe("contactSalesClass", () => {
       thresholds: { exceptional_signals: 2 },
     });
     expect(value.tier).toBe("exceptional");
+  });
+
+  it("spots a partnership ask, not a plain mention of partner (D81)", () => {
+    expect(isPartnershipAsk("We'd like to explore a partnership")).toBe(true);
+    expect(isPartnershipAsk("Can we become a reseller of Builder?")).toBe(true);
+    expect(isPartnershipAsk("Interested in your partner program")).toBe(true);
+    expect(isPartnershipAsk("Our partner agency built our site")).toBe(false);
+    // An agency's tier can still be judged for a partnership ask.
+    const agency = contactSalesClass({
+      ...base,
+      message: "We are an agency and want a partnership. SSO across teams.",
+      breeze: 8,
+      employees: 3000,
+      skipAgency: true,
+    });
+    expect(agency.tier).toBe("exceptional");
   });
 });

@@ -110,6 +110,19 @@ describe("the recommendation follows the qualification (D67)", () => {
     expect(advice.reason).not.toMatch(/QL definition/);
   });
 
+  it("recommends by the partnership route (D81)", () => {
+    expect(
+      recommend({ ...base, route: "partnership_recycle" }).recommendation,
+    ).toBe("decline");
+    expect(
+      recommend({
+        ...base,
+        route: "partnerships",
+        suggestRecycle: { score: 1 },
+      }).recommendation,
+    ).toBe("accept");
+  });
+
   it("names the tier when it says accept", () => {
     expect(
       recommend({

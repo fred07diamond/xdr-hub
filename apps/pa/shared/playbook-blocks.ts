@@ -394,6 +394,8 @@ const ENTRY_TITLES: Record<string, string> = {
   "rule.routing.order": "Ownership order",
   "rule.routing.by_class": "Routing by class",
   "rule.routing.commercial": "Commercial accounts",
+  "def.partnership_ask": "Partnership ask",
+  "msg.first_touch.partnerships": "Partnership ask",
   "rule.routing.sal_stale_days": "When a SAL goes stale",
   "rule.sla.first_touch": "First touch SLA",
   "rule.sla.decision": "Decision deadline",

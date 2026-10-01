@@ -59,6 +59,19 @@ export interface QualifyInput {
   /** Sign-up contacts on the account (company: Number of Associated Sign Up Contacts). */
   signupContacts?: number | null;
   thresholds?: Partial<QualifyThresholds>;
+  /** Judge the tier even for an agency, as for a partnership ask (D81). */
+  skipAgency?: boolean;
+}
+
+/**
+ * A partnership ask (D81): they want to partner with Builder, not buy it.
+ * Plain "partner" is not enough; agencies and buyers say it too.
+ */
+const PARTNERSHIP =
+  /\b(partnership|partnering|partner with (you|builder|your team)|become an? (\w+ )?partner|partner program|reseller|resell(ing)? builder|affiliate|referral partner|co-?marketing|co-?selling|alliance|technology partner|integration partner|channel partner)\b/i;
+
+export function isPartnershipAsk(message: string | null | undefined) {
+  return PARTNERSHIP.test(message ?? "");
 }
 
 export interface Criterion {
@@ -111,7 +124,7 @@ export function contactSalesClass(input: QualifyInput): ContactSalesClass {
       : "code";
 
   // Agencies route first (master instructions: agency routing before class).
-  if (input.agencySignal || AGENCY_WORDS.test(message)) {
+  if (!input.skipAgency && (input.agencySignal || AGENCY_WORDS.test(message))) {
     return {
       approach: "agency",
       label: APPROACH_LABELS.agency,

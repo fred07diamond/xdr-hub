@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-01 (partnerships and badge colors)
+
+- A Partnerships role in Lead routing. An exceptional company asking about a
+  partnership routes to Partnerships; anything less recycles with no email
+  (D81).
+- Classification badges have one color each and no dot, so Exceptional,
+  Requires discovery, Suggest recycle, and the rest are easy to tell apart
+  (D82).
+
 ## 2026-10-01 (AE-owned accounts)
 
 - When an AE owns the account in HubSpot, PA does nothing: no draft, no
