@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-01 (first touch, again)
+
+- A reply in a thread is no longer shown as the first touch. The first touch
+  is the first email sent to the lead (not a CC) that starts a conversation.
+- When only a reply thread is in HubSpot, the card says the first email is
+  not logged and that the lead was contacted, with the thread below.
+- The first touch card lists who the email actually went to.
+- Quoted earlier messages ("On ... wrote:" and lines starting with >) no
+  longer show in email text.
+
 ## 2026-10-01 (qualification and first touch)
 
 - Leads are now Exceptional or Requires discovery, from five signals: intent

@@ -538,6 +538,7 @@ export async function contactOf(engagementId: string) {
         contactId,
         submittedAt: latest.submittedAt,
         firstSubmittedAt,
+        leadEmail: latest.email,
         inboxId: latest.inboxId,
       }
     : null;
@@ -602,6 +603,9 @@ export async function recordFirstTouch(
 }
 
 const HISTORY_RECHECK_MS = 10 * 60_000;
+/** Bumped when first touch detection changes, so recorded ones are rechecked. */
+const FIRST_TOUCH_RULES = 2;
+
 const WATCHED_STATES = new Set([
   "routed",
   "awaiting_first_touch",
@@ -634,7 +638,9 @@ export async function detectFirstTouches(budgetMs = 10_000, limit = 8) {
     const recheck =
       Boolean(engagement.firstTouchAt) &&
       !events.some(
-        (item) => item.type === "history.checked" && item.payload.full === true,
+        (item) =>
+          item.type === "history.checked" &&
+          Number(item.payload.rules ?? 0) >= FIRST_TOUCH_RULES,
       );
     if (
       !recheck &&
@@ -662,8 +668,10 @@ export async function detectFirstTouches(budgetMs = 10_000, limit = 8) {
       const history = await fetchContactHistory(hubspotFetch, contactId, {
         perType: 10,
         firstTouchSince: since ?? submission.submittedAt,
+        leadEmail: submission.email,
       });
-      const sent = history.firstTouch ?? null;
+      // A reply thread with no logged first email still proves contact.
+      const sent = history.firstTouch ?? history.threadEvidence ?? null;
       await repository.appendEvent({
         id: newId(),
         engagementId: engagement.id,
@@ -673,7 +681,7 @@ export async function detectFirstTouches(budgetMs = 10_000, limit = 8) {
         payload: {
           items: history.items.length,
           first_touch: Boolean(sent),
-          full: true,
+          rules: FIRST_TOUCH_RULES,
         },
         receiptId: null,
         occurredAt: now().toISOString(),

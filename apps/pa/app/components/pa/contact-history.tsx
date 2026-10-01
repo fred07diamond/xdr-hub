@@ -33,6 +33,8 @@ export interface HistoryResult {
   items: HistoryItem[];
   unavailable: Array<{ kind: string; reason: string }>;
   firstTouch: HistoryItem | null;
+  /** No first email to the lead is logged, but a reply thread is (D68). */
+  threadEvidence?: HistoryItem | null;
 }
 
 const KIND = {
@@ -258,12 +260,18 @@ export function FirstTouchCard({
         <Row
           label="To"
           value={
-            <>
-              {lead.name ? `${lead.name} ` : null}
+            email.to ? (
               <span className="font-mono text-[12px] text-muted-foreground">
-                {lead.email}
+                {email.to.split(/[;,]\s*/).join(", ")}
               </span>
-            </>
+            ) : (
+              <>
+                {lead.name ? `${lead.name} ` : null}
+                <span className="font-mono text-[12px] text-muted-foreground">
+                  {lead.email}
+                </span>
+              </>
+            )
           }
         />
         <Row label="From" value={email.from ?? "Unknown sender"} />
@@ -288,6 +296,74 @@ export function FirstTouchCard({
         )}
       </div>
       <p className="border-t border-border px-4 py-2 text-[11.5px] text-muted-foreground">
+        First contact is marked done on the SLA timer. PA does not draft another
+        first touch for this lead.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * The lead is on a reply thread, so they were contacted, but the first email
+ * itself is not logged on their HubSpot record (D68). Says so instead of
+ * passing a reply off as the first touch.
+ */
+export function FirstTouchNotLoggedCard({
+  thread,
+  crmUrl,
+}: {
+  thread: HistoryItem;
+  crmUrl: string | null;
+}) {
+  return (
+    <section
+      aria-label="First touch"
+      className="flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-xs"
+    >
+      <header className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <h2 className="text-[13px] font-semibold text-foreground">
+          First touch
+        </h2>
+        <span className="inline-flex h-[22px] items-center gap-1 rounded-[5px] bg-secondary px-1.5 text-[11.5px] font-medium text-foreground">
+          <IconCheck className="size-3.5" strokeWidth={2} aria-hidden="true" />
+          Contacted
+        </span>
+      </header>
+      <div className="space-y-3 px-4 py-4 text-[13px] leading-relaxed">
+        <p className="text-foreground">
+          The first email to this lead is not logged on their HubSpot record.
+          They are on a reply thread, so they were contacted before{" "}
+          {thread.at ? formatDateTime(thread.at) : "the thread started"}.
+        </p>
+        <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[12.5px]">
+          <dt className="text-muted-foreground">Thread</dt>
+          <dd className="font-medium text-foreground">
+            {thread.title ?? "(no subject)"}
+          </dd>
+          <dt className="text-muted-foreground">Earliest</dt>
+          <dd className="text-foreground">
+            {thread.direction === "inbound" ? "Reply from " : "Sent by "}
+            {thread.from ?? "unknown"}
+          </dd>
+        </dl>
+        <p className="text-[12.5px] text-muted-foreground">
+          The whole thread is in the contact history below.
+          {crmUrl ? (
+            <>
+              {" "}
+              <a
+                href={crmUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-foreground underline underline-offset-2"
+              >
+                Open in HubSpot
+              </a>
+            </>
+          ) : null}
+        </p>
+      </div>
+      <p className="mt-auto border-t border-border px-4 py-2 text-[11.5px] text-muted-foreground">
         First contact is marked done on the SLA timer. PA does not draft another
         first touch for this lead.
       </p>

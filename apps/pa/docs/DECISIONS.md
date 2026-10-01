@@ -1296,3 +1296,12 @@ bottom. Revisit one only when its "revisit when" condition happens.
   one sent after the engagement's first form. The list below still shows
   the newest. Leads whose first touch was recorded before this are checked
   once and corrected when an earlier email is found.
+- 2026-10-01 follow-up (Fred: "First touch is still showing the email
+  thread"). On that lead the first email was never logged on the contact;
+  only the reply thread was, and PA showed our reply to a colleague (the
+  lead on CC) as the first touch. A first touch is now addressed to the lead
+  (To, not CC) and is not a reply or forward. When only a thread is logged,
+  PA says the first email is not in HubSpot and uses the thread's earliest
+  email as proof of contact for the SLA timer. Reply headers that wrap over
+  lines and quoted `>` lines are dropped from email text. Recorded first
+  touches are rechecked once under these rules.

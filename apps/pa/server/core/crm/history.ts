@@ -27,6 +27,11 @@ export interface ContactHistory {
    * contact, not only the newest ones shown (D68). Set when asked for.
    */
   firstTouch?: HistoryItem | null;
+  /**
+   * When no first email to the lead is logged, the earliest email of a reply
+   * thread they are on after the form: proof they were contacted (D68).
+   */
+  threadEvidence?: HistoryItem | null;
   /** Kinds HubSpot would not return, for example a token without the email scope. */
   unavailable: Array<{ kind: HistoryKind; reason: string }>;
 }
@@ -116,9 +121,17 @@ export function cleanBody(value: unknown, max = 4000): string | null {
       /&(nbsp|amp|quot|#39|apos|lt|gt);/g,
       (entity) => ENTITIES[entity] ?? entity,
     );
-  // The reply chain: "On Tue, Sep 30, ... wrote:" and everything after it.
-  text = text.split(/\n\s*On .{4,120}wrote:\s*\n/)[0];
+  // The reply chain: "On Tue, Sep 30, ... wrote:" (which mail clients wrap
+  // over two or three lines) and everything after it, then any quoted lines.
+  text = text.split(
+    /\n[ \t]*On [^\n]{4,160}(?:\n[^\n]{0,160}){0,2}?wrote:[ \t]*\n/,
+  )[0];
   text = text.split(/\n-{2,}\s*Original Message\s*-{2,}/i)[0];
+  text = text.split(/\n_{5,}\s*\nFrom:/)[0];
+  text = text
+    .split("\n")
+    .filter((line) => !/^\s*>/.test(line))
+    .join("\n");
   // A link HubSpot renders as its text and its href.
   text = text.replace(/(https?:\/\/\S+?)[:\s]+\1/g, "$1");
   text = text
@@ -238,12 +251,18 @@ async function batchRead(
 export async function fetchContactHistory(
   fetch: HubSpotFetch,
   contactId: string,
-  options: { perType?: number; firstTouchSince?: string | null } = {},
+  options: {
+    perType?: number;
+    firstTouchSince?: string | null;
+    /** The lead's email: a first touch is addressed to them (D68). */
+    leadEmail?: string | null;
+  } = {},
 ): Promise<ContactHistory> {
   const perType = options.perType ?? 20;
   const items: HistoryItem[] = [];
   const unavailable: ContactHistory["unavailable"] = [];
   let firstTouch: HistoryItem | null = null;
+  let threadEvidence: HistoryItem | null = null;
   await Promise.all(
     TYPES.map(async (type) => {
       try {
@@ -259,11 +278,17 @@ export async function fetchContactHistory(
           await batchRead(fetch, type.object, type.properties, wanted)
         ).map((raw) => toItem(type.kind, raw));
         read.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
-        if (type.kind === "email" && options.firstTouchSince)
+        if (type.kind === "email" && options.firstTouchSince) {
+          const all = { items: read, unavailable: [] };
           firstTouch = firstTouchAfter(
-            { items: read, unavailable: [] },
+            all,
             options.firstTouchSince,
+            options.leadEmail,
           );
+          threadEvidence = firstTouch
+            ? null
+            : threadAfter(all, options.firstTouchSince);
+        }
         items.push(...read.slice(0, perType));
       } catch (error) {
         unavailable.push({
@@ -295,16 +320,30 @@ export async function fetchContactHistory(
   }
   items.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
   return options.firstTouchSince !== undefined
-    ? { items, unavailable, firstTouch }
+    ? { items, unavailable, firstTouch, threadEvidence }
     : { items, unavailable };
 }
 
-/** The first email we sent after the form: HubSpot's own first touch. */
+const REPLY = /^\s*(re|fw|fwd|aw|wg|sv|tr)\s*:/i;
+
+const recipients = (value: string | null) =>
+  (value ?? "")
+    .toLowerCase()
+    .split(/[;,\s]+/)
+    .filter(Boolean);
+
+/**
+ * The first email we sent after the form: HubSpot's own first touch. A first
+ * touch is addressed to the lead (not a CC) and starts a conversation; a
+ * reply or forward in someone else's thread is not one (D68).
+ */
 export function firstTouchAfter(
   history: ContactHistory,
   submittedAt: string,
+  leadEmail?: string | null,
 ): HistoryItem | null {
   const since = Date.parse(submittedAt);
+  const lead = leadEmail?.trim().toLowerCase() || null;
   const sent = history.items
     .filter(
       (item) =>
@@ -312,8 +351,29 @@ export function firstTouchAfter(
         item.direction === "outbound" &&
         item.at &&
         Date.parse(item.at) >= since &&
-        !/fail|bounce|draft|scheduled/i.test(item.status ?? ""),
+        !/fail|bounce|draft|scheduled/i.test(item.status ?? "") &&
+        !REPLY.test(item.title ?? "") &&
+        (!lead || !item.to || recipients(item.to).includes(lead)),
     )
     .sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""));
   return sent[0] ?? null;
+}
+
+/** The earliest email of a reply thread after the form, in either direction. */
+export function threadAfter(
+  history: ContactHistory,
+  submittedAt: string,
+): HistoryItem | null {
+  const since = Date.parse(submittedAt);
+  return (
+    history.items
+      .filter(
+        (item) =>
+          item.kind === "email" &&
+          item.at &&
+          Date.parse(item.at) >= since &&
+          REPLY.test(item.title ?? ""),
+      )
+      .sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""))[0] ?? null
+  );
 }

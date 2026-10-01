@@ -146,3 +146,83 @@ describe("the first touch (D68)", () => {
     expect(history.firstTouch?.title).toBe("Touch 11");
   });
 });
+
+describe("a reply thread is not a first touch (D68)", () => {
+  // The lead was emailed outside HubSpot; only the thread is logged: a
+  // colleague's reply, then our reply to the colleague with the lead on CC.
+  const thread = [
+    {
+      id: "1",
+      properties: {
+        hs_timestamp: "2026-10-01T01:37:14Z",
+        hs_email_direction: "INCOMING_EMAIL",
+        hs_email_subject: "Re: your request about the CMS",
+        hs_email_from_email: "colleague@example.com",
+        hs_email_to_email: "lead@example.com;rep@example.com",
+        hs_email_text: "Thanks, see you then.",
+      },
+    },
+    {
+      id: "2",
+      properties: {
+        hs_timestamp: "2026-10-01T18:08:11Z",
+        hs_email_direction: "EMAIL",
+        hs_email_status: "SENT",
+        hs_email_subject: "Re: your request about the CMS",
+        hs_email_from_email: "rep@example.com",
+        hs_email_to_email: "other@example.com",
+        hs_email_text:
+          "Hey Sam!\n\nLooking forward to it.\n\nOn Thu, Oct 1, 2026 at 8:13 AM Sam Lee\nwrote:\n\n> Good morning!\n> We are on a headless CMS.",
+      },
+    },
+  ];
+  const portal: HubSpotFetch = async (path) => {
+    if (path.includes("/associations/emails"))
+      return { results: thread.map((item) => ({ toObjectId: item.id })) };
+    if (path.includes("/associations/")) return { results: [] };
+    if (path === "/crm/v3/objects/emails/batch/read")
+      return { results: thread };
+    if (path.includes("properties=dobby_message_1")) return { properties: {} };
+    throw new Error(`unexpected ${path}`);
+  };
+
+  it("shows no first touch, and the thread as proof of contact", async () => {
+    const history = await fetchContactHistory(portal, "c1", {
+      firstTouchSince: "2026-09-30T19:59:18Z",
+      leadEmail: "lead@example.com",
+    });
+    expect(history.firstTouch).toBeNull();
+    expect(history.threadEvidence?.at).toBe("2026-10-01T01:37:14Z");
+  });
+
+  it("drops a wrapped reply header and the quoted lines", () => {
+    expect(cleanBody(thread[1].properties.hs_email_text)).toBe(
+      "Hey Sam!\n\nLooking forward to it.",
+    );
+    expect(cleanBody("Hi\n> quoted\nThanks")).toBe("Hi\nThanks");
+  });
+
+  it("takes a first email addressed to the lead", () => {
+    const sent = firstTouchAfter(
+      {
+        items: [
+          {
+            id: "a",
+            kind: "email",
+            direction: "outbound",
+            at: "2026-10-01T09:00:00Z",
+            title: "Your CMS request",
+            preview: "Hi",
+            from: "rep@example.com",
+            to: "lead@example.com",
+            status: "SENT",
+          },
+        ],
+        unavailable: [],
+      },
+      "2026-09-30T19:59:18Z",
+      "LEAD@example.com",
+    );
+    expect(sent?.id).toBe("a");
+  });
+});

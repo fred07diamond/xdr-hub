@@ -32,6 +32,7 @@ import { SalesCycle, SlaDetail } from "@/components/pa/clock";
 import {
   ContactHistoryCard,
   FirstTouchCard,
+  FirstTouchNotLoggedCard,
   useContactHistory,
   type HistoryResult,
 } from "@/components/pa/contact-history";
@@ -830,6 +831,11 @@ export default function EngagementRoute() {
               <FirstTouchCard
                 email={historyData.firstTouch}
                 lead={detail.draft.to}
+              />
+            ) : historyData?.threadEvidence ? (
+              <FirstTouchNotLoggedCard
+                thread={historyData.threadEvidence}
+                crmUrl={detail.lead.crmUrl}
               />
             ) : (
               <DraftCard
