@@ -292,6 +292,7 @@ function leadRouteView(route: LeadRouteResult): LeadRouteView {
     paOwner: route.paOwner,
     segment: route.segment,
     needs: route.needs ?? null,
+    roundRobin: route.roundRobin ?? null,
   };
 }
 

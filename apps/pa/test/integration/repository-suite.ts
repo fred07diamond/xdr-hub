@@ -375,6 +375,25 @@ export function defineRepositorySuite(dialect: "sqlite" | "postgres") {
       expect(await m.repo.listRouteOverrides()).toHaveLength(1);
       await m.repo.clearRouteOverride(engagement.id);
       expect(await m.repo.getRouteOverride(engagement.id)).toBeNull();
+
+      // The round robin keeps the first pick for a lead (D78).
+      const pick = {
+        engagementId: engagement.id,
+        aeEmail: "ent-a@example.com",
+        method: "round_robin" as const,
+        assignedAt: at,
+      };
+      expect(await m.repo.insertAeAssignmentIfAbsent(pick)).toBe(true);
+      expect(
+        await m.repo.insertAeAssignmentIfAbsent({
+          ...pick,
+          aeEmail: "ent-b@example.com",
+        }),
+      ).toBe(false);
+      expect((await m.repo.getAeAssignment(engagement.id))?.aeEmail).toBe(
+        "ent-a@example.com",
+      );
+      expect(await m.repo.listAeAssignments()).toHaveLength(1);
     });
 
     it("fails loudly on a corrupt JSON column instead of passing a string on", async () => {

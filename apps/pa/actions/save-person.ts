@@ -8,7 +8,7 @@ const email = z.string().trim().toLowerCase().email();
 
 export default defineAction({
   description:
-    "People only. Save someone leads are routed to (D66): their role, meeting link, and, for a PA, their pod AE. Stored in PA only; nothing is written to HubSpot.",
+    "People only. Save someone leads are routed to (D66): their role (PA, Enterprise AE in the round robin, Commercial AE, CSM) and meeting link. Stored in PA only; nothing is written to HubSpot.",
   schema: z.object({
     email,
     displayName: z.string().trim().max(120).nullable().optional(),

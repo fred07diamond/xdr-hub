@@ -1,5 +1,5 @@
-// The people leads are routed to (D66): role, meeting link, and a PA's pod
-// AE. Owners PA has seen on leads are listed so their details can be filled.
+// The people leads are routed to (D66, D78): role and meeting link. Owners PA
+// has seen on leads are listed so their details can be filled.
 import {
   actionErrorMessage,
   useActionMutation,
@@ -28,7 +28,7 @@ const field =
 
 const ROLE_LABELS = {
   pa: "PA",
-  ae: "AE",
+  ae: "Enterprise AE",
   commercial_ae: "Commercial AE",
   csm: "CSM",
 } as const;
@@ -62,12 +62,11 @@ function PersonRow({
     (person.seenAsPa > 0 ? "pa" : person.seenAsAccountOwner > 0 ? "ae" : null);
   const [role, setRole] = useState<string>(guessRole ?? "");
   const [link, setLink] = useState(person.meetingLink ?? "");
-  const [pod, setPod] = useState(person.podAeEmail ?? "");
   const dirty =
     !person.saved ||
     role !== (person.role ?? "") ||
     link !== (person.meetingLink ?? "") ||
-    pod !== (person.podAeEmail ?? "");
+    false;
   const name = person.displayName ?? person.email;
 
   function submit() {
@@ -77,7 +76,8 @@ function PersonRow({
         displayName: person.displayName,
         role: (role || null) as never,
         meetingLink: link.trim() || null,
-        podAeEmail: role === "pa" ? pod || null : null,
+        // Pod AEs no longer route leads (D78); keep what is stored.
+        podAeEmail: person.podAeEmail,
       },
       {
         onSuccess: () => {
@@ -90,7 +90,7 @@ function PersonRow({
   }
 
   return (
-    <li className="grid gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_8.5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] md:items-center">
+    <li className="grid gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_9rem_minmax(0,2fr)_auto] md:items-center">
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium text-foreground">
           {name}
@@ -137,32 +137,6 @@ function PersonRow({
           disabled={!canEdit}
           onChange={(event) => setLink(event.target.value)}
         />
-      </label>
-      <label className="grid gap-0.5">
-        <span className="text-[11px] text-muted-foreground md:sr-only">
-          Pod AE
-        </span>
-        {role === "pa" ? (
-          <select
-            className={field}
-            value={pod}
-            disabled={!canEdit}
-            onChange={(event) => setPod(event.target.value)}
-          >
-            <option value="">No pod AE</option>
-            {aes
-              .filter((ae) => ae.email !== person.email)
-              .map((ae) => (
-                <option key={ae.email} value={ae.email}>
-                  {ae.displayName ?? ae.email}
-                </option>
-              ))}
-          </select>
-        ) : (
-          <span className="hidden text-[12px] text-muted-foreground md:block">
-            {role ? "Only PAs have a pod AE" : ""}
-          </span>
-        )}
       </label>
       <div className="flex justify-end">
         {canEdit ? (
@@ -233,11 +207,12 @@ export function PeopleEditor() {
           Routing: people and meeting links
         </h2>
         <p className="max-w-[70ch] text-[12.5px] text-muted-foreground">
-          Who takes the meeting once a lead is triaged. Exceptional leads go to
-          the account's AE; else a commercial account (under the playbook's
-          employee line) goes to the Commercial AE, and a bigger one to the PA's
-          pod AE. The email carries that AE's meeting link. When the PA takes
-          the call, it carries the PA's link. Saved in PA only.
+          Who takes the meeting once a lead is triaged. An exceptional lead goes
+          to the AE who owns the account in HubSpot. With no AE owner, 8,000
+          employees or fewer goes to the Commercial AE, and bigger accounts
+          round robin across the Enterprise AEs. The email carries that AE's
+          meeting link. When the PA takes the call, it carries the PA's link.
+          Saved in PA only.
           {hasCommercial ? "" : " No Commercial AE is set yet."}
         </p>
       </div>

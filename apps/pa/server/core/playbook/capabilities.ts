@@ -110,7 +110,7 @@ export const EVALUATORS: Record<RuleId, Evaluator> = {
     reads: ["max_employees"],
     crmFields: [],
     summary:
-      "Exceptional leads at companies under this many employees go to the commercial AE",
+      "With no AE owner: at or under this many employees to the Commercial AE, above it round robin to an Enterprise AE",
   },
   "rule.routing.sal_stale_days": {
     paramSchema: ruleParamSchemas["rule.routing.sal_stale_days"],

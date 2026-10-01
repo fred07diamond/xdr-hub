@@ -3,6 +3,7 @@ import { checkDecisionDeadlines } from "./decisions.js";
 import {
   detectFirstTouches,
   processRefreshQueue,
+  assignEnterpriseAes,
   queueFollowUpRefreshes,
   ensureInboundAgent,
   INTAKE_CORRELATION,
@@ -33,6 +34,8 @@ export async function runInboundSweep(owner: {
   const followUps = await queueFollowUpRefreshes();
   // Refresh requests (D63) before counting work, so refreshed leads are woken too.
   const refresh = { ...(await processRefreshQueue(15_000)), followUps };
+  // The enterprise round robin's picks (D78), before drafts are written.
+  const assigned = await assignEnterpriseAes();
   // First touches sent from HubSpot (D64), so PA stops drafting for them.
   const history = await detectFirstTouches();
   const repository = repo();
@@ -79,6 +82,7 @@ export async function runInboundSweep(owner: {
     agentWork: work.length,
     refresh,
     history,
+    assigned,
     agentSetup,
     agent,
     org: Boolean(owner.orgId),

@@ -472,6 +472,15 @@ CREATE TABLE IF NOT EXISTS pa_route_overrides (
 )
 `;
 
+export const aeAssignments = `
+CREATE TABLE IF NOT EXISTS pa_ae_assignments (
+  engagement_id TEXT PRIMARY KEY,
+  ae_email TEXT NOT NULL,
+  method TEXT NOT NULL,
+  assigned_at TEXT NOT NULL
+)
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -489,6 +498,7 @@ export const PA_MIGRATIONS = [
   { version: 8, name: "pa-rep-decisions", sql: repDecisions },
   { version: 9, name: "pa-lead-briefs", sql: leadBriefs },
   { version: 10, name: "pa-lead-routing", sql: leadRouting },
+  { version: 11, name: "pa-ae-assignments", sql: aeAssignments },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {

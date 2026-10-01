@@ -197,7 +197,16 @@ export interface LeadBriefRecord {
 
 export type PersonRole = "pa" | "ae" | "commercial_ae" | "csm";
 
-/** Someone a lead can be routed to (D66): role, meeting link, pod AE. */
+/** An enterprise AE given to a lead by round robin (D78). */
+export interface AeAssignmentRecord {
+  engagementId: string;
+  aeEmail: string;
+  /** carried: copied onto the lead's new run by a refresh; not counted again. */
+  method: "round_robin" | "carried";
+  assignedAt: string;
+}
+
+/** Someone a lead can be routed to (D66): role and meeting link. podAeEmail is no longer used for routing (D78). */
 export interface PersonRecord {
   email: string;
   displayName: string | null;
@@ -546,6 +555,10 @@ export interface PaRepository extends PlaybookStore {
   clearRouteOverride(engagementId: string): Promise<void>;
   getRouteOverride(engagementId: string): Promise<RouteOverrideRecord | null>;
   listRouteOverrides(): Promise<RouteOverrideRecord[]>;
+  /** Keeps the first assignment; returns false when the lead already had one. */
+  insertAeAssignmentIfAbsent(record: AeAssignmentRecord): Promise<boolean>;
+  getAeAssignment(engagementId: string): Promise<AeAssignmentRecord | null>;
+  listAeAssignments(): Promise<AeAssignmentRecord[]>;
 
   insertDecisionIfAbsent(record: DecisionRecord): Promise<boolean>;
   getDecision(engagementId: string): Promise<DecisionRecord | null>;

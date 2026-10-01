@@ -7,7 +7,7 @@ import { now, repo } from "../server/lib/pa-context.js";
 
 export default defineAction({
   description:
-    "People only. Save the meeting link of the person a lead is routed to (D72), from the lead page. With podAeFor, also make them that PA's pod AE. The link is kept on that person, so every lead routed to them uses it and nobody is asked again; their role and pod AE are kept. Drafts are rewritten with the link. Stored in PA only.",
+    "People only. Save the meeting link of the person a lead is routed to (D72), from the lead page. The link is kept on that person, so every lead routed to them uses it and nobody is asked again; their role is kept. Drafts are rewritten with the link. Stored in PA only.",
   schema: z.object({
     email: z.string().trim().toLowerCase().email(),
     meetingLink: z

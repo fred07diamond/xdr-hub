@@ -93,12 +93,14 @@ export interface LeadRouteResult {
   meetingWith: MeetingWith | null;
   /** What is missing to finish the route, for example a meeting link. */
   gaps: string[];
-  /** The lead's PA, so a missing pod AE can be set from the lead (D72). */
+  /** The lead's PA. */
   paOwner: RoutePerson | null;
   /** Commercial or enterprise, from the company's employees (D77). */
   segment: Segment | null;
   /** Who is missing to finish the route, so the lead page can ask once. */
-  needs?: "commercial_ae" | "pod_ae" | null;
+  needs?: "commercial_ae" | "enterprise_ae" | null;
+  /** The enterprise round robin: given and saved, or next up (D78). */
+  roundRobin?: "assigned" | "pending" | null;
 }
 
 export interface LeadRouteInput {
@@ -121,22 +123,57 @@ export interface LeadRouteInput {
   suggestRecycle?: boolean;
   /** The company's employees, for the commercial segment (D77). */
   employees?: number | null;
-  /** Under this many employees is a commercial account (playbook). */
+  /** At or under this many employees is a commercial account (playbook). */
   commercialMaxEmployees?: number | null;
+  /** The enterprise round robin (D78): the AE this lead was given, or next up. */
+  enterprise?: { assigned: RoutePerson | null; next: RoutePerson | null };
 }
 
 export type Segment = "commercial" | "enterprise";
 
-/** Commercial when the company is under the playbook's line (D77). */
+/** Commercial at or under the playbook's line, enterprise above it (D78). */
 export function segmentOf(input: {
   employees?: number | null;
   commercialMaxEmployees?: number | null;
 }): Segment | null {
   if (input.employees === null || input.employees === undefined) return null;
   if (!input.commercialMaxEmployees) return null;
-  return input.employees < input.commercialMaxEmployees
+  return input.employees <= input.commercialMaxEmployees
     ? "commercial"
     : "enterprise";
+}
+
+/**
+ * The next enterprise AE in the round robin (D78): the one given the fewest
+ * leads, then the one given a lead longest ago, then by email.
+ */
+export function nextEnterpriseAe(
+  people: PersonRecord[],
+  assignments: Array<{ aeEmail: string; assignedAt: string; method?: string }>,
+): RoutePerson | null {
+  const aes = people.filter((person) => person.role === "ae");
+  if (aes.length === 0) return null;
+  const stats = new Map<string, { count: number; last: string }>();
+  for (const item of assignments) {
+    // A refresh's copy of an earlier pick is the same lead, not a new one.
+    if (item.method === "carried") continue;
+    const email = item.aeEmail.toLowerCase();
+    const current = stats.get(email) ?? { count: 0, last: "" };
+    stats.set(email, {
+      count: current.count + 1,
+      last: item.assignedAt > current.last ? item.assignedAt : current.last,
+    });
+  }
+  const pick = [...aes].sort((a, b) => {
+    const x = stats.get(a.email) ?? { count: 0, last: "" };
+    const y = stats.get(b.email) ?? { count: 0, last: "" };
+    return (
+      x.count - y.count ||
+      x.last.localeCompare(y.last) ||
+      a.email.localeCompare(b.email)
+    );
+  })[0];
+  return { email: pick.email, name: pick.displayName };
 }
 
 const nameOf = (person: RoutePerson | PersonRecord) =>
@@ -161,14 +198,20 @@ function meetingWith(
 const isRoute = (value: string | null | undefined): value is LeadRoute =>
   Boolean(value && (LEAD_ROUTES as readonly string[]).includes(value));
 
-/** The AE for an enterprise lead: the account's AE, else the PA's pod AE. */
+/**
+ * The AE for an exceptional lead (D78): the AE who owns the account in
+ * HubSpot; else, at 8,000 employees or fewer, the commercial AE; else the
+ * next enterprise AE in the round robin.
+ */
 function aeFor(
   input: LeadRouteInput,
   people: Map<string, PersonRecord>,
+  gaps: string[],
 ): {
   ae: RoutePerson | null;
   why: string;
-  missing?: "commercial_ae" | "pod_ae";
+  missing?: "commercial_ae" | "enterprise_ae";
+  roundRobin?: "assigned" | "pending";
 } {
   const account = input.accountOwner;
   const accountIsPa =
@@ -176,32 +219,39 @@ function aeFor(
     (people.get(account.email.toLowerCase())?.role === "pa" ||
       account.email.toLowerCase() === input.paOwner?.email.toLowerCase());
   if (account && !accountIsPa)
-    return { ae: account, why: "the account's AE in HubSpot" };
-  // A commercial account goes to the commercial AE (D77).
-  if (segmentOf(input) === "commercial") {
+    return { ae: account, why: "the AE who owns the account in HubSpot" };
+  const line = (input.commercialMaxEmployees ?? 0).toLocaleString();
+  const segment = segmentOf(input);
+  if (segment === "commercial") {
     const commercial = [...people.values()]
       .filter((person) => person.role === "commercial_ae")
       .sort((a, b) => a.email.localeCompare(b.email))[0];
-    const line = (input.commercialMaxEmployees ?? 0).toLocaleString();
     if (commercial)
       return {
         ae: { email: commercial.email, name: commercial.displayName },
-        why: `the commercial AE (a commercial account, under ${line} employees)`,
+        why: `the commercial AE (${line} employees or fewer, no AE owner)`,
       };
     return { ae: null, why: "", missing: "commercial_ae" };
   }
-  const pa = input.paOwner
-    ? people.get(input.paOwner.email.toLowerCase())
-    : undefined;
-  const pod = pa?.podAeEmail?.toLowerCase();
-  if (pod) {
-    const saved = people.get(pod);
+  if (segment === null && input.commercialMaxEmployees)
+    gaps.push(
+      "Employee count unknown, so it goes to the enterprise round robin. Check the company size.",
+    );
+  const assigned = input.enterprise?.assigned ?? null;
+  if (assigned)
     return {
-      ae: { email: pod, name: saved?.displayName ?? null },
-      why: `${nameOf(input.paOwner!)}'s pod AE`,
+      ae: assigned,
+      why: "the enterprise AE the round robin gave this lead",
+      roundRobin: "assigned",
     };
-  }
-  return { ae: null, why: "", missing: "pod_ae" };
+  const next = input.enterprise?.next ?? null;
+  if (next)
+    return {
+      ae: next,
+      why: "next up in the enterprise AE round robin",
+      roundRobin: "pending",
+    };
+  return { ae: null, why: "", missing: "enterprise_ae" };
 }
 
 export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
@@ -273,23 +323,24 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
         : "No class yet, so qualify first.";
 
   if (route === "route_to_ae") {
-    const { ae, why: whose, missing } = aeFor(input, people);
+    const { ae, why: whose, missing, roundRobin } = aeFor(input, people, gaps);
     if (!ae) {
       gaps.push(
         missing === "commercial_ae"
-          ? `No commercial AE for this commercial account. Set one on the Team page.`
-          : input.paOwner
-            ? `No AE for this lead: the account has no AE owner and ${nameOf(input.paOwner)} has no pod AE. Set one on the Team page.`
-            : "No AE for this lead: the account has no AE owner and the lead has no PA.",
+          ? "No commercial AE for this commercial account. Set one on the Team page."
+          : "No enterprise AEs for the round robin. Add one on the Team page.",
       );
       return { ...result(route, source, why), needs: missing ?? null };
     }
-    return result(
-      route,
-      source,
-      `${why} ${nameOf(ae)} is ${whose}.`,
-      meetingWith(ae, "ae", people, gaps),
-    );
+    return {
+      ...result(
+        route,
+        source,
+        `${why} ${nameOf(ae)} is ${whose}.`,
+        meetingWith(ae, "ae", people, gaps),
+      ),
+      roundRobin: roundRobin ?? null,
+    };
   }
   if (route === "pa_meeting") {
     if (!input.paOwner) {

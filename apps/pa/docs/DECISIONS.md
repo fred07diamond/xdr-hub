@@ -1461,3 +1461,25 @@ bottom. Revisit one only when its "revisit when" condition happens.
   their meeting link. The Route box marks the lead as a commercial or
   enterprise account, and the commercial AE is looped in on the email like
   any AE (D72).
+
+## D78. AE routing: AE owner, Commercial AE, or the Enterprise AE round robin (2026-10-01)
+
+- Fred's rule for an exceptional lead, replacing D77's ordering and the PA
+  pod AE (D72):
+  - Owned by an AE in HubSpot: route to that AE owner.
+  - Not owned by an AE, 8,000 employees or fewer: route to the Commercial AE.
+  - Not owned by an AE, more than 8,000 employees: round robin to an
+    Enterprise AE.
+- The line is "or fewer" now (`max_employees` is inclusive). An unknown
+  employee count goes to the enterprise round robin and the lead says to
+  check the size.
+- **Round robin:** the Enterprise AE given the fewest leads, then the one
+  given a lead longest ago. The minute sweep saves each pick
+  (`pa_ae_assignments`, migration v11) before drafts are written, so a lead
+  keeps its AE and the rotation stays fair; until it is saved, the lead
+  shows who is next up. A refresh carries the pick over without counting it
+  again.
+- **People:** the Team page roles are PA, Enterprise AE (the round robin),
+  Commercial AE, and CSM. The pod AE column is gone; stored pod AEs are no
+  longer used. With no Enterprise AE or no Commercial AE set, the lead's
+  Route box asks once for one.

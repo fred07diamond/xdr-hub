@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (AE routing)
+
+- Exceptional leads: owned by an AE goes to that AE; not owned and 8,000
+  employees or fewer goes to the Commercial AE; not owned and bigger round
+  robins across the Enterprise AEs, and the lead keeps its pick (D78).
+- Team page roles: PA, Enterprise AE, Commercial AE, CSM. Pod AEs are gone.
+
 ## 2026-10-01 (commercial AE)
 
 - Exceptional leads at commercial accounts (under 8,000 employees) go to the

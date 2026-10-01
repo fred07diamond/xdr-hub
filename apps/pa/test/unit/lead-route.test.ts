@@ -1,11 +1,12 @@
-// Lead routing (D66): after triage, who takes the meeting and whose link the
-// email carries. The owner is the PA; the route is separate.
+// Lead routing (D66, D78): after triage, who takes the meeting and whose link
+// the email carries. The owner is the PA; the route is separate.
 import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_ROUTE_BY_CLASS,
   draftRouteOf,
   leadRouteFor,
+  nextEnterpriseAe,
   type LeadRouteInput,
 } from "../../server/core/lead-route/index.js";
 import type { PersonRecord } from "../../server/core/repo/types.js";
@@ -27,10 +28,14 @@ const person = (
 });
 
 const people = [
-  person("pa@example.com", "pa", { podAeEmail: "pod-ae@example.com" }),
-  person("pod-ae@example.com", "ae"),
+  person("pa@example.com", "pa"),
+  person("ent-a@example.com", "ae"),
+  person("ent-b@example.com", "ae"),
+  person("commercial-ae@example.com", "commercial_ae"),
   person("account-ae@example.com", "ae"),
 ];
+
+const NEXT = { email: "ent-a@example.com", name: "ent-a" };
 
 const base: LeadRouteInput = {
   precheckOutcome: "continue",
@@ -45,6 +50,9 @@ const base: LeadRouteInput = {
   people,
   byClass: DEFAULT_ROUTE_BY_CLASS,
   override: null,
+  employees: 20000,
+  commercialMaxEmployees: 8000,
+  enterprise: { assigned: null, next: NEXT },
 };
 
 describe("leadRouteFor", () => {
@@ -67,34 +75,77 @@ describe("leadRouteFor", () => {
     });
   });
 
-  it("falls back to the PA's pod AE when the account has no AE", () => {
+  it("round robins an unowned account over 8,000 employees to an Enterprise AE (D78)", () => {
     const route = leadRouteFor(base);
-    expect(route.meetingWith?.email).toBe("pod-ae@example.com");
-    // An account owned by the PA themself is not an AE.
-    const own = leadRouteFor({
+    expect(route.segment).toBe("enterprise");
+    expect(route.meetingWith?.email).toBe("ent-a@example.com");
+    expect(route.roundRobin).toBe("pending");
+    // Once saved, the lead keeps its AE.
+    const kept = leadRouteFor({
       ...base,
-      accountOwner: { email: "pa@example.com", name: "Pat" },
+      enterprise: {
+        assigned: { email: "ent-b@example.com", name: null },
+        next: NEXT,
+      },
     });
-    expect(own.meetingWith?.email).toBe("pod-ae@example.com");
+    expect(kept.meetingWith?.email).toBe("ent-b@example.com");
+    expect(kept.roundRobin).toBe("assigned");
+    // An account owned by the PA themself is not owned by an AE.
+    expect(
+      leadRouteFor({
+        ...base,
+        accountOwner: { email: "pa@example.com", name: "Pat" },
+      }).meetingWith?.email,
+    ).toBe("ent-a@example.com");
+  });
+
+  it("picks the Enterprise AE given the fewest leads, then the longest ago", () => {
+    expect(nextEnterpriseAe(people, [])?.email).toBe("account-ae@example.com");
+    const assignments = [
+      { aeEmail: "account-ae@example.com", assignedAt: "2026-10-01T10:00:00Z" },
+      { aeEmail: "ent-a@example.com", assignedAt: "2026-10-01T11:00:00Z" },
+      { aeEmail: "ent-b@example.com", assignedAt: "2026-10-01T09:00:00Z" },
+    ];
+    expect(nextEnterpriseAe(people, assignments)?.email).toBe(
+      "ent-b@example.com",
+    );
+    // A refresh's copy is the same lead, so it does not count again.
+    expect(
+      nextEnterpriseAe(people, [
+        ...assignments,
+        {
+          aeEmail: "ent-b@example.com",
+          assignedAt: "2026-10-01T12:00:00Z",
+          method: "carried",
+        },
+      ])?.email,
+    ).toBe("ent-b@example.com");
+    expect(nextEnterpriseAe([person("pa@example.com", "pa")], [])).toBeNull();
   });
 
   it("says what is missing instead of guessing", () => {
-    const noPod = leadRouteFor({
+    const none = leadRouteFor({
       ...base,
       people: [person("pa@example.com", "pa")],
+      enterprise: { assigned: null, next: null },
     });
-    expect(noPod.meetingWith).toBeNull();
-    expect(noPod.gaps[0]).toMatch(/pod AE/);
+    expect(none.meetingWith).toBeNull();
+    expect(none.needs).toBe("enterprise_ae");
+    expect(none.gaps[0]).toMatch(/No enterprise AEs/);
     const noLink = leadRouteFor({
       ...base,
       people: [
-        person("pa@example.com", "pa", { podAeEmail: "pod-ae@example.com" }),
-        person("pod-ae@example.com", "ae", { meetingLink: null }),
+        person("pa@example.com", "pa"),
+        person("ent-a@example.com", "ae", { meetingLink: null }),
       ],
     });
     expect(noLink.meetingWith?.link).toBeNull();
     expect(noLink.gaps[0]).toMatch(/No meeting link/);
     expect(draftRouteOf(noLink)).toMatchObject({ needsLink: true, link: null });
+    // An unknown size goes to the round robin, flagged.
+    const unknown = leadRouteFor({ ...base, employees: null });
+    expect(unknown.meetingWith?.email).toBe("ent-a@example.com");
+    expect(unknown.gaps[0]).toMatch(/Employee count unknown/);
   });
 
   it("qualifies a Standard lead first, and the PA can take the call", () => {
@@ -146,48 +197,29 @@ describe("leadRouteFor", () => {
     ).toBe("pa_meeting");
   });
 
-  it("sends a commercial account to the commercial AE (D77)", () => {
-    const commercialPeople = [
-      ...people,
-      person("commercial-ae@example.com", "commercial_ae"),
-    ];
-    const small = leadRouteFor({
-      ...base,
-      people: commercialPeople,
-      employees: 520,
-      commercialMaxEmployees: 8000,
-    });
-    expect(small.segment).toBe("commercial");
-    expect(small.meetingWith?.email).toBe("commercial-ae@example.com");
-    expect(draftRouteOf(small).cc).toBe("commercial-ae@example.com");
-
-    // 8,000 and up, or an unknown size, stays with the pod AE.
-    for (const employees of [8000, null]) {
-      const big = leadRouteFor({
-        ...base,
-        people: commercialPeople,
-        employees,
-        commercialMaxEmployees: 8000,
-      });
-      expect(big.meetingWith?.email).toBe("pod-ae@example.com");
+  it("sends an unowned account of 8,000 employees or fewer to the Commercial AE", () => {
+    for (const employees of [520, 8000]) {
+      const route = leadRouteFor({ ...base, employees });
+      expect(route.segment).toBe("commercial");
+      expect(route.meetingWith?.email).toBe("commercial-ae@example.com");
+      expect(draftRouteOf(route).cc).toBe("commercial-ae@example.com");
     }
-
-    // The account's own AE still comes first.
+    expect(leadRouteFor({ ...base, employees: 8001 }).segment).toBe(
+      "enterprise",
+    );
+    // Owned by an AE: that AE, whatever the size.
     expect(
       leadRouteFor({
         ...base,
-        people: commercialPeople,
         employees: 520,
-        commercialMaxEmployees: 8000,
         accountOwner: { email: "account-ae@example.com", name: "Alex" },
       }).meetingWith?.email,
     ).toBe("account-ae@example.com");
-
-    // No commercial AE set: say so, and ask for one.
+    // No Commercial AE set: say so, and ask for one.
     const missing = leadRouteFor({
       ...base,
       employees: 520,
-      commercialMaxEmployees: 8000,
+      people: people.filter((item) => item.role !== "commercial_ae"),
     });
     expect(missing.meetingWith).toBeNull();
     expect(missing.needs).toBe("commercial_ae");

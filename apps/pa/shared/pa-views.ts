@@ -132,12 +132,14 @@ export interface LeadRouteView {
   gaps: string[];
   /** Whether the PA can change it on this lead. */
   canOverride: boolean;
-  /** The lead's PA (D72), to set their pod AE from the lead. */
+  /** The lead's PA. */
   paOwner: { email: string; name: string | null } | null;
   /** Commercial or enterprise, from the company's employees (D77). */
   segment: "commercial" | "enterprise" | null;
   /** Who is missing to finish the route, so the lead page asks once. */
-  needs: "commercial_ae" | "pod_ae" | null;
+  needs: "commercial_ae" | "enterprise_ae" | null;
+  /** The enterprise round robin: given and saved, or next up (D78). */
+  roundRobin: "assigned" | "pending" | null;
 }
 
 export type DraftStatus =

@@ -423,6 +423,7 @@ export async function refreshInbox(inboxId: string): Promise<{
         draft:
           (await repository.listDrafts(engagement.id)).slice(-1)[0] ?? null,
         override: await repository.getRouteOverride(engagement.id),
+        assignment: await repository.getAeAssignment(engagement.id),
       }
     : null;
   if (engagement && engagement.state !== "closed") {
@@ -491,6 +492,13 @@ export async function refreshInbox(inboxId: string): Promise<{
       await repository.setRouteOverride({
         ...carried.override,
         engagementId: run.engagementId,
+      });
+    // The lead keeps the enterprise AE the round robin gave it.
+    if (carried.assignment)
+      await repository.insertAeAssignmentIfAbsent({
+        ...carried.assignment,
+        engagementId: run.engagementId,
+        method: "carried",
       });
     // The draft stays on screen; the agent rewrites it only if the route or
     // the rules changed (listAgentWork).
@@ -593,6 +601,47 @@ export async function queueFollowUpRefreshes(limit = 5): Promise<number> {
     queued += 1;
   }
   return queued;
+}
+
+/**
+ * Saves the enterprise round robin's pick for leads that need one (D78), so
+ * a lead keeps its AE and the next lead goes to the next AE. Oldest first.
+ */
+export async function assignEnterpriseAes(limit = 10): Promise<number> {
+  const repository = repo();
+  const release = await activeRelease(repository);
+  const people = await repository.listPeople();
+  if (!people.some((person) => person.role === "ae")) return 0;
+  const assignments = await repository.listAeAssignments();
+  const rows = (
+    await repository.listInboxBySource(HUBSPOT_SOURCE, ["done"], 300)
+  ).sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+  let assigned = 0;
+  for (const row of rows) {
+    if (assigned >= limit) break;
+    const submission = await repository.getSubmissionByInbox(row.id);
+    if (!submission?.engagementId) continue;
+    const engagement = await repository.getEngagement(submission.engagementId);
+    if (!engagement || engagement.state === "closed") continue;
+    if (assignments.some((item) => item.engagementId === engagement.id))
+      continue;
+    const route = await routeForEngagement(repository, release, engagement, {
+      people,
+      assignments,
+    });
+    if (route.roundRobin !== "pending" || !route.meetingWith) continue;
+    const record = {
+      engagementId: engagement.id,
+      aeEmail: route.meetingWith.email,
+      method: "round_robin" as const,
+      assignedAt: now().toISOString(),
+    };
+    if (await repository.insertAeAssignmentIfAbsent(record)) {
+      assignments.push(record);
+      assigned += 1;
+    }
+  }
+  return assigned;
 }
 
 /** One batch of queued refreshes, within a time budget. */

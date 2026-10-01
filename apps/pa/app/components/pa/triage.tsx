@@ -461,19 +461,19 @@ function MeetingLinkField({
 }
 
 /**
- * Asked once (D72): an exceptional lead has no AE, because the account has no
- * AE owner and the PA has no pod AE. Saving makes this AE the PA's pod AE,
- * with their meeting link, so the PA's next leads route there too.
+ * Asked once (D77, D78): an exceptional lead with no AE owner needs the
+ * Commercial AE, or an Enterprise AE for the round robin, and none is set.
+ * Saving adds them with their meeting link, so no lead asks again.
  */
-function PodAeField({
+function AeSetupField({
   pa,
   onSaved,
-  mode = "pod_ae",
+  mode = "enterprise_ae",
 }: {
   pa: NonNullable<LeadRouteView["paOwner"]> | null;
   onSaved?: () => void;
-  /** pod_ae: the PA's AE. commercial_ae: the AE for commercial accounts (D77). */
-  mode?: "pod_ae" | "commercial_ae";
+  /** enterprise_ae: adds an AE to the round robin (D78). commercial_ae: the commercial AE (D77). */
+  mode?: "enterprise_ae" | "commercial_ae";
 }) {
   const commercial = mode === "commercial_ae";
   const save = useActionMutation("set-meeting-link");
@@ -500,7 +500,6 @@ function PodAeField({
   const [link, setLink] = useState("");
   const known = aes.find((ae) => ae.email === email.trim().toLowerCase());
   const needsLink = !known?.meetingLink;
-  const paName = pa?.name ?? pa?.email ?? "the PA";
   const valid =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
     (!needsLink || /^https:\/\/\S+$/.test(link.trim()));
@@ -515,14 +514,14 @@ function PodAeField({
             meetingLink: (needsLink ? link : known!.meetingLink!).trim(),
             displayName: known?.displayName ?? null,
             role: commercial ? "commercial_ae" : "ae",
-            podAeFor: commercial ? null : (pa?.email ?? null),
+            podAeFor: null,
           },
           {
             onSuccess: () => {
               toast.success(
                 commercial
                   ? "Saved. Exceptional leads at commercial accounts now route to this AE."
-                  : `Saved. ${paName}'s enterprise leads now route to this AE.`,
+                  : "Saved. This AE is in the enterprise round robin now.",
               );
               onSaved?.();
             },
@@ -532,12 +531,12 @@ function PodAeField({
       }}
     >
       <p className="text-[12px] font-medium text-foreground">
-        {commercial ? "Who is the commercial AE?" : `Who is ${paName}'s AE?`}
+        {commercial ? "Who is the commercial AE?" : "Add an enterprise AE"}
       </p>
       <p className="text-[11.5px] text-muted-foreground">
         {commercial
           ? "Asked once. Saved as the Commercial AE and used for every exceptional lead at a commercial account."
-          : `Asked once. Saved as ${paName}'s pod AE and used for every enterprise lead of theirs with no account AE.`}
+          : "Asked once. No enterprise AEs are set up yet; this one joins the round robin for accounts over the commercial line with no AE owner."}
       </p>
       <div className="mt-1.5 grid gap-1.5">
         <input
@@ -594,15 +593,11 @@ export function LeadRouteBlock({
     !who && value.needs === "commercial_ae" && onLinkSaved,
   );
   const askForAe = Boolean(
-    !who &&
-    !askForCommercial &&
-    value.route === "route_to_ae" &&
-    value.paOwner &&
-    onLinkSaved,
+    !who && value.needs === "enterprise_ae" && onLinkSaved,
   );
   const hidden = (gap: string) =>
     (askForLink && /No meeting link/.test(gap)) ||
-    (askForAe && /No AE for this lead/.test(gap)) ||
+    (askForAe && /No enterprise AEs/.test(gap)) ||
     (askForCommercial && /No commercial AE/.test(gap));
   return (
     <div className="rounded-md border border-border px-3 py-2.5">
@@ -667,11 +662,11 @@ export function LeadRouteBlock({
       {askForLink && who ? (
         <MeetingLinkField who={who} onSaved={onLinkSaved} />
       ) : null}
-      {askForAe && value.paOwner ? (
-        <PodAeField pa={value.paOwner} onSaved={onLinkSaved} />
+      {askForAe ? (
+        <AeSetupField pa={value.paOwner} onSaved={onLinkSaved} />
       ) : null}
       {askForCommercial ? (
-        <PodAeField
+        <AeSetupField
           pa={value.paOwner}
           onSaved={onLinkSaved}
           mode="commercial_ae"

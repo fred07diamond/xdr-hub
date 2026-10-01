@@ -20,6 +20,7 @@ import {
   type LeadBriefRecord,
   type PersonRecord,
   type RouteOverrideRecord,
+  type AeAssignmentRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type SubmissionRecord,
@@ -60,6 +61,7 @@ const {
   paLeadBriefs,
   paPeople,
   paRouteOverrides,
+  paAeAssignments,
   paHandbookDocs,
   paHandbookRevisions,
   paSubmissions,
@@ -581,6 +583,26 @@ export class DrizzleRepository implements PaRepository {
       .where(eq(paRouteOverrides.engagementId, engagementId))
       .limit(1);
     return (row as RouteOverrideRecord | undefined) ?? null;
+  }
+  async insertAeAssignmentIfAbsent(record: AeAssignmentRecord) {
+    const rows = await this.db
+      .insert(paAeAssignments)
+      .values(record)
+      .onConflictDoNothing({ target: paAeAssignments.engagementId })
+      .returning();
+    return rows.length > 0;
+  }
+  async getAeAssignment(engagementId: string) {
+    const [row] = await this.db
+      .select()
+      .from(paAeAssignments)
+      .where(eq(paAeAssignments.engagementId, engagementId))
+      .limit(1);
+    return (row as AeAssignmentRecord | undefined) ?? null;
+  }
+  async listAeAssignments() {
+    const rows = await this.db.select().from(paAeAssignments);
+    return rows as AeAssignmentRecord[];
   }
   async listRouteOverrides() {
     const rows = await this.db.select().from(paRouteOverrides);

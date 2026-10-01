@@ -6,6 +6,7 @@ import {
   type DecisionRecord,
   type LeadBriefRecord,
   type PersonRecord,
+  type AeAssignmentRecord,
   type RouteOverrideRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
@@ -44,6 +45,7 @@ interface Tables {
   briefs: Map<string, LeadBriefRecord>;
   people: Map<string, PersonRecord>;
   routeOverrides: Map<string, RouteOverrideRecord>;
+  aeAssignments: Map<string, AeAssignmentRecord>;
   handbook: Map<string, HandbookDocRecord>;
   handbookRevisions: Map<string, HandbookRevisionRecord>;
   releases: Map<string, ReleaseRecord>;
@@ -71,6 +73,7 @@ function emptyTables(): Tables {
     briefs: new Map(),
     people: new Map(),
     routeOverrides: new Map(),
+    aeAssignments: new Map(),
     handbook: new Map(),
     handbookRevisions: new Map(),
     releases: new Map(),
@@ -422,6 +425,18 @@ export class MemoryRepository implements PaRepository {
   async getRouteOverride(engagementId: string) {
     const found = this.tables.routeOverrides.get(engagementId);
     return found ? copy(found) : null;
+  }
+  async insertAeAssignmentIfAbsent(record: AeAssignmentRecord) {
+    if (this.tables.aeAssignments.has(record.engagementId)) return false;
+    this.tables.aeAssignments.set(record.engagementId, copy(record));
+    return true;
+  }
+  async getAeAssignment(engagementId: string) {
+    const found = this.tables.aeAssignments.get(engagementId);
+    return found ? copy(found) : null;
+  }
+  async listAeAssignments() {
+    return [...this.tables.aeAssignments.values()].map(copy);
   }
   async listRouteOverrides() {
     return [...this.tables.routeOverrides.values()].map(copy);

@@ -13,12 +13,14 @@ import type {
   PaRepository,
   PersonRecord,
   RouteOverrideRecord,
+  AeAssignmentRecord,
   SubmissionRecord,
 } from "../repo/types.js";
 import type { RoutingResult } from "../routing/index.js";
 import {
   DEFAULT_ROUTE_BY_CLASS,
   leadRouteFor,
+  nextEnterpriseAe,
   type LeadRouteResult,
   type RoutePerson,
 } from "./index.js";
@@ -62,6 +64,26 @@ export function classOfSubmission(input: {
     signupContacts: company?.signupContacts ?? null,
     thresholds: qualifyThresholds(input.release),
   });
+}
+
+/** The lead's round robin AE if it has one, and who is next up (D78). */
+async function enterpriseOf(
+  repo: PaRepository,
+  engagement: EngagementRecord,
+  people: PersonRecord[],
+  preloaded?: AeAssignmentRecord[],
+) {
+  const assignments = preloaded ?? (await repo.listAeAssignments());
+  const mine = assignments.find((item) => item.engagementId === engagement.id);
+  const saved = mine
+    ? people.find((person) => person.email === mine.aeEmail.toLowerCase())
+    : null;
+  return {
+    assigned: mine
+      ? { email: mine.aeEmail, name: saved?.displayName ?? null }
+      : null,
+    next: mine ? null : nextEnterpriseAe(people, assignments),
+  };
 }
 
 /** The commercial line when the active playbook has no block for it yet. */
@@ -115,6 +137,7 @@ export async function routeForEngagement(
   preload: {
     people?: PersonRecord[];
     override?: RouteOverrideRecord | null;
+    assignments?: AeAssignmentRecord[];
   } = {},
 ): Promise<
   LeadRouteResult & { classLabel: string | null; approach: string | null }
@@ -178,6 +201,12 @@ export async function routeForEngagement(
       snapshot?.company?.employees ??
       lowerBound(fieldOf(latest?.fields, "company_size")),
     commercialMaxEmployees: commercialLine(release),
+    enterprise: await enterpriseOf(
+      repo,
+      engagement,
+      people,
+      preload.assignments,
+    ),
   });
   return {
     ...route,

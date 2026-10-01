@@ -511,3 +511,12 @@ export const paRouteOverrides = table("pa_route_overrides", {
   setBy: text("set_by").notNull(),
   setAt: text("set_at").notNull(),
 });
+
+// Enterprise AE round robin (D78), migration v11: who each lead was given,
+// kept so a lead keeps its AE and the rotation stays fair.
+export const paAeAssignments = table("pa_ae_assignments", {
+  engagementId: text("engagement_id").primaryKey(),
+  aeEmail: text("ae_email").notNull(),
+  method: text("method").notNull(),
+  assignedAt: text("assigned_at").notNull(),
+});

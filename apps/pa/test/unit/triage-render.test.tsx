@@ -97,6 +97,7 @@ describe("triage UI", () => {
             paOwner: null,
             segment: null,
             needs: null,
+            roundRobin: null,
           }}
           onChange={() => {}}
         />
