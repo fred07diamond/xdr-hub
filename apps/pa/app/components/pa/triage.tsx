@@ -186,7 +186,15 @@ export function DraftPreview({ draft }: { draft: DraftSummary }) {
 function DraftReasoning({ draft }: { draft: DraftView }) {
   const why = draft.reasoning;
   const tcq = draft.rubric;
-  if (!why && !tcq) return null;
+  if (!draft.body) return null;
+  if (!why && !tcq)
+    return (
+      <p className="mx-4 mb-4 rounded-md border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground">
+        No reasoning on this draft: it was written before PA asked the agent to
+        explain its drafts. The agent rewrites it under the current rules, and
+        the new draft shows why it reads the way it does.
+      </p>
+    );
   const row = (label: string, quote: string | null, note: string | null) =>
     quote || note ? (
       <div className="grid gap-0.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3">
