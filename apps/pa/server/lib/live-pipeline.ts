@@ -719,7 +719,7 @@ export async function recordFirstTouch(
 
 const HISTORY_RECHECK_MS = 10 * 60_000;
 /** Bumped when first touch detection changes, so recorded ones are rechecked. */
-const FIRST_TOUCH_RULES = 3;
+const FIRST_TOUCH_RULES = 4;
 
 const WATCHED_STATES = new Set([
   "routed",
@@ -787,6 +787,38 @@ export async function detectFirstTouches(budgetMs = 10_000, limit = 8) {
       });
       // A reply thread with no logged first email still proves contact.
       const sent = history.firstTouch ?? history.threadEvidence ?? null;
+      // Keep a short copy of it for the board (D75), once per email.
+      if (
+        sent &&
+        !events.some(
+          (item) =>
+            item.type === "first_touch.email" &&
+            item.payload.email_id === sent.id,
+        )
+      )
+        await repository.appendEvent({
+          id: newId(),
+          engagementId: engagement.id,
+          correlationId: engagement.id,
+          type: "first_touch.email",
+          actor: "system:hubspot-history",
+          payload: {
+            email_id: sent.id,
+            kind: history.firstTouch ? "first_touch" : "thread",
+            sent_at: sent.at,
+            subject: sent.title,
+            from: sent.from,
+            to: sent.to,
+            preview: (sent.preview ?? "")
+              // The greeting adds nothing to a one-line preview.
+              .replace(/^\s*(hi|hey|hello|dear)\b[^,\n]{0,40},?\s*\n/i, "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 300),
+          },
+          receiptId: null,
+          occurredAt: now().toISOString(),
+        });
       await repository.appendEvent({
         id: newId(),
         engagementId: engagement.id,

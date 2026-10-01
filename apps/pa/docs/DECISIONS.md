@@ -1418,3 +1418,14 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - Not changed: the framework's access check itself. Caching its positive
   answers would need a framework patch, which the repo allows only for a
   confirmed upstream bug; that is a follow-up if the error comes back.
+
+## D75. The board shows the first email sent from HubSpot (2026-10-01)
+
+- Fred: leads actioned in HubSpot showed "No draft needed" on the board;
+  the sent email should show like the drafts do.
+- The board reads only PA's data, and the email lived in HubSpot. When the
+  history check finds the first touch (or the reply thread that proves
+  contact), PA now saves a short copy: subject, a 300 character preview
+  without the greeting, sender, recipients, and when it was sent (event
+  `first_touch.email`, once per email). The board shows it with a "Sent
+  from HubSpot" chip. Leads already detected are rechecked once to fill it.

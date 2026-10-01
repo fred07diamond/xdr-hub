@@ -8,6 +8,7 @@ import { SalesCycle } from "../../app/components/pa/clock.js";
 import { BoardTable } from "../../app/components/pa/inbound-board.js";
 import {
   DraftCard,
+  DraftPreview,
   LeadRouteBlock,
   TriageCard,
 } from "../../app/components/pa/triage.js";
@@ -104,5 +105,22 @@ describe("triage UI", () => {
     expect(html).toContain("Playbook: Route to the AE");
     expect(html).toContain("PA takes the call");
     expect(html).toContain('href="/team"');
+  });
+
+  it("shows a first email sent from HubSpot on the board like a draft", () => {
+    const html = renderToStaticMarkup(
+      <DraftPreview
+        draft={{
+          status: "sent",
+          subject: "re: your request",
+          preview: "Thanks for reaching out, happy to help with privacy mode.",
+          problemCount: 0,
+          note: "The first email went out from HubSpot.",
+        }}
+      />,
+    );
+    expect(html).toContain("re: your request");
+    expect(html).toContain("Sent from HubSpot");
+    expect(html).toContain("happy to help with privacy mode");
   });
 });

@@ -96,6 +96,11 @@ const DRAFT_STATUS: Record<
     className: "bg-muted text-muted-foreground",
     icon: null,
   },
+  sent: {
+    label: "Sent from HubSpot",
+    className: "bg-primary-soft text-primary",
+    icon: IconCheck,
+  },
   not_needed: {
     label: "No reply needed",
     className:
@@ -124,6 +129,20 @@ export function DraftStatusChip({ status }: { status: DraftStatus }) {
 
 /** The board cell: subject and first lines of the draft, or why there is none. */
 export function DraftPreview({ draft }: { draft: DraftSummary }) {
+  if (draft.status === "sent")
+    return (
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="min-w-0 truncate text-[13px] font-medium text-foreground">
+            {draft.subject ?? "(no subject)"}
+          </p>
+          <DraftStatusChip status="sent" />
+        </div>
+        <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-[1.45] text-muted-foreground">
+          {draft.preview ?? draft.note}
+        </p>
+      </div>
+    );
   if (draft.status === "ready" || draft.status === "needs_edit") {
     return (
       <div className="min-w-0">

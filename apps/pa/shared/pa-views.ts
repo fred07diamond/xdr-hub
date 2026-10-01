@@ -136,7 +136,13 @@ export interface LeadRouteView {
   paOwner: { email: string; name: string | null } | null;
 }
 
-export type DraftStatus = "ready" | "needs_edit" | "waiting" | "not_needed";
+export type DraftStatus =
+  | "ready"
+  | "needs_edit"
+  | "waiting"
+  | "not_needed"
+  /** The first email already went out from HubSpot (D75). */
+  | "sent";
 
 export interface DraftSummary {
   status: DraftStatus;

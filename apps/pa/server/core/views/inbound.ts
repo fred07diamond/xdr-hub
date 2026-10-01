@@ -5,6 +5,7 @@ import type {
   BoardTab,
   CitationView,
   ClockView,
+  DraftSummary,
   EngagementDetail,
   EvaluationView,
   LeadRouteView,
@@ -305,6 +306,40 @@ async function leadRouteOf(
   );
 }
 
+/**
+ * The first email sent from HubSpot, as PA saved it when it found it (D75),
+ * so the board shows it like a draft instead of "no draft needed".
+ */
+function sentSummary(
+  events: Array<{ type: string; payload: Record<string, unknown> }>,
+  engagement: EngagementRecord,
+): DraftSummary | null {
+  if (!engagement.firstTouchAt && engagement.state !== "first_touch_sent")
+    return null;
+  const saved = [...events]
+    .reverse()
+    .find(
+      (item) =>
+        item.type === "first_touch.email" ||
+        item.type === "first_touch.detected",
+    );
+  if (!saved) return null;
+  const text = (key: string) =>
+    typeof saved.payload[key] === "string"
+      ? (saved.payload[key] as string)
+      : null;
+  const thread = saved.payload.kind === "thread";
+  return {
+    status: "sent",
+    subject: text("subject"),
+    preview: text("preview"),
+    problemCount: 0,
+    note: thread
+      ? "Contacted on a reply thread in HubSpot."
+      : "The first email went out from HubSpot.",
+  };
+}
+
 async function liveDecision(
   repo: PaRepository,
   engagement: EngagementRecord,
@@ -434,7 +469,7 @@ async function buildRow(
       triage.kind,
       people,
     ),
-    draft: draftSummary(draft),
+    draft: sentSummary(events, engagement) ?? draftSummary(draft),
     sla: slaView({ engagement, clock, events, submittedAt, now }),
     decision: await liveDecision(repo, engagement, release, now),
     state: engagement.state,

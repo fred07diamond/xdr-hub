@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01 (sent emails on the board)
+
+- Leads already emailed from HubSpot show that email on the board, subject
+  and first lines, marked "Sent from HubSpot", instead of "No draft
+  needed" (D75).
+
 ## 2026-10-01 (lead page reliability)
 
 - The inbound list and lead page load much faster: each record is read

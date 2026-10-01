@@ -201,6 +201,7 @@ export function triageFor(input: {
     needs_edit: "The draft breaks a message rule: fix it before it goes out.",
     waiting: "The draft reply has not been written yet.",
     not_needed: "No reply to draft.",
+    sent: "The first email went out from HubSpot.",
   };
   if (flagged) {
     return {
