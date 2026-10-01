@@ -1666,3 +1666,24 @@ bottom. Revisit one only when its "revisit when" condition happens.
   (its class, route, and draft) still says what it suggests.
 - The decision records stay in the database (nothing is deleted), but
   nothing in the app asks for one.
+
+## D90. The board is in sections, and leads HubSpot moved on leave the queue (2026-10-01)
+
+- Fred: "everything is mixed in together. The actioned stuff is in with the
+  pending stuff, and the stuff that will not get actioned is mixed in with
+  the urgent stuff." And, on a lead PA contacted after which a deal was
+  created: it "should automatically move out of the queue and not be
+  actioned again... the user should not need to see this lead anymore once
+  the lifecycle stage changes to S0."
+- **Sections:** To do (sales leads nobody has contacted), Contacted (first
+  email sent, waiting on HubSpot), Moved on, and Not for PA (spam, vendor
+  pitches, support, AE-owned, customers, partnership recycles). Moved on and
+  Not for PA are folded at the bottom. The header counts what is to do.
+- **Moved on:** HubSpot has the lead at SAL or later (S0 included), Recycle,
+  or Disqualified; or a deal on the contact was created after the form; or
+  an open deal appeared after PA's first touch. It applies to sales leads
+  and to any lead PA already contacted; a customer's stage is not a move.
+  A moved-on lead shows "Moved on" with the reason, has no route prompts,
+  no draft work, and no round robin pick, and the agent skips it.
+- The 30 minute HubSpot check (D83) now also reads the contact's deals
+  (read only) and records a deal created after the form.

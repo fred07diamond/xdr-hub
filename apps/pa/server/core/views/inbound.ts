@@ -25,7 +25,9 @@ import { readFirstTouchClock, nextWorkingInstant } from "../clocks/index.js";
 import {
   hubspotStage,
   latestLifecycle,
+  movedOnOf,
   type HubSpotStage,
+  type MovedOn,
 } from "../crm/lifecycle.js";
 import { currentAdvice } from "../decisions/index.js";
 import {
@@ -384,14 +386,39 @@ function partnershipRecycleTriage(route: LeadRouteView): TriageView {
   };
 }
 
+const SALES_KINDS = new Set(["reply", "review", "owner"]);
+
+/** HubSpot moved the lead past PA (D90): it leaves the queue. */
+function movedOnTriage(movedOn: MovedOn): TriageView {
+  return {
+    kind: "closed",
+    label: "Moved on",
+    verdictLabel: null,
+    why: `${movedOn.reason}, so PA's part is done.`,
+    action: "Nothing to do in PA. It continues in HubSpot.",
+  };
+}
+
 /** How the board and record treat a route that needs no work from PA. */
-function stepBackOf(route: LeadRouteView | null) {
+function stepBackOf(
+  route: LeadRouteView | null,
+  movedOn: MovedOn | null = null,
+) {
+  if (movedOn)
+    return {
+      triage: movedOnTriage(movedOn),
+      note: `No draft: ${movedOn.reason.toLowerCase()}, so the lead moved on.`,
+      noClock: "No SLA: moved on in HubSpot",
+      keepDecision: false,
+      keepClock: true,
+    };
   if (route?.route === "ae_owned")
     return {
       triage: aeOwnedTriage(route),
       note: AE_OWNED_NOTE,
       noClock: "No SLA: owned by an AE, HubSpot emails them",
       keepDecision: false,
+      keepClock: false,
     };
   if (route?.route === "partnership_recycle")
     return {
@@ -399,6 +426,7 @@ function stepBackOf(route: LeadRouteView | null) {
       note: PARTNERSHIP_RECYCLE_NOTE,
       noClock: "No SLA: a partnership ask that recycles",
       keepDecision: true,
+      keepClock: false,
     };
   return null;
 }
@@ -547,18 +575,23 @@ async function buildRow(
     triage.kind,
     people,
   );
-  const stepBack = stepBackOf(leadRoute);
-  const crmStage = hubspotStage(
-    latestLifecycle(
-      events,
-      (
-        snapshotReceipt?.ruleResults.snapshot as
-          | { contact?: { lifecycleRaw?: string | null } | null }
-          | undefined
-      )?.contact?.lifecycleRaw,
-    ),
-  );
-  const timed = stepBack ? untimed(engagement) : engagement;
+  const snapshotLifecycle = (
+    snapshotReceipt?.ruleResults.snapshot as
+      | { contact?: { lifecycleRaw?: string | null } | null }
+      | undefined
+  )?.contact?.lifecycleRaw;
+  const crmStage = hubspotStage(latestLifecycle(events, snapshotLifecycle));
+  // Sales leads, and any lead PA already contacted (an open deal later).
+  const movedOn: MovedOn | null =
+    !SALES_KINDS.has(triage.kind) && !engagement.firstTouchAt
+      ? null
+      : (movedOnOf(events, snapshotLifecycle) ??
+        (hasOpenDeal && engagement.firstTouchAt
+          ? { reason: "A deal opened after PA's first touch", stage: "sal" }
+          : null));
+  const stepBack = stepBackOf(leadRoute, movedOn);
+  const timed =
+    stepBack && !stepBack.keepClock ? untimed(engagement) : engagement;
   const clock = clockView({
     engagement: timed,
     owner,
@@ -569,12 +602,28 @@ async function buildRow(
       ? stepBack.noClock
       : await noClockReason(repo, engagement),
   });
+  const shownTriage = stepBack ? stepBack.triage : triage;
+  const sent = sentSummary(events, engagement);
+  const bucket: BoardRow["bucket"] = movedOn
+    ? "moved_on"
+    : shownTriage.kind === "closed" || shownTriage.kind === "elsewhere"
+      ? "not_for_pa"
+      : engagement.firstTouchAt || sent
+        ? "contacted"
+        : "todo";
   return {
     id: engagement.id,
-    triage: stepBack ? stepBack.triage : triage,
-    leadRoute,
+    bucket,
+    bucketReason:
+      bucket === "moved_on"
+        ? (movedOn?.reason ?? null)
+        : bucket === "not_for_pa"
+          ? shownTriage.label
+          : null,
+    triage: shownTriage,
+    leadRoute: movedOn ? null : leadRoute,
     draft:
-      sentSummary(events, engagement) ??
+      sent ??
       (stepBack
         ? {
             status: "not_needed",
@@ -984,18 +1033,24 @@ export async function buildEngagementDetail(input: {
     engagement,
     triageRaw.kind,
   );
-  const stepBack = stepBackOf(leadRoute);
-  const triage = stepBack ? stepBack.triage : triageRaw;
-  const crmLifecycle = latestLifecycle(
-    events,
-    (
-      lastOf("crm_snapshot")?.ruleResults.snapshot as
-        | { contact?: { lifecycleRaw?: string | null } | null }
-        | undefined
-    )?.contact?.lifecycleRaw,
-  );
+  const snapshotLifecycle = (
+    lastOf("crm_snapshot")?.ruleResults.snapshot as
+      | { contact?: { lifecycleRaw?: string | null } | null }
+      | undefined
+  )?.contact?.lifecycleRaw;
+  const crmLifecycle = latestLifecycle(events, snapshotLifecycle);
   const crmStage = hubspotStage(crmLifecycle);
-  const timed = stepBack ? untimed(engagement) : engagement;
+  const movedOn: MovedOn | null =
+    !SALES_KINDS.has(triageRaw.kind) && !engagement.firstTouchAt
+      ? null
+      : (movedOnOf(events, snapshotLifecycle) ??
+        ((detailSnapshot?.openDeals ?? []).length > 0 && engagement.firstTouchAt
+          ? { reason: "A deal opened after PA's first touch", stage: "sal" }
+          : null));
+  const stepBack = stepBackOf(leadRoute, movedOn);
+  const triage = stepBack ? stepBack.triage : triageRaw;
+  const timed =
+    stepBack && !stepBack.keepClock ? untimed(engagement) : engagement;
   const clock = clockView({
     engagement: timed,
     owner,
@@ -1012,7 +1067,7 @@ export async function buildEngagementDetail(input: {
   return {
     id: engagement.id,
     triage,
-    leadRoute,
+    leadRoute: movedOn ? null : leadRoute,
     draft: stepBack
       ? {
           ...draft,

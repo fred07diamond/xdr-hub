@@ -144,6 +144,24 @@ describe("the SLA timer follows HubSpot (D83)", () => {
     expect(early.label).toBe("Recycled in HubSpot");
   });
 
+  it("knows when HubSpot moved a lead past PA (D90)", async () => {
+    const { movedOnOf } = await import("../../server/core/crm/lifecycle.js");
+    const checked = (payload: Record<string, unknown>) => [
+      { type: "crm.lifecycle_checked", payload },
+    ];
+    expect(movedOnOf(checked({ lifecycle: "S0" }), "QL")?.reason).toBe(
+      "S0 in HubSpot",
+    );
+    expect(movedOnOf([], "Recycle")?.reason).toBe("Recycled in HubSpot");
+    expect(
+      movedOnOf(checked({ lifecycle: "QL", deal_after_form: true }), "QL")
+        ?.reason,
+    ).toBe("A deal was created after the form");
+    // Still a QL, or a customer asking for help: not moved on.
+    expect(movedOnOf([], "QL")).toBeNull();
+    expect(movedOnOf([], "customer")).toBeNull();
+  });
+
   it("reads HubSpot's lifecycle labels", async () => {
     const { hubspotStage, latestLifecycle } =
       await import("../../server/core/crm/lifecycle.js");

@@ -19,6 +19,7 @@ import {
 import {
   LIFECYCLE_EVENT,
   lifecycleOfEngagement,
+  movedOnOfEngagement,
 } from "../core/crm/lifecycle.js";
 import { DRAFT_RULES_VERSION, draftPlan } from "../core/drafting/index.js";
 import {
@@ -238,6 +239,9 @@ export async function listAgentWork(
         }
       | null
       | undefined;
+    // Moved on in HubSpot (SAL, S0, Recycle, a new deal): no draft (D90).
+    if (plan.needed && (await movedOnOfEngagement(repository, engagement.id)))
+      continue;
     // Owned by an AE: HubSpot's workflow emails them, so no draft (D80).
     if (plan.needed) {
       routing ??= {
@@ -665,6 +669,7 @@ export async function assignEnterpriseAes(limit = 10): Promise<number> {
     if (!engagement || engagement.state === "closed") continue;
     if (assignments.some((item) => item.engagementId === engagement.id))
       continue;
+    if (await movedOnOfEngagement(repository, engagement.id)) continue;
     const route = await routeForEngagement(repository, release, engagement, {
       people,
       assignments,
@@ -690,6 +695,46 @@ export async function assignEnterpriseAes(limit = 10): Promise<number> {
  * SLA timer and decision without a full refresh.
  */
 const LIFECYCLE_RECHECK_MS = 30 * 60_000;
+
+/** The first deal on a contact created at or after the form, if any. */
+async function dealAfterForm(
+  contactId: string,
+  since: string,
+): Promise<{ id: string; stage: string | null } | null> {
+  const associated = (await hubspotFetch(
+    `/crm/v4/objects/contacts/${encodeURIComponent(contactId)}/associations/deals?limit=100`,
+  )) as { results?: Array<{ toObjectId: string | number }> };
+  const ids = (associated.results ?? []).map((item) => String(item.toObjectId));
+  if (ids.length === 0) return null;
+  const read = (await hubspotFetch("/crm/v3/objects/deals/batch/read", {
+    method: "POST",
+    body: JSON.stringify({
+      properties: ["createdate", "dealstage", "dealname"],
+      inputs: ids.slice(0, 100).map((id) => ({ id })),
+    }),
+  })) as {
+    results?: Array<{ id: string; properties: Record<string, unknown> }>;
+  };
+  const after = (read.results ?? [])
+    .filter((deal) => {
+      const created = Date.parse(String(deal.properties.createdate ?? ""));
+      return Number.isFinite(created) && created >= Date.parse(since);
+    })
+    .sort((a, b) =>
+      String(a.properties.createdate).localeCompare(
+        String(b.properties.createdate),
+      ),
+    )[0];
+  return after
+    ? {
+        id: after.id,
+        stage:
+          typeof after.properties.dealstage === "string"
+            ? after.properties.dealstage
+            : null,
+      }
+    : null;
+}
 
 export async function syncLifecycles(limit = 8, budgetMs = 8_000) {
   const repository = repo();
@@ -723,6 +768,8 @@ export async function syncLifecycles(limit = 8, budgetMs = 8_000) {
       now().getTime() - Date.parse(last.occurredAt) < LIFECYCLE_RECHECK_MS
     )
       continue;
+    // Already moved past PA: nothing left to watch (D90).
+    if (last?.payload.deal_after_form === true) continue;
     checked += 1;
     try {
       const contact = await deps.crm.getContact({
@@ -731,13 +778,25 @@ export async function syncLifecycles(limit = 8, budgetMs = 8_000) {
       });
       const before = await lifecycleOfEngagement(repository, engagement.id);
       if (before !== contact.lifecycleRaw) changed += 1;
+      // A deal on the contact created after the form (D90), read only.
+      const since = (
+        await repository.listSubmissionsForEngagement(engagement.id)
+      )
+        .map((item) => item.submittedAt)
+        .sort()[0];
+      const deal = await dealAfterForm(contactId, since ?? row.receivedAt);
       await repository.appendEvent({
         id: newId(),
         engagementId: engagement.id,
         correlationId: engagement.id,
         type: LIFECYCLE_EVENT,
         actor: "system:hubspot-lifecycle",
-        payload: { lifecycle: contact.lifecycleRaw, before },
+        payload: {
+          lifecycle: contact.lifecycleRaw,
+          before,
+          deal_after_form: Boolean(deal),
+          deal_stage: deal?.stage ?? null,
+        },
         receiptId: null,
         occurredAt: now().toISOString(),
       });

@@ -358,7 +358,10 @@ export function BoardTable({
   selected,
   onToggle,
   onToggleAll,
+  hideHead = false,
 }: {
+  /** Later sections reuse the first section's column headers (D90). */
+  hideHead?: boolean;
   rows: BoardRow[];
   now: number;
   tab: BoardTab;
@@ -380,7 +383,7 @@ export function BoardTable({
         <col />
         <col className="w-[15%]" />
       </colgroup>
-      <thead>
+      <thead className={hideHead ? "sr-only" : undefined}>
         <tr className="text-[11.5px] font-medium text-muted-foreground">
           <HeaderCell className="px-3.5">
             <Checkbox

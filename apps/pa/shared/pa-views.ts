@@ -193,8 +193,14 @@ export interface DraftView extends DraftSummary {
   createdAt: string | null;
 }
 
+/** Where a lead sits on the board (D90). */
+export type BoardBucket = "todo" | "contacted" | "moved_on" | "not_for_pa";
+
 export interface BoardRow {
   id: string;
+  bucket: BoardBucket;
+  /** Why it is in that section, for Moved on and Not for PA. */
+  bucketReason: string | null;
   state: string;
   stateLabel: string;
   lead: LeadView;

@@ -6,6 +6,7 @@ import {
 } from "@agent-native/core/client/hooks";
 import type { BoardRow, BoardTab } from "@shared/pa-views";
 import {
+  IconChevronDown,
   IconDatabaseImport,
   IconFilterOff,
   IconFlask2,
@@ -41,10 +42,36 @@ import {
   type BoardWindow,
 } from "@/lib/board-arrange";
 import { setDemoMode, useDemoMode } from "@/lib/demo-mode";
+import { cn } from "@/lib/utils";
 
 export function meta() {
   return [{ title: `Inbound - ${APP_TITLE}` }];
 }
+
+/** The board's sections, in order (D90). */
+const BUCKETS: Array<{ id: BoardRow["bucket"]; label: string; hint: string }> =
+  [
+    {
+      id: "todo",
+      label: "To do",
+      hint: "Sales leads nobody has contacted yet",
+    },
+    {
+      id: "contacted",
+      label: "Contacted",
+      hint: "First email sent, waiting on the next step in HubSpot",
+    },
+    {
+      id: "moved_on",
+      label: "Moved on",
+      hint: "HubSpot moved these past PA: SAL, S0, Recycle, or a new deal",
+    },
+    {
+      id: "not_for_pa",
+      label: "Not for PA",
+      hint: "Spam, vendor pitches, support, AE-owned accounts, customers",
+    },
+  ];
 
 function parseTab(value: string | null): BoardTab {
   return BOARD_TABS.some((item) => item.id === value)
@@ -80,6 +107,10 @@ export default function InboundRoute() {
   const board = useInboundBoard(tab, state);
   const replay = useActionMutation("replay-submission");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [folded, setFolded] = useState<Record<string, boolean>>({
+    moved_on: true,
+    not_for_pa: true,
+  });
 
   useEffect(() => {
     setSelected(new Set());
@@ -287,34 +318,85 @@ export default function InboundRoute() {
       </EmptyState>
     );
   } else {
+    // One section per bucket (D90): what needs doing first, then what is
+    // waiting on HubSpot, with moved on and not for PA folded away.
+    const sections = BUCKETS.map((bucket) => ({
+      ...bucket,
+      rows: rows.filter((row) => (row.bucket ?? "todo") === bucket.id),
+    })).filter((section) => section.rows.length > 0);
+    const firstOpen = sections.find((section) => !folded[section.id])?.id;
     content = (
-      <>
-        <div className="hidden @min-[60rem]:block">
-          <BoardTable
-            rows={rows}
-            tab={tab}
-            linkQuery={linkQuery}
-            now={now}
-            selected={selected}
-            onToggle={toggle}
-            onToggleAll={(checked) =>
-              setSelected(
-                checked ? new Set(rows.map((row) => row.id)) : new Set(),
-              )
-            }
-          />
-        </div>
-        <div className="@min-[60rem]:hidden">
-          <BoardCards
-            rows={rows}
-            tab={tab}
-            linkQuery={linkQuery}
-            now={now}
-            selected={selected}
-            onToggle={toggle}
-          />
-        </div>
-      </>
+      <div>
+        {sections.map((section) => {
+          const isFolded = Boolean(folded[section.id]);
+          return (
+            <section key={section.id} aria-label={section.label}>
+              <button
+                type="button"
+                onClick={() =>
+                  setFolded((current) => ({
+                    ...current,
+                    [section.id]: !current[section.id],
+                  }))
+                }
+                aria-expanded={!isFolded}
+                className="flex w-full items-center gap-2 border-b border-border bg-muted/40 px-4 py-2 text-left hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
+                <IconChevronDown
+                  className={cn(
+                    "size-4 shrink-0 text-muted-foreground transition-transform",
+                    isFolded && "-rotate-90",
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="text-[13px] font-semibold text-foreground">
+                  {section.label}
+                </span>
+                <span className="rounded-full bg-background px-1.5 text-[11.5px] tabular-nums text-muted-foreground ring-1 ring-border">
+                  {section.rows.length}
+                </span>
+                <span className="hidden truncate text-[12px] text-muted-foreground sm:inline">
+                  {section.hint}
+                </span>
+              </button>
+              {isFolded ? null : (
+                <>
+                  <div className="hidden @min-[60rem]:block">
+                    <BoardTable
+                      rows={section.rows}
+                      tab={tab}
+                      linkQuery={linkQuery}
+                      now={now}
+                      selected={selected}
+                      onToggle={toggle}
+                      hideHead={section.id !== firstOpen}
+                      onToggleAll={(checked) =>
+                        setSelected((current) => {
+                          const next = new Set(current);
+                          for (const row of section.rows)
+                            if (checked) next.add(row.id);
+                            else next.delete(row.id);
+                          return next;
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="@min-[60rem]:hidden">
+                    <BoardCards
+                      rows={section.rows}
+                      tab={tab}
+                      linkQuery={linkQuery}
+                      now={now}
+                      selected={selected}
+                      onToggle={toggle}
+                    />
+                  </div>
+                </>
+              )}
+            </section>
+          );
+        })}
+      </div>
     );
   }
 
@@ -332,7 +414,8 @@ export default function InboundRoute() {
               {tab === "mine" && board.data.viewer.profileName
                 ? `${board.data.viewer.profileName} (your PA profile) · `
                 : null}
-              {rows.length} {rows.length === 1 ? "lead" : "leads"}
+              {rows.filter((row) => (row.bucket ?? "todo") === "todo").length}{" "}
+              to do · {rows.length} {rows.length === 1 ? "lead" : "leads"}
             </span>
           ) : null}
           <DemoToggle enabled={demo} onChange={setDemoMode} />

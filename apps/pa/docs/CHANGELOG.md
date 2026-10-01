@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (board sections)
+
+- The inbound board is in sections: To do, Contacted, Moved on, and Not for
+  PA, with the last two folded away (D90).
+- A lead HubSpot moved on (SAL, S0, Recycle, Disqualified, or a deal created
+  after the form) leaves the queue and is never worked again.
+
 ## 2026-10-01 (no decisions in PA)
 
 - The decision bar is gone from leads, and the Needs decision tab, decision

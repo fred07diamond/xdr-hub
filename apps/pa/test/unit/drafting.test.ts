@@ -334,9 +334,13 @@ describe("the demo board, as a PA sees it", () => {
     expect(byName.get("Marcus Lee")!.triage.label).not.toMatch(
       /Qualified lead|QL/,
     );
-    expect(byName.get("Marcus Lee")!.triage.why).toMatch(
-      /already owns the account/,
-    );
+    // Marcus is already SAL in HubSpot, so he moved on (D90).
+    expect(byName.get("Marcus Lee")!.triage.label).toBe("Moved on");
+    expect(byName.get("Marcus Lee")!.bucket).toBe("moved_on");
+    // The board's sections (D90).
+    expect(byName.get("Priya Natarajan")!.bucket).toBe("todo");
+    expect(byName.get("Leo Brandt")!.bucket).toBe("not_for_pa");
+    expect(byName.get("Sam Whitfield")!.bucket).toBe("not_for_pa");
     expect(byName.get("Ines Duarte")!.triage.label).toBe("Open deal");
     expect(byName.get("Elena Petrova")!.triage.label).toBe("Existing customer");
     expect(byName.get("Sam Whitfield")!.triage.label).toBe("Support request");

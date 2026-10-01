@@ -58,3 +58,58 @@ export async function lifecycleOfEngagement(
     | undefined;
   return latestLifecycle(events, snapshot?.contact?.lifecycleRaw);
 }
+
+/**
+ * Whether HubSpot has moved the lead past PA (D90): a stage of SAL or later
+ * (S0 included), Recycle, or Disqualified, or a deal on the contact created
+ * after the form. The lead leaves the queue and PA does nothing more.
+ */
+export interface MovedOn {
+  reason: string;
+  stage: HubSpotStage;
+}
+
+export function movedOnOf(
+  events: Array<{ type: string; payload: Record<string, unknown> }>,
+  snapshotLifecycle: string | null | undefined,
+): MovedOn | null {
+  const lifecycle = latestLifecycle(events, snapshotLifecycle);
+  const stage = hubspotStage(lifecycle);
+  const checked = [...events]
+    .reverse()
+    .find((item) => item.type === LIFECYCLE_EVENT);
+  const deal = checked?.payload.deal_after_form === true;
+  if (deal)
+    return {
+      reason: "A deal was created after the form",
+      stage: stage ?? "sal",
+    };
+  if (!stage) return null;
+  // Customers are handled as existing customers, not as a lead moving on.
+  if (/^(customer|evangelist)$/i.test((lifecycle ?? "").trim())) return null;
+  return {
+    reason:
+      stage === "sal"
+        ? `${lifecycle} in HubSpot`
+        : stage === "recycle"
+          ? "Recycled in HubSpot"
+          : "Disqualified in HubSpot",
+    stage,
+  };
+}
+
+export async function movedOnOfEngagement(
+  repo: PaRepository,
+  engagementId: string,
+): Promise<MovedOn | null> {
+  const [events, receipts] = await Promise.all([
+    repo.listEvents(engagementId),
+    repo.listReceipts(engagementId),
+  ]);
+  const snapshot = [...receipts]
+    .reverse()
+    .find((item) => item.kind === "crm_snapshot")?.ruleResults.snapshot as
+    | { contact?: { lifecycleRaw?: string | null } | null }
+    | undefined;
+  return movedOnOf(events, snapshot?.contact?.lifecycleRaw);
+}
