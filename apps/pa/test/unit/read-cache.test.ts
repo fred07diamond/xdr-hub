@@ -50,7 +50,7 @@ describe("withReadCache", () => {
     const board = await buildInboundBoard({
       repo: proxy,
       release: seedRelease,
-      viewer: { userId: null, isAdmin: false, canReplay: false },
+      viewer: { userId: null, canReplay: false },
       tab: "team",
       state: null,
       now: clock.now(),
