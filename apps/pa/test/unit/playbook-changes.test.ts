@@ -1,5 +1,6 @@
-// The change workflow (D44): owning teams approve, people publish, edits void
-// approvals, and a change published first forces a rebase.
+// The change workflow (D44, D76): the owner or a Playbook admin approves,
+// people publish, edits void approvals, and a change published first forces
+// a rebase.
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -26,6 +27,7 @@ import { fixedClock, idFactory } from "../helpers.js";
 const OWNER = "fred@builder.example.com";
 const REVOPS = "ops@builder.example.com";
 const PA = "pa@builder.example.com";
+const ADMIN = "admin@builder.example.com";
 
 function directory(members: Record<string, Team>): TeamDirectory {
   return {
@@ -64,7 +66,11 @@ describe("playbook changes", () => {
     repo = new MemoryRepository();
     const clock = fixedClock();
     deps = { repo, now: clock.now, newId: idFactory(clock) };
-    team = directory({ [REVOPS]: "revops", [PA]: "pa_team" });
+    team = directory({
+      [REVOPS]: "revops",
+      [PA]: "pa_team",
+      [ADMIN]: "admin",
+    });
   });
 
   async function readyForReview(
@@ -83,15 +89,15 @@ describe("playbook changes", () => {
     return submitChange(deps, team, person(author), change.id);
   }
 
-  it("publishes once the owning team approves, and moves the active label", async () => {
+  it("publishes once a Playbook admin approves, and moves the active label", async () => {
     const change = await readyForReview();
-    expect(change.requiredTeams).toEqual(["revops"]);
-    await reviewChange(deps, team, person(REVOPS), {
+    expect(change.requiredTeams).toEqual(["admin"]);
+    await reviewChange(deps, team, person(ADMIN), {
       changeId: change.id,
-      team: "revops",
+      team: "admin",
       decision: "approve",
     });
-    const published = await publishChange(deps, person(REVOPS), change.id);
+    const published = await publishChange(deps, person(ADMIN), change.id);
     expect(published.change.status).toBe("published");
     const active = await activeRelease(repo, deps.now());
     expect(active.id).toBe(published.release.id);
@@ -106,7 +112,7 @@ describe("playbook changes", () => {
     expect(await repo.getRelease(seedRelease.id)).not.toBeNull();
   });
 
-  it("does not publish before every owning team approves", async () => {
+  it("needs the owner or an admin, not RevOps or the PA team (D76)", async () => {
     const both = [
       restrict(["CU"]),
       {
@@ -115,17 +121,19 @@ describe("playbook changes", () => {
         after: { pool: [PA] },
       },
     ];
-    const change = await readyForReview(OWNER, both);
-    expect(change.requiredTeams).toEqual(["pa_team", "revops"]);
-    await reviewChange(deps, team, person(REVOPS), {
-      changeId: change.id,
-      team: "revops",
-      decision: "approve",
-    });
-    expect((await approvalState(repo, change)).missing).toEqual(["pa_team"]);
+    const change = await readyForReview(PA, both);
+    expect(change.requiredTeams).toEqual(["admin"]);
+    expect((await approvalState(repo, change)).missing).toEqual(["admin"]);
     await expect(
       publishChange(deps, person(REVOPS), change.id),
-    ).rejects.toThrow(/pa_team/);
+    ).rejects.toThrow(/admin/);
+    await expect(
+      reviewChange(deps, team, person(REVOPS), {
+        changeId: change.id,
+        team: "admin",
+        decision: "approve",
+      }),
+    ).rejects.toThrow(/Only the owner or a Playbook admin/);
   });
 
   it("lets the agent draft but never approve or publish", async () => {
@@ -141,40 +149,44 @@ describe("playbook changes", () => {
     });
     const inReview = await submitChange(deps, team, person(PA), drafted.id);
     await expect(
-      reviewChange(deps, team, agent(REVOPS), {
+      reviewChange(deps, team, agent(ADMIN), {
         changeId: inReview.id,
-        team: "revops",
+        team: "admin",
         decision: "approve",
       }),
     ).rejects.toThrow(/human decision/);
     await expect(
-      publishChange(deps, { email: REVOPS, caller: "automation" }, inReview.id),
+      publishChange(deps, { email: ADMIN, caller: "automation" }, inReview.id),
     ).rejects.toThrow(/human decision/);
   });
 
-  it("stops the author approving their own change, and people outside the team", async () => {
-    const change = await readyForReview(REVOPS);
+  it("stops an admin approving their own change", async () => {
+    const change = await readyForReview(ADMIN);
     await expect(
-      reviewChange(deps, team, person(REVOPS), {
+      reviewChange(deps, team, person(ADMIN), {
         changeId: change.id,
-        team: "revops",
+        team: "admin",
         decision: "approve",
       }),
-    ).rejects.toThrow(/author/);
-    await expect(
-      reviewChange(deps, team, person(PA), {
-        changeId: change.id,
-        team: "revops",
-        decision: "approve",
-      }),
-    ).rejects.toThrow(/Only revops/);
+    ).rejects.toThrow(/own change/);
+  });
+
+  it("lets the owner approve any change, their own included", async () => {
+    const change = await readyForReview(OWNER);
+    await reviewChange(deps, team, person(OWNER), {
+      changeId: change.id,
+      team: "admin",
+      decision: "approve",
+    });
+    const published = await publishChange(deps, person(OWNER), change.id);
+    expect(published.change.status).toBe("published");
   });
 
   it("voids approvals when the change is edited", async () => {
     const change = await readyForReview();
-    await reviewChange(deps, team, person(REVOPS), {
+    await reviewChange(deps, team, person(ADMIN), {
       changeId: change.id,
-      team: "revops",
+      team: "admin",
       decision: "approve",
     });
     await editChange(deps, team, person(PA), {
@@ -182,51 +194,30 @@ describe("playbook changes", () => {
       set: [restrict(["CU"])],
     });
     await expect(
-      publishChange(deps, person(REVOPS), change.id),
+      publishChange(deps, person(ADMIN), change.id),
     ).rejects.toThrow();
     const after = (await repo.getChange(change.id))!;
     expect(after.status).toBe("draft");
     expect((await approvalState(repo, after)).approvals).toEqual([]);
   });
 
-  it("lets the app owner stand in only while a team has no members", async () => {
-    team = directory({ [PA]: "pa_team" });
-    const change = await readyForReview();
-    const { onBehalf } = await reviewChange(deps, team, person(OWNER), {
-      changeId: change.id,
-      team: "revops",
-      decision: "approve",
-    });
-    expect(onBehalf).toBe(true);
-
-    team = directory({ [PA]: "pa_team", [REVOPS]: "revops" });
-    const second = await readyForReview(PA, [restrict(["CU"])]);
-    await expect(
-      reviewChange(deps, team, person(OWNER), {
-        changeId: second.id,
-        team: "revops",
-        decision: "approve",
-      }),
-    ).rejects.toThrow(/Only revops/);
-  });
-
   it("forces a rebase when another change published first, and flags conflicts", async () => {
     const first = await readyForReview();
     const second = await readyForReview(PA, [restrict(["CU"])]);
-    await reviewChange(deps, team, person(REVOPS), {
+    await reviewChange(deps, team, person(ADMIN), {
       changeId: first.id,
-      team: "revops",
+      team: "admin",
       decision: "approve",
     });
-    await publishChange(deps, person(REVOPS), first.id);
-    await reviewChange(deps, team, person(REVOPS), {
+    await publishChange(deps, person(ADMIN), first.id);
+    await reviewChange(deps, team, person(ADMIN), {
       changeId: second.id,
-      team: "revops",
+      team: "admin",
       decision: "approve",
     });
-    await expect(
-      publishChange(deps, person(REVOPS), second.id),
-    ).rejects.toThrow(/published first/);
+    await expect(publishChange(deps, person(ADMIN), second.id)).rejects.toThrow(
+      /published first/,
+    );
     await expect(
       checkPlaybookChange(deps, { changeId: second.id, impact: replayImpact }),
     ).rejects.toThrow(/also changed/);

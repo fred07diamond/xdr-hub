@@ -1429,3 +1429,17 @@ bottom. Revisit one only when its "revisit when" condition happens.
   without the greeting, sender, recipients, and when it was sent (event
   `first_touch.email`, once per email). The board shows it with a "Sent
   from HubSpot" chip. Leads already detected are rechecked once to fill it.
+
+## D76. The owner or a Playbook admin approves playbook edits (2026-10-01)
+
+- Fred: "Edits to the playbook should not go to revops, it should go to me
+  the owner, or an admin that I set." This replaces owning-team approval
+  (D44) for playbook changes.
+- A new playbook role, **Playbook admin**, is assigned on the Team page by
+  the owner. Every change needs one approval from the app owner or a
+  Playbook admin. The owner can approve any change, their own included; an
+  admin approves anyone's but their own. RevOps and the PA team still draft,
+  check, and submit, and entries keep their owning team as who to ask.
+- Changes already in review that named RevOps or the PA team now wait on
+  the owner or an admin instead. A Playbook admin sees the same
+  suggestions as the owner.

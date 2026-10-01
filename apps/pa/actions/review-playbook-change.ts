@@ -12,10 +12,10 @@ import {
 
 export default defineAction({
   description:
-    "People only: approve or reject a change in review for one owning team. The reviewer must be on that team and not the author; the app owner may stand in only for a team with no members. The agent cannot call this.",
+    "People only: approve or reject a change in review. Playbook edits are approved by the app owner (any change, their own included) or a Playbook admin (not their own) (D76). The agent cannot call this.",
   schema: z.object({
     changeId: z.string().min(1),
-    team: z.enum(["pa_team", "revops"]),
+    team: z.enum(["admin"]).default("admin"),
     decision: z.enum(["approve", "reject"]),
     note: z.string().max(1000).optional(),
   }),

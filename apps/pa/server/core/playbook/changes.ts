@@ -13,6 +13,7 @@ import {
   checkChange,
   type CheckResult,
   type Finding,
+  APPROVER,
   type Team,
 } from "./checks.js";
 import { canonicalJson, sha256Hex } from "./hash.js";
@@ -409,22 +410,23 @@ export async function reviewChange(
   const change = await requireChange(deps.repo, input.changeId);
   if (change.status !== "in_review")
     throw new ChangeError("Only changes in review can be reviewed", 409);
-  if (!change.requiredTeams.includes(input.team))
-    throw new ChangeError(`This change does not need ${input.team}`, 400);
-  if (actor.email === change.authorEmail)
-    throw new ChangeError("The author cannot review their own change", 403);
+  if (input.team !== APPROVER)
+    throw new ChangeError(
+      "Playbook edits are approved by the owner or a Playbook admin",
+      400,
+    );
   const actorTeam = await team.teamOf(actor.email);
   const owner = await team.isAppOwner(actor.email);
-  let onBehalf = false;
-  if (actorTeam !== input.team) {
-    // The app owner stands in only while a team has nobody assigned yet.
-    if (owner && !(await team.hasMembers(input.team))) onBehalf = true;
-    else
-      throw new ChangeError(
-        `Only ${input.team} can review for ${input.team}`,
-        403,
-      );
-  }
+  // The owner approves any change, their own included; an admin approves
+  // anyone's but their own (D76).
+  if (!owner && actorTeam !== APPROVER)
+    throw new ChangeError(
+      "Only the owner or a Playbook admin can approve playbook edits",
+      403,
+    );
+  if (!owner && actor.email === change.authorEmail)
+    throw new ChangeError("An admin cannot approve their own change", 403);
+  const onBehalf = false;
   await assertFresh(deps, change);
   const at = deps.now().toISOString();
   return deps.repo.transaction(async (tx) => {
@@ -451,6 +453,11 @@ export async function reviewChange(
   });
 }
 
+/** Changes in review before D76 named owning teams; they now need an approver. */
+export function approversOf(change: ChangeRecord): string[] {
+  return change.requiredTeams.length > 0 ? [APPROVER] : [];
+}
+
 export async function approvalState(repo: PaRepository, change: ChangeRecord) {
   const approvals = (await repo.listApprovals(change.id)).filter(
     (item) =>
@@ -458,7 +465,7 @@ export async function approvalState(repo: PaRepository, change: ChangeRecord) {
       item.checkedAgainst === change.checkedAgainst,
   );
   const approvedTeams = new Set(approvals.map((item) => item.team));
-  const missing = change.requiredTeams.filter(
+  const missing = approversOf(change).filter(
     (teamName) => !approvedTeams.has(teamName),
   );
   return {

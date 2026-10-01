@@ -477,7 +477,7 @@ export default function PlaybookRoute() {
           </h1>
           <p className="mt-0.5 max-w-[60ch] text-[13px] text-muted-foreground">
             How PA handles Contact Sales leads. Edits collect in your draft, and
-            the owning team approves them before they take effect.
+            the owner or a Playbook admin approves them before they take effect.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -893,8 +893,8 @@ function BlockForm({
               existing?.ownerTeam ?? type?.defaultOwnerTeam ?? "revops"
             ]
           }
-          ; changes go to your draft, and that team approves them before they
-          take effect.
+          ; changes go to your draft, and the owner or a Playbook admin approves
+          them before they take effect.
         </SheetDescription>
       </SheetHeader>
       <div className="grid gap-4 px-4 pb-6">

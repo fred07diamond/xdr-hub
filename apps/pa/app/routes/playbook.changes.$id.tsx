@@ -86,7 +86,10 @@ const AUDIENCE: Record<string, string> = {
   revops: "RevOps",
   pa_team: "PA team",
 };
-const teamLabel = (team: string) => TEAM_LABELS[team as PlaybookRole] ?? team;
+const teamLabel = (team: string) =>
+  team === "admin"
+    ? "the owner or a Playbook admin"
+    : (TEAM_LABELS[team as PlaybookRole] ?? team);
 
 export default function PlaybookChangeRoute() {
   const { id = "" } = useParams();
@@ -154,8 +157,10 @@ export default function PlaybookChangeRoute() {
       </div>
       <p className="text-[13px] text-muted-foreground">
         {change.rationale} Drafted by {change.authorEmail}
-        {change.authorKind === "agent" ? " with the agent" : ""}. Needs{" "}
-        {change.requiredTeams.map(teamLabel).join(" and ") || "a check first"}.
+        {change.authorKind === "agent" ? " with the agent" : ""}.{" "}
+        {change.requiredTeams.length
+          ? `Approved by ${change.requiredTeams.map(teamLabel).join(" and ")}.`
+          : "Needs a check first."}
       </p>
       {change.status === "draft" ? (
         <Panel title="Describe this change for reviewers">
@@ -265,9 +270,7 @@ export default function PlaybookChangeRoute() {
         </div>
       ) : null}
 
-      {change.status === "in_review" &&
-      data.viewer.canReviewFor.length > 0 &&
-      !data.viewer.isAuthor ? (
+      {change.status === "in_review" && data.viewer.canReviewFor.length > 0 ? (
         <Panel title="Your review">
           <div className="grid gap-2">
             <textarea
@@ -286,15 +289,15 @@ export default function PlaybookChangeRoute() {
                       review.mutate(
                         {
                           changeId: change.id,
-                          team: team as PlaybookRole,
+                          team: "admin",
                           decision: "approve",
                           note: note || undefined,
                         },
-                        after(`Approved for ${teamLabel(team)}`),
+                        after("Approved"),
                       )
                     }
                   >
-                    Approve for {teamLabel(team)}
+                    Approve
                   </Button>
                   <Button
                     type="button"
@@ -304,7 +307,7 @@ export default function PlaybookChangeRoute() {
                       review.mutate(
                         {
                           changeId: change.id,
-                          team: team as PlaybookRole,
+                          team: "admin",
                           decision: "reject",
                           note: note || undefined,
                         },

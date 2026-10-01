@@ -29,11 +29,13 @@ export default defineAction({
       directory.teamOf(actor.email),
       directory.isAppOwner(actor.email),
     ]);
-    const mine: SuggestionAudience[] = isAppOwner
-      ? [...SUGGESTION_AUDIENCES]
-      : role
-        ? [role]
-        : [];
+    // A Playbook admin sees what the owner sees (D76).
+    const mine: SuggestionAudience[] =
+      isAppOwner || role === "admin"
+        ? [...SUGGESTION_AUDIENCES]
+        : role
+          ? [role]
+          : [];
     const audiences = args.audience ?? mine;
     const suggestions = await repo().listSuggestions({
       audiences,

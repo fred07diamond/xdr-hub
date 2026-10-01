@@ -26,7 +26,13 @@ import {
   type ConfigTarget,
 } from "./store.js";
 
-export type Team = "pa_team" | "revops";
+export type Team = "pa_team" | "revops" | "admin";
+
+/**
+ * Who approves playbook edits (D76): the app owner, or a Playbook admin the
+ * owner assigns. Owning teams stay on entries as who to ask, not who approves.
+ */
+export const APPROVER: Team = "admin";
 
 export interface Finding {
   kind: SuggestionKind;
@@ -60,6 +66,14 @@ const teamsOf = (ownerTeam: string | undefined): Team[] =>
  * team cannot take over the other team's entry by changing its owner_team.
  */
 export function requiredTeamsFor(
+  base: PlaybookRelease,
+  items: ChangeItemRecord[],
+): Team[] {
+  return items.length > 0 ? [APPROVER] : [];
+}
+
+/** The owning teams a change touches, for context on the change page. */
+export function owningTeamsFor(
   base: PlaybookRelease,
   items: ChangeItemRecord[],
 ): Team[] {

@@ -13,7 +13,9 @@ scope: runtime
 The playbook is owned by two teams. RevOps owns definitions, rules of
 engagement, routing, SLAs, and the HubSpot mapping. The PA team owns message
 rules, knowledge, plays, views, and the routing pool. Entries marked `both`
-need both. People approve and publish; you draft and suggest.
+need both. People approve and publish; you draft and suggest. Every
+playbook change is approved by the app owner or a Playbook admin the owner
+assigns (D76), whichever team owns the entry.
 
 ## The playbook is built from blocks
 

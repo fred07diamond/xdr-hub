@@ -241,12 +241,10 @@ describe("checks", () => {
     expect(keys).not.toContain("crm_field:map:contact.sal_value");
   });
 
-  it("needs the old and the new owning team when ownership moves", () => {
+  it("sends every change to the owner or a Playbook admin (D76)", () => {
     const moved = item("def.ql", { ...entry("def.ql"), owner_team: "pa_team" });
-    expect(requiredTeamsFor(seedRelease, [moved])).toEqual([
-      "pa_team",
-      "revops",
-    ]);
+    expect(requiredTeamsFor(seedRelease, [moved])).toEqual(["admin"]);
+    expect(requiredTeamsFor(seedRelease, [])).toEqual([]);
   });
 
   it("audits the seed honestly", () => {

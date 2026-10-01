@@ -172,7 +172,7 @@ export function defineRepositorySuite(dialect: "sqlite" | "postgres") {
       const team = {
         teamOf: async (email: string) =>
           email === "ops@example.com"
-            ? ("revops" as const)
+            ? ("admin" as const)
             : email === "pa@example.com"
               ? ("pa_team" as const)
               : null,
@@ -203,7 +203,7 @@ export function defineRepositorySuite(dialect: "sqlite" | "postgres") {
       await changes.submitChange(deps, team, pa, change.id);
       await changes.reviewChange(deps, team, ops, {
         changeId: change.id,
-        team: "revops",
+        team: "admin",
         decision: "approve",
       });
       const published = await changes.publishChange(deps, ops, change.id);

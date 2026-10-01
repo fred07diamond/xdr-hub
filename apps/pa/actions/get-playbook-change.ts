@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   approvalFingerprint,
   approvalState,
+  approversOf,
 } from "../server/core/playbook/changes.js";
 import { repo } from "../server/lib/pa-context.js";
 import { actorOf, teamDirectory } from "../server/lib/playbook-service.js";
@@ -33,7 +34,7 @@ export default defineAction({
       change.checkedAgainst ===
         approvalFingerprint(change.baseReleaseId, items);
     return {
-      change,
+      change: { ...change, requiredTeams: approversOf(change) },
       items,
       checksFresh: fresh,
       approvals: (await repository.listApprovals(change.id)).map((item) => ({
@@ -46,9 +47,14 @@ export default defineAction({
         role,
         isAppOwner,
         isAuthor: actor.email === change.authorEmail,
-        canReviewFor: change.requiredTeams.filter(
-          (team) => team === role || isAppOwner,
-        ),
+        // The owner approves anything, their own included; an admin
+        // anything but their own (D76).
+        canReviewFor:
+          change.status === "in_review" &&
+          (isAppOwner ||
+            (role === "admin" && actor.email !== change.authorEmail))
+            ? approversOf(change)
+            : [],
       },
     };
   },

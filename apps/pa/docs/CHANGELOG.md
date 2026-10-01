@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01 (playbook approvals)
+
+- Playbook edits are approved by the owner or a Playbook admin, not RevOps
+  or the PA team. Assign Playbook admins on the Team page. The owner can
+  approve their own changes (D76).
+
 ## 2026-10-01 (sent emails on the board)
 
 - Leads already emailed from HubSpot show that email on the board, subject
