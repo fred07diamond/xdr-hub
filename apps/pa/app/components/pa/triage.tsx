@@ -25,7 +25,6 @@ import {
   IconX,
   IconMessageCircleQuestion,
   IconLoader2,
-  IconPencil,
   IconRefresh,
 } from "@tabler/icons-react";
 import { Fragment, useState, type ReactNode } from "react";
@@ -191,7 +190,7 @@ function DraftReasoning({ draft }: { draft: DraftView }) {
   if (!draft.body) return null;
   if (!why && !tcq)
     return (
-      <p className="mx-4 mb-4 rounded-md border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground">
+      <p className="border-t border-border bg-muted/30 px-4 py-2.5 text-[12px] text-muted-foreground">
         No reasoning on this draft: it was written before PA asked the agent to
         explain its drafts. The agent rewrites it under the current rules, and
         the new draft shows why it reads the way it does.
@@ -216,14 +215,14 @@ function DraftReasoning({ draft }: { draft: DraftView }) {
       </div>
     ) : null;
   return (
-    <details className="group mx-4 mb-4 rounded-md border border-border" open>
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12.5px] font-medium text-foreground">
+    <details className="group border-t border-border bg-muted/30" open>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-[12.5px] font-medium text-foreground">
         Why it reads this way
         <span className="text-[11.5px] font-normal text-muted-foreground group-open:hidden">
           Show
         </span>
       </summary>
-      <dl className="grid gap-2.5 border-t border-border px-3 py-3">
+      <dl className="grid gap-2.5 px-4 pb-4">
         {row("Class and route", null, why?.approach ?? null)}
         {row("Acknowledgment", null, why?.acknowledgment ?? null)}
         {row("Trigger", tcq?.trigger ?? null, why?.trigger ?? null)}
@@ -405,7 +404,6 @@ export function DraftCard({
           <div className="px-4 py-4">
             <DraftBody body={draft.body ?? ""} />
           </div>
-          <DraftReasoning draft={draft} />
           {draft.problems.length > 0 ? (
             <div className="mx-4 mb-4 rounded-md bg-warning-soft px-3 py-2.5">
               <p className="text-[12.5px] font-medium text-warning-foreground">
@@ -456,15 +454,6 @@ export function DraftCard({
                 {draft.rewriting ? "Rewriting..." : "Rewrite reply"}
               </Button>
             ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => onAsk("revise")}
-            >
-              <IconPencil className="size-4" aria-hidden="true" />
-              Ask agent to revise
-            </Button>
             <span className="ml-auto text-[12px] text-muted-foreground">
               {draft.status === "ready"
                 ? `Passes all ${draft.checksRun} message checks`
@@ -481,6 +470,7 @@ export function DraftCard({
               <CitationChips entries={draft.usedEntries} className="mt-1.5" />
             ) : null}
           </div>
+          <DraftReasoning draft={draft} />
         </>
       ) : sent ? null : (
         <div className="flex flex-1 flex-col items-start gap-3 px-4 py-5">
