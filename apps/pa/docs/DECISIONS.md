@@ -1575,3 +1575,9 @@ bottom. Revisit one only when its "revisit when" condition happens.
   automatic 10 and 60 minute reads (D70), closes the lead's earlier run,
   and the board built a full row for each before hiding it. It now skips
   refreshed runs and leads hidden as not Contact Sales before any work.
+- 2026-10-01 follow-up, approved by Fred: the remaining failures were cold
+  starts, where the first access check to a cold Dispatch was cut off at
+  2.5 seconds. The workspace's pinned `@agent-native/core@0.176.4` patch now
+  also waits up to 8 seconds and remembers a granted check for 5 minutes
+  per user, app, and org (denials are never cached). Remove it once the
+  framework fixes this upstream.

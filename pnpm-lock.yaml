@@ -56,7 +56,7 @@ overrides:
 
 patchedDependencies:
   '@agent-native/core@0.176.4':
-    hash: 586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd
+    hash: e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6
     path: patches/@agent-native__core@0.176.4.patch
 
 importers:
@@ -65,7 +65,7 @@ importers:
     dependencies:
       '@agent-native/core':
         specifier: 0.176.4
-        version: 0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)
+        version: 0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -87,7 +87,7 @@ importers:
     dependencies:
       '@agent-native/core':
         specifier: 0.176.4
-        version: 0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)
+        version: 0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)
       '@agent-native/toolkit':
         specifier: 0.19.2
         version: 0.19.2(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
@@ -310,10 +310,10 @@ importers:
     dependencies:
       '@agent-native/core':
         specifier: 0.176.4
-        version: 0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)
+        version: 0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)
       '@agent-native/dispatch':
         specifier: 0.33.1
-        version: 0.33.1(@agent-native/core@0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(4d5b51c34d39d8dbe9560b4421788abb))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
+        version: 0.33.1(@agent-native/core@0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(4d5b51c34d39d8dbe9560b4421788abb))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
@@ -413,7 +413,7 @@ importers:
     dependencies:
       '@agent-native/core':
         specifier: 0.176.4
-        version: 0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)
+        version: 0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)
       '@agent-native/toolkit':
         specifier: 0.19.2
         version: 0.19.2(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
@@ -654,7 +654,7 @@ importers:
     dependencies:
       '@agent-native/core':
         specifier: 0.176.4
-        version: 0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)
+        version: 0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)
       '@agent-native/toolkit':
         specifier: 0.19.2
         version: 0.19.2(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
@@ -922,7 +922,7 @@ importers:
     dependencies:
       '@agent-native/core':
         specifier: 0.176.4
-        version: 0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)
+        version: 0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)
       '@agent-native/toolkit':
         specifier: 0.19.2
         version: 0.19.2(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
@@ -7290,7 +7290,7 @@ packages:
 
 snapshots:
 
-  '@agent-native/core@0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)':
+  '@agent-native/core@0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)':
     dependencies:
       '@agent-native/recap-cli': 0.5.24
       '@agent-native/toolkit': 0.19.2(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
@@ -7503,9 +7503,9 @@ snapshots:
       - xml2js
       - zephyr-agent
 
-  '@agent-native/dispatch@0.33.1(@agent-native/core@0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(4d5b51c34d39d8dbe9560b4421788abb))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))':
+  '@agent-native/dispatch@0.33.1(@agent-native/core@0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(4d5b51c34d39d8dbe9560b4421788abb))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))':
     dependencies:
-      '@agent-native/core': 0.176.4(patch_hash=586daf365b17873fa64e5197ace8e8e5f8f387f527d5e8760cc9ae58c223d8bd)(24ad8426ef469279fa5cf6f7bc201637)
+      '@agent-native/core': 0.176.4(patch_hash=e1443557350ef599084b3439204c2c25fa7c5807dd4b85fb08187e440a0fa6d6)(24ad8426ef469279fa5cf6f7bc201637)
       '@agent-native/toolkit': 0.19.2(@floating-ui/dom@1.8.0)(@tiptap/extension-code-block@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extension-list@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/extensions@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1)(use-sync-external-store@1.6.0(react@19.2.7))
       '@radix-ui/react-accordion': 1.2.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-alert-dialog': 1.1.19(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -7608,8 +7608,8 @@ snapshots:
       '@tiptap/core': 3.30.1(@tiptap/pm@3.28.0)
       '@tiptap/extension-bubble-menu': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)
       '@tiptap/extension-code-block-lowlight': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/extension-code-block@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(highlight.js@11.11.1)(lowlight@3.3.0)
-      '@tiptap/extension-collaboration': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))(yjs@13.6.32)
-      '@tiptap/extension-collaboration-caret': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))
+      '@tiptap/extension-collaboration': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))(yjs@13.6.32)
+      '@tiptap/extension-collaboration-caret': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))
       '@tiptap/extension-floating-menu': 3.28.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)
       '@tiptap/extension-image': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))
       '@tiptap/extension-link': 3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)
@@ -9720,7 +9720,7 @@ snapshots:
     optionalDependencies:
       typescript: 7.0.2
 
-  '@reduxjs/toolkit@2.12.0(react-redux@9.3.0(@types/react@19.2.17)(react@19.2.7)(redux@5.0.1))(react@19.2.7)':
+  '@reduxjs/toolkit@2.12.0(react-redux@9.3.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@standard-schema/utils': 0.3.0
@@ -10158,13 +10158,13 @@ snapshots:
     dependencies:
       '@tiptap/core': 3.30.1(@tiptap/pm@3.28.0)
 
-  '@tiptap/extension-collaboration-caret@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))':
+  '@tiptap/extension-collaboration-caret@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))':
     dependencies:
       '@tiptap/core': 3.30.1(@tiptap/pm@3.28.0)
       '@tiptap/pm': 3.28.0
       '@tiptap/y-tiptap': 3.0.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32)
 
-  '@tiptap/extension-collaboration@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.1)(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))(yjs@13.6.32)':
+  '@tiptap/extension-collaboration@3.30.1(@tiptap/core@3.30.1(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/y-tiptap@3.0.7(y-protocols@1.0.7(yjs@13.6.32))(yjs@13.6.32))(yjs@13.6.32)':
     dependencies:
       '@tiptap/core': 3.30.1(@tiptap/pm@3.28.0)
       '@tiptap/pm': 3.28.0
@@ -12927,7 +12927,7 @@ snapshots:
 
   recharts@3.9.2(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react-is@19.2.7)(react@19.2.7)(redux@5.0.1):
     dependencies:
-      '@reduxjs/toolkit': 2.12.0(react-redux@9.3.0(@types/react@19.2.17)(react@19.2.7)(redux@5.0.1))(react@19.2.7)
+      '@reduxjs/toolkit': 2.12.0(react-redux@9.3.0(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)
       clsx: 2.1.1
       decimal.js-light: 2.5.1
       es-toolkit: 1.49.0
