@@ -297,10 +297,12 @@ export function RoutingSettings() {
           Lead routing
         </h2>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          Who an exceptional lead goes to. Owned by an AE in HubSpot: that AE.
-          Not owned, {line} employees or fewer: the Commercial AE. Not owned and
-          bigger: the next Enterprise AE in the round robin. The email carries
-          that person's meeting link.{" "}
+          Who an exceptional lead goes to. Owned by an AE in HubSpot: nothing
+          happens in PA, because HubSpot's workflow emails them. Not owned,{" "}
+          {line} employees or fewer: the Commercial AE. Not owned and bigger:
+          the next Enterprise AE in the round robin. The email carries that
+          person's meeting link. An owner counts as an AE once they are listed
+          here.{" "}
           <Link
             to="/playbook?section=routing"
             className="text-foreground underline underline-offset-2"

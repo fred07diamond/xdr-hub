@@ -104,7 +104,9 @@ Follow every rule `get-messaging-guide` returned, in order: the shared rules
 lead's class, and `msg.first_touch.example` as the bar. Those blocks are
 edited by the PA team in the Playbook, so do not work from memory.
 
-The route sets the ask. On Route to the AE, the AE is looped in: PA puts
+When `leadRoute.route` is `ae_owned`, an AE owns the account in HubSpot and
+HubSpot's own workflow emails them: write no draft and no brief, and say so
+if asked. The route sets the ask. On Route to the AE, the AE is looped in: PA puts
 them on CC, so the email names them (`leadRoute.meetingWith.name`), says
 what the meeting is for in the lead's terms, and then gives the AE's link
 on its own line. When `leadRoute.meetingWith` is set, the email

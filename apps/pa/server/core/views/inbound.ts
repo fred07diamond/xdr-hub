@@ -13,6 +13,7 @@ import type {
   OwnerView,
   ReceiptDetail,
   ReceiptSummary,
+  TriageView,
 } from "../../../shared/pa-views.js";
 import {
   briefLabels,
@@ -277,7 +278,12 @@ async function briefView(
   };
 }
 
-const FIXED_ROUTES = new Set(["no_sales_email", "customer_team", "deal_ae"]);
+const FIXED_ROUTES = new Set([
+  "no_sales_email",
+  "customer_team",
+  "deal_ae",
+  "ae_owned",
+]);
 
 function leadRouteView(route: LeadRouteResult): LeadRouteView {
   return {
@@ -342,6 +348,26 @@ function sentSummary(
       : "The first email went out from HubSpot.",
   };
 }
+
+const AE_OWNED_NOTE =
+  "No draft: owned by an AE in HubSpot, and HubSpot's workflow emails them.";
+
+/** An AE owns the account (D80): PA steps back on the board and the record. */
+function aeOwnedTriage(route: LeadRouteView): TriageView {
+  return {
+    kind: "elsewhere",
+    label: "AE-owned account",
+    verdictLabel: null,
+    why: route.reason,
+    action: "Nothing to do in PA. HubSpot's workflow emails them.",
+  };
+}
+
+const untimed = (engagement: EngagementRecord): EngagementRecord => ({
+  ...engagement,
+  firstTouchDueAt: null,
+  decisionDueAt: null,
+});
 
 async function liveDecision(
   repo: PaRepository,
@@ -454,27 +480,44 @@ async function buildRow(
     awaitingAgent: !assessment && inbox?.source === "hubspot",
   });
   const submittedAt = latest?.submittedAt ?? engagement.createdAt;
-  const clock = clockView({
+  const leadRoute = await leadRouteOf(
+    repo,
+    release,
     engagement,
+    triage.kind,
+    people,
+  );
+  const stepBack = leadRoute?.route === "ae_owned";
+  const timed = stepBack ? untimed(engagement) : engagement;
+  const clock = clockView({
+    engagement: timed,
     owner,
     submittedAt,
     release: pinned,
     now,
-    noClockReason: await noClockReason(repo, engagement),
+    noClockReason: stepBack
+      ? "No SLA: owned by an AE, HubSpot emails them"
+      : await noClockReason(repo, engagement),
   });
   return {
     id: engagement.id,
-    triage,
-    leadRoute: await leadRouteOf(
-      repo,
-      release,
-      engagement,
-      triage.kind,
-      people,
-    ),
-    draft: sentSummary(events, engagement) ?? draftSummary(draft),
-    sla: slaView({ engagement, clock, events, submittedAt, now }),
-    decision: await liveDecision(repo, engagement, release, now),
+    triage: stepBack && leadRoute ? aeOwnedTriage(leadRoute) : triage,
+    leadRoute,
+    draft:
+      sentSummary(events, engagement) ??
+      (stepBack
+        ? {
+            status: "not_needed",
+            subject: null,
+            preview: null,
+            problemCount: 0,
+            note: AE_OWNED_NOTE,
+          }
+        : draftSummary(draft)),
+    sla: slaView({ engagement: timed, clock, events, submittedAt, now }),
+    decision: stepBack
+      ? null
+      : await liveDecision(repo, engagement, release, now),
     state: engagement.state,
     stateLabel: stateLabel(engagement.state),
     hidden: inbox?.status === "skipped",
@@ -821,7 +864,7 @@ export async function buildEngagementDetail(input: {
     entryVersion: (id) =>
       pinned.entries.find((entry) => entry.id === id)?.version ?? null,
   });
-  const triage = triageFor({
+  const triageRaw = triageFor({
     engagement,
     precheckOutcome: precheck?.outcome ?? null,
     signal: precheck?.signal ?? null,
@@ -844,13 +887,24 @@ export async function buildEngagementDetail(input: {
   });
 
   const submittedAt = latest?.submittedAt ?? engagement.createdAt;
-  const clock = clockView({
+  const leadRoute = await leadRouteOf(
+    repo,
+    input.release,
     engagement,
+    triageRaw.kind,
+  );
+  const stepBack = leadRoute?.route === "ae_owned";
+  const triage = stepBack && leadRoute ? aeOwnedTriage(leadRoute) : triageRaw;
+  const timed = stepBack ? untimed(engagement) : engagement;
+  const clock = clockView({
+    engagement: timed,
     owner,
     submittedAt,
     release: pinned,
     now: input.now,
-    noClockReason: await noClockReason(repo, engagement),
+    noClockReason: stepBack
+      ? "No SLA: owned by an AE, HubSpot emails them"
+      : await noClockReason(repo, engagement),
   });
   const snapshotReceipt = lastOf("crm_snapshot");
   const firstSubmission = submissions[0];
@@ -858,10 +912,31 @@ export async function buildEngagementDetail(input: {
   return {
     id: engagement.id,
     triage,
-    leadRoute: await leadRouteOf(repo, input.release, engagement, triage.kind),
-    draft,
-    sla: slaView({ engagement, clock, events, submittedAt, now: input.now }),
-    decision: await liveDecision(repo, engagement, input.release, input.now),
+    leadRoute,
+    draft: stepBack
+      ? {
+          ...draft,
+          status: "not_needed",
+          id: null,
+          body: null,
+          subject: null,
+          preview: null,
+          problems: [],
+          problemCount: 0,
+          cc: null,
+          note: AE_OWNED_NOTE,
+        }
+      : draft,
+    sla: slaView({
+      engagement: timed,
+      clock,
+      events,
+      submittedAt,
+      now: input.now,
+    }),
+    decision: stepBack
+      ? null
+      : await liveDecision(repo, engagement, input.release, input.now),
     brief: await briefView(repo, engagement.id, {
       company: latest?.companyName ?? null,
       contact: [

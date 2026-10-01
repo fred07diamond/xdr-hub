@@ -13,6 +13,7 @@ export const LEAD_ROUTES = [
   "agency",
   "customer_team",
   "deal_ae",
+  "ae_owned",
   "no_sales_email",
 ] as const;
 export type LeadRoute = (typeof LEAD_ROUTES)[number];
@@ -33,6 +34,7 @@ export const LEAD_ROUTE_LABELS: Record<LeadRoute, string> = {
   agency: "Agency path",
   customer_team: "Their AE and CSM",
   deal_ae: "The deal's AE",
+  ae_owned: "Owned by an AE",
   no_sales_email: "No sales email",
 };
 
@@ -52,8 +54,12 @@ export const LEAD_ROUTE_EMAIL: Record<LeadRoute, string> = {
     "Connect them with their AE and CSM. Not a PA play, no meeting link.",
   deal_ae:
     "An open deal is in progress: introduce the deal's AE with their meeting link.",
+  ae_owned:
+    "Owned by an AE in HubSpot. HubSpot's workflow emails them, so PA does nothing.",
   no_sales_email: "No sales email.",
 };
+
+const AE_ROLES = new Set(["ae", "commercial_ae"]);
 
 /** The class-to-route rule the playbook seeds (rule.routing.by_class). */
 export const DEFAULT_ROUTE_BY_CLASS: Record<string, LeadRoute> = {
@@ -279,6 +285,27 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
 
   if (input.precheckOutcome && NOT_SALES.has(input.precheckOutcome))
     return result("no_sales_email", "crm", "Not a sales lead.");
+  // Owned by an AE, whatever the class or segment: HubSpot's own workflow
+  // emails them, so PA steps back (D80). An owner is an AE when Lead
+  // routing has them as an Enterprise or Commercial AE.
+  const owner = input.accountOwner;
+  const ownerRole = owner
+    ? people.get(owner.email.toLowerCase())?.role
+    : undefined;
+  if (owner && ownerRole && AE_ROLES.has(ownerRole))
+    return result(
+      "ae_owned",
+      "crm",
+      `${nameOf(owner)} owns the account in HubSpot. HubSpot's workflow emails them; nothing to do in PA.`,
+    );
+  if (
+    owner &&
+    !ownerRole &&
+    owner.email.toLowerCase() !== input.paOwner?.email.toLowerCase()
+  )
+    gaps.push(
+      `${nameOf(owner)} owns the account in HubSpot but is not set up in Lead routing. If they are an AE, mark them in Settings, Organization, and PA steps back.`,
+    );
   if (input.hasOpenDeal) {
     const deal = input.dealOwner ?? input.accountOwner;
     return result(

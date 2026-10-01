@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (AE-owned accounts)
+
+- When an AE owns the account in HubSpot, PA does nothing: no draft, no
+  decision, no SLA. HubSpot's existing workflow emails them (D80).
+- An owner counts as an AE once they are in Lead routing as an Enterprise
+  or Commercial AE; an unknown owner is flagged to set up.
+
 ## 2026-10-01 (lead routing settings)
 
 - Settings, Organization has a Lead routing section: set the Commercial AE,

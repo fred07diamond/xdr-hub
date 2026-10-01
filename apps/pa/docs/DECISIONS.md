@@ -1497,3 +1497,18 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - It replaces the earlier people list, whose pod AE column and mixed list
   of everyone seen made it hard to read. Lead pages link here when someone
   or a meeting link is missing.
+
+## D80. An account owned by an AE is left to HubSpot (2026-10-01)
+
+- Fred: "if the account is owned by an AE no matter the area, nothing should
+  happen. There is a workflow that already exists for this where an email is
+  sent from HubSpot."
+- A new route, **Owned by an AE** (`ae_owned`), comes before every other
+  route except the non-sales exits: whatever the class, segment, or an open
+  deal, PA writes no draft, opens no decision, starts no SLA timer, and
+  makes no round robin pick. The board and the record say "AE-owned
+  account" and that HubSpot's workflow emails them. It cannot be overridden.
+- An account owner counts as an AE when Lead routing (D79) lists them as an
+  Enterprise or Commercial AE. Many accounts are owned by PAs, so an owner
+  Lead routing does not know is not assumed to be an AE: PA keeps working
+  the lead and flags the owner to set up.

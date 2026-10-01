@@ -56,23 +56,29 @@ const base: LeadRouteInput = {
 };
 
 describe("leadRouteFor", () => {
-  it("sends an enterprise fit to the account's AE, with that AE's link", () => {
-    const route = leadRouteFor({
+  it("steps back when an AE owns the account, whatever the class or size (D80)", () => {
+    for (const input of [
+      {},
+      { approach: "standard_code" },
+      { employees: 520 },
+      { hasOpenDeal: true },
+    ]) {
+      const route = leadRouteFor({
+        ...base,
+        ...input,
+        accountOwner: { email: "account-ae@example.com", name: "Alex" },
+      });
+      expect(route.route).toBe("ae_owned");
+      expect(route.meetingWith).toBeNull();
+      expect(draftRouteOf(route).needsLink).toBe(false);
+    }
+    // An owner Lead routing does not know is flagged, and PA keeps working.
+    const unknown = leadRouteFor({
       ...base,
-      accountOwner: { email: "account-ae@example.com", name: "Alex" },
+      accountOwner: { email: "someone@example.com", name: "Sam" },
     });
-    expect(route.route).toBe("route_to_ae");
-    expect(route.meetingWith).toMatchObject({
-      email: "account-ae@example.com",
-      role: "ae",
-      link: "https://meetings.example.com/account-ae",
-    });
-    expect(route.gaps).toEqual([]);
-    // The AE is looped in on the email.
-    expect(draftRouteOf(route)).toMatchObject({
-      cc: "account-ae@example.com",
-      aeName: "Alex",
-    });
+    expect(unknown.route).toBe("route_to_ae");
+    expect(unknown.gaps[0]).toMatch(/not set up in Lead routing/);
   });
 
   it("round robins an unowned account over 8,000 employees to an Enterprise AE (D78)", () => {
@@ -207,14 +213,14 @@ describe("leadRouteFor", () => {
     expect(leadRouteFor({ ...base, employees: 8001 }).segment).toBe(
       "enterprise",
     );
-    // Owned by an AE: that AE, whatever the size.
+    // Owned by an AE: PA steps back, whatever the size.
     expect(
       leadRouteFor({
         ...base,
         employees: 520,
         accountOwner: { email: "account-ae@example.com", name: "Alex" },
-      }).meetingWith?.email,
-    ).toBe("account-ae@example.com");
+      }).route,
+    ).toBe("ae_owned");
     // No Commercial AE set: say so, and ask for one.
     const missing = leadRouteFor({
       ...base,

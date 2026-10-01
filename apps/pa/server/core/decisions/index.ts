@@ -5,7 +5,10 @@
 // is recorded and alerted, never executed (Fred, 2026-09-30). Decisions
 // change the lead in PA only; HubSpot is not written.
 import type { CrmSnapshot } from "../crm/port.js";
-import { classOfSubmission } from "../lead-route/engagement.js";
+import {
+  classOfSubmission,
+  routeForEngagement,
+} from "../lead-route/engagement.js";
 import { assertTransition, type EngagementState } from "../objects/index.js";
 import { rule } from "../playbook/resolve.js";
 import type { PlaybookRelease } from "../playbook/schema.js";
@@ -308,6 +311,12 @@ export async function ensureDecision(
   if (!engagement) return null;
   const inputs = await decisionInputs(deps.repo, engagement, deps.release);
   if (!inputs || !needsDecision(inputs)) return null;
+  // Owned by an AE: HubSpot's workflow handles it, so no PA decision (D80).
+  if (
+    (await routeForEngagement(deps.repo, deps.release, engagement)).route ===
+    "ae_owned"
+  )
+    return null;
   const hours = rule(deps.release, "rule.sla.decision").params.hours;
   const advice = recommend(inputs);
   const at = deps.now().toISOString();

@@ -140,7 +140,7 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": "Routing happens after the lead is triaged, and it decides whose meeting link goes in the email.\nA good fit for enterprise goes to an AE: the AE who owns the account in HubSpot; with no AE owner, the Commercial AE at 8,000 employees or fewer, else the next Enterprise AE in the round robin (the Commercial accounts block). The email carries the AE's meeting link to speed up the sales process.\nA lead the PA thinks has potential, but that is not an enterprise fit yet, is the PA's call: the email carries the PA's own meeting link.\nAnything unclear qualifies first with questions and no link. The PA can change the route on any lead.\n",
+      "body": "Routing happens after the lead is triaged, and it decides whose meeting link goes in the email.\nAn account owned by an AE in HubSpot is left to HubSpot's workflow, whatever its class. Otherwise a good fit for enterprise goes to an AE: the Commercial AE at 8,000 employees or fewer, else the next Enterprise AE in the round robin (the Commercial accounts block). The email carries the AE's meeting link to speed up the sales process.\nA lead the PA thinks has potential, but that is not an enterprise fit yet, is the PA's call: the email carries the PA's own meeting link.\nAnything unclear qualifies first with questions and no link. The PA can change the route on any lead.\n",
       "params": {
         "hq_content": "route_to_ae",
         "hq_code": "route_to_ae",
@@ -162,11 +162,11 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": "A commercial account is a company with max_employees employees or fewer.\nOwned by an AE in HubSpot: route to that AE owner.\nNot owned by an AE, max_employees employees or fewer: route to the Commercial AE.\nNot owned by an AE, more than max_employees employees: round robin to the next Enterprise AE. The pick is saved, so the lead keeps its AE.\nAn unknown employee count goes to the enterprise round robin and is flagged to check.\nThe Commercial AE and the Enterprise AEs are set in Settings, Organization, under Lead routing.\n",
+      "body": "A commercial account is a company with max_employees employees or fewer.\nOwned by an AE in HubSpot, whatever the class or size: nothing happens in PA. HubSpot's own workflow emails them, so there is no draft, no decision, and no SLA.\nNot owned by an AE, max_employees employees or fewer: route to the Commercial AE.\nNot owned by an AE, more than max_employees employees: round robin to the next Enterprise AE. The pick is saved, so the lead keeps its AE.\nAn unknown employee count goes to the enterprise round robin and is flagged to check.\nThe Commercial AE and the Enterprise AEs are set in Settings, Organization, under Lead routing.\n",
       "params": {
         "max_employees": 8000
       },
-      "rationale": "Fred, 2026-10-01: 8k or less and unowned by an AE goes to the Commercial AE; 8k+ and unowned round robins to an Enterprise AE; owned by an AE goes to the AE owner.",
+      "rationale": "Fred, 2026-10-01: 8k or less and unowned by an AE goes to the Commercial AE; 8k+ and unowned round robins to an Enterprise AE. Owned by an AE: nothing happens in PA; HubSpot's workflow emails them.",
       "owner_team": "both",
       "block": "threshold",
       "section": "routing",
@@ -620,12 +620,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "d3055b644ed5e4fc7b5c3026f995caeae799ed705a9ad43847fb6fa584c3cba3",
-  "short_id": "d3055b64",
+  "id": "29339d9c8b9640f8c2cb42ebd510b1b41f25d73aa4aaf8f4f31d836eb4f99644",
+  "short_id": "29339d9c",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "88acd489bb33bf560cf1877e816038afef46cdd950276d7b94c8336a2bf2a480"
+      "sha256": "7ba2298c2ed8f6ab1b26feb4820042cf9801dcd79f56171b84555335f0aac4fa"
     },
     {
       "path": "config/routing-pool.yaml",

@@ -114,7 +114,7 @@ entries:
     version: 1
     body: |
       Routing happens after the lead is triaged, and it decides whose meeting link goes in the email.
-      A good fit for enterprise goes to an AE: the AE who owns the account in HubSpot; with no AE owner, the Commercial AE at 8,000 employees or fewer, else the next Enterprise AE in the round robin (the Commercial accounts block). The email carries the AE's meeting link to speed up the sales process.
+      An account owned by an AE in HubSpot is left to HubSpot's workflow, whatever its class. Otherwise a good fit for enterprise goes to an AE: the Commercial AE at 8,000 employees or fewer, else the next Enterprise AE in the round robin (the Commercial accounts block). The email carries the AE's meeting link to speed up the sales process.
       A lead the PA thinks has potential, but that is not an enterprise fit yet, is the PA's call: the email carries the PA's own meeting link.
       Anything unclear qualifies first with questions and no link. The PA can change the route on any lead.
     params:
@@ -136,14 +136,14 @@ entries:
     version: 1
     body: |
       A commercial account is a company with max_employees employees or fewer.
-      Owned by an AE in HubSpot: route to that AE owner.
+      Owned by an AE in HubSpot, whatever the class or size: nothing happens in PA. HubSpot's own workflow emails them, so there is no draft, no decision, and no SLA.
       Not owned by an AE, max_employees employees or fewer: route to the Commercial AE.
       Not owned by an AE, more than max_employees employees: round robin to the next Enterprise AE. The pick is saved, so the lead keeps its AE.
       An unknown employee count goes to the enterprise round robin and is flagged to check.
       The Commercial AE and the Enterprise AEs are set in Settings, Organization, under Lead routing.
     params:
       max_employees: 8000
-    rationale: "Fred, 2026-10-01: 8k or less and unowned by an AE goes to the Commercial AE; 8k+ and unowned round robins to an Enterprise AE; owned by an AE goes to the AE owner."
+    rationale: "Fred, 2026-10-01: 8k or less and unowned by an AE goes to the Commercial AE; 8k+ and unowned round robins to an Enterprise AE. Owned by an AE: nothing happens in PA; HubSpot's workflow emails them."
   - id: rule.sla.first_touch
     block: clock
     section: clocks

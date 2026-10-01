@@ -232,6 +232,20 @@ export async function listAgentWork(
         }
       | null
       | undefined;
+    // Owned by an AE: HubSpot's workflow emails them, so no draft (D80).
+    if (plan.needed) {
+      routing ??= {
+        release: await activeRelease(repository),
+        people: await repository.listPeople(),
+      };
+      const route = await routeForEngagement(
+        repository,
+        routing.release,
+        engagement,
+        { people: routing.people },
+      );
+      if (route.route === "ae_owned") continue;
+    }
     let stale = false;
     if (plan.needed && latest) {
       const undecided =
