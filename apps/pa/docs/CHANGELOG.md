@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-01 (inbound sort and filter)
+
+- The inbound board lists the newest request first by default, so a new
+  Contact Sales lead lands at the top as soon as it is pulled. "Most urgent"
+  keeps the old SLA order (breached, at risk, then by due time).
+- Filter by when the lead was submitted: last 24 hours, 7 days, 30 days, or
+  any time. The choice stays in the link, and next and previous on a lead
+  follow it.
+- Leads submitted in the last hour carry a New mark.
+- The board refreshes every 30 seconds, so new leads appear without a
+  reload.
+
 ## 2026-09-30 (routing after triage)
 
 - Every lead now shows its route: route to the AE, PA takes the call, or

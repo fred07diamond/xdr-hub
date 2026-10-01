@@ -25,12 +25,21 @@ import {
   BoardTabs,
   SelectionBar,
   StateFilter,
+  ViewControls,
 } from "@/components/pa/inbound-board";
 import { IntakeBar } from "@/components/pa/intake-bar";
 import { EmptyState, ErrorState } from "@/components/pa/states";
 import { Button } from "@/components/ui/button";
 import { useInboundBoard } from "@/hooks/use-pa-data";
 import { APP_TITLE } from "@/lib/app-config";
+import {
+  arrangeRows,
+  boardQuery,
+  parseSort,
+  parseWindow,
+  type BoardSort,
+  type BoardWindow,
+} from "@/lib/board-arrange";
 import { setDemoMode, useDemoMode } from "@/lib/demo-mode";
 
 export function meta() {
@@ -65,6 +74,8 @@ export default function InboundRoute() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
   const state = searchParams.get("state") || undefined;
+  const sort = parseSort(searchParams.get("sort"));
+  const within = parseWindow(searchParams.get("within"));
   const demo = useDemoMode();
   const board = useInboundBoard(tab, state);
   const replay = useActionMutation("replay-submission");
@@ -72,7 +83,7 @@ export default function InboundRoute() {
 
   useEffect(() => {
     setSelected(new Set());
-  }, [tab, state, demo]);
+  }, [tab, state, demo, within]);
 
   useEffect(() => {
     const engagementIds = [...selected];
@@ -85,7 +96,22 @@ export default function InboundRoute() {
     ).catch(() => undefined);
   }, [selected]);
 
-  const rows = board.data?.rows ?? [];
+  const allRows = board.data?.rows ?? [];
+  const now = board.data ? Date.parse(board.data.generatedAt) : Date.now();
+  const rows = arrangeRows(allRows, { sort, within, now });
+  const linkQuery = boardQuery({ tab, sort, within });
+
+  function setView(next: { sort?: BoardSort; within?: BoardWindow }) {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", tab);
+    const nextSort = next.sort ?? sort;
+    const nextWithin = next.within ?? within;
+    if (nextSort === "newest") params.delete("sort");
+    else params.set("sort", nextSort);
+    if (nextWithin === "all") params.delete("within");
+    else params.set("within", nextWithin);
+    setSearchParams(params, { replace: true });
+  }
 
   function setStateFilter(next: string | undefined) {
     const params = new URLSearchParams(searchParams);
@@ -193,6 +219,28 @@ export default function InboundRoute() {
         </p>
       </EmptyState>
     );
+  } else if (rows.length === 0 && allRows.length > 0 && within !== "all") {
+    content = (
+      <EmptyState
+        icon={IconFilterOff}
+        title="Nothing submitted in this window"
+        action={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setView({ within: "all" })}
+          >
+            Show any time
+          </Button>
+        }
+      >
+        <p>
+          {allRows.length} older{" "}
+          {allRows.length === 1 ? "lead is" : "leads are"} on this tab.
+        </p>
+      </EmptyState>
+    );
   } else if (rows.length === 0) {
     content = state ? (
       <EmptyState
@@ -245,7 +293,8 @@ export default function InboundRoute() {
           <BoardTable
             rows={rows}
             tab={tab}
-            now={Date.parse(board.data.generatedAt)}
+            linkQuery={linkQuery}
+            now={now}
             selected={selected}
             onToggle={toggle}
             onToggleAll={(checked) =>
@@ -259,6 +308,8 @@ export default function InboundRoute() {
           <BoardCards
             rows={rows}
             tab={tab}
+            linkQuery={linkQuery}
+            now={now}
             selected={selected}
             onToggle={toggle}
           />
@@ -285,6 +336,12 @@ export default function InboundRoute() {
             </span>
           ) : null}
           <DemoToggle enabled={demo} onChange={setDemoMode} />
+          <ViewControls
+            sort={sort}
+            within={within}
+            onSort={(next) => setView({ sort: next })}
+            onWithin={(next) => setView({ within: next })}
+          />
           <StateFilter
             states={board.data?.states ?? []}
             value={state}

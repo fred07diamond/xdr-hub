@@ -52,6 +52,12 @@ import { UntrustedText } from "@/components/pa/untrusted-text";
 import { Button } from "@/components/ui/button";
 import { useEngagement, useInboundBoard } from "@/hooks/use-pa-data";
 import { APP_TITLE } from "@/lib/app-config";
+import {
+  arrangeRows,
+  boardQuery,
+  parseSort,
+  parseWindow,
+} from "@/lib/board-arrange";
 import { countryName, formatDateTime, humanize, initials } from "@/lib/format";
 
 export function meta() {
@@ -467,12 +473,20 @@ export default function EngagementRoute() {
   )?.id;
   // The board the PA came from, so "next lead" walks the same queue.
   const board = useInboundBoard(fromTab ?? "team", undefined);
-  const queue = board.data?.rows ?? [];
+  const sort = parseSort(searchParams.get("sort"));
+  const within = parseWindow(searchParams.get("within"));
+  const queue = arrangeRows(board.data?.rows ?? [], {
+    sort,
+    within,
+    now: board.data ? Date.parse(board.data.generatedAt) : Date.now(),
+  });
   const index = queue.findIndex((row) => row.id === id);
   const prevId = index > 0 ? queue[index - 1].id : null;
   const nextId =
     index >= 0 && index < queue.length - 1 ? queue[index + 1].id : null;
-  const suffix = fromTab ? `?tab=${fromTab}` : "";
+  const suffix = fromTab
+    ? `?${boardQuery({ tab: fromTab, sort, within })}`
+    : "";
   const [drawerOpen, setDrawerOpen] = useState(false);
   const decide = useActionMutation("decide-lead");
   const refresh = useActionMutation("refresh-lead");

@@ -18,6 +18,9 @@ export function useInboundBoard(tab: BoardTab, state: string | undefined) {
     {
       placeholderData: keepPreviousData,
       enabled: !demo,
+      // HubSpot is polled every minute; refetch so new requests show up
+      // at the top without a reload.
+      refetchInterval: 30_000,
     },
   );
   const sample = useQuery({
