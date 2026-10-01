@@ -193,8 +193,8 @@ describe("salesCycleView", () => {
       verdict: "ql",
       triageKind: "reply",
     });
+    // No MQL: a Contact Sales lead starts at QL (D91).
     expect(stages.map((stage) => stage.label)).toEqual([
-      "MQL",
       "QL",
       "SAL or Recycle",
       "S0",
@@ -204,23 +204,22 @@ describe("salesCycleView", () => {
     ]);
     expect(stages.map((stage) => stage.status)).toEqual([
       "done",
-      "done",
       "current",
       "upcoming",
       "upcoming",
       "upcoming",
       "upcoming",
     ]);
-    expect(stages[3].note).toMatch(/HubSpot/);
+    expect(stages[2].note).toMatch(/HubSpot/);
   });
 
-  it("stops a lead that is not a sales opportunity at MQL", () => {
+  it("stops a lead that is not a sales opportunity before QL", () => {
     const stages = salesCycleView({
       ...base,
       verdict: "route_elsewhere",
       triageKind: "elsewhere",
     });
-    expect(stages[1].status).toBe("stopped");
+    expect(stages[0].status).toBe("stopped");
   });
 
   it("forks to Recycle when HubSpot or the rep recycles the lead", () => {
@@ -234,9 +233,10 @@ describe("salesCycleView", () => {
         verdict: null,
         triageKind: "reply",
       });
-      expect(stages[2]).toMatchObject({ label: "Recycle", status: "stopped" });
+      expect(stages[0].status).toBe("done");
+      expect(stages[1]).toMatchObject({ label: "Recycle", status: "stopped" });
       expect(
-        stages.slice(3).every((stage) => stage.status === "upcoming"),
+        stages.slice(2).every((stage) => stage.status === "upcoming"),
       ).toBe(true);
     }
   });
@@ -248,8 +248,7 @@ describe("salesCycleView", () => {
       crmLifecycle: "SAL",
       triageKind: "owner",
     });
-    expect(stages.slice(0, 4).map((stage) => stage.status)).toEqual([
-      "done",
+    expect(stages.slice(0, 3).map((stage) => stage.status)).toEqual([
       "done",
       "done",
       "current",

@@ -54,7 +54,6 @@ export interface SlaView {
 }
 
 export const SALES_STAGES = [
-  { code: "mql", label: "MQL" },
   { code: "ql", label: "QL" },
   { code: "sal", label: "SAL" },
   { code: "s0", label: "S0" },

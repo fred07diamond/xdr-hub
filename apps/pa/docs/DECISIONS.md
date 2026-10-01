@@ -1687,3 +1687,13 @@ bottom. Revisit one only when its "revisit when" condition happens.
   no draft work, and no round robin pick, and the agent skips it.
 - The 30 minute HubSpot check (D83) now also reads the contact's deals
   (read only) and records a deal created after the form.
+
+## D91. The sales cycle starts at QL (2026-10-01)
+
+- Fred: "the stage of this lead is in Recycle not MQL. We should remove MQL
+  all together."
+- The cycle is now QL, SAL or Recycle, S0, NBM booked, NBM complete, S1.
+  A Contact Sales lead starts at QL.
+- A sales lead that moved on (D90) still shows QL done and its HubSpot
+  stage (for example Recycle) as where it stopped; before, the moved-on view
+  made QL read as stopped.

@@ -407,7 +407,7 @@ function stepBackOf(
   if (movedOn)
     return {
       triage: movedOnTriage(movedOn),
-      note: `No draft: ${movedOn.reason.toLowerCase()}, so the lead moved on.`,
+      note: `No draft: ${movedOn.reason.charAt(0).toLowerCase()}${movedOn.reason.slice(1)}, so the lead moved on.`,
       noClock: "No SLA: moved on in HubSpot",
       keepDecision: false,
       keepClock: true,
@@ -1134,7 +1134,8 @@ export async function buildEngagementDetail(input: {
       verdict: scorecard?.verdict ?? null,
       scoredAt: scorecards[scorecards.length - 1]?.createdAt ?? null,
       crmLifecycle,
-      triageKind: triage.kind,
+      // The lead's own kind: a moved-on sales lead still reached QL (D91).
+      triageKind: triageRaw.kind,
       events,
       decisionChoice: (await repo.getDecision(engagement.id))?.choice ?? null,
     }),

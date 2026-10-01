@@ -236,8 +236,9 @@ export function slaView(input: {
 }
 
 /**
- * Where the lead is in the sales cycle: MQL, QL, SAL, S0, NBM booked, NBM
- * complete, S1. PA records MQL through SAL and NBM booked; S0, NBM complete,
+ * Where the lead is in the sales cycle: QL, SAL, S0, NBM booked, NBM
+ * complete, S1 (no MQL: a Contact Sales lead starts at QL, D91). PA records
+ * QL through SAL and NBM booked; S0, NBM complete,
  * and S1 come from HubSpot deals once the adapter reads them.
  */
 export function salesCycleView(input: {
@@ -278,7 +279,6 @@ export function salesCycleView(input: {
       }
     >
   > = {
-    mql: { at: input.submittedAt, note: "Contact Sales form" },
   };
   // Every Contact Sales lead comes in as a QL: it is the lifecycle stage on
   // arrival, not a verdict (D69).

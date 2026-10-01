@@ -183,7 +183,7 @@ const shortDate = (iso: string) =>
     new Date(iso),
   );
 
-/** MQL, QL, SAL, S0, NBM booked, NBM complete, S1, with the SLA timer. */
+/** QL, SAL, S0, NBM booked, NBM complete, S1, with the SLA timer. */
 export function SalesCycle({
   stages,
   sla,
