@@ -10,7 +10,8 @@ import {
 } from "../../server/core/qualify/index.js";
 
 const base: QualifyInput = {
-  message: "Looking at Builder for our team.",
+  message:
+    "Looking at Builder for our team to speed up how we build and ship pages.",
   useCase: "Webapps",
   jobTitle: "Engineer",
   breeze: 4,
@@ -128,5 +129,24 @@ describe("contactSalesClass", () => {
       skipAgency: true,
     });
     expect(agency.tier).toBe("exceptional");
+  });
+
+  it("suggests a recycle for a thin message with nothing to qualify (D88)", () => {
+    const thin = contactSalesClass({
+      ...base,
+      message: "yes need a trail",
+      breeze: 2,
+      useCase: "Headless CMS",
+    });
+    expect(thin.suggestRecycle).toBe(true);
+    expect(thin.summary).toMatch(/A 4 word message with nothing to qualify/);
+    // A short real question still gets discovery.
+    expect(
+      contactSalesClass({
+        ...base,
+        message: "Is a simple CMS without AI included?",
+        breeze: 4,
+      }).suggestRecycle,
+    ).toBe(false);
   });
 });

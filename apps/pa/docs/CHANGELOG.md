@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01 (thin messages)
+
+- A very short message with no question and next to no signal (for example
+  "yes need a trial") suggests a recycle instead of Requires discovery: one
+  clarification email, then recycle (D88).
+
 ## 2026-10-01 (rewrite reply)
 
 - A Rewrite reply button rewrites just the drafted reply, first in the

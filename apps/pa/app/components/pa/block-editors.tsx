@@ -780,6 +780,7 @@ export function BlockDataEditor({ block, data, onChange }: BlockEditorProps) {
             employees_exceptional: "employees",
             max_employees: "employees",
             signups_multiple: "sign-ups",
+            thin_message_words: "words",
           }}
         />
       );

@@ -145,6 +145,7 @@ export const EVALUATORS: Record<RuleId, Evaluator> = {
       "intent_recycle",
       "employees_exceptional",
       "signups_multiple",
+      "thin_message_words",
     ],
     crmFields: [],
     summary:

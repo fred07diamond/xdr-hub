@@ -81,6 +81,7 @@ export interface DecisionInputs {
     tier: "exceptional" | "discovery" | null;
     signalsMet: number;
     label: string;
+    suggestRecycle?: boolean;
   } | null;
 }
 
@@ -182,6 +183,19 @@ export function recommend(input: DecisionInputs): {
       options,
       recommendation: "decline",
       reason: `Intent score ${input.suggestRecycle.score} of 10 (none counts as 0): recycle after one email asking them to clarify, not a sequence.`,
+      question,
+    };
+  // A thin message with nothing to qualify (D88).
+  if (
+    input.qualification?.suggestRecycle &&
+    input.precheckOutcome !== "attach_to_owner"
+  )
+    return {
+      kind: "standard",
+      options,
+      recommendation: "decline",
+      reason:
+        "A short message with nothing to qualify yet: recycle after one email asking them to clarify, not a sequence.",
       question,
     };
   // The recommendation follows the qualification (D67), so it never says
@@ -297,7 +311,12 @@ async function qualificationOf(
     snapshot: (snapshotReceipt?.ruleResults.snapshot ?? null) as never,
     release: release ?? null,
   });
-  return { tier: cls.tier, signalsMet: cls.signalsMet, label: cls.label };
+  return {
+    tier: cls.tier,
+    signalsMet: cls.signalsMet,
+    label: cls.label,
+    suggestRecycle: cls.suggestRecycle,
+  };
 }
 
 /** PA's recommendation now, for an open decision recorded under older rules. */

@@ -247,13 +247,14 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": "Every Contact Sales lead is Exceptional or Requires discovery, from five signals. Agencies take the agency path first.\nExceptional (route to the AE) when at least exceptional_signals of these are true. Intent score (HubSpot Company Fit Score, Breeze, 0 to 10) of intent_exceptional or more. A clear enterprise need in the inbound message. employees_exceptional or more employees. A clearly defined budget (the form says Approved, or the message names one; may need outside research). Multiple sign-ups from the account (HubSpot company, Number of Associated Sign Up Contacts, at least signups_multiple).\nRequires discovery (qualify first) otherwise. Typically an intent score of 2 to 5, a potential or unclear enterprise need, an unknown budget, under 100 employees, and a single sign-up.\nAn intent score of intent_recycle or less suggests a recycle, and no intent score counts as 0. Those leads get one email asking them to clarify, not a sequence. The PA decides.\nContent or Code only picks the email angle and the questions.\n",
+      "body": "Every Contact Sales lead is Exceptional or Requires discovery, from five signals. Agencies take the agency path first.\nExceptional (route to the AE) when at least exceptional_signals of these are true. Intent score (HubSpot Company Fit Score, Breeze, 0 to 10) of intent_exceptional or more. A clear enterprise need in the inbound message. employees_exceptional or more employees. A clearly defined budget (the form says Approved, or the message names one; may need outside research). Multiple sign-ups from the account (HubSpot company, Number of Associated Sign Up Contacts, at least signups_multiple).\nRequires discovery (qualify first) otherwise. Typically an intent score of 2 to 5, a potential or unclear enterprise need, an unknown budget, under 100 employees, and a single sign-up.\nAn intent score of intent_recycle or less suggests a recycle, and no intent score counts as 0. So does a thin message: under thin_message_words words, no question, and at most one signal (for example \"yes need a trial\"), since there is nothing to qualify. Those leads get one email asking them to clarify, not a sequence. The PA decides.\nContent or Code only picks the email angle and the questions.\n",
       "params": {
         "exceptional_signals": 3,
         "intent_exceptional": 6,
         "intent_recycle": 1,
         "employees_exceptional": 101,
-        "signups_multiple": 2
+        "signups_multiple": 2,
+        "thin_message_words": 8
       },
       "rationale": "Fred, 2026-10-01: exceptional leads route to the AE; anything less requires discovery.",
       "owner_team": "both",
@@ -651,12 +652,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "30c6cd2187647b0572dbcc63d7c025c6491d5cd0679f14da7c5f2b44b50ee9bb",
-  "short_id": "30c6cd21",
+  "id": "9634178f4d5b057c9a55fd589ab0c04d71746ed2609e7f40a619bc3006045b73",
+  "short_id": "9634178f",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "e0828451374e4a95f933d085d23d1741875558df41fab6c5b9f2e60dcf764264"
+      "sha256": "329c107d3d1f871f626c5d3916cf4943a39d36bedc4a44b5bb3b4b351c2cdfab"
     },
     {
       "path": "config/routing-pool.yaml",

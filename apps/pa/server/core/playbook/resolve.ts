@@ -91,6 +91,7 @@ export const ruleParamSchemas = {
     intent_recycle: z.number().min(0).max(10),
     employees_exceptional: z.number().int().positive(),
     signups_multiple: z.number().int().min(1),
+    thin_message_words: z.number().int().min(0).optional(),
   }),
   "rule.enterprise.bar": z.object({
     code_min_seats: z.number().int().positive(),

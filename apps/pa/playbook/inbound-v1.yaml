@@ -211,7 +211,7 @@ entries:
       Every Contact Sales lead is Exceptional or Requires discovery, from five signals. Agencies take the agency path first.
       Exceptional (route to the AE) when at least exceptional_signals of these are true. Intent score (HubSpot Company Fit Score, Breeze, 0 to 10) of intent_exceptional or more. A clear enterprise need in the inbound message. employees_exceptional or more employees. A clearly defined budget (the form says Approved, or the message names one; may need outside research). Multiple sign-ups from the account (HubSpot company, Number of Associated Sign Up Contacts, at least signups_multiple).
       Requires discovery (qualify first) otherwise. Typically an intent score of 2 to 5, a potential or unclear enterprise need, an unknown budget, under 100 employees, and a single sign-up.
-      An intent score of intent_recycle or less suggests a recycle, and no intent score counts as 0. Those leads get one email asking them to clarify, not a sequence. The PA decides.
+      An intent score of intent_recycle or less suggests a recycle, and no intent score counts as 0. So does a thin message: under thin_message_words words, no question, and at most one signal (for example "yes need a trial"), since there is nothing to qualify. Those leads get one email asking them to clarify, not a sequence. The PA decides.
       Content or Code only picks the email angle and the questions.
     params:
       exceptional_signals: 3
@@ -219,6 +219,7 @@ entries:
       intent_recycle: 1
       employees_exceptional: 101
       signups_multiple: 2
+      thin_message_words: 8
     rationale: "Fred, 2026-10-01: exceptional leads route to the AE; anything less requires discovery."
 
   - id: msg.first_touch.structure

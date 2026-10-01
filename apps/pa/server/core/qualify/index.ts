@@ -17,6 +17,8 @@ export interface QualifyThresholds {
   employees_exceptional: number;
   /** Sign-up contacts on the account at or above this is an exceptional signal. */
   signups_multiple: number;
+  /** A message under this many words, with no question, is too thin (D88). */
+  thin_message_words: number;
 }
 
 export const DEFAULT_THRESHOLDS: QualifyThresholds = {
@@ -25,6 +27,7 @@ export const DEFAULT_THRESHOLDS: QualifyThresholds = {
   intent_recycle: 1,
   employees_exceptional: 101,
   signups_multiple: 2,
+  thin_message_words: 8,
 };
 
 /** The playbook's qualification thresholds (D67), or the defaults. */
@@ -111,6 +114,8 @@ const ENTERPRISE_NEED =
   /\b(enterprise|design system|sso|saml|rbac|role.based|access control|security review|compliance|soc ?2|hipaa|gdpr|governance|audit|at scale|across (\d+ )?(teams|brands|sites|regions|markets)|multiple (teams|brands|sites|regions|markets)|\d{2,}\+? (seats|developers|engineers|editors|users|pages|sites)|self.hosted|vpc|on.prem|sla|replatform|migrat\w*|localization|multi.?brand|multi.?site)\b/i;
 const BUDGET_WORDS =
   /(\$\s?\d|\b\d+\s?k\b|\bbudget (is |was )?(approved|allocated|set|secured)|\bbudgeted\b|\bprocurement\b|\bpurchase order\b|\bpo\b)/i;
+
+const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 export function contactSalesClass(input: QualifyInput): ContactSalesClass {
   const t = { ...DEFAULT_THRESHOLDS, ...(input.thresholds ?? {}) };
@@ -207,8 +212,15 @@ export function contactSalesClass(input: QualifyInput): ContactSalesClass {
   ];
   const signalsMet = criteria.filter((item) => item.met === true).length;
   const exceptional = signalsMet >= t.exceptional_signals;
-  const suggestRecycle =
-    !exceptional && (input.breeze ?? 0) <= t.intent_recycle;
+  // A thin message (D88): a few words, no question, and next to no signal,
+  // such as "yes need a trial". Nothing to qualify, so it suggests a recycle.
+  const messageWords = words(message);
+  const thin =
+    messageWords < t.thin_message_words &&
+    !message.includes("?") &&
+    signalsMet <= 1;
+  const lowIntent = (input.breeze ?? 0) <= t.intent_recycle;
+  const suggestRecycle = !exceptional && (lowIntent || thin);
   const approach: Approach =
     product === "content"
       ? exceptional
@@ -233,7 +245,13 @@ export function contactSalesClass(input: QualifyInput): ContactSalesClass {
     summary: exceptional
       ? `${signalsMet} of 5 signals: exceptional. Route to the AE with their meeting link, and ask only about real gaps.`
       : suggestRecycle
-        ? `${input.breeze === null ? "No intent score" : `Intent score ${input.breeze}`}: suggest recycle. One email asking them to clarify what they need, not a sequence (${signalsMet} of 5 signals).`
+        ? `${
+            lowIntent
+              ? input.breeze === null
+                ? "No intent score"
+                : `Intent score ${input.breeze}`
+              : `A ${messageWords} word message with nothing to qualify`
+          }: suggest recycle. One email asking them to clarify what they need, not a sequence (${signalsMet} of 5 signals).`
         : `${signalsMet} of 5 signals: requires discovery. Ask about what is still open (${open.join(", ")}) before routing.`,
   };
 }

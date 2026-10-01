@@ -1641,3 +1641,15 @@ bottom. Revisit one only when its "revisit when" condition happens.
   only) puts that lead first in the agent's queue, with an optional note,
   and wakes the agent now. Only the reply is rewritten. The card says it is
   rewriting and refreshes until the new draft is in.
+
+## D88. A thin message suggests a recycle (2026-10-01)
+
+- Fred, on "yes need a trail" (4 words, intent score 2, 0 of 5 signals)
+  showing Requires discovery: "Why does this say requires discovery when
+  this is an obvious recycle?" Under D67 only an intent score of 0 or 1
+  suggested a recycle, so a 2 kept it in discovery.
+- A message under 8 words, with no question and at most one of the five
+  signals, now suggests a recycle too: there is nothing to qualify. It takes
+  the one clarification email route (D71) and PA recommends decline and
+  recycle. A short real question still gets discovery.
+- The line is `thin_message_words` in the playbook's qualification block.
