@@ -73,6 +73,15 @@ export const draftReasoningSchema = z
       .describe(
         "Why this class and route, from the signals and the playbook (for example: 1 of 5 signals, so Requires discovery; route qualify first)",
       ),
+    acknowledgment: z
+      .string()
+      .trim()
+      .min(5)
+      .max(300)
+      .optional()
+      .describe(
+        "How the opening thanks them for reaching out and names what they asked about (D86)",
+      ),
     trigger: z
       .string()
       .trim()
@@ -190,7 +199,7 @@ export type DraftStatus = "proposed" | "needs_edit";
  * The version of the draft rules. A draft saved under older rules is
  * redrafted while its lead is still undecided (D62).
  */
-export const DRAFT_RULES_VERSION = 6;
+export const DRAFT_RULES_VERSION = 7;
 
 export interface LintProblem {
   code:
@@ -214,7 +223,8 @@ export interface LintProblem {
     | "unanswered_ask"
     | "ae_named"
     | "internal_name"
-    | "tone";
+    | "tone"
+    | "acknowledgment";
   message: string;
 }
 
@@ -553,6 +563,30 @@ export function lintDraft(input: {
       code: "ae_named",
       message: `The AE, ${route.aeName}, is looped in on this email. Name them and say what the meeting with them is for.`,
     });
+  }
+
+  // Acknowledgment (D86): the email opens by thanking them for reaching out.
+  {
+    const opening = draft.body
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(" ");
+    if (
+      !/\b(thanks|thank you)\b[^.!?]{0,80}\b(reaching out|getting in touch|contacting|your (note|message|interest|inquiry|enquiry|request|question))\b/i.test(
+        opening,
+      ) &&
+      // In the prospect's language too.
+      !/\bgracias\b[^.!?]{0,80}\b(escribir(nos)?|contactar(nos)?|tu (mensaje|inter[eé]s|consulta)|su (mensaje|inter[eé]s|consulta))/i.test(
+        opening,
+      )
+    )
+      problems.push({
+        code: "acknowledgment",
+        message:
+          'Open by thanking them for reaching out and naming what they asked about, for example "Thanks for reaching out about Builder\'s visual CMS."',
+      });
   }
 
   // TCQ (D85): the connection is in the email, not only in the rubric.

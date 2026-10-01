@@ -1603,3 +1603,20 @@ bottom. Revisit one only when its "revisit when" condition happens.
   (`internal_name`); 40 to 75 words, with 75 a hard limit (it was a soft
   target with a 130 cap). `DRAFT_RULES_VERSION` is 6, so undecided drafts
   are rewritten.
+
+## D86. TCQ starts with an acknowledgment (2026-10-01)
+
+- Fred added a step to the TCQ framework: "acknowledge the message and thank
+  the person for reaching out and inquiring", with an example that opens
+  "Thanks for reaching out about Builder Content (CMS)." and closes
+  "Looking forward to your response,".
+- Every first touch now opens, after the greeting and on its own line, by
+  thanking them for reaching out and naming what they asked about. It is
+  not the trigger, which follows it. The close is a short line such as
+  "Looking forward to your response," and the owner's first name.
+- The lint checks the opening lines thank them for reaching out
+  (`acknowledgment`), in English or Spanish. The agent's reasoning has an
+  acknowledgment field, shown under the draft. The worked examples in the
+  playbook show it (with placeholder names, and without a garbled sentence
+  in the pasted example). `DRAFT_RULES_VERSION` is 7, so undecided drafts
+  are rewritten.

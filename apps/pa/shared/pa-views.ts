@@ -167,6 +167,7 @@ export interface DraftView extends DraftSummary {
   rubric: { trigger: string; connection: string; ask: string } | null;
   reasoning: {
     approach: string;
+    acknowledgment?: string;
     trigger: string;
     connection: string;
     question: string;

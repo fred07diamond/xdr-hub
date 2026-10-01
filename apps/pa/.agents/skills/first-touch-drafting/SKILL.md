@@ -115,7 +115,10 @@ missing, put `[meeting link]` where it goes and say so. Qualify first and
 the agency path carry no link (`cta: reply`). Never invent a link and never
 use one from memory.
 
-Every draft has all three TCQ parts in the email itself, a professional,
+Every draft opens, right after the greeting, by thanking them for reaching
+out and naming what they asked about ("Thanks for reaching out about
+Builder's visual CMS."), then has all three TCQ parts in the email itself,
+closes with a short line such as "Looking forward to your response,", a professional,
 warm tone (never "Hey" or "Yep"), and no internal product names. Explain
 it in `reasoning`, which the PA reads under the draft: why this class and
 route, why this trigger, connection, and question, how you answered each

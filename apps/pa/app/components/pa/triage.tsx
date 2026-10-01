@@ -223,6 +223,7 @@ function DraftReasoning({ draft }: { draft: DraftView }) {
       </summary>
       <dl className="grid gap-2.5 border-t border-border px-3 py-3">
         {row("Class and route", null, why?.approach ?? null)}
+        {row("Acknowledgment", null, why?.acknowledgment ?? null)}
         {row("Trigger", tcq?.trigger ?? null, why?.trigger ?? null)}
         {row("Connection", tcq?.connection ?? null, why?.connection ?? null)}
         {row("Question", tcq?.ask ?? null, why?.question ?? null)}

@@ -15,6 +15,7 @@ const good: DraftInput = {
   subject: "Your marketing site move",
   body: [
     "Hi Priya,",
+    "Thanks for reaching out about Builder's CMS.",
     "Saw you're moving your marketing site to a headless CMS. Our CMS is part of the Enterprise plan, and I'll send the SSO details over tomorrow.",
     "Grab 30 minutes with Sam, our AE, to walk through your setup https://meetings.example.com/sam",
     "Thanks,",
@@ -237,6 +238,15 @@ describe("lintDraft", () => {
       expect.arrayContaining(["tone", "internal_name"]),
     );
     expect(codes({})).not.toContain("internal_name");
+    // Acknowledgment (D86): the email opens by thanking them for reaching out.
+    expect(
+      codes({
+        body: good.body.replace(
+          "Thanks for reaching out about Builder's CMS.\n\n",
+          "",
+        ),
+      }),
+    ).toContain("acknowledgment");
     // An exceptional lead loops in the AE (D72): named in the email.
     const withAe = { ...TO_AE, cc: "sam@example.com", aeName: "Sam Ortiz" };
     expect(

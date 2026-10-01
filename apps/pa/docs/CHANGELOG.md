@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (acknowledgment)
+
+- Every draft opens by thanking the person for reaching out and naming what
+  they asked about, then the trigger, connection, and question, and closes
+  "Looking forward to your response," (D86). Undecided drafts are being
+  rewritten.
+
 ## 2026-10-01 (draft reasoning and quality)
 
 - Every draft shows why it reads the way it does: the class and route, the

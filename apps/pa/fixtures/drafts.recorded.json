@@ -4,10 +4,13 @@
     "agency-already-sal": {
       "subject": "An Enterprise trial for your client",
       "approach": "agency",
-      "body": "Hi Ravi,\n\nThanks for requesting an Enterprise trial version for your client. We work with a lot of agency teams, and our partnerships team can set that up.\n\nSo I can set up the right trial, who is the client, and roughly how large are they?\n\nThanks,\n\n{owner_first_name}",
+      "body": "Hi Ravi,\n\nThanks for reaching out about Builder.\n\nThanks for requesting an Enterprise trial version for your client. We work with a lot of agency teams, and our partnerships team can set that up.\n\nSo I can set up the right trial, who is the client, and roughly how large are they?\n\nThanks,\n\n{owner_first_name}",
       "cta": "reply",
       "language": "en",
-      "used_entry_ids": ["msg.first_touch.structure", "msg.agency.first_touch"],
+      "used_entry_ids": [
+        "msg.first_touch.structure",
+        "msg.agency.first_touch"
+      ],
       "rubric": {
         "trigger": "requesting for Enterprise trial version",
         "connection": "We work with a lot of agency teams",
@@ -18,10 +21,12 @@
     "direct-new-unowned": {
       "subject": "Your move to a headless CMS",
       "approach": "standard_content",
-      "body": "Hi Maya,\n\nSaw you're moving your marketing site to a headless CMS. Teams like yours usually want marketing publishing without waiting on engineering.\n\nOur CMS is part of the Enterprise plan, and SSO comes with it. Pricing depends on scale, so roughly how many pages would you manage, and how many people would edit them? What are you moving from?\n\nThanks,\n\n{owner_first_name}",
+      "body": "Hi Maya,\n\nThanks for reaching out about Builder.\n\nSaw you're moving your marketing site to a headless CMS. Teams like yours usually want marketing publishing without waiting on engineering.\n\nOur CMS is part of the Enterprise plan, and SSO comes with it. Pricing depends on scale, so roughly how many pages would you manage, and how many people would edit them? What are you moving from?\n\nThanks,\n\n{owner_first_name}",
       "cta": "reply",
       "language": "en",
-      "used_entry_ids": ["msg.first_touch.structure"],
+      "used_entry_ids": [
+        "msg.first_touch.structure"
+      ],
       "rubric": {
         "trigger": "moving our marketing site to a headless CMS",
         "connection": "Teams like yours usually want marketing publishing without waiting on engineering",
@@ -35,7 +40,9 @@
       "body": "Hi Pat,\n\nThanks for getting in touch from Unknown Ltd. Your note did not say what you are hoping to build, so I'd rather ask than assume. Teams like yours usually start with one project.\n\nWhat is it, and who on your team would use it? Is engineering in the loop yet?\n\nThanks,\n\n{owner_first_name}",
       "cta": "reply",
       "language": "en",
-      "used_entry_ids": ["msg.first_touch.structure"],
+      "used_entry_ids": [
+        "msg.first_touch.structure"
+      ],
       "rubric": {
         "trigger": "Unknown Ltd",
         "connection": "Teams like yours usually start with one project",
