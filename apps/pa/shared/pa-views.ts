@@ -132,6 +132,8 @@ export interface LeadRouteView {
   gaps: string[];
   /** Whether the PA can change it on this lead. */
   canOverride: boolean;
+  /** The lead's PA (D72), to set their pod AE from the lead. */
+  paOwner: { email: string; name: string | null } | null;
 }
 
 export type DraftStatus = "ready" | "needs_edit" | "waiting" | "not_needed";

@@ -719,7 +719,7 @@ export async function recordFirstTouch(
 
 const HISTORY_RECHECK_MS = 10 * 60_000;
 /** Bumped when first touch detection changes, so recorded ones are rechecked. */
-const FIRST_TOUCH_RULES = 2;
+const FIRST_TOUCH_RULES = 3;
 
 const WATCHED_STATES = new Set([
   "routed",

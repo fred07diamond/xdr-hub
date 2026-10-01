@@ -1391,3 +1391,11 @@ bottom. Revisit one only when its "revisit when" condition happens.
   latest draft, which the agent rewrites only if the route or rules
   changed; and any route the PA picked. A changed message still goes to the
   agent.
+- 2026-10-01 follow-ups. (1) A "Re:" subject no longer disqualifies a first
+  touch: reps reply to the form notification itself, and that is the first
+  email. Only an email the lead is not addressed on (a CC) is excluded.
+  The not-logged card also shows the thread's earliest email. Recorded
+  first touches are rechecked under this rule. (2) When an exceptional lead
+  has no AE at all (no account AE, no pod AE), the Route box asks once "Who
+  is <PA>'s AE?": pick or type the AE and their link; it is saved as the
+  PA's pod AE, so their next enterprise leads route there.

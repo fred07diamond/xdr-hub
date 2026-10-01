@@ -202,6 +202,30 @@ describe("a reply thread is not a first touch (D68)", () => {
     expect(cleanBody("Hi\n> quoted\nThanks")).toBe("Hi\nThanks");
   });
 
+  it("takes a reply to the form notification when it goes to the lead", () => {
+    const sent = firstTouchAfter(
+      {
+        items: [
+          {
+            id: "r",
+            kind: "email",
+            direction: "outbound",
+            at: "2026-10-01T19:43:00Z",
+            title: "re: your request/builder.io",
+            preview: "Hi Jordan",
+            from: "rep@example.com",
+            to: "lead@example.com",
+            status: "SENT",
+          },
+        ],
+        unavailable: [],
+      },
+      "2026-10-01T15:00:00Z",
+      "lead@example.com",
+    );
+    expect(sent?.id).toBe("r");
+  });
+
   it("takes a first email addressed to the lead", () => {
     const sent = firstTouchAfter(
       {

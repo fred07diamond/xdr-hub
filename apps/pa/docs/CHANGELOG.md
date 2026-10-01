@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (first touch and AE setup)
+
+- A first email that replies to the form notification ("re: your request")
+  shows as the first touch again.
+- When an exceptional lead has no AE, the Route box asks once who the PA's
+  AE is, with their meeting link, and saves it as the PA's pod AE.
+
 ## 2026-10-01 (AE loop-in, meeting links, refresh)
 
 - Exceptional leads loop in the AE: the AE is on Cc, named in the email,

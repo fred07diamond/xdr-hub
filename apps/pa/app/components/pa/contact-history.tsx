@@ -346,6 +346,11 @@ export function FirstTouchNotLoggedCard({
             {thread.from ?? "unknown"}
           </dd>
         </dl>
+        {thread.preview ? (
+          <div className="rounded-md border border-border px-3 py-3">
+            <EmailText text={thread.preview} />
+          </div>
+        ) : null}
         <p className="text-[12.5px] text-muted-foreground">
           The whole thread is in the contact history below.
           {crmUrl ? (

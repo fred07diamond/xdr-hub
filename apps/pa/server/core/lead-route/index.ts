@@ -93,6 +93,8 @@ export interface LeadRouteResult {
   meetingWith: MeetingWith | null;
   /** What is missing to finish the route, for example a meeting link. */
   gaps: string[];
+  /** The lead's PA, so a missing pod AE can be set from the lead (D72). */
+  paOwner: RoutePerson | null;
 }
 
 export interface LeadRouteInput {
@@ -181,6 +183,7 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     source,
     meetingWith: meeting,
     gaps,
+    paOwner: input.paOwner,
   });
 
   if (input.precheckOutcome && NOT_SALES.has(input.precheckOutcome))

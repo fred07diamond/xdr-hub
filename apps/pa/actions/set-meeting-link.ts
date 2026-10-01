@@ -7,7 +7,7 @@ import { now, repo } from "../server/lib/pa-context.js";
 
 export default defineAction({
   description:
-    "People only. Save the meeting link of the person a lead is routed to (D72), from the lead page. The link is kept on that person, so every lead routed to them uses it and nobody is asked again; their role and pod AE are kept. Drafts are rewritten with the link. Stored in PA only.",
+    "People only. Save the meeting link of the person a lead is routed to (D72), from the lead page. With podAeFor, also make them that PA's pod AE. The link is kept on that person, so every lead routed to them uses it and nobody is asked again; their role and pod AE are kept. Drafts are rewritten with the link. Stored in PA only.",
   schema: z.object({
     email: z.string().trim().toLowerCase().email(),
     meetingLink: z
@@ -18,6 +18,16 @@ export default defineAction({
       .refine((value) => value.startsWith("https://"), "Use an https link"),
     displayName: z.string().trim().max(120).nullable().optional(),
     role: z.enum(["pa", "ae", "csm"]).nullable().optional(),
+    podAeFor: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email()
+      .nullable()
+      .optional()
+      .describe(
+        "A PA's email: this person becomes their pod AE, so the PA's enterprise leads route here",
+      ),
   }),
   agentTool: false,
   audit: {
@@ -50,6 +60,22 @@ export default defineAction({
       createdAt: existing?.createdAt ?? at,
       updatedAt: at,
     });
+    // Set from a lead with no AE: this person is the PA's pod AE from now on.
+    if (args.podAeFor && args.podAeFor !== args.email) {
+      const pa = (await repository.listPeople()).find(
+        (item) => item.email === args.podAeFor,
+      );
+      await repository.upsertPerson({
+        email: args.podAeFor,
+        displayName: pa?.displayName ?? null,
+        role: pa?.role ?? "pa",
+        meetingLink: pa?.meetingLink ?? null,
+        podAeEmail: args.email,
+        updatedBy: actor,
+        createdAt: pa?.createdAt ?? at,
+        updatedAt: at,
+      });
+    }
     // Drafts written without the link are rewritten with it.
     const agent = await wakeInboundAgent({
       userEmail: actor,

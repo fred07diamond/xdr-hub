@@ -287,6 +287,7 @@ function leadRouteView(route: LeadRouteResult): LeadRouteView {
     meetingWith: route.meetingWith,
     gaps: route.gaps,
     canOverride: !FIXED_ROUTES.has(route.route),
+    paOwner: route.paOwner,
   };
 }
 

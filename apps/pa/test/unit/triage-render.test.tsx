@@ -93,6 +93,7 @@ describe("triage UI", () => {
             },
             gaps: ["No meeting link for Alex. Add it on the Team page."],
             canOverride: true,
+            paOwner: null,
           }}
           onChange={() => {}}
         />

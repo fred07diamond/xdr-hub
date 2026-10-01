@@ -333,9 +333,9 @@ const recipients = (value: string | null) =>
     .filter(Boolean);
 
 /**
- * The first email we sent after the form: HubSpot's own first touch. A first
- * touch is addressed to the lead (not a CC) and starts a conversation; a
- * reply or forward in someone else's thread is not one (D68).
+ * The first email we sent after the form: HubSpot's own first touch. It is
+ * addressed to the lead, not just a CC (D68). A "Re:" subject is fine: reps
+ * often reply to the form notification itself.
  */
 export function firstTouchAfter(
   history: ContactHistory,
@@ -352,7 +352,6 @@ export function firstTouchAfter(
         item.at &&
         Date.parse(item.at) >= since &&
         !/fail|bounce|draft|scheduled/i.test(item.status ?? "") &&
-        !REPLY.test(item.title ?? "") &&
         (!lead || !item.to || recipients(item.to).includes(lead)),
     )
     .sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""));

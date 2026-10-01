@@ -3,6 +3,7 @@
 import {
   actionErrorMessage,
   useActionMutation,
+  useActionQuery,
 } from "@agent-native/core/client/hooks";
 import type {
   DecisionView,
@@ -440,6 +441,111 @@ function MeetingLinkField({
   );
 }
 
+/**
+ * Asked once (D72): an exceptional lead has no AE, because the account has no
+ * AE owner and the PA has no pod AE. Saving makes this AE the PA's pod AE,
+ * with their meeting link, so the PA's next leads route there too.
+ */
+function PodAeField({
+  pa,
+  onSaved,
+}: {
+  pa: NonNullable<LeadRouteView["paOwner"]>;
+  onSaved?: () => void;
+}) {
+  const save = useActionMutation("set-meeting-link");
+  const people = useActionQuery("list-people", {});
+  const aes = (
+    (
+      people.data as
+        | {
+            people: Array<{
+              email: string;
+              displayName: string | null;
+              role: string | null;
+              meetingLink: string | null;
+            }>;
+          }
+        | undefined
+    )?.people ?? []
+  ).filter((person) => person.role === "ae");
+  const [email, setEmail] = useState("");
+  const [link, setLink] = useState("");
+  const known = aes.find((ae) => ae.email === email.trim().toLowerCase());
+  const needsLink = !known?.meetingLink;
+  const paName = pa.name ?? pa.email;
+  const valid =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
+    (!needsLink || /^https:\/\/\S+$/.test(link.trim()));
+  return (
+    <form
+      className="mt-2 rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 p-2.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate(
+          {
+            email: email.trim().toLowerCase(),
+            meetingLink: (needsLink ? link : known!.meetingLink!).trim(),
+            displayName: known?.displayName ?? null,
+            role: "ae",
+            podAeFor: pa.email,
+          },
+          {
+            onSuccess: () => {
+              toast.success(
+                `Saved. ${paName}'s enterprise leads now route to this AE.`,
+              );
+              onSaved?.();
+            },
+            onError: (error) => toast.error(actionErrorMessage(error)),
+          },
+        );
+      }}
+    >
+      <p className="text-[12px] font-medium text-foreground">
+        Who is {paName}'s AE?
+      </p>
+      <p className="text-[11.5px] text-muted-foreground">
+        Asked once. Saved as {paName}'s pod AE and used for every enterprise
+        lead of theirs with no account AE.
+      </p>
+      <div className="mt-1.5 grid gap-1.5">
+        <input
+          type="email"
+          list="pa-known-aes"
+          required
+          placeholder="AE email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="h-8 rounded-md border border-input bg-background px-2 text-[13px] shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <datalist id="pa-known-aes">
+          {aes.map((ae) => (
+            <option key={ae.email} value={ae.email}>
+              {ae.displayName ?? ae.email}
+            </option>
+          ))}
+        </datalist>
+        {needsLink ? (
+          <input
+            type="url"
+            inputMode="url"
+            placeholder="Their meeting link, https://meetings.hubspot.com/..."
+            value={link}
+            onChange={(event) => setLink(event.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-[13px] shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        ) : null}
+        <div>
+          <Button type="submit" size="sm" disabled={save.isPending || !valid}>
+            {save.isPending ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 export function LeadRouteBlock({
   value,
   onChange,
@@ -454,6 +560,12 @@ export function LeadRouteBlock({
 }) {
   const who = value.meetingWith;
   const askForLink = Boolean(who && !who.link && onLinkSaved);
+  const askForAe = Boolean(
+    !who && value.route === "route_to_ae" && value.paOwner && onLinkSaved,
+  );
+  const hidden = (gap: string) =>
+    (askForLink && /No meeting link/.test(gap)) ||
+    (askForAe && /No AE for this lead/.test(gap));
   return (
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -508,11 +620,13 @@ export function LeadRouteBlock({
       {askForLink && who ? (
         <MeetingLinkField who={who} onSaved={onLinkSaved} />
       ) : null}
-      {value.gaps.filter((gap) => !(askForLink && /No meeting link/.test(gap)))
-        .length > 0 ? (
+      {askForAe && value.paOwner ? (
+        <PodAeField pa={value.paOwner} onSaved={onLinkSaved} />
+      ) : null}
+      {value.gaps.filter((gap) => !hidden(gap)).length > 0 ? (
         <ul className="mt-1.5 space-y-0.5">
           {value.gaps
-            .filter((gap) => !(askForLink && /No meeting link/.test(gap)))
+            .filter((gap) => !hidden(gap))
             .map((gap) => (
               <li
                 key={gap}
