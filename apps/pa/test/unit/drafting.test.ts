@@ -243,7 +243,7 @@ describe("the demo board, as a PA sees it", () => {
 
     const priya = byName.get("Priya Natarajan")!;
     expect(priya.triage.kind).toBe("reply");
-    expect(priya.triage.label).toBe("Qualified lead");
+    expect(priya.triage.label).toBe("Requires discovery");
     expect(priya.triage.why).toMatch(/^Owner PA .+, by round robin\.$/);
     expect(priya.draft.status).toBe("ready");
     expect(priya.draft.preview).not.toMatch(/^Hi /);
@@ -259,7 +259,9 @@ describe("the demo board, as a PA sees it", () => {
 
     // Every lead has an owner, so an owned account is classified by the lead
     // itself; the open deal and the customer are their own classes (D59).
-    expect(byName.get("Marcus Lee")!.triage.label).toBe("Qualified lead");
+    expect(byName.get("Marcus Lee")!.triage.label).not.toMatch(
+      /Qualified lead|QL/,
+    );
     expect(byName.get("Marcus Lee")!.triage.why).toMatch(
       /already owns the account/,
     );

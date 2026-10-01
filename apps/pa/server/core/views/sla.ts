@@ -184,6 +184,8 @@ export function salesCycleView(input: {
   crmLifecycle: string | null;
   triageKind: TriageKind;
   events: EventRecord[];
+  /** The rep's decision, when made: decline means recycle (D69). */
+  decisionChoice?: string | null;
 }): SalesStageView[] {
   // This portal's lifecycle labels (D54, D57): QL, SAL, S0, S1 map onto the cycle.
   const lifecycle = (input.crmLifecycle ?? "").toLowerCase();
@@ -215,9 +217,14 @@ export function salesCycleView(input: {
   > = {
     mql: { at: input.submittedAt, note: "Contact Sales form" },
   };
-  if (input.verdict === "ql")
-    reached.ql = { at: input.scoredAt, note: "Suggested by the scorecard" };
-  if (crmRank >= 1) reached.ql ??= { at: null, note: inHubSpot };
+  // Every Contact Sales lead comes in as a QL: it is the lifecycle stage on
+  // arrival, not a verdict (D69).
+  if (input.triageKind !== "closed" && input.triageKind !== "elsewhere")
+    reached.ql = {
+      at: input.submittedAt,
+      note: "Every Contact Sales lead starts as a QL",
+    };
+  else if (crmRank >= 1) reached.ql = { at: null, note: inHubSpot };
   if (crmRank >= 2) reached.sal = { at: null, note: inHubSpot };
   if (crmRank >= 3) reached.s0 = { at: null, note: inHubSpot };
   if (crmRank >= 6) reached.s1 = { at: null, note: inHubSpot };
@@ -231,7 +238,37 @@ export function salesCycleView(input: {
   );
   const stopped =
     input.triageKind === "closed" || input.triageKind === "elsewhere";
+  // After QL the lead goes to SAL or to Recycle (D69).
+  const recycled =
+    lifecycle === "recycle"
+      ? inHubSpot
+      : input.decisionChoice === "decline"
+        ? "Declined and recycled in PA"
+        : null;
+  const disqualified = ["disqualified", "excluded"].includes(lifecycle)
+    ? inHubSpot
+    : null;
   return SALES_STAGES.map((stage, index) => {
+    if (stage.code === "sal" && !reached.sal && (recycled || disqualified))
+      return {
+        code: stage.code,
+        label: recycled ? "Recycle" : "Disqualified",
+        status: "stopped",
+        at: null,
+        note: recycled ?? disqualified,
+      };
+    if (
+      (recycled || disqualified) &&
+      !reached.sal &&
+      index > SALES_STAGES.findIndex((item) => item.code === "sal")
+    )
+      return {
+        code: stage.code,
+        label: stage.label,
+        status: "upcoming",
+        at: null,
+        note: null,
+      };
     const hit = reached[stage.code];
     if (hit || index < lastDone)
       return {
@@ -244,7 +281,8 @@ export function salesCycleView(input: {
     if (index === lastDone + 1)
       return {
         code: stage.code,
-        label: stage.label,
+        label:
+          stage.code === "sal" && !stopped ? "SAL or Recycle" : stage.label,
         status: stopped ? "stopped" : "current",
         at: null,
         note: stopped ? "Not a sales opportunity" : null,

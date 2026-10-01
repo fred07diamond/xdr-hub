@@ -330,7 +330,7 @@ function ScorecardPanel({ detail }: { detail: EngagementDetail }) {
       aside={
         scorecard ? (
           <span className="flex items-center gap-2 text-[12px] text-muted-foreground">
-            Suggested verdict
+            Scorecard read
             <span className="rounded-[5px] border border-foreground/25 px-1.5 py-0.5 text-[12px] font-semibold text-foreground">
               {scorecard.verdictLabel}
             </span>
@@ -595,7 +595,7 @@ export default function EngagementRoute() {
 
   function askAgent(kind: "general" | "revise" | "draft" = "general") {
     if (!detail) return;
-    const summary = `Classified as ${detail.triage.label} (${detail.triage.kind}); verdict ${detail.triage.verdictLabel ?? "none"}; ${detail.triage.why} Owner ${detail.owner?.name ?? "none"}; SLA timer: ${detail.sla.label}; sales cycle at ${detail.salesCycle.find((stage) => stage.status === "current" || stage.status === "stopped")?.label ?? "S1"}. Draft: ${detail.draft.status}.`;
+    const summary = `Classified as ${detail.triage.label} (${detail.triage.kind}); ${detail.triage.why} Owner ${detail.owner?.name ?? "none"}; SLA timer: ${detail.sla.label}; sales cycle at ${detail.salesCycle.find((stage) => stage.status === "current" || stage.status === "stopped")?.label ?? "S1"}. Draft: ${detail.draft.status}.`;
     const draftText =
       detail.draft.body !== null
         ? `Current draft. Subject: ${detail.draft.subject}\n${detail.draft.body}${detail.draft.problems.length > 0 ? `\nLint problems: ${detail.draft.problems.map((problem) => problem.message).join(" ")}` : ""}`
@@ -799,6 +799,9 @@ export default function EngagementRoute() {
                 source: detail.assessment?.explicitQuestion
                   ? "question"
                   : "message",
+                message:
+                  detail.submissions[detail.submissions.length - 1]?.message ??
+                  null,
               }}
               facts={[
                 ...(detail.relationship.label
@@ -889,9 +892,7 @@ export default function EngagementRoute() {
               hint={[
                 detail.precheck?.outcomeLabel,
                 detail.route?.label,
-                detail.scorecard
-                  ? `Verdict ${detail.scorecard.verdictLabel}`
-                  : null,
+                detail.contactSalesClass?.label ?? null,
               ]
                 .filter(Boolean)
                 .join(" · ")}

@@ -16,7 +16,6 @@ import {
   type Approach,
   type LintResult,
 } from "../drafting/index.js";
-import { VERDICT_LABELS, type Verdict } from "../objects/index.js";
 import type {
   DecisionRecord,
   DraftRecord,
@@ -76,9 +75,22 @@ export function triageFor(input: {
   awaitingAgent?: boolean;
   hasOpenDeal?: boolean;
   intent?: string | null;
+  /** The lead's qualification (D67); the badge says it instead of a verdict. */
+  qualification?: {
+    tier: "exceptional" | "discovery" | null;
+    suggestRecycle: boolean;
+  } | null;
 }): TriageView {
-  const verdictLabel = input.verdict
-    ? (VERDICT_LABELS[input.verdict as Verdict] ?? input.verdict)
+  // QL is the lifecycle stage every inbound lead starts at, not a level of
+  // qualification, so no verdict is shown (D69).
+  const verdictLabel = null;
+  const q = input.qualification;
+  const qualified = q?.tier
+    ? q.tier === "exceptional"
+      ? "Exceptional"
+      : q.suggestRecycle
+        ? "Suggest recycle"
+        : "Requires discovery"
     : null;
   const owner = input.ownerName;
   const reason = input.routeReason ? sentence(input.routeReason) : "";
@@ -126,7 +138,7 @@ export function triageFor(input: {
         kind: "reply",
         label:
           input.intent === "sales" || !input.intent
-            ? "Qualified lead"
+            ? (qualified ?? "Sales request")
             : "Needs a look",
         verdictLabel: null,
         why: owner
@@ -179,11 +191,8 @@ export function triageFor(input: {
 
   const flagged = input.engagement.reviewFlags.length > 0;
   const label =
-    input.verdict === "ql"
-      ? "Qualified lead"
-      : input.verdict === "recycle"
-        ? "Not sales ready"
-        : (verdictLabel ?? "Needs a first touch");
+    qualified ??
+    (input.verdict === "recycle" ? "Not sales ready" : "Needs a first touch");
   const assigned = owner
     ? ownerLine(owner, input.engagement.ownerSource)
     : reason || "No owner yet.";
@@ -334,8 +343,16 @@ const choice = (code: string) => ({
 export function decisionView(
   record: DecisionRecord | null,
   now: Date,
+  /** PA's recommendation now; an open decision shows it (D67). */
+  advice?: { recommendation: string; reason: string } | null,
 ): DecisionView | null {
   if (!record) return null;
+  if (record.status === "open" && advice)
+    record = {
+      ...record,
+      recommendation: advice.recommendation as DecisionRecord["recommendation"],
+      recommendationReason: advice.reason,
+    };
   return {
     status: record.status,
     kind: record.kind,

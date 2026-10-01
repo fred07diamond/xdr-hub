@@ -480,6 +480,63 @@ export async function queueRefreshAll(): Promise<number> {
   return queued;
 }
 
+/**
+ * HubSpot finishes a new contact after the form: the owner is assigned a few
+ * minutes later, the Breeze score and the questionnaire later still. PA's
+ * first read can miss all of it (D70), so each new lead is read again about
+ * 10 and 60 minutes after its form, while nobody has acted on it yet.
+ */
+export const FOLLOW_UP_READS_MIN = [10, 60] as const;
+const FOLLOW_UP_WINDOW_MS = 3 * 60 * 60_000;
+
+/** Whether a lead's next follow-up read from HubSpot is due. */
+export function followUpDue(
+  row: { receivedAt: string; payload: Record<string, unknown> },
+  nowMs: number,
+): boolean {
+  const submittedAt = Date.parse(
+    String(row.payload.submitted_at ?? row.receivedAt),
+  );
+  if (!Number.isFinite(submittedAt)) return false;
+  if (nowMs - submittedAt > FOLLOW_UP_WINDOW_MS) return false;
+  const lastRead = Date.parse(
+    String(row.payload.refreshed_at ?? row.receivedAt),
+  );
+  return FOLLOW_UP_READS_MIN.some((minutes) => {
+    const at = submittedAt + minutes * 60_000;
+    return nowMs >= at && lastRead < at;
+  });
+}
+
+export async function queueFollowUpRefreshes(limit = 5): Promise<number> {
+  const repository = repo();
+  const nowMs = now().getTime();
+  let queued = 0;
+  for (const row of await repository.listInboxBySource(
+    HUBSPOT_SOURCE,
+    ["done"],
+    200,
+  )) {
+    if (queued >= limit) break;
+    if (!followUpDue(row, nowMs)) continue;
+    const submission = await repository.getSubmissionByInbox(row.id);
+    if (!submission?.engagementId) continue;
+    const engagement = await repository.getEngagement(submission.engagementId);
+    // Someone acted on it: a refresh restarts triage, so leave it be.
+    if (!engagement || engagement.firstTouchAt) continue;
+    if ((await repository.getDecision(engagement.id))?.status === "decided")
+      continue;
+    if (await repository.getRouteOverride(engagement.id)) continue;
+    await repository.updateInbox(
+      row.id,
+      { status: "refresh", updatedAt: now().toISOString() },
+      row.version,
+    );
+    queued += 1;
+  }
+  return queued;
+}
+
 /** One batch of queued refreshes, within a time budget. */
 export async function processRefreshQueue(budgetMs = 20_000) {
   const repository = repo();

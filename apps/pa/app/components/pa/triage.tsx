@@ -441,6 +441,66 @@ export function LeadRouteBlock({
   );
 }
 
+/**
+ * The form message exactly as they wrote it, with the question PA picked out
+ * of it underneath, so the card reads the same as HubSpot (D70).
+ */
+function TheirMessage({
+  asked,
+}: {
+  asked: {
+    text: string | null;
+    source: "question" | "message" | null;
+    message?: string | null;
+  };
+}) {
+  const [open, setOpen] = useState(false);
+  const message =
+    asked.message ?? (asked.source === "message" ? asked.text : null);
+  const question = asked.source === "question" ? asked.text : null;
+  const long = (message?.length ?? 0) > 420;
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="text-[11.5px] font-medium text-muted-foreground">
+          Their message
+        </p>
+        {message ? (
+          <>
+            <p
+              className={cn(
+                "pa-untrusted mt-1 whitespace-pre-line border-l-2 border-foreground/25 pl-3 text-[13.5px] leading-relaxed text-foreground",
+                long && !open && "line-clamp-6",
+              )}
+            >
+              {message}
+            </p>
+            {long ? (
+              <button
+                type="button"
+                onClick={() => setOpen((value) => !value)}
+                className="mt-1 pl-3 text-[12px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {open ? "Show less" : "Show the whole message"}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            No message on the form.
+          </p>
+        )}
+      </div>
+      {question && question !== message ? (
+        <p className="text-[12.5px] text-muted-foreground">
+          <span className="font-medium text-foreground">They asked</span>{" "}
+          <span className="pa-untrusted">{question}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function TriageCard({
   triage,
   asked,
@@ -451,7 +511,12 @@ export function TriageCard({
   routeBusy,
 }: {
   triage: TriageView;
-  asked: { text: string | null; source: "question" | "message" | null };
+  asked: {
+    text: string | null;
+    source: "question" | "message" | null;
+    /** The whole form message; shown as written. */
+    message?: string | null;
+  };
   facts: Array<{ label: string; value: string }>;
   contactSalesClass?: ContactSalesClassView | null;
   leadRoute?: LeadRouteView | null;
@@ -472,35 +537,12 @@ export function TriageCard({
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <TriageBadge triage={triage} className="h-7 px-2.5 text-[13.5px]" />
-            {triage.verdictLabel &&
-            triage.verdictLabel !== triage.label &&
-            triage.kind !== "owner" ? (
-              <span className="text-[12px] text-muted-foreground">
-                Verdict{" "}
-                <span className="font-medium text-foreground">
-                  {triage.verdictLabel}
-                </span>
-              </span>
-            ) : null}
           </div>
           <p className="text-[14px] leading-relaxed text-foreground">
             {triage.why}
           </p>
         </div>
-        <div>
-          <p className="text-[11.5px] font-medium text-muted-foreground">
-            {asked.source === "question" ? "They asked" : "Their message"}
-          </p>
-          {asked.text ? (
-            <p className="pa-untrusted mt-1 border-l-2 border-foreground/25 pl-3 text-[13.5px] leading-relaxed text-foreground">
-              {asked.text}
-            </p>
-          ) : (
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              No message on the form.
-            </p>
-          )}
-        </div>
+        <TheirMessage asked={asked} />
         {contactSalesClass ? (
           <ContactSalesClassBlock value={contactSalesClass} />
         ) : null}

@@ -23,7 +23,8 @@ export const STATE_LABELS: Record<EngagementState, string> = {
   first_touch_sent: "First touch sent",
   replied: "Replied",
   meeting_booked: "Meeting booked",
-  ql: "QL",
+  // The scorecard's read; QL itself is a lifecycle stage (D69).
+  ql: "Sales request",
   sal: "SAL",
   recycled: "Recycled",
   disqualified: "Disqualified",

@@ -316,3 +316,27 @@ describe("ownership as of the submission (D57)", () => {
     expect(company?.assignedOwner).toBeNull();
   });
 });
+
+describe("follow-up reads from HubSpot (D70)", async () => {
+  const { followUpDue } = await import("../../server/lib/live-pipeline.js");
+  const form = Date.parse("2026-10-01T10:25:18Z");
+  const at = (minutes: number) => form + minutes * 60_000;
+  const row = (readMinutes: number | null) => ({
+    receivedAt: new Date(at(1)).toISOString(),
+    payload: {
+      submitted_at: new Date(form).toISOString(),
+      ...(readMinutes === null
+        ? {}
+        : { refreshed_at: new Date(at(readMinutes)).toISOString() }),
+    },
+  });
+
+  it("reads a new lead again at 10 and 60 minutes, then stops", () => {
+    expect(followUpDue(row(null), at(5))).toBe(false);
+    expect(followUpDue(row(null), at(11))).toBe(true);
+    expect(followUpDue(row(11), at(30))).toBe(false);
+    expect(followUpDue(row(11), at(61))).toBe(true);
+    expect(followUpDue(row(61), at(120))).toBe(false);
+    expect(followUpDue(row(null), at(200))).toBe(false);
+  });
+});

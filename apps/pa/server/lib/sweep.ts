@@ -3,6 +3,7 @@ import { checkDecisionDeadlines } from "./decisions.js";
 import {
   detectFirstTouches,
   processRefreshQueue,
+  queueFollowUpRefreshes,
   ensureInboundAgent,
   INTAKE_CORRELATION,
   listAgentWork,
@@ -28,8 +29,10 @@ export async function runInboundSweep(owner: {
     limit: 50,
     actor: "system:minute-poll",
   });
+  // New leads are read again once HubSpot has finished them (D70).
+  const followUps = await queueFollowUpRefreshes();
   // Refresh requests (D63) before counting work, so refreshed leads are woken too.
-  const refresh = await processRefreshQueue(15_000);
+  const refresh = { ...(await processRefreshQueue(15_000)), followUps };
   // First touches sent from HubSpot (D64), so PA stops drafting for them.
   const history = await detectFirstTouches();
   const repository = repo();

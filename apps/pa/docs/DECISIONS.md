@@ -1305,3 +1305,32 @@ bottom. Revisit one only when its "revisit when" condition happens.
   email as proof of contact for the SLA timer. Reply headers that wrap over
   lines and quoted `>` lines are dropped from email text. Recorded first
   touches are rechecked once under these rules.
+
+## D69. QL is a stage, not a verdict, and after QL comes SAL or Recycle (2026-10-01)
+
+- Fred: "If it's an inbound lead it will always come in as a QL. QL is just
+  a stage in the Lifecycle, not a determination or a level of
+  qualification." And: "a lead could go to SAL or it could go to Recycle."
+- The badge no longer says "Qualified lead" or "Verdict QL". It says the
+  qualification (D67): Exceptional, Requires discovery, or Suggest recycle.
+  The scorecard's `ql` read is labeled "Sales request" where it still shows.
+- The sales cycle marks QL on arrival for every sales lead. The next stage
+  reads "SAL or Recycle"; when HubSpot's lifecycle is Recycle, or the rep
+  declines and recycles in PA, that stage shows Recycle and the cycle stops.
+  Disqualified and Excluded stop it the same way.
+- The decision recommendation follows the qualification, so it never says
+  "accept and sequence" while the class suggests a recycle. Open decisions
+  show PA's current recommendation, not the one saved when they were made.
+
+## D70. New leads are read from HubSpot again once HubSpot has finished them (2026-10-01)
+
+- Fred flagged a lead whose owner, intent score, name, and message did not
+  match HubSpot. PA read it within a minute of the form; HubSpot assigned
+  the owner four minutes later, then filled the Breeze score, and the
+  questionnaire came an hour after that. PA kept its first read.
+- Each new lead is now read again about 10 and 60 minutes after its form
+  (within 3 hours), while nobody has acted on it: no decision made, no route
+  override, no first touch. A refresh restarts triage, so acted-on leads are
+  left alone; "Refresh from HubSpot" still works on any lead.
+- The classification card shows the whole form message as written, with
+  the question PA picked out of it underneath, so it reads like HubSpot.

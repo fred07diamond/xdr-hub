@@ -31,7 +31,8 @@ describe("triage UI", () => {
     );
     expect(html).toContain("Classified as");
     expect(html).toContain("Drafted reply");
-    expect(html).toContain("Qualified lead");
+    expect(html).toContain("Requires discovery");
+    expect(html).not.toContain("Verdict");
     expect(html).toContain("Replatforming your storefront content");
     expect(html).toContain("?tab=team");
   });

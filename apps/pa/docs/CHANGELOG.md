@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-01 (lifecycle and fresh HubSpot data)
+
+- No more "Verdict QL": every inbound lead starts as a QL, so the badge shows
+  the qualification instead (Exceptional, Requires discovery, Suggest
+  recycle) (D69).
+- The sales cycle's next stage after QL reads "SAL or Recycle", and shows
+  Recycle when the lead is recycled in HubSpot or declined in PA.
+- PA's recommendation now matches the qualification; a lead that suggests a
+  recycle is recommended for decline and recycle.
+- New leads are read from HubSpot again at about 10 and 60 minutes, so the
+  owner, intent score, name, and questionnaire answers catch up (D70).
+- The classification card shows the full message as written, with their
+  question underneath.
+
 ## 2026-10-01 (first touch, again)
 
 - A reply in a thread is no longer shown as the first touch. The first touch

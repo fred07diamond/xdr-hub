@@ -105,7 +105,7 @@ describe("salesCycleView", () => {
     crmLifecycle: null,
   };
 
-  it("puts a QL on the way to SAL", () => {
+  it("puts every sales lead at QL, on the way to SAL or Recycle", () => {
     const stages = salesCycleView({
       ...base,
       verdict: "ql",
@@ -114,7 +114,7 @@ describe("salesCycleView", () => {
     expect(stages.map((stage) => stage.label)).toEqual([
       "MQL",
       "QL",
-      "SAL",
+      "SAL or Recycle",
       "S0",
       "NBM booked",
       "NBM complete",
@@ -139,6 +139,24 @@ describe("salesCycleView", () => {
       triageKind: "elsewhere",
     });
     expect(stages[1].status).toBe("stopped");
+  });
+
+  it("forks to Recycle when HubSpot or the rep recycles the lead", () => {
+    for (const input of [
+      { crmLifecycle: "Recycle" },
+      { decisionChoice: "decline" },
+    ]) {
+      const stages = salesCycleView({
+        ...base,
+        ...input,
+        verdict: null,
+        triageKind: "reply",
+      });
+      expect(stages[2]).toMatchObject({ label: "Recycle", status: "stopped" });
+      expect(
+        stages.slice(3).every((stage) => stage.status === "upcoming"),
+      ).toBe(true);
+    }
   });
 
   it("reads SAL from HubSpot for an owned contact", () => {
@@ -168,6 +186,6 @@ describe("the demo board's SLA timer", () => {
     const detail = await demo.engagement(byName.get("Priya Natarajan")!.id);
     expect(
       detail!.salesCycle.find((stage) => stage.status === "current")?.label,
-    ).toBe("SAL");
+    ).toBe("SAL or Recycle");
   });
 });

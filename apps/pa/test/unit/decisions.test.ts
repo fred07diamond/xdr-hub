@@ -84,6 +84,48 @@ describe("which leads get a decision", () => {
   });
 });
 
+describe("the recommendation follows the qualification (D67)", () => {
+  const base = {
+    engagement: { reviewFlags: [] },
+    submittedAt: "2026-09-30T16:00:00.000Z",
+    precheckOutcome: "continue",
+    signal: null,
+    verdict: "ql",
+    flagged: false,
+    ownerEmail: null,
+    snapshot: { contact: null, openDeals: [] },
+  } as unknown as DecisionInputs;
+
+  it("never says accept when the class suggests a recycle", () => {
+    const advice = recommend({
+      ...base,
+      suggestRecycle: { score: 1 },
+      qualification: {
+        tier: "discovery",
+        signalsMet: 1,
+        label: "Requires discovery, Code, suggest recycle",
+      },
+    });
+    expect(advice.recommendation).toBe("decline");
+    expect(advice.reason).not.toMatch(/QL definition/);
+  });
+
+  it("names the tier when it says accept", () => {
+    expect(
+      recommend({
+        ...base,
+        qualification: { tier: "exceptional", signalsMet: 4, label: "x" },
+      }).reason,
+    ).toMatch(/^Exceptional, 4 of 5 signals/);
+    expect(
+      recommend({
+        ...base,
+        qualification: { tier: "discovery", signalsMet: 1, label: "x" },
+      }).reason,
+    ).toMatch(/^Requires discovery/);
+  });
+});
+
 describe("deciding", () => {
   it("accept moves the lead to SAL in PA; research keeps it open", async () => {
     const { repo, deps, id } = await replayed();

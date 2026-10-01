@@ -5,6 +5,7 @@
 // is recorded and alerted, never executed (Fred, 2026-09-30). Decisions
 // change the lead in PA only; HubSpot is not written.
 import type { CrmSnapshot } from "../crm/port.js";
+import { classOfSubmission } from "../lead-route/engagement.js";
 import { assertTransition, type EngagementState } from "../objects/index.js";
 import { rule } from "../playbook/resolve.js";
 import type { PlaybookRelease } from "../playbook/schema.js";
@@ -13,6 +14,7 @@ import type {
   DecisionRecord,
   EngagementRecord,
   PaRepository,
+  SubmissionRecord,
 } from "../repo/types.js";
 
 export const STANDARD_CHOICES = ["accept", "decline", "research"] as const;
@@ -68,6 +70,12 @@ export interface DecisionInputs {
   ownerEmail: string | null;
   /** Intent score at or under the playbook's recycle line (D67). */
   suggestRecycle?: { score: number } | null;
+  /** The lead's qualification (D67), which the recommendation follows. */
+  qualification?: {
+    tier: "exceptional" | "discovery" | null;
+    signalsMet: number;
+    label: string;
+  } | null;
 }
 
 /**
@@ -151,15 +159,39 @@ export function recommend(input: DecisionInputs): {
       reason: `Intent score ${input.suggestRecycle.score} of 10: suggest recycle with a note.`,
       question,
     };
-  if (input.verdict === "ql" || input.precheckOutcome === "attach_to_owner")
+  // The recommendation follows the qualification (D67), so it never says
+  // accept while the class says recycle.
+  const q = input.qualification;
+  if (q?.tier === "exceptional")
     return {
       kind: "standard",
       options,
       recommendation: "accept",
-      reason:
-        input.precheckOutcome === "attach_to_owner"
-          ? "An owned account with a sales request. The owner works it."
-          : "A legitimate sales request that meets the QL definition.",
+      reason: `Exceptional, ${q.signalsMet} of 5 signals. Accept and route to the AE.`,
+      question,
+    };
+  if (input.precheckOutcome === "attach_to_owner")
+    return {
+      kind: "standard",
+      options,
+      recommendation: "accept",
+      reason: "An owned account with a sales request. The owner works it.",
+      question,
+    };
+  if (q?.tier === "discovery" && input.verdict !== "recycle")
+    return {
+      kind: "standard",
+      options,
+      recommendation: "accept",
+      reason: `Requires discovery, ${q.signalsMet} of 5 signals. Accept and qualify first with questions.`,
+      question,
+    };
+  if (input.verdict === "ql")
+    return {
+      kind: "standard",
+      options,
+      recommendation: "accept",
+      reason: "A legitimate sales request. Accept and qualify it.",
       question,
     };
   if (input.verdict === "recycle")
@@ -220,7 +252,34 @@ export async function decisionInputs(
     flagged: engagement.reviewFlags.length > 0,
     ownerEmail: owner?.email ?? routedOwner?.email ?? null,
     suggestRecycle: recycleSignal(latest.fields, release),
+    qualification: await qualificationOf(repo, latest, snapshot, release),
   };
+}
+
+async function qualificationOf(
+  repo: PaRepository,
+  submission: SubmissionRecord,
+  snapshotReceipt: { ruleResults: Record<string, unknown> } | null,
+  release: PlaybookRelease | undefined,
+): Promise<DecisionInputs["qualification"]> {
+  const assessment = await repo.getAssessmentForSubmission(submission.id);
+  const cls = classOfSubmission({
+    submission,
+    assessment,
+    snapshot: (snapshotReceipt?.ruleResults.snapshot ?? null) as never,
+    release: release ?? null,
+  });
+  return { tier: cls.tier, signalsMet: cls.signalsMet, label: cls.label };
+}
+
+/** PA's recommendation now, for an open decision recorded under older rules. */
+export async function currentAdvice(
+  repo: PaRepository,
+  engagement: EngagementRecord,
+  release: PlaybookRelease,
+) {
+  const inputs = await decisionInputs(repo, engagement, release);
+  return inputs ? recommend(inputs) : null;
 }
 
 function recycleSignal(

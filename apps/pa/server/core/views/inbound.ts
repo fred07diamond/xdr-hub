@@ -20,6 +20,7 @@ import {
   leadBriefSchema,
 } from "../brief/index.js";
 import { readFirstTouchClock, nextWorkingInstant } from "../clocks/index.js";
+import { currentAdvice } from "../decisions/index.js";
 import {
   classOfSubmission,
   routeForEngagement,
@@ -302,6 +303,20 @@ async function leadRouteOf(
   );
 }
 
+async function liveDecision(
+  repo: PaRepository,
+  engagement: EngagementRecord,
+  release: PlaybookRelease,
+  now: Date,
+) {
+  const record = await repo.getDecision(engagement.id);
+  const advice =
+    record?.status === "open"
+      ? await currentAdvice(repo, engagement, release)
+      : null;
+  return decisionView(record, now, advice);
+}
+
 function crmUrlOf(inbox: { payload: Record<string, unknown> } | null) {
   const url = inbox?.payload.crm_url;
   return typeof url === "string" && url.startsWith("https://app.hubspot.com/")
@@ -376,11 +391,20 @@ async function buildRow(
     entryVersion: (id) =>
       pinned.entries.find((entry) => entry.id === id)?.version ?? null,
   });
+  const qualification = precheckOutcome
+    ? classOfSubmission({
+        submission: latest,
+        assessment,
+        snapshot: snapshotReceipt?.ruleResults.snapshot as never,
+        release,
+      })
+    : null;
   const triage = triageFor({
     engagement,
     precheckOutcome,
     signal,
     hasOpenDeal,
+    qualification,
     intent: assessment?.intent ?? null,
     verdict: scorecard?.verdict ?? null,
     routeReason: engagement.routeReason,
@@ -410,7 +434,7 @@ async function buildRow(
     ),
     draft: draftSummary(draft),
     sla: slaView({ engagement, clock, events, submittedAt, now }),
-    decision: decisionView(await repo.getDecision(engagement.id), now),
+    decision: await liveDecision(repo, engagement, release, now),
     state: engagement.state,
     stateLabel: stateLabel(engagement.state),
     hidden: inbox?.status === "skipped",
@@ -760,6 +784,14 @@ export async function buildEngagementDetail(input: {
     engagement,
     precheckOutcome: precheck?.outcome ?? null,
     signal: precheck?.signal ?? null,
+    qualification: precheck?.outcome
+      ? classOfSubmission({
+          submission: latest,
+          assessment,
+          snapshot: detailSnapshot as never,
+          release: input.release,
+        })
+      : null,
     hasOpenDeal: (detailSnapshot?.openDeals ?? []).length > 0,
     intent: assessment?.intent ?? null,
     verdict: scorecard?.verdict ?? null,
@@ -788,7 +820,7 @@ export async function buildEngagementDetail(input: {
     leadRoute: await leadRouteOf(repo, input.release, engagement, triage.kind),
     draft,
     sla: slaView({ engagement, clock, events, submittedAt, now: input.now }),
-    decision: decisionView(await repo.getDecision(engagement.id), input.now),
+    decision: await liveDecision(repo, engagement, input.release, input.now),
     brief: await briefView(repo, engagement.id, {
       company: latest?.companyName ?? null,
       contact: [
@@ -820,6 +852,7 @@ export async function buildEngagementDetail(input: {
         )?.contact?.lifecycleRaw ?? null,
       triageKind: triage.kind,
       events,
+      decisionChoice: (await repo.getDecision(engagement.id))?.choice ?? null,
     }),
     state: engagement.state,
     stateLabel: stateLabel(engagement.state),
