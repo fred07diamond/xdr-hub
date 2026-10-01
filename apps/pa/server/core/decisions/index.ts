@@ -156,7 +156,7 @@ export function recommend(input: DecisionInputs): {
       kind: "standard",
       options,
       recommendation: "decline",
-      reason: `Intent score ${input.suggestRecycle.score} of 10: suggest recycle with a note.`,
+      reason: `Intent score ${input.suggestRecycle.score} of 10 (none counts as 0): recycle after one email asking them to clarify, not a sequence.`,
       question,
     };
   // The recommendation follows the qualification (D67), so it never says
@@ -287,8 +287,9 @@ function recycleSignal(
   release: PlaybookRelease | undefined,
 ): { score: number } | null {
   const raw = fields.breeze_fit_score;
-  const score = typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
-  if (!Number.isFinite(score)) return null;
+  const parsed = typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
+  // No score counts as 0 (D71).
+  const score = Number.isFinite(parsed) ? parsed : 0;
   const line =
     qualifyThresholds(release).intent_recycle ??
     DEFAULT_THRESHOLDS.intent_recycle;

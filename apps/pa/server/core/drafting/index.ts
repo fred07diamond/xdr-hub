@@ -137,7 +137,7 @@ export type DraftStatus = "proposed" | "needs_edit";
  * The version of the draft rules. A draft saved under older rules is
  * redrafted while its lead is still undecided (D62).
  */
-export const DRAFT_RULES_VERSION = 3;
+export const DRAFT_RULES_VERSION = 4;
 
 export interface LintProblem {
   code:
@@ -157,7 +157,8 @@ export interface LintProblem {
     | "trigger"
     | "connection"
     | "content_enterprise"
-    | "questions";
+    | "questions"
+    | "unanswered_ask";
   message: string;
 }
 
@@ -274,6 +275,37 @@ const escapeRegExp = (text: string) =>
 
 const LINK = /https?:\/\/\S+|\[(calendar|meeting) link\]/gi;
 
+const ASKS: Array<{ asked: RegExp; answered: RegExp; message: string }> = [
+  {
+    asked:
+      /\b(book|schedule|set up|arrange|hop on|jump on|have)\b[^.?!\n]{0,30}\b(call|meeting|chat)\b|\b(call|meeting) (with|to discuss)\b|\bspeak (with|to) (someone|sales|you)\b/i,
+    answered:
+      /\b(call|meeting|chat|talk|time|walk ?through|session|meet)\b|\[meeting link\]|https?:\/\//i,
+    message:
+      "They asked for a call, and the draft does not answer that. Say yes and how it happens (the meeting link, or that you will set it up).",
+  },
+  {
+    asked: /\bdemo\b/i,
+    answered: /\b(demo|walk ?through|show you|working session)\b/i,
+    message:
+      "They asked for a demo, and the draft does not answer that. Say how they will see it.",
+  },
+  {
+    asked: /\b(pric(e|es|ing)|cost|quote|how much)\b/i,
+    answered: /\b(pric(e|es|ing)|cost|quote)\b/i,
+    message:
+      "They asked about pricing, and the draft does not acknowledge it. Say you will cover it (no numbers outside the price check).",
+  },
+];
+
+/** Asks in their message that the draft leaves without a reply. */
+export function unansweredAsks(asked: string | null, body: string): string[] {
+  if (!asked) return [];
+  return ASKS.filter(
+    (item) => item.asked.test(asked) && !item.answered.test(body),
+  ).map((item) => item.message);
+}
+
 /** SPEC 5.5, against the pinned release's message rules. */
 export function lintDraft(input: {
   draft: DraftInput;
@@ -284,6 +316,8 @@ export function lintDraft(input: {
   sourceText?: string | null;
   /** The lead's route (D66): whose meeting link the email carries, if any. */
   route?: DraftRoute | null;
+  /** Their form message, to check every ask in it gets a reply (D71). */
+  askedText?: string | null;
 }): LintResult {
   const { draft, release } = input;
   const params = messageRuleParams.parse(
@@ -434,18 +468,6 @@ export function lintDraft(input: {
     }
   }
   if (
-    !/\b(teams like|companies like|other (\w+ )?teams|a lot of (\w+ )?teams|most (\w+ )?teams|equipos como|empresas como)\b/i.test(
-      draft.body,
-    ) &&
-    draft.approach !== "hq_content"
-  ) {
-    warnings.push({
-      code: "connection",
-      message:
-        'No peer connection. Tie it to teams like theirs ("teams like yours usually...").',
-    });
-  }
-  if (
     (draft.approach === "hq_content" ||
       draft.approach === "standard_content") &&
     !/\benterprise\b/i.test(draft.body)
@@ -456,17 +478,27 @@ export function lintDraft(input: {
         "A Content lead should hear, in one line, that the CMS is part of the Enterprise plan.",
     });
   }
+  // Questions (D71): a couple that matter, never an interrogation.
   const questionMarks = (draft.body.match(/\?/g) ?? []).length;
-  if (
-    (draft.approach === "standard_content" ||
-      draft.approach === "standard_code") &&
-    questionMarks < 2
+  if (questionMarks > 2) {
+    problems.push({
+      code: "questions",
+      message: `Asks ${questionMarks} questions. Ask at most two, the ones that matter most.`,
+    });
+  } else if (
+    questionMarks === 0 &&
+    (route ? !route.needsLink : draft.cta !== "meeting")
   ) {
     problems.push({
       code: "questions",
       message:
-        "A Requires discovery lead gets 2 or 3 qualifying questions before the soft offer to find time.",
+        "No meeting link on this route, so ask one or two questions to move it forward.",
     });
+  }
+
+  // Everything they asked for gets a reply (D71): a call, a demo, pricing.
+  for (const ask of unansweredAsks(input.askedText ?? null, draft.body)) {
+    problems.push({ code: "unanswered_ask", message: ask });
   }
 
   if (input.explicitQuestion) {

@@ -208,9 +208,41 @@ describe("lintDraft", () => {
         body: good.body.replace("part of the Enterprise plan", "a paid plan"),
       }),
     ).toContain("content_enterprise");
-    expect(codes({ approach: "standard_content", cta: "reply" })).toContain(
+    // At most two questions; one or two when there is no meeting link (D71).
+    expect(codes({ body: `${good.body}\nOne? Two? Three?` })).toContain(
       "questions",
     );
+    expect(
+      lint({ cta: "reply" }, "Q?", {
+        route: "qualify_first",
+        label: "Qualify first",
+        needsLink: false,
+        link: null,
+      }).problems.map((problem) => problem.code),
+    ).toEqual(expect.arrayContaining(["questions", "meeting_link"]));
+    // Every ask in their message gets a reply.
+    const asked = (body: string) =>
+      lintDraft({
+        draft: { ...good, body },
+        release: seedRelease,
+        explicitQuestion: "Q?",
+        ownerFirstName: "Dana",
+        sourceText: SOURCE,
+        route: TO_AE,
+        askedText:
+          "We'd like a demo on a bilingual site and pricing. Could we book a call?",
+      }).problems.filter((problem) => problem.code === "unanswered_ask");
+    expect(asked(good.body).map((item) => item.message)).toEqual([
+      expect.stringMatching(/pricing/),
+    ]);
+    expect(
+      asked(
+        good.body.replace(
+          "to walk through your setup",
+          "to walk through a demo and pricing",
+        ),
+      ),
+    ).toHaveLength(0);
     expect(
       codes({
         body: good.body.replace(
@@ -287,7 +319,6 @@ describe("the demo board, as a PA sees it", () => {
       "calls_to_action",
       "colon",
       "content_enterprise",
-      "questions",
       "trigger",
     ]);
   });

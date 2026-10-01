@@ -9,6 +9,7 @@ export const LEAD_ROUTES = [
   "route_to_ae",
   "pa_meeting",
   "qualify_first",
+  "clarify_once",
   "agency",
   "customer_team",
   "deal_ae",
@@ -21,12 +22,14 @@ export const OVERRIDABLE_ROUTES = [
   "route_to_ae",
   "pa_meeting",
   "qualify_first",
+  "clarify_once",
 ] as const satisfies readonly LeadRoute[];
 
 export const LEAD_ROUTE_LABELS: Record<LeadRoute, string> = {
   route_to_ae: "Route to the AE",
   pa_meeting: "PA takes the call",
   qualify_first: "Qualify first",
+  clarify_once: "One clarification email",
   agency: "Agency path",
   customer_team: "Their AE and CSM",
   deal_ae: "The deal's AE",
@@ -40,7 +43,9 @@ export const LEAD_ROUTE_EMAIL: Record<LeadRoute, string> = {
   pa_meeting:
     "Include the PA's meeting link as the ask, with the qualifying questions.",
   qualify_first:
-    "Ask 2 or 3 qualifying questions. No meeting link yet; the answers decide the route.",
+    "Answer what they asked, then one or two questions. No meeting link yet; the answers decide the route.",
+  clarify_once:
+    "One email asking them to clarify what they need. Not a sequence and no meeting link; with no reply, it recycles.",
   agency:
     "Ask the path question (internal use, a client project, or exploring). No link yet.",
   customer_team:
@@ -106,6 +111,8 @@ export interface LeadRouteInput {
   people: PersonRecord[];
   byClass: Record<string, string>;
   override: string | null;
+  /** The class suggests a recycle (no or a very low intent score, D71). */
+  suggestRecycle?: boolean;
 }
 
 const nameOf = (person: RoutePerson | PersonRecord) =>
@@ -204,14 +211,22 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     : input.approach
       ? input.byClass[input.approach]
       : null;
+  const recycle = !override && !input.isAgency && input.suggestRecycle;
   const route: LeadRoute =
-    override ?? (isRoute(fromClass) ? fromClass : "qualify_first");
+    override ??
+    (recycle
+      ? "clarify_once"
+      : isRoute(fromClass)
+        ? fromClass
+        : "qualify_first");
   const source = override ? "override" : "playbook";
   const why = override
     ? "Picked by the PA."
-    : input.approach
-      ? "From the lead's class and the playbook's routing rule."
-      : "No class yet, so qualify first.";
+    : recycle
+      ? "No or a very low intent score suggests a recycle, so one email to clarify."
+      : input.approach
+        ? "From the lead's class and the playbook's routing rule."
+        : "No class yet, so qualify first.";
 
   if (route === "route_to_ae") {
     const { ae, why: whose } = aeFor(input, people);

@@ -988,6 +988,7 @@ const draft: PipelineStep = {
       explicitQuestion: state.assessment?.explicitQuestion ?? null,
       ownerFirstName,
       sourceText: triggerSource(submission),
+      askedText: submission.message ?? null,
     });
     const used = deps.release.entries
       .filter((entry) => parsed.data.used_entry_ids.includes(entry.id))

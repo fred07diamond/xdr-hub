@@ -1334,3 +1334,30 @@ bottom. Revisit one only when its "revisit when" condition happens.
   left alone; "Refresh from HubSpot" still works on any lead.
 - The classification card shows the whole form message as written, with
   the question PA picked out of it underneath, so it reads like HubSpot.
+
+## D71. Answer what they asked, no lectures, and no score means one clarification email (2026-10-01)
+
+- Fred: the drafts "sound a bit preachy" and do not address "the questions
+  and specifics of the message". On the example lead the draft ignored the
+  call, the demo, and the pricing they asked for, restated their message,
+  told them what "the hard part" is, and asked three questions. Part of that
+  came from PA's own lint, which nudged every draft toward a "teams like
+  yours" line and required Standard leads to ask two or three questions.
+- **Messaging (playbook):** answer every ask first (a call, a demo,
+  pricing, a plan); the connection line uses their specifics and is skipped
+  rather than lecturing; no "teams like yours usually find" or "the hard
+  part is" (now banned phrases); at most two questions. The worked example
+  now shows a lead asking for a call, a demo, and pricing.
+- **Lint:** the peer-connection nudge is gone; more than two questions is a
+  problem, and so is a no-link route with no question; an ask in their
+  message (call, demo, pricing) that the draft does not answer is a
+  problem (`unanswered_ask`). `DRAFT_RULES_VERSION` is 4, so undecided
+  drafts are rewritten.
+- **No intent score counts as 0** (Fred), so it suggests a recycle. Those
+  leads take a new route, **One clarification email** (`clarify_once`): a
+  single short email asking them to clarify what they need, not a sequence
+  and no meeting link; with no reply, it recycles. The decision
+  recommendation is decline and recycle. The PA can still pick another route.
+  The playbook has a block for it (`msg.first_touch.clarify`).
+- Demo and synthetic fixtures carry made-up fit scores so they still show
+  the full range.

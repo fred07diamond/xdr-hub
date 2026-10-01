@@ -79,6 +79,7 @@ export default defineAction({
         owner?.displayName ?? routedOwner?.displayName ?? null,
       ),
       sourceText: submission ? triggerSource(submission) : null,
+      askedText: submission?.message ?? null,
     });
     const at = now().toISOString();
     const receiptId = newId();

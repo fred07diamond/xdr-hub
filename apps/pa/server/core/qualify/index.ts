@@ -139,10 +139,11 @@ export function contactSalesClass(input: QualifyInput): ContactSalesClass {
   const criteria: Criterion[] = [
     {
       label: `Intent score ${t.intent_exceptional} or more`,
-      met: input.breeze === null ? null : input.breeze >= t.intent_exceptional,
+      // No score counts as 0 (D71): unscored leads are not given the benefit.
+      met: (input.breeze ?? 0) >= t.intent_exceptional,
       evidence:
         input.breeze === null
-          ? "No intent score (Breeze fit) in HubSpot"
+          ? "No intent score (Breeze fit) in HubSpot, counted as 0"
           : `Intent score ${input.breeze} of 10`,
     },
     {
@@ -194,7 +195,7 @@ export function contactSalesClass(input: QualifyInput): ContactSalesClass {
   const signalsMet = criteria.filter((item) => item.met === true).length;
   const exceptional = signalsMet >= t.exceptional_signals;
   const suggestRecycle =
-    !exceptional && input.breeze !== null && input.breeze <= t.intent_recycle;
+    !exceptional && (input.breeze ?? 0) <= t.intent_recycle;
   const approach: Approach =
     product === "content"
       ? exceptional
@@ -219,7 +220,7 @@ export function contactSalesClass(input: QualifyInput): ContactSalesClass {
     summary: exceptional
       ? `${signalsMet} of 5 signals: exceptional. Route to the AE with their meeting link, and ask only about real gaps.`
       : suggestRecycle
-        ? `Intent score ${input.breeze}: suggest recycle. If it goes ahead, it needs discovery first (${signalsMet} of 5 signals).`
+        ? `${input.breeze === null ? "No intent score" : `Intent score ${input.breeze}`}: suggest recycle. One email asking them to clarify what they need, not a sequence (${signalsMet} of 5 signals).`
         : `${signalsMet} of 5 signals: requires discovery. Ask about what is still open (${open.join(", ")}) before routing.`,
   };
 }

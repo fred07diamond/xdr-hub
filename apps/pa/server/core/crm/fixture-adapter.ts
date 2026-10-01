@@ -20,6 +20,8 @@ export const fixtureCaseSchema = z.object({
     company: z.string().optional(),
     country: z.string().optional(),
     message: z.string(),
+    /** HubSpot form and contact fields, such as breeze_fit_score. */
+    fields: z.record(z.string(), z.string()).optional(),
   }),
   crm: z.object({
     lifecycle: z.string().nullable().optional(),

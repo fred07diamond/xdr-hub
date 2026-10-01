@@ -347,6 +347,7 @@ const ROUTE_CHOICES: Array<{ value: string; label: string }> = [
   { value: "route_to_ae", label: "Route to the AE" },
   { value: "pa_meeting", label: "PA takes the call" },
   { value: "qualify_first", label: "Qualify first" },
+  { value: "clarify_once", label: "One clarification email" },
 ];
 
 const shortLink = (link: string) =>

@@ -32,7 +32,7 @@ the move that fills each gap.
   contact in HubSpot, and Dobby's message. If an email already went out
   after the form (`firstTouch`), do not draft a first touch; say so, and if
   asked for a follow-up, build on what was sent instead of repeating it.
-- `get-messaging-guide` with the lead's approach: the playbook's Messaging
+- `get-messaging-guide` with the lead's approach and `leadRoute.route`: the playbook's Messaging
   section, which is how every draft is written (the TCQ rubric, voice,
   choosing questions, the formula for the class, and a worked example). It
   is the source of truth; it comes from the current playbook, so follow it
@@ -92,6 +92,12 @@ unknown stays unknown.
 - Gaps and risks, and the next step.
 
 ## 4. Draft, then call `save-draft`
+
+Answer what they asked before anything else: a call, a demo, pricing, or a
+plan each get a plain yes and how it happens. Do not restate their message
+or lecture them about their problem. At most two questions. On the
+`clarify_once` route (no or a very low intent score), write one short email
+asking them to clarify what they need; it is not a sequence.
 
 Follow every rule `get-messaging-guide` returned, in order: the shared rules
 (`msg.first_touch.structure`, `.voice`, `.questions`), then the block for the

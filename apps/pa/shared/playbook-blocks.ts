@@ -407,6 +407,7 @@ const ENTRY_TITLES: Record<string, string> = {
   "msg.first_touch.hq_code": "Exceptional, Code",
   "msg.first_touch.standard_code": "Requires discovery, Code",
   "msg.agency.first_touch": "Agency",
+  "msg.first_touch.clarify": "One clarification email",
   "msg.first_touch.example": "Example, bad and better",
   "kb.partner_program": "Partner program",
   "kb.trial_path_partner_led": "Partner-led trial path",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-01 (tone, and leads with no fit score)
+
+- Drafts answer what the lead asked first (a call, a demo, pricing), skip
+  the lecture, and ask at most two questions. The check flags any ask left
+  unanswered. Undecided drafts are being rewritten (D71).
+- A lead with no intent score counts as 0 and suggests a recycle. It gets
+  one email asking them to clarify what they need, not a sequence.
+
 ## 2026-10-01 (lifecycle and fresh HubSpot data)
 
 - No more "Verdict QL": every inbound lead starts as a QL, so the badge shows

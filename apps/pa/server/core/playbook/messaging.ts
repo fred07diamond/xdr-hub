@@ -17,6 +17,7 @@ export interface MessagingRule {
 function appliesTo(entry: ReleaseEntry): string | null {
   const scope = entry.scope ?? {};
   if (typeof scope.approach === "string") return scope.approach;
+  if (typeof scope.route === "string") return `route:${scope.route}`;
   if (scope.relationship_state === "agency") return "agency";
   return null;
 }
@@ -27,12 +28,16 @@ const position = (entry: ReleaseEntry) =>
 export function messagingGuide(
   release: PlaybookRelease,
   approach: string | null,
+  /** The lead's route (D71): a route block applies on that route only. */
+  route: string | null = null,
 ): { releaseShortId: string; approach: string | null; rules: MessagingRule[] } {
   const rules = release.entries
     .filter((entry) => entry.type === "message_rule")
     .filter((entry) => !HIDDEN.has(entry.status ?? "active"))
     .filter((entry) => {
       const target = appliesTo(entry);
+      if (target?.startsWith("route:"))
+        return approach === null || target === `route:${route}`;
       return target === null || approach === null || target === approach;
     })
     .sort((a, b) => position(a) - position(b))

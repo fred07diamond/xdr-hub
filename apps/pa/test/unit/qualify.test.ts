@@ -74,12 +74,14 @@ describe("contactSalesClass", () => {
       .filter((item) => item.met === null)
       .map((item) => item.label);
     expect(unknown).toEqual([
-      "Intent score 6 or more",
       "100+ employees",
       "Clearly defined budget",
       "Multiple sign-ups from the account",
     ]);
     expect(value.tier).toBe("discovery");
+    // No intent score counts as 0 (D71), so it suggests a recycle.
+    expect(value.criteria[0]).toMatchObject({ met: false });
+    expect(value.suggestRecycle).toBe(true);
   });
 
   it("suggests a recycle at an intent score of 0 or 1", () => {

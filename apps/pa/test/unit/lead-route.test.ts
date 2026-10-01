@@ -126,6 +126,21 @@ describe("leadRouteFor", () => {
     expect(leadRouteFor({ ...base, isAgency: true }).route).toBe("agency");
   });
 
+  it("sends one clarification email when the class suggests a recycle", () => {
+    const route = leadRouteFor({
+      ...base,
+      approach: "standard_content",
+      suggestRecycle: true,
+    });
+    expect(route.route).toBe("clarify_once");
+    expect(draftRouteOf(route).needsLink).toBe(false);
+    // The PA can still take the call, and an exceptional lead is never sent here.
+    expect(
+      leadRouteFor({ ...base, suggestRecycle: true, override: "pa_meeting" })
+        .route,
+    ).toBe("pa_meeting");
+  });
+
   it("follows the playbook's routing rule", () => {
     const route = leadRouteFor({
       ...base,

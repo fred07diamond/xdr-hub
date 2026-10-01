@@ -177,7 +177,7 @@ entries:
       Every Contact Sales lead is Exceptional or Requires discovery, from five signals. Agencies take the agency path first.
       Exceptional (route to the AE) when at least exceptional_signals of these are true. Intent score (HubSpot Company Fit Score, Breeze, 0 to 10) of intent_exceptional or more. A clear enterprise need in the inbound message. employees_exceptional or more employees. A clearly defined budget (the form says Approved, or the message names one; may need outside research). Multiple sign-ups from the account (HubSpot company, Number of Associated Sign Up Contacts, at least signups_multiple).
       Requires discovery (qualify first) otherwise. Typically an intent score of 2 to 5, a potential or unclear enterprise need, an unknown budget, under 100 employees, and a single sign-up.
-      An intent score of intent_recycle or less suggests a recycle. The PA decides.
+      An intent score of intent_recycle or less suggests a recycle, and no intent score counts as 0. Those leads get one email asking them to clarify, not a sequence. The PA decides.
       Content or Code only picks the email angle and the questions.
     params:
       exceptional_signals: 3
@@ -198,9 +198,10 @@ entries:
     version: 1
     body: |
       Every first touch follows TCQ, and every draft is checked against it.
+      Answer what they asked first. If they asked for a call, a demo, pricing, or a plan, the email says yes and how it happens before anything else. Never skip their ask to ask your own questions.
       Trigger. Open on the specific thing they said, in their words, from the message or a form answer (business driver, how they will measure success, budget status, who makes the call, tech stack, use case). Never "thanks for reaching out about Builder" as the whole trigger, never a paraphrase that loses their detail. The exact words quoted go in rubric.trigger; PA checks they appear in the form and in the email.
-      Connection. One sentence tying it to teams like theirs ("teams like yours usually hit X"), with the benefit their persona cares about (design quality, dev efficiency, product velocity; for Content, marketing shipping pages without waiting on engineering). Not a feature list, never "Builder can help teams" or "our platform". Goes in rubric.connection.
-      Question. The ask. Pain in their world, filling the biggest gap, or the time offer. Reasonable, 15 to 30 minutes, never "demo our platform". Goes in rubric.ask.
+      Connection. One short, plain line that shows you understood their setup, using their specifics (their stack, languages, team, what they already have). Not a lesson about their situation and not a generalization ("teams like yours usually find", "the hard part is"); skip it rather than lecture. Never a feature list, "Builder can help teams", or "our platform". Goes in rubric.connection.
+      Question. The ask. At most two questions, the ones that matter most for the call or the next step, or the time offer. Reasonable, 15 to 30 minutes, never "demo our platform". Goes in rubric.ask.
       Classify the lead first, then follow the formula for its class (the class blocks below).
       Under 75 words when possible. No filler like "I'll confirm the best-fit approach and get back to you"; only promise to confirm something real they asked that you cannot answer.
       The lead's route decides the ask (the Routing section; get-engagement returns it as leadRoute). Route to the AE, or the PA takes the call, means that person's meeting link is the ask, exactly as given, with no day suggestions. Qualify first and the agency path carry no link yet.
@@ -238,6 +239,8 @@ entries:
         - "cutting-edge"
         - "Want to see a demo"
         - "Do you have 15 minutes"
+        - "teams like yours usually find"
+        - "the hard part is"
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.first_touch.voice
     block: message_rule
@@ -249,7 +252,7 @@ entries:
     precedence: 4
     version: 1
     body: |
-      A technical founder or staff engineer, plain and a little casual.
+      A technical founder or staff engineer, plain and a little casual. Helpful, not preachy: no lessons, no telling them what their problem really is, no restating their message back at length.
       No em dashes, no colons, no "Best regards". A casual sign-off, signed with the owner's first name.
       Say Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.
       "Design-to-code" may describe their problem, never the pitch. Win on collaboration and control, not on out-coding Cursor or Copilot.
@@ -267,7 +270,7 @@ entries:
     precedence: 4
     version: 1
     body: |
-      Fill the biggest gap. Ask about their pain and their world, never their interest in us or their buying process.
+      Fill the biggest gap, and only after answering what they asked. At most two questions. Ask about their pain and their world, never their interest in us or their buying process.
       Never ask "what's driving your interest", "who signs off", "want to see a demo", "do you have 15 minutes", or "what's your traffic".
       The test. With every mention of Builder removed, would a thoughtful peer ask this?
       Do not re-ask what the message or the form already answered.
@@ -366,7 +369,7 @@ entries:
       For a client project, ask the client's headcount and HQ before proposing times. Offer the partner path when relevant.
       Routing and who to route to are in the Sales handbook (03).
 
-  - id: msg.first_touch.example
+  - id: msg.first_touch.clarify
     block: message_rule
     section: messaging
     position: 9
@@ -375,23 +378,39 @@ entries:
     owner_team: pa_team
     precedence: 4
     version: 1
+    scope:
+      route: clarify_once
+    body: |
+      One clarification email.
+      For a lead that suggests a recycle (no intent score, or 0 to 1). One short email, not a sequence and no meeting link.
+      Thank them, answer anything they asked in a line (a call or pricing can be set up once it is clear what they need), then ask one or two questions that clarify who they are and what they want to do with Builder.
+      Under 60 words. If they do not reply, the lead recycles.
+    source: "Fred, 2026-10-01"
+  - id: msg.first_touch.example
+    block: message_rule
+    section: messaging
+    position: 10
+    type: message_rule
+    owner: PMM and enablement
+    owner_team: pa_team
+    precedence: 4
+    version: 1
     body: |
       A bad draft and a better one (Requires discovery, Content).
-      Their message. "Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng." Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.
+      Their message. "We need a CMS so marketing can run the whole site in English and Arabic (right to left) without a developer, with an approval step before anything goes live. We already have a bilingual React site. We'd like to discuss the Enterprise plan, a demo on a bilingual site, and pricing. Could we book a call?"
 
-      Bad. "Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?"
-      Why it is bad. The trigger is paraphrased, the connection is a product pitch, the confirm line is filler, the question is an interrogation, and Enterprise-only is missing.
+      Bad. "Saw you want marketing running the whole site day to day, in English and Arabic RTL, without pulling in a developer. Teams like yours usually find that once that eng dependency lifts, the hard part is keeping brand consistent. The CMS you're describing is part of our Enterprise plan. How many pages does marketing publish a month? Who's doing that work today? What's your rough timeline?"
+      Why it is bad. It ignores the call, the demo, and pricing they asked for. It restates their message and lectures them about their own problem. Three questions read like an interrogation.
 
       Better.
       Hi Sam,
 
-      Saw you're weighing build vs. buy so marketing can build and test paid landing pages without eng. Teams like yours usually find the eng queue, not the page builder, is what sets the pace.
+      Happy to set up a call. We can walk through a bilingual demo with Arabic right to left and approvals before publish, and cover the Enterprise plan and pricing there.
 
-      Our CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?
-
-      Happy to find time if it's easier to talk it through.
+      Since you already run a React site, is the plan to keep it and add the CMS on top, or rebuild? I'll send times once I hear back.
 
       Riley
+
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: kb.partner_program
     block: knowledge

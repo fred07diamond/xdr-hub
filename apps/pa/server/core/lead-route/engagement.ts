@@ -156,6 +156,7 @@ export async function routeForEngagement(
     people,
     byClass: routeByClass(release),
     override: override?.route ?? null,
+    suggestRecycle: Boolean(cls?.suggestRecycle),
   });
   return {
     ...route,
