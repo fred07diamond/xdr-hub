@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 interface Person {
   email: string;
   displayName: string | null;
-  role: "pa" | "ae" | "csm" | null;
+  role: "pa" | "ae" | "commercial_ae" | "csm" | null;
   meetingLink: string | null;
   podAeEmail: string | null;
   saved: boolean;
@@ -26,7 +26,12 @@ interface Person {
 const field =
   "h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60";
 
-const ROLE_LABELS = { pa: "PA", ae: "AE", csm: "CSM" } as const;
+const ROLE_LABELS = {
+  pa: "PA",
+  ae: "AE",
+  commercial_ae: "Commercial AE",
+  csm: "CSM",
+} as const;
 
 function seenLabel(person: Person) {
   const parts = [
@@ -85,7 +90,7 @@ function PersonRow({
   }
 
   return (
-    <li className="grid gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_6rem_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] md:items-center">
+    <li className="grid gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_8.5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] md:items-center">
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium text-foreground">
           {name}
@@ -194,6 +199,9 @@ export function PeopleEditor() {
     ),
   ];
   const aes = people.filter((person) => person.role === "ae");
+  const hasCommercial = people.some(
+    (person) => person.role === "commercial_ae",
+  );
 
   function add() {
     const value = email.trim().toLowerCase();
@@ -225,10 +233,12 @@ export function PeopleEditor() {
           Routing: people and meeting links
         </h2>
         <p className="max-w-[70ch] text-[12.5px] text-muted-foreground">
-          Who takes the meeting once a lead is triaged. Enterprise leads go to
-          the account's AE, else the PA's pod AE, and the email carries that
-          AE's meeting link. When the PA takes the call, it carries the PA's
-          link. Saved in PA only.
+          Who takes the meeting once a lead is triaged. Exceptional leads go to
+          the account's AE; else a commercial account (under the playbook's
+          employee line) goes to the Commercial AE, and a bigger one to the PA's
+          pod AE. The email carries that AE's meeting link. When the PA takes
+          the call, it carries the PA's link. Saved in PA only.
+          {hasCommercial ? "" : " No Commercial AE is set yet."}
         </p>
       </div>
       <div className="rounded-lg border border-border bg-card">

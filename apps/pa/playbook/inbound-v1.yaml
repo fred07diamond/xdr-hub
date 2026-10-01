@@ -125,6 +125,22 @@ entries:
       content_price_check: qualify_first
       agency: agency
     rationale: "Fred, 2026-09-30: the lead is routed from the PA to the AE once it meets the enterprise bar; otherwise the PA takes the call."
+  - id: rule.routing.commercial
+    block: threshold
+    section: routing
+    position: 1
+    type: rule
+    owner: Sales leadership
+    owner_team: both
+    precedence: 2
+    version: 1
+    body: |
+      A commercial account is a company with fewer than max_employees employees.
+      An exceptional lead at a commercial account goes to the commercial AE (set on the Team page), unless the account already has its own AE in HubSpot.
+      Bigger companies, and companies whose size is unknown, go to the PA's pod AE.
+    params:
+      max_employees: 8000
+    rationale: "Fred, 2026-10-01: a commercial account (under 8k employees) goes to the commercial AE."
   - id: rule.sla.first_touch
     block: clock
     section: clocks

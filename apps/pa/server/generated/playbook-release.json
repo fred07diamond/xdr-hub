@@ -156,6 +156,23 @@
       "position": 0
     },
     {
+      "id": "rule.routing.commercial",
+      "type": "rule",
+      "owner": "Sales leadership",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": "A commercial account is a company with fewer than max_employees employees.\nAn exceptional lead at a commercial account goes to the commercial AE (set on the Team page), unless the account already has its own AE in HubSpot.\nBigger companies, and companies whose size is unknown, go to the PA's pod AE.\n",
+      "params": {
+        "max_employees": 8000
+      },
+      "rationale": "Fred, 2026-10-01: a commercial account (under 8k employees) goes to the commercial AE.",
+      "owner_team": "both",
+      "block": "threshold",
+      "section": "routing",
+      "position": 1
+    },
+    {
       "id": "rule.sla.first_touch",
       "type": "rule",
       "owner": "RevOps and PA lead",
@@ -603,12 +620,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "2ab6b4a1f8cef7141a72843ade4bf75556a9fedc0b298ac4139da1bb7b7b50a8",
-  "short_id": "2ab6b4a1",
+  "id": "f30afe49dea91491745d604845d9223774cc328c660c90ca8ea48cf534992fd6",
+  "short_id": "f30afe49",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "ce03e0b13f14d2507f9ed4d67b9cf72febd74b24715efef2fff34e3b0bdfe2b3"
+      "sha256": "2aeed2f6a2734589e05257bb37cf6edcb8a3cc3eade1c894925da476b5e85b39"
     },
     {
       "path": "config/routing-pool.yaml",

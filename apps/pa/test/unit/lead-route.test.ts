@@ -146,6 +146,54 @@ describe("leadRouteFor", () => {
     ).toBe("pa_meeting");
   });
 
+  it("sends a commercial account to the commercial AE (D77)", () => {
+    const commercialPeople = [
+      ...people,
+      person("commercial-ae@example.com", "commercial_ae"),
+    ];
+    const small = leadRouteFor({
+      ...base,
+      people: commercialPeople,
+      employees: 520,
+      commercialMaxEmployees: 8000,
+    });
+    expect(small.segment).toBe("commercial");
+    expect(small.meetingWith?.email).toBe("commercial-ae@example.com");
+    expect(draftRouteOf(small).cc).toBe("commercial-ae@example.com");
+
+    // 8,000 and up, or an unknown size, stays with the pod AE.
+    for (const employees of [8000, null]) {
+      const big = leadRouteFor({
+        ...base,
+        people: commercialPeople,
+        employees,
+        commercialMaxEmployees: 8000,
+      });
+      expect(big.meetingWith?.email).toBe("pod-ae@example.com");
+    }
+
+    // The account's own AE still comes first.
+    expect(
+      leadRouteFor({
+        ...base,
+        people: commercialPeople,
+        employees: 520,
+        commercialMaxEmployees: 8000,
+        accountOwner: { email: "account-ae@example.com", name: "Alex" },
+      }).meetingWith?.email,
+    ).toBe("account-ae@example.com");
+
+    // No commercial AE set: say so, and ask for one.
+    const missing = leadRouteFor({
+      ...base,
+      employees: 520,
+      commercialMaxEmployees: 8000,
+    });
+    expect(missing.meetingWith).toBeNull();
+    expect(missing.needs).toBe("commercial_ae");
+    expect(missing.gaps[0]).toMatch(/No commercial AE/);
+  });
+
   it("follows the playbook's routing rule", () => {
     const route = leadRouteFor({
       ...base,

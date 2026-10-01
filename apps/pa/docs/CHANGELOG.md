@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 (commercial AE)
+
+- Exceptional leads at commercial accounts (under 8,000 employees) go to the
+  Commercial AE, unless the account already has its own AE (D77).
+- Set the Commercial AE on the Team page, or from the lead the first time
+  one is needed. The 8,000 line is in the playbook's Routing section.
+
 ## 2026-10-01 (playbook approvals)
 
 - Playbook edits are approved by the owner or a Playbook admin, not RevOps

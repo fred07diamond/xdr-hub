@@ -195,7 +195,7 @@ export interface LeadBriefRecord {
   createdAt: string;
 }
 
-export type PersonRole = "pa" | "ae" | "csm";
+export type PersonRole = "pa" | "ae" | "commercial_ae" | "csm";
 
 /** Someone a lead can be routed to (D66): role, meeting link, pod AE. */
 export interface PersonRecord {

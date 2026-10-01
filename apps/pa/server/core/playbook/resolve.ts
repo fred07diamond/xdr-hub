@@ -72,6 +72,9 @@ export const ruleParamSchemas = {
     z.string(),
     z.enum(["route_to_ae", "pa_meeting", "qualify_first", "agency"]),
   ),
+  "rule.routing.commercial": z.object({
+    max_employees: z.number().int().positive(),
+  }),
   "rule.routing.sal_stale_days": z.object({
     days: z.number().int().positive(),
   }),

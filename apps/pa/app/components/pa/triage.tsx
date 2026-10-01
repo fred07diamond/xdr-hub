@@ -468,10 +468,14 @@ function MeetingLinkField({
 function PodAeField({
   pa,
   onSaved,
+  mode = "pod_ae",
 }: {
-  pa: NonNullable<LeadRouteView["paOwner"]>;
+  pa: NonNullable<LeadRouteView["paOwner"]> | null;
   onSaved?: () => void;
+  /** pod_ae: the PA's AE. commercial_ae: the AE for commercial accounts (D77). */
+  mode?: "pod_ae" | "commercial_ae";
 }) {
+  const commercial = mode === "commercial_ae";
   const save = useActionMutation("set-meeting-link");
   const people = useActionQuery("list-people", {});
   const aes = (
@@ -487,12 +491,16 @@ function PodAeField({
           }
         | undefined
     )?.people ?? []
-  ).filter((person) => person.role === "ae");
+  ).filter((person) =>
+    commercial
+      ? person.role === "commercial_ae" || person.role === "ae"
+      : person.role === "ae",
+  );
   const [email, setEmail] = useState("");
   const [link, setLink] = useState("");
   const known = aes.find((ae) => ae.email === email.trim().toLowerCase());
   const needsLink = !known?.meetingLink;
-  const paName = pa.name ?? pa.email;
+  const paName = pa?.name ?? pa?.email ?? "the PA";
   const valid =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
     (!needsLink || /^https:\/\/\S+$/.test(link.trim()));
@@ -506,13 +514,15 @@ function PodAeField({
             email: email.trim().toLowerCase(),
             meetingLink: (needsLink ? link : known!.meetingLink!).trim(),
             displayName: known?.displayName ?? null,
-            role: "ae",
-            podAeFor: pa.email,
+            role: commercial ? "commercial_ae" : "ae",
+            podAeFor: commercial ? null : (pa?.email ?? null),
           },
           {
             onSuccess: () => {
               toast.success(
-                `Saved. ${paName}'s enterprise leads now route to this AE.`,
+                commercial
+                  ? "Saved. Exceptional leads at commercial accounts now route to this AE."
+                  : `Saved. ${paName}'s enterprise leads now route to this AE.`,
               );
               onSaved?.();
             },
@@ -522,11 +532,12 @@ function PodAeField({
       }}
     >
       <p className="text-[12px] font-medium text-foreground">
-        Who is {paName}'s AE?
+        {commercial ? "Who is the commercial AE?" : `Who is ${paName}'s AE?`}
       </p>
       <p className="text-[11.5px] text-muted-foreground">
-        Asked once. Saved as {paName}'s pod AE and used for every enterprise
-        lead of theirs with no account AE.
+        {commercial
+          ? "Asked once. Saved as the Commercial AE and used for every exceptional lead at a commercial account."
+          : `Asked once. Saved as ${paName}'s pod AE and used for every enterprise lead of theirs with no account AE.`}
       </p>
       <div className="mt-1.5 grid gap-1.5">
         <input
@@ -579,16 +590,33 @@ export function LeadRouteBlock({
 }) {
   const who = value.meetingWith;
   const askForLink = Boolean(who && !who.link && onLinkSaved);
+  const askForCommercial = Boolean(
+    !who && value.needs === "commercial_ae" && onLinkSaved,
+  );
   const askForAe = Boolean(
-    !who && value.route === "route_to_ae" && value.paOwner && onLinkSaved,
+    !who &&
+    !askForCommercial &&
+    value.route === "route_to_ae" &&
+    value.paOwner &&
+    onLinkSaved,
   );
   const hidden = (gap: string) =>
     (askForLink && /No meeting link/.test(gap)) ||
-    (askForAe && /No AE for this lead/.test(gap));
+    (askForAe && /No AE for this lead/.test(gap)) ||
+    (askForCommercial && /No commercial AE/.test(gap));
   return (
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11.5px] font-medium text-muted-foreground">Route</p>
+        <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+          Route
+          {value.segment && value.route === "route_to_ae" ? (
+            <span className="rounded-[4px] bg-secondary px-1.5 py-px text-[11px] font-medium text-foreground">
+              {value.segment === "commercial"
+                ? "Commercial account"
+                : "Enterprise account"}
+            </span>
+          ) : null}
+        </p>
         {onChange && value.canOverride ? (
           <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
             <span className="sr-only">Change the route</span>
@@ -641,6 +669,13 @@ export function LeadRouteBlock({
       ) : null}
       {askForAe && value.paOwner ? (
         <PodAeField pa={value.paOwner} onSaved={onLinkSaved} />
+      ) : null}
+      {askForCommercial ? (
+        <PodAeField
+          pa={value.paOwner}
+          onSaved={onLinkSaved}
+          mode="commercial_ae"
+        />
       ) : null}
       {value.gaps.filter((gap) => !hidden(gap)).length > 0 ? (
         <ul className="mt-1.5 space-y-0.5">

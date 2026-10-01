@@ -64,6 +64,23 @@ export function classOfSubmission(input: {
   });
 }
 
+/** The commercial line when the active playbook has no block for it yet. */
+export const DEFAULT_COMMERCIAL_MAX_EMPLOYEES = 8000;
+
+/** The playbook's commercial line (D77): under this many employees. */
+export function commercialLine(release: PlaybookRelease): number | null {
+  const entry = release.entries.find(
+    (item) => item.id === "rule.routing.commercial",
+  );
+  // A release published before the block existed still uses the line Fred
+  // set; retiring the block turns commercial routing off.
+  if (!entry) return DEFAULT_COMMERCIAL_MAX_EMPLOYEES;
+  if (entry.status === "retired") return null;
+  const value = (entry.params as Record<string, unknown> | undefined)
+    ?.max_employees;
+  return typeof value === "number" && value > 0 ? value : null;
+}
+
 /** The playbook's class-to-route rule, or the seed default. */
 export function routeByClass(release: PlaybookRelease): Record<string, string> {
   const entry = release.entries.find(
@@ -157,6 +174,10 @@ export async function routeForEngagement(
     byClass: routeByClass(release),
     override: override?.route ?? null,
     suggestRecycle: Boolean(cls?.suggestRecycle),
+    employees:
+      snapshot?.company?.employees ??
+      lowerBound(fieldOf(latest?.fields, "company_size")),
+    commercialMaxEmployees: commercialLine(release),
   });
   return {
     ...route,

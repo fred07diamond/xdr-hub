@@ -134,6 +134,10 @@ export interface LeadRouteView {
   canOverride: boolean;
   /** The lead's PA (D72), to set their pod AE from the lead. */
   paOwner: { email: string; name: string | null } | null;
+  /** Commercial or enterprise, from the company's employees (D77). */
+  segment: "commercial" | "enterprise" | null;
+  /** Who is missing to finish the route, so the lead page asks once. */
+  needs: "commercial_ae" | "pod_ae" | null;
 }
 
 export type DraftStatus =

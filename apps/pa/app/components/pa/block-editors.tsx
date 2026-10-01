@@ -778,6 +778,7 @@ export function BlockDataEditor({ block, data, onChange }: BlockEditorProps) {
             intent_exceptional: "intent score",
             intent_recycle: "intent score",
             employees_exceptional: "employees",
+            max_employees: "employees",
             signups_multiple: "sign-ups",
           }}
         />

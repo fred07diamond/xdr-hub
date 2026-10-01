@@ -12,7 +12,7 @@ export default defineAction({
   schema: z.object({
     email,
     displayName: z.string().trim().max(120).nullable().optional(),
-    role: z.enum(["pa", "ae", "csm"]).nullable(),
+    role: z.enum(["pa", "ae", "commercial_ae", "csm"]).nullable(),
     meetingLink: z
       .string()
       .trim()

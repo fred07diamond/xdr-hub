@@ -95,6 +95,10 @@ export interface LeadRouteResult {
   gaps: string[];
   /** The lead's PA, so a missing pod AE can be set from the lead (D72). */
   paOwner: RoutePerson | null;
+  /** Commercial or enterprise, from the company's employees (D77). */
+  segment: Segment | null;
+  /** Who is missing to finish the route, so the lead page can ask once. */
+  needs?: "commercial_ae" | "pod_ae" | null;
 }
 
 export interface LeadRouteInput {
@@ -115,6 +119,24 @@ export interface LeadRouteInput {
   override: string | null;
   /** The class suggests a recycle (no or a very low intent score, D71). */
   suggestRecycle?: boolean;
+  /** The company's employees, for the commercial segment (D77). */
+  employees?: number | null;
+  /** Under this many employees is a commercial account (playbook). */
+  commercialMaxEmployees?: number | null;
+}
+
+export type Segment = "commercial" | "enterprise";
+
+/** Commercial when the company is under the playbook's line (D77). */
+export function segmentOf(input: {
+  employees?: number | null;
+  commercialMaxEmployees?: number | null;
+}): Segment | null {
+  if (input.employees === null || input.employees === undefined) return null;
+  if (!input.commercialMaxEmployees) return null;
+  return input.employees < input.commercialMaxEmployees
+    ? "commercial"
+    : "enterprise";
 }
 
 const nameOf = (person: RoutePerson | PersonRecord) =>
@@ -143,7 +165,11 @@ const isRoute = (value: string | null | undefined): value is LeadRoute =>
 function aeFor(
   input: LeadRouteInput,
   people: Map<string, PersonRecord>,
-): { ae: RoutePerson | null; why: string } {
+): {
+  ae: RoutePerson | null;
+  why: string;
+  missing?: "commercial_ae" | "pod_ae";
+} {
   const account = input.accountOwner;
   const accountIsPa =
     account &&
@@ -151,6 +177,19 @@ function aeFor(
       account.email.toLowerCase() === input.paOwner?.email.toLowerCase());
   if (account && !accountIsPa)
     return { ae: account, why: "the account's AE in HubSpot" };
+  // A commercial account goes to the commercial AE (D77).
+  if (segmentOf(input) === "commercial") {
+    const commercial = [...people.values()]
+      .filter((person) => person.role === "commercial_ae")
+      .sort((a, b) => a.email.localeCompare(b.email))[0];
+    const line = (input.commercialMaxEmployees ?? 0).toLocaleString();
+    if (commercial)
+      return {
+        ae: { email: commercial.email, name: commercial.displayName },
+        why: `the commercial AE (a commercial account, under ${line} employees)`,
+      };
+    return { ae: null, why: "", missing: "commercial_ae" };
+  }
   const pa = input.paOwner
     ? people.get(input.paOwner.email.toLowerCase())
     : undefined;
@@ -162,7 +201,7 @@ function aeFor(
       why: `${nameOf(input.paOwner!)}'s pod AE`,
     };
   }
-  return { ae: null, why: "" };
+  return { ae: null, why: "", missing: "pod_ae" };
 }
 
 export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
@@ -184,6 +223,8 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     meetingWith: meeting,
     gaps,
     paOwner: input.paOwner,
+    segment: segmentOf(input),
+    needs: null,
   });
 
   if (input.precheckOutcome && NOT_SALES.has(input.precheckOutcome))
@@ -232,14 +273,16 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
         : "No class yet, so qualify first.";
 
   if (route === "route_to_ae") {
-    const { ae, why: whose } = aeFor(input, people);
+    const { ae, why: whose, missing } = aeFor(input, people);
     if (!ae) {
       gaps.push(
-        input.paOwner
-          ? `No AE for this lead: the account has no AE owner and ${nameOf(input.paOwner)} has no pod AE. Set one on the Team page.`
-          : "No AE for this lead: the account has no AE owner and the lead has no PA.",
+        missing === "commercial_ae"
+          ? `No commercial AE for this commercial account. Set one on the Team page.`
+          : input.paOwner
+            ? `No AE for this lead: the account has no AE owner and ${nameOf(input.paOwner)} has no pod AE. Set one on the Team page.`
+            : "No AE for this lead: the account has no AE owner and the lead has no PA.",
       );
-      return result(route, source, why);
+      return { ...result(route, source, why), needs: missing ?? null };
     }
     return result(
       route,

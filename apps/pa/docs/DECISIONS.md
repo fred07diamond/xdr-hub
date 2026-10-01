@@ -1443,3 +1443,21 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - Changes already in review that named RevOps or the PA team now wait on
   the owner or an admin instead. A Playbook admin sees the same
   suggestions as the owner.
+
+## D77. Commercial accounts go to the commercial AE (2026-10-01)
+
+- Fred: "a commercial account (defined in the playbook as a company below
+  8k employees) goes to the commercial AE."
+- Choosing the AE for Route to the AE is now: the account's own AE in
+  HubSpot first; else, for a commercial account, the Commercial AE; else
+  the PA's pod AE. A company is commercial when its employees (HubSpot
+  company, else the form's company size) are under the line; an unknown
+  size is not assumed commercial.
+- The line is a playbook block, `rule.routing.commercial` (Routing,
+  `max_employees: 8000`). A release published before the block existed
+  uses 8,000; retiring the block turns commercial routing off.
+- The Commercial AE is a role on the Team page (People and meeting links).
+  With none set, a commercial lead's Route box asks once who it is and for
+  their meeting link. The Route box marks the lead as a commercial or
+  enterprise account, and the commercial AE is looped in on the email like
+  any AE (D72).

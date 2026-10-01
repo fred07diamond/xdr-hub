@@ -290,6 +290,8 @@ function leadRouteView(route: LeadRouteResult): LeadRouteView {
     gaps: route.gaps,
     canOverride: !FIXED_ROUTES.has(route.route),
     paOwner: route.paOwner,
+    segment: route.segment,
+    needs: route.needs ?? null,
   };
 }
 

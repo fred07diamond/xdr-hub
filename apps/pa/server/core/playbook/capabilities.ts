@@ -105,6 +105,13 @@ export const EVALUATORS: Record<RuleId, Evaluator> = {
     summary:
       "After triage, which class goes to the AE, which the PA takes, and which qualifies first",
   },
+  "rule.routing.commercial": {
+    paramSchema: ruleParamSchemas["rule.routing.commercial"],
+    reads: ["max_employees"],
+    crmFields: [],
+    summary:
+      "Exceptional leads at companies under this many employees go to the commercial AE",
+  },
   "rule.routing.sal_stale_days": {
     paramSchema: ruleParamSchemas["rule.routing.sal_stale_days"],
     reads: ["days"],

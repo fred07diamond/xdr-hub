@@ -170,7 +170,7 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     icon: "IconGauge",
     description:
       "A number a rule compares against, such as days before an SAL counts as stale.",
-    sections: ["ownership", "qualification", "rules_of_engagement"],
+    sections: ["ownership", "routing", "qualification", "rules_of_engagement"],
     defaultOwnerTeam: "revops",
     storage: { kind: "entry", entryType: "rule", idPrefix: "rule" },
     schema: z.record(z.string(), z.union([z.number(), z.string()])),
@@ -393,6 +393,7 @@ const ENTRY_TITLES: Record<string, string> = {
   "rule.precheck.restricted_countries": "Restricted countries",
   "rule.routing.order": "Ownership order",
   "rule.routing.by_class": "Routing by class",
+  "rule.routing.commercial": "Commercial accounts",
   "rule.routing.sal_stale_days": "When a SAL goes stale",
   "rule.sla.first_touch": "First touch SLA",
   "rule.sla.decision": "Decision deadline",
