@@ -130,6 +130,19 @@ export const EVALUATORS: Record<RuleId, Evaluator> = {
     crmFields: [],
     summary: "Which CRM adapter the CRM port uses",
   },
+  "rule.qualify.tiers": {
+    paramSchema: ruleParamSchemas["rule.qualify.tiers"],
+    reads: [
+      "exceptional_signals",
+      "intent_exceptional",
+      "intent_recycle",
+      "employees_exceptional",
+      "signups_multiple",
+    ],
+    crmFields: [],
+    summary:
+      "Exceptional (route to the AE) or Requires discovery, from five signals",
+  },
   "rule.enterprise.bar": {
     paramSchema: ruleParamSchemas["rule.enterprise.bar"],
     reads: ["code_min_seats"],

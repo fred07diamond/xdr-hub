@@ -91,3 +91,58 @@ describe("drafting after a HubSpot first touch", () => {
     expect(plan.reason).toMatch(/already went out from HubSpot/);
   });
 });
+
+describe("the first touch (D68)", () => {
+  // 30 emails sent after the form, newest last, across two pages of
+  // associations: only the newest 20 are shown, but the first touch is the
+  // very first one.
+  const emails = Array.from({ length: 30 }, (_, index) => ({
+    id: String(index + 1),
+    properties: {
+      hs_timestamp: new Date(
+        Date.parse("2026-09-01T10:00:00Z") + index * 86_400_000,
+      ).toISOString(),
+      hs_email_direction: "EMAIL",
+      hs_email_subject: `Touch ${index + 1}`,
+      hs_email_text: `Touch ${index + 1}`,
+      hs_email_status: "SENT",
+    },
+  }));
+  const busy: HubSpotFetch = async (path, init) => {
+    if (path.includes("/associations/emails"))
+      return path.includes("after=")
+        ? { results: emails.slice(15).map((item) => ({ toObjectId: item.id })) }
+        : {
+            results: emails
+              .slice(0, 15)
+              .map((item) => ({ toObjectId: item.id })),
+            paging: { next: { after: "15" } },
+          };
+    if (path.includes("/associations/")) return { results: [] };
+    if (path === "/crm/v3/objects/emails/batch/read") {
+      const ids = (
+        JSON.parse(String(init?.body)) as { inputs: Array<{ id: string }> }
+      ).inputs.map((item) => item.id);
+      return { results: emails.filter((item) => ids.includes(item.id)) };
+    }
+    if (path.includes("properties=dobby_message_1")) return { properties: {} };
+    throw new Error(`unexpected ${path}`);
+  };
+
+  it("is the first email after the first form, not the latest touch", async () => {
+    const history = await fetchContactHistory(busy, "c1", {
+      firstTouchSince: "2026-09-01T09:00:00Z",
+    });
+    expect(history.items.filter((item) => item.kind === "email")).toHaveLength(
+      20,
+    );
+    expect(history.firstTouch?.title).toBe("Touch 1");
+  });
+
+  it("counts from the form, so emails before it are not the first touch", async () => {
+    const history = await fetchContactHistory(busy, "c1", {
+      firstTouchSince: "2026-09-10T12:00:00Z",
+    });
+    expect(history.firstTouch?.title).toBe("Touch 11");
+  });
+});

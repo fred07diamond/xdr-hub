@@ -706,9 +706,21 @@ export function ContactSalesClassBlock({
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11.5px] font-medium text-muted-foreground">
-          Contact Sales class
+          Qualification
+          {value.tier && typeof value.signalsMet === "number"
+            ? `, ${value.signalsMet} of 5 signals`
+            : ""}
         </p>
-        <span className="rounded-[5px] bg-secondary px-1.5 py-0.5 text-[12px] font-medium text-foreground">
+        <span
+          className={cn(
+            "rounded-[5px] px-1.5 py-0.5 text-[12px] font-medium",
+            value.tier === "exceptional"
+              ? "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300"
+              : value.suggestRecycle
+                ? "bg-amber-500/12 text-amber-800 dark:text-amber-300"
+                : "bg-secondary text-foreground",
+          )}
+        >
           {value.label}
         </span>
       </div>

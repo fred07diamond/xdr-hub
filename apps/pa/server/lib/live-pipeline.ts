@@ -10,11 +10,7 @@ import {
 } from "@agent-native/core/triggers";
 import { hubspotFetchWithTimeout } from "@xdr-hub/shared/server";
 
-import {
-  fetchContactHistory,
-  firstTouchAfter,
-  type HistoryItem,
-} from "../core/crm/history.js";
+import { fetchContactHistory, type HistoryItem } from "../core/crm/history.js";
 import {
   HubSpotCrmAdapter,
   type HubSpotFetch,
@@ -532,8 +528,18 @@ export async function contactOf(engagementId: string) {
     typeof inbox?.payload.crm_contact_id === "string"
       ? inbox.payload.crm_contact_id
       : null;
+  // The first touch counts from the engagement's first form, not a later
+  // resubmission (D68).
+  const firstSubmittedAt = submissions
+    .map((item) => item.submittedAt)
+    .sort()[0];
   return contactId
-    ? { contactId, submittedAt: latest.submittedAt, inboxId: latest.inboxId }
+    ? {
+        contactId,
+        submittedAt: latest.submittedAt,
+        firstSubmittedAt,
+        inboxId: latest.inboxId,
+      }
     : null;
 }
 
@@ -618,17 +624,25 @@ export async function detectFirstTouches(budgetMs = 10_000, limit = 8) {
     const submission = await repository.getSubmissionByInbox(row.id);
     if (!submission?.engagementId) continue;
     const engagement = await repository.getEngagement(submission.engagementId);
-    if (
-      !engagement ||
-      engagement.firstTouchAt ||
-      !WATCHED_STATES.has(engagement.state)
-    )
-      continue;
+    if (!engagement) continue;
     const events = await repository.listEvents(engagement.id);
     const last = [...events]
       .reverse()
       .find((item) => item.type === "history.checked");
+    // A first touch recorded before D68 may be a later email (only the
+    // newest were read): check it once against every email.
+    const recheck =
+      Boolean(engagement.firstTouchAt) &&
+      !events.some(
+        (item) => item.type === "history.checked" && item.payload.full === true,
+      );
     if (
+      !recheck &&
+      (engagement.firstTouchAt || !WATCHED_STATES.has(engagement.state))
+    )
+      continue;
+    if (
+      !recheck &&
       last &&
       now().getTime() - Date.parse(last.occurredAt) < HISTORY_RECHECK_MS
     )
@@ -640,21 +654,45 @@ export async function detectFirstTouches(budgetMs = 10_000, limit = 8) {
     if (!contactId) continue;
     checked += 1;
     try {
+      const since = (
+        await repository.listSubmissionsForEngagement(engagement.id)
+      )
+        .map((item) => item.submittedAt)
+        .sort()[0];
       const history = await fetchContactHistory(hubspotFetch, contactId, {
         perType: 10,
+        firstTouchSince: since ?? submission.submittedAt,
       });
-      const sent = firstTouchAfter(history, submission.submittedAt);
+      const sent = history.firstTouch ?? null;
       await repository.appendEvent({
         id: newId(),
         engagementId: engagement.id,
         correlationId: engagement.id,
         type: "history.checked",
         actor: "system:hubspot-history",
-        payload: { items: history.items.length, first_touch: Boolean(sent) },
+        payload: {
+          items: history.items.length,
+          first_touch: Boolean(sent),
+          full: true,
+        },
         receiptId: null,
         occurredAt: now().toISOString(),
       });
-      if (sent && (await recordFirstTouch(engagement.id, sent))) detected += 1;
+      if (
+        recheck &&
+        sent?.at &&
+        engagement.firstTouchAt &&
+        sent.at < engagement.firstTouchAt
+      ) {
+        // Correct the contact milestone to the real first email.
+        await repository.updateEngagement(
+          engagement.id,
+          { firstTouchAt: sent.at, updatedAt: now().toISOString() },
+          engagement.version,
+        );
+        detected += 1;
+      } else if (sent && (await recordFirstTouch(engagement.id, sent)))
+        detected += 1;
     } catch (error) {
       console.warn(
         "[pa] History check failed:",

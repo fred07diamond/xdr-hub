@@ -22,6 +22,11 @@ export interface HistoryItem {
 
 export interface ContactHistory {
   items: HistoryItem[];
+  /**
+   * The first email we sent after the form, found among every email on the
+   * contact, not only the newest ones shown (D68). Set when asked for.
+   */
+  firstTouch?: HistoryItem | null;
   /** Kinds HubSpot would not return, for example a token without the email scope. */
   unavailable: Array<{ kind: HistoryKind; reason: string }>;
 }
@@ -186,38 +191,79 @@ function toItem(
   };
 }
 
+/** Every associated id, following HubSpot's paging (bounded). */
+async function associatedIds(
+  fetch: HubSpotFetch,
+  contactId: string,
+  object: string,
+  max = 1000,
+): Promise<string[]> {
+  const ids: string[] = [];
+  let after: string | null = null;
+  do {
+    const page = (await fetch(
+      `/crm/v4/objects/contacts/${encodeURIComponent(contactId)}/associations/${object}?limit=500${after ? `&after=${encodeURIComponent(after)}` : ""}`,
+    )) as {
+      results?: Array<{ toObjectId: string | number }>;
+      paging?: { next?: { after?: string } };
+    };
+    ids.push(...(page.results ?? []).map((item) => String(item.toObjectId)));
+    after = page.paging?.next?.after ?? null;
+  } while (after && ids.length < max);
+  return ids;
+}
+
+async function batchRead(
+  fetch: HubSpotFetch,
+  object: string,
+  properties: string[],
+  ids: string[],
+) {
+  const rows: Array<{ id: string; properties: Record<string, unknown> }> = [];
+  for (let index = 0; index < ids.length; index += 100) {
+    const batch = (await fetch(`/crm/v3/objects/${object}/batch/read`, {
+      method: "POST",
+      body: JSON.stringify({
+        properties,
+        inputs: ids.slice(index, index + 100).map((id) => ({ id })),
+      }),
+    })) as {
+      results?: Array<{ id: string; properties: Record<string, unknown> }>;
+    };
+    rows.push(...(batch.results ?? []));
+  }
+  return rows;
+}
+
 export async function fetchContactHistory(
   fetch: HubSpotFetch,
   contactId: string,
-  options: { perType?: number } = {},
+  options: { perType?: number; firstTouchSince?: string | null } = {},
 ): Promise<ContactHistory> {
   const perType = options.perType ?? 20;
   const items: HistoryItem[] = [];
   const unavailable: ContactHistory["unavailable"] = [];
+  let firstTouch: HistoryItem | null = null;
   await Promise.all(
     TYPES.map(async (type) => {
       try {
-        const associated = (await fetch(
-          `/crm/v4/objects/contacts/${encodeURIComponent(contactId)}/associations/${type.object}?limit=100`,
-        )) as { results?: Array<{ toObjectId: string | number }> };
-        const ids = (associated.results ?? [])
-          .map((item) => String(item.toObjectId))
-          .slice(-perType * 3);
+        const ids = await associatedIds(fetch, contactId, type.object);
         if (ids.length === 0) return;
-        const batch = (await fetch(
-          `/crm/v3/objects/${type.object}/batch/read`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              properties: type.properties,
-              inputs: ids.map((id) => ({ id })),
-            }),
-          },
-        )) as {
-          results?: Array<{ id: string; properties: Record<string, unknown> }>;
-        };
-        const read = (batch.results ?? []).map((raw) => toItem(type.kind, raw));
+        // Emails are read in full so the first touch is the real first one;
+        // other kinds only need the newest.
+        const wanted =
+          type.kind === "email" && options.firstTouchSince
+            ? ids
+            : ids.slice(-perType * 3);
+        const read = (
+          await batchRead(fetch, type.object, type.properties, wanted)
+        ).map((raw) => toItem(type.kind, raw));
         read.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+        if (type.kind === "email" && options.firstTouchSince)
+          firstTouch = firstTouchAfter(
+            { items: read, unavailable: [] },
+            options.firstTouchSince,
+          );
         items.push(...read.slice(0, perType));
       } catch (error) {
         unavailable.push({
@@ -248,7 +294,9 @@ export async function fetchContactHistory(
     // The Dobby property is optional.
   }
   items.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
-  return { items, unavailable };
+  return options.firstTouchSince !== undefined
+    ? { items, unavailable, firstTouch }
+    : { items, unavailable };
 }
 
 /** The first email we sent after the form: HubSpot's own first touch. */

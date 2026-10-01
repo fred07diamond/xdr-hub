@@ -345,10 +345,10 @@ const OUTCOMES: Record<string, string> = {
   continue: "Continue",
 };
 const CLASS_LABELS: Record<string, string> = {
-  hq_content: "Highly Qualified Content",
-  hq_code: "Highly Qualified Code",
-  standard_content: "Standard Content",
-  standard_code: "Standard Code",
+  hq_content: "Exceptional, Content",
+  hq_code: "Exceptional, Code",
+  standard_content: "Requires discovery, Content",
+  standard_code: "Requires discovery, Code",
   content_price_check: "Content price check",
   agency: "Agency",
 };
@@ -770,7 +770,16 @@ export function BlockDataEditor({ block, data, onChange }: BlockEditorProps) {
         <NumbersEditor
           data={data}
           onChange={onChange}
-          units={{ days: "days", code_min_seats: "seats", hours: "hours" }}
+          units={{
+            days: "days",
+            code_min_seats: "seats",
+            hours: "hours",
+            exceptional_signals: "of 5 signals",
+            intent_exceptional: "intent score",
+            intent_recycle: "intent score",
+            employees_exceptional: "employees",
+            signups_multiple: "sign-ups",
+          }}
         />
       );
     case "clock":

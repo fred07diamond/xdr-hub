@@ -353,6 +353,10 @@ export interface EngagementDetail {
     approach: string;
     label: string;
     product: "content" | "code";
+    /** Exceptional routes to the AE; discovery is qualified first (D67). */
+    tier?: "exceptional" | "discovery" | null;
+    suggestRecycle?: boolean;
+    signalsMet?: number;
     criteria: Array<{ label: string; met: boolean | null; evidence: string }>;
     summary: string;
   } | null;

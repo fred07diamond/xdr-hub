@@ -174,10 +174,10 @@ const OWNER_NAMES: Record<string, string> = {
 };
 
 const CLASS_NAMES: Record<string, string> = {
-  hq_content: "Highly Qualified Content",
-  hq_code: "Highly Qualified Code",
-  standard_content: "Standard Content",
-  standard_code: "Standard Code",
+  hq_content: "Exceptional, Content",
+  hq_code: "Exceptional, Code",
+  standard_content: "Requires discovery, Content",
+  standard_code: "Requires discovery, Code",
   content_price_check: "Content price check",
   agency: "Agency",
 };

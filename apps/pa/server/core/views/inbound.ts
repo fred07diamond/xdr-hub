@@ -20,7 +20,10 @@ import {
   leadBriefSchema,
 } from "../brief/index.js";
 import { readFirstTouchClock, nextWorkingInstant } from "../clocks/index.js";
-import { routeForEngagement } from "../lead-route/engagement.js";
+import {
+  classOfSubmission,
+  routeForEngagement,
+} from "../lead-route/engagement.js";
 import type { LeadRouteResult } from "../lead-route/index.js";
 import {
   ENGAGEMENT_STATES,
@@ -41,7 +44,6 @@ import type {
   PrecheckResult,
   SignalEvaluation,
 } from "../precheck/index.js";
-import { contactSalesClass } from "../qualify/index.js";
 import type {
   EngagementRecord,
   PaRepository,
@@ -799,18 +801,11 @@ export async function buildEngagementDetail(input: {
     }),
     contactSalesClass:
       triage.kind === "reply" || triage.kind === "review"
-        ? contactSalesClass({
-            message: latest?.message ?? null,
-            useCase: fieldOf(latest?.fields, "use_case"),
-            jobTitle: fieldOf(latest?.fields, "job_title"),
-            breeze: numberOf(fieldOf(latest?.fields, "breeze_fit_score")),
-            employees:
-              detailSnapshotCompany(detailSnapshot)?.employees ??
-              lowerBound(fieldOf(latest?.fields, "company_size")),
-            annualRevenue:
-              detailSnapshotCompany(detailSnapshot)?.annualRevenue ?? null,
-            productInterest: assessment?.productInterest ?? null,
-            agencySignal: Boolean(assessment?.agencySignal),
+        ? classOfSubmission({
+            submission: latest,
+            assessment,
+            snapshot: detailSnapshot as never,
+            release: input.release,
           })
         : null,
     salesCycle: salesCycleView({

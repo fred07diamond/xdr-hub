@@ -47,26 +47,23 @@ the move that fills each gap.
 
 ## 2. Classify (start from `contactSalesClass`)
 
-Content or Code first. Content: CMS, headless CMS, pages, marketing site,
-landing pages, publishing, content team, or the form's use case is Headless
-CMS or Landing pages. Otherwise Code.
+The rule is the playbook's `rule.qualify.tiers` (Qualification section). A
+lead is **Exceptional** (route to the AE) when enough of five signals are
+true, and **Requires discovery** (qualify first) otherwise:
 
-- **Highly Qualified Content**: 2 of 3. Breeze 7+ or a recognizable
-  enterprise (Fortune 500, major brand, 2,000+ employees, $500M+ revenue); a
-  detailed message with a specific initiative; the message already answers
-  2+ of the 5 Content questions. Junior titles never downgrade Content.
-- **Standard Content**: the rest, when there is real Content intent.
-- **Content price check**: only when both employees (under 50) and page
-  views (under 500k) are known and under the line, and they asked price.
-- **Highly Qualified Code**: all 3. Breeze 5+ or a recognizable enterprise;
-  manager-level title or above; a specific enterprise need in the message.
-  Two of three on a clearly enterprise-scale account also counts.
-- **Standard Code**: the rest. Company size alone never decides enterprise
-  need; probe for signals.
-- **Agency** first, whenever it is an agency, SI, or consultancy: find the
-  path (internal use, a client project, exploring). For a client project,
-  get the client's headcount and HQ before proposing times. Routing is in
-  the handbook (03).
+- Intent score: HubSpot's Company Fit Score (Breeze), 0 to 10.
+- A clear enterprise need in the inbound message (versus potential or
+  unclear).
+- Employee headcount at the line.
+- A clearly defined budget: the form says Approved or the message names one.
+  When it is blank, say unknown; it may need outside research.
+- Multiple sign-ups from the account (HubSpot company, Number of Associated
+  Sign Up Contacts).
+
+A very low intent score suggests a recycle; say so in the brief, and the PA
+decides. Content or Code only picks the email angle and the questions.
+Agencies, SIs, and consultancies go first: find the path (internal use, a
+client project, or exploring). Routing for agencies is in the handbook (03).
 
 You may disagree with PA's suggested class when the evidence says so; say
 why in the brief. Never assume a fact you do not have.

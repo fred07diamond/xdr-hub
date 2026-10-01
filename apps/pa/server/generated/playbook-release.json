@@ -210,6 +210,27 @@
       "position": 0
     },
     {
+      "id": "rule.qualify.tiers",
+      "type": "rule",
+      "owner": "Sales leadership",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": "Every Contact Sales lead is Exceptional or Requires discovery, from five signals. Agencies take the agency path first.\nExceptional (route to the AE) when at least exceptional_signals of these are true. Intent score (HubSpot Company Fit Score, Breeze, 0 to 10) of intent_exceptional or more. A clear enterprise need in the inbound message. employees_exceptional or more employees. A clearly defined budget (the form says Approved, or the message names one; may need outside research). Multiple sign-ups from the account (HubSpot company, Number of Associated Sign Up Contacts, at least signups_multiple).\nRequires discovery (qualify first) otherwise. Typically an intent score of 2 to 5, a potential or unclear enterprise need, an unknown budget, under 100 employees, and a single sign-up.\nAn intent score of intent_recycle or less suggests a recycle. The PA decides.\nContent or Code only picks the email angle and the questions.\n",
+      "params": {
+        "exceptional_signals": 3,
+        "intent_exceptional": 6,
+        "intent_recycle": 1,
+        "employees_exceptional": 101,
+        "signups_multiple": 2
+      },
+      "rationale": "Fred, 2026-10-01: exceptional leads route to the AE; anything less requires discovery.",
+      "owner_team": "both",
+      "block": "threshold",
+      "section": "qualification",
+      "position": 1
+    },
+    {
       "id": "msg.first_touch.structure",
       "type": "message_rule",
       "owner": "PMM and enablement",
@@ -300,7 +321,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Highly Qualified Content.\nRouted to the AE. Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. The AE's meeting link is the ask, to speed up the sales process, with 1 or 2 questions only for genuine gaps. Frame the call as tailored to them.\n",
+      "body": "Exceptional, Content.\nRouted to the AE. Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. The AE's meeting link is the ask, to speed up the sales process, with 1 or 2 questions only for genuine gaps. Frame the call as tailored to them.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "hq_content"
@@ -317,7 +338,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Standard Content.\nAcknowledge in their words. One line that the CMS is part of the Enterprise plan. Ask 2 or 3 of the Content questions the message and form have not answered (how many pages, who edits, current setup, page types, timeline). No demo on the first touch; conversation first.\nQualify first by default, so no link. When the PA takes the call, end with the PA's meeting link after the questions.\n",
+      "body": "Requires discovery, Content.\nAcknowledge in their words. One line that the CMS is part of the Enterprise plan. Ask 2 or 3 of the Content questions the message and form have not answered (how many pages, who edits, current setup, page types, timeline). No demo on the first touch; conversation first.\nQualify first by default, so no link. When the PA takes the call, end with the PA's meeting link after the questions.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "standard_content"
@@ -351,7 +372,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Highly Qualified Code.\nRouted to the AE. Acknowledge, one line of value, and the AE's meeting link as the ask. Then 1 or 2 prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by \"or is there a different challenge driving this?\". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).\n",
+      "body": "Exceptional, Code.\nRouted to the AE. Acknowledge, one line of value, and the AE's meeting link as the ask. Then 1 or 2 prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by \"or is there a different challenge driving this?\". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "hq_code"
@@ -368,7 +389,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Standard Code.\nAcknowledge, a line of value, 2 or 3 qualifying questions (enterprise signals, a path to engineering), then \"let me know and we can find time\". Company size alone never decides enterprise need.\nQualify first by default, so no link. When the PA takes the call, end with the PA's meeting link instead.\n",
+      "body": "Requires discovery, Code.\nAcknowledge, a line of value, 2 or 3 qualifying questions (enterprise signals, a path to engineering), then \"let me know and we can find time\". Company size alone never decides enterprise need.\nQualify first by default, so no link. When the PA takes the call, end with the PA's meeting link instead.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "standard_code"
@@ -401,7 +422,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "A bad draft and a better one (Standard Content, qualify first).\nTheir message. \"Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng.\" Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.\n\nBad. \"Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?\"\nWhy it is bad. The trigger is paraphrased, the connection is a product pitch, the confirm line is filler, the question is an interrogation, and Enterprise-only is missing.\n\nBetter.\nHi Sam,\n\nSaw you're weighing build vs. buy so marketing can build and test paid landing pages without eng. Teams like yours usually find the eng queue, not the page builder, is what sets the pace.\n\nOur CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?\n\nHappy to find time if it's easier to talk it through.\n\nRiley\n",
+      "body": "A bad draft and a better one (Requires discovery, Content).\nTheir message. \"Doing buy vs. build evaluation on enabling marketing to build and test paid landing pages without eng.\" Business driver, reduce engineering bottlenecks. Success measure, % of marketing LPs built and tested without eng.\n\nBad. \"Thanks for sharing that you're evaluating build versus buy. Builder's visual CMS can help teams create and publish landing pages. I'll confirm the best-fit approach and get back to you by tomorrow. How many landing pages do you expect to launch monthly, and what's your traffic?\"\nWhy it is bad. The trigger is paraphrased, the connection is a product pitch, the confirm line is filler, the question is an interrogation, and Enterprise-only is missing.\n\nBetter.\nHi Sam,\n\nSaw you're weighing build vs. buy so marketing can build and test paid landing pages without eng. Teams like yours usually find the eng queue, not the page builder, is what sets the pace.\n\nOur CMS is part of the Enterprise plan. Roughly how many pages would marketing run a month, and who would build them day to day?\n\nHappy to find time if it's easier to talk it through.\n\nRiley\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "owner_team": "pa_team",
       "block": "message_rule",
@@ -563,12 +584,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "6041481ffde9d9f6f6ddf43e06a3576c813f855b0f1b9d63ebff06821ffac9d1",
-  "short_id": "6041481f",
+  "id": "b76e6d98edf10e383cfbf26a5dfc1df904fef65e7525e57e3290ac908119d10c",
+  "short_id": "b76e6d98",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "05bf6730437b9180eb7a878b279c9e73ea79a95603d95767b81e4d0089dc6614"
+      "sha256": "214bad7f2db776fe6af7f40a51b7a8d52730cf8d5bd4d177639fd3327712e30c"
     },
     {
       "path": "config/routing-pool.yaml",

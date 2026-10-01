@@ -8,6 +8,7 @@ import type { CrmSnapshot } from "../crm/port.js";
 import { assertTransition, type EngagementState } from "../objects/index.js";
 import { rule } from "../playbook/resolve.js";
 import type { PlaybookRelease } from "../playbook/schema.js";
+import { DEFAULT_THRESHOLDS, qualifyThresholds } from "../qualify/index.js";
 import type {
   DecisionRecord,
   EngagementRecord,
@@ -65,6 +66,8 @@ export interface DecisionInputs {
   snapshot: CrmSnapshot | null;
   flagged: boolean;
   ownerEmail: string | null;
+  /** Intent score at or under the playbook's recycle line (D67). */
+  suggestRecycle?: { score: number } | null;
 }
 
 /**
@@ -140,6 +143,14 @@ export function recommend(input: DecisionInputs): {
       reason: "An existing customer. PA cannot tell which team they are on.",
       question,
     };
+  if (input.suggestRecycle && input.precheckOutcome !== "attach_to_owner")
+    return {
+      kind: "standard",
+      options,
+      recommendation: "decline",
+      reason: `Intent score ${input.suggestRecycle.score} of 10: suggest recycle with a note.`,
+      question,
+    };
   if (input.verdict === "ql" || input.precheckOutcome === "attach_to_owner")
     return {
       kind: "standard",
@@ -179,6 +190,7 @@ export interface DecisionDeps {
 export async function decisionInputs(
   repo: PaRepository,
   engagement: EngagementRecord,
+  release?: PlaybookRelease,
 ): Promise<DecisionInputs | null> {
   const submissions = await repo.listSubmissionsForEngagement(engagement.id);
   const latest = submissions[submissions.length - 1];
@@ -207,7 +219,21 @@ export async function decisionInputs(
       (snapshot?.ruleResults.snapshot as CrmSnapshot | undefined) ?? null,
     flagged: engagement.reviewFlags.length > 0,
     ownerEmail: owner?.email ?? routedOwner?.email ?? null,
+    suggestRecycle: recycleSignal(latest.fields, release),
   };
+}
+
+function recycleSignal(
+  fields: Record<string, unknown>,
+  release: PlaybookRelease | undefined,
+): { score: number } | null {
+  const raw = fields.breeze_fit_score;
+  const score = typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
+  if (!Number.isFinite(score)) return null;
+  const line =
+    qualifyThresholds(release).intent_recycle ??
+    DEFAULT_THRESHOLDS.intent_recycle;
+  return score <= line ? { score } : null;
 }
 
 /** Creates the engagement's decision once, when it needs one. */
@@ -220,7 +246,7 @@ export async function ensureDecision(
   if (existing) return existing;
   const engagement = await deps.repo.getEngagement(engagementId);
   if (!engagement) return null;
-  const inputs = await decisionInputs(deps.repo, engagement);
+  const inputs = await decisionInputs(deps.repo, engagement, deps.release);
   if (!inputs || !needsDecision(inputs)) return null;
   const hours = rule(deps.release, "rule.sla.decision").params.hours;
   const advice = recommend(inputs);

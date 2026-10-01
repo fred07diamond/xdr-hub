@@ -1,125 +1,113 @@
-// The Contact Sales class (D61), from the xDR master instructions' criteria,
-// and the lead brief's CRM note.
+// The Contact Sales class (D67): Exceptional (3 of 5 signals, route to the
+// AE) or Requires discovery, with an intent score of 0 or 1 suggesting a
+// recycle. Agencies route first.
 import { describe, expect, it } from "vitest";
 
-import { crmNote, leadBriefSchema } from "../../server/core/brief/index.js";
-import { contactSalesClass } from "../../server/core/qualify/index.js";
+import {
+  contactSalesClass,
+  type QualifyInput,
+} from "../../server/core/qualify/index.js";
 
-const base = {
-  message: null,
-  useCase: null,
-  jobTitle: null,
-  breeze: null,
-  employees: null,
+const base: QualifyInput = {
+  message: "Looking at Builder for our team.",
+  useCase: "Webapps",
+  jobTitle: "Engineer",
+  breeze: 4,
+  employees: 40,
   annualRevenue: null,
   productInterest: null,
   agencySignal: false,
+  budgetStatus: null,
+  signupContacts: 1,
 };
 
+const met = (input: Partial<QualifyInput>) =>
+  contactSalesClass({ ...base, ...input })
+    .criteria.filter((item) => item.met === true)
+    .map((item) => item.label);
+
 describe("contactSalesClass", () => {
-  it("makes a detailed CMS replatform at an enterprise Highly Qualified Content", () => {
-    const result = contactSalesClass({
+  it("needs 3 of the 5 signals for Exceptional", () => {
+    const strong = contactSalesClass({
       ...base,
-      message:
-        "We are replatforming our marketing site to Next.js with a Storybook design system. Our content team of 12 editors manages about 400 landing pages and needs to launch by Q1.",
-      useCase: "Headless CMS",
-      employees: 5000,
+      breeze: 8,
+      message: "We need SSO and RBAC across 12 teams on our design system.",
+      employees: 2500,
     });
-    expect(result.approach).toBe("hq_content");
-    expect(result.criteria.every((item) => item.met !== false)).toBe(true);
+    expect(strong.tier).toBe("exceptional");
+    expect(strong.approach).toBe("hq_code");
+    expect(strong.label).toBe("Exceptional, Code");
+    expect(strong.signalsMet).toBe(3);
+
+    const two = contactSalesClass({ ...base, breeze: 8, employees: 2500 });
+    expect(two.tier).toBe("discovery");
+    expect(two.label).toBe("Requires discovery, Code");
   });
 
-  it("keeps a vague CMS ask Standard Content, and never downgrades on title", () => {
-    const result = contactSalesClass({
-      ...base,
-      message: "We want a new content management system for the whole site.",
-      jobTitle: "Intern",
-      employees: 300,
-    });
-    expect(result.approach).toBe("standard_content");
-    expect(result.summary).toMatch(/Enterprise only/);
-  });
-
-  it("needs all three for Highly Qualified Code, or two at enterprise scale", () => {
-    const needAndTitle = {
-      ...base,
-      message:
-        "Our design and engineering teams keep rebuilding prototypes; we need SSO and a design system in the codebase.",
-      jobTitle: "Director of Engineering",
-    };
-    expect(contactSalesClass({ ...needAndTitle, breeze: 6 }).approach).toBe(
-      "hq_code",
+  it("reads each signal at the playbook's lines", () => {
+    expect(met({ breeze: 6 })).toContain("Intent score 6 or more");
+    expect(met({ breeze: 5 })).not.toContain("Intent score 6 or more");
+    expect(met({ employees: 101 })).toContain("100+ employees");
+    expect(met({ employees: 100 })).not.toContain("100+ employees");
+    expect(met({ budgetStatus: "Approved" })).toContain(
+      "Clearly defined budget",
+    );
+    expect(met({ budgetStatus: "Unsure" })).not.toContain(
+      "Clearly defined budget",
+    );
+    expect(met({ signupContacts: 3 })).toContain(
+      "Multiple sign-ups from the account",
     );
     expect(
-      contactSalesClass({ ...needAndTitle, breeze: 3, employees: 400 })
-        .approach,
-    ).toBe("standard_code");
-    expect(
-      contactSalesClass({
-        ...needAndTitle,
-        jobTitle: "Software Engineer",
-        employees: 8000,
-      }).approach,
-    ).toBe("hq_code");
+      met({ message: "Replatforming 40 sites onto a headless CMS" }),
+    ).toContain("Clear enterprise need in the message");
   });
 
-  it("routes agencies first", () => {
+  it("says unknown instead of guessing", () => {
+    const value = contactSalesClass({
+      ...base,
+      breeze: null,
+      employees: null,
+      signupContacts: null,
+    });
+    const unknown = value.criteria
+      .filter((item) => item.met === null)
+      .map((item) => item.label);
+    expect(unknown).toEqual([
+      "Intent score 6 or more",
+      "100+ employees",
+      "Clearly defined budget",
+      "Multiple sign-ups from the account",
+    ]);
+    expect(value.tier).toBe("discovery");
+  });
+
+  it("suggests a recycle at an intent score of 0 or 1", () => {
+    const low = contactSalesClass({ ...base, breeze: 1 });
+    expect(low.suggestRecycle).toBe(true);
+    expect(low.label).toBe("Requires discovery, Code, suggest recycle");
+    expect(contactSalesClass({ ...base, breeze: 2 }).suggestRecycle).toBe(
+      false,
+    );
+  });
+
+  it("keeps Content and Code for the email angle, and agencies first", () => {
     expect(
-      contactSalesClass({
-        ...base,
-        message: "We're building a site for a client in retail.",
-      }).approach,
+      contactSalesClass({ ...base, useCase: "Headless CMS" }).approach,
+    ).toBe("standard_content");
+    expect(
+      contactSalesClass({ ...base, message: "Building this for a client" })
+        .approach,
     ).toBe("agency");
   });
-});
 
-describe("the CRM note", () => {
-  it("formats the master instructions' note and leaves out empty fields", () => {
-    const brief = leadBriefSchema.parse({
-      summary: "Director of Eng at a 400 person SaaS asking about SSO.",
-      persona: "eng",
-      deal_role: "likely_buyer",
-      use_case: "collaborative_build",
-      path_to_engineering: "They are engineering",
-      enterprise_signals: ["SSO required"],
-      gates: [
-        {
-          gate: "pain",
-          status: "gap",
-          evidence: "Not named yet",
-          next_move: "Ask about rebuilds",
-        },
-        { gate: "champion", status: "unknown", evidence: "One contact so far" },
-        { gate: "next_step", status: "gap", evidence: "No meeting yet" },
-        { gate: "enterprise_need", status: "gap", evidence: "1 signal (SSO)" },
-        { gate: "metrics", status: "unknown", evidence: "None yet" },
-      ],
-      next_step: "Send the qualifying email",
+  it("follows thresholds edited in the playbook", () => {
+    const value = contactSalesClass({
+      ...base,
+      breeze: 8,
+      employees: 2500,
+      thresholds: { exceptional_signals: 2 },
     });
-    const note = crmNote(brief, {
-      company: "Example Co",
-      contact: "Sam Lee, Director of Engineering",
-      source: "Contact Sales",
-    });
-    expect(note).toMatch(/^Lead summary so far: Director of Eng/);
-    expect(note).toContain("Persona: Eng");
-    expect(note).toContain("Stage 1 Gate Status:");
-    expect(note).toContain(
-      "- Mutually identified pain we can solve: Gap. Not named yet Next: Ask about rebuilds",
-    );
-    expect(note).not.toContain("Scope:");
-  });
-
-  it("requires all five gates, once each", () => {
-    expect(
-      leadBriefSchema.safeParse({
-        summary: "x",
-        persona: "eng",
-        deal_role: "coach",
-        use_case: "unknown",
-        gates: [],
-        next_step: "x",
-      }).success,
-    ).toBe(false);
+    expect(value.tier).toBe("exceptional");
   });
 });

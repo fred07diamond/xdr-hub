@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-01 (qualification and first touch)
+
+- Leads are now Exceptional or Requires discovery, from five signals: intent
+  score, a clear enterprise need, headcount, budget, and multiple sign-ups.
+  Three of five is Exceptional, which routes to the AE. An intent score of
+  0 or 1 suggests a recycle (D67).
+- The thresholds live in the playbook's Qualification section, so they can
+  be changed there.
+- The lead page shows the qualification with how many of the five signals
+  are met, and the evidence for each.
+- The first touch card now always shows the first email sent after the
+  form, even on contacts with many emails (D68).
+
 ## 2026-10-01 (inbound sort and filter)
 
 - The inbound board lists the newest request first by default, so a new

@@ -59,7 +59,7 @@ describe("playbook page", () => {
       </MemoryRouter>,
     );
     expect(html).toContain("First touch structure (TCQ)");
-    expect(html).toContain("Highly Qualified Content");
+    expect(html).toContain("Exceptional, Content");
     expect(html).not.toContain("msg.first_touch.structure");
     // Other sections are in the nav, not rendered as blocks.
     expect(html).toContain("Definitions");

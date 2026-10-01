@@ -27,8 +27,9 @@ export const OWNER_NAME_TOKEN = "[owner first name]";
 export const MEETING_LINK_TOKEN = "[meeting link]";
 
 /**
- * The Contact Sales classes from the Sales handbook (03), decided before the
- * draft is written. Each has its own formula.
+ * The Contact Sales classes, decided before the draft is written. Each has its
+ * own formula. The `hq_` codes are Exceptional and the `standard_` codes are
+ * Requires discovery (D67); the codes stay so saved drafts keep their class.
  */
 export const APPROACHES = [
   "hq_content",
@@ -42,11 +43,11 @@ export const APPROACHES = [
 export type Approach = (typeof APPROACHES)[number];
 
 export const APPROACH_LABELS: Record<Approach, string> = {
-  hq_content: "Highly Qualified Content",
-  standard_content: "Standard Content",
+  hq_content: "Exceptional, Content",
+  standard_content: "Requires discovery, Content",
   content_price_check: "Content price check",
-  hq_code: "Highly Qualified Code",
-  standard_code: "Standard Code",
+  hq_code: "Exceptional, Code",
+  standard_code: "Requires discovery, Code",
   agency: "Agency routing",
   not_sales: "Not a sales request",
 };
@@ -464,7 +465,7 @@ export function lintDraft(input: {
     problems.push({
       code: "questions",
       message:
-        "A Standard lead gets 2 or 3 qualifying questions before the soft offer to find time.",
+        "A Requires discovery lead gets 2 or 3 qualifying questions before the soft offer to find time.",
     });
   }
 

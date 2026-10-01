@@ -2,7 +2,11 @@
 // snapshot, the owner, the class, the Team page's people, and any override.
 import type { CrmSnapshot } from "../crm/port.js";
 import type { PlaybookRelease } from "../playbook/schema.js";
-import { contactSalesClass, type ContactSalesClass } from "../qualify/index.js";
+import {
+  contactSalesClass,
+  qualifyThresholds,
+  type ContactSalesClass,
+} from "../qualify/index.js";
 import type {
   AssessmentRecord,
   EngagementRecord,
@@ -35,11 +39,12 @@ const lowerBound = (value: string | null) => {
   return match ? Number(match[0]) : null;
 };
 
-/** The Contact Sales class for a submission (D61). */
+/** The Contact Sales class for a submission (D61, D67). */
 export function classOfSubmission(input: {
   submission: SubmissionRecord | null | undefined;
   assessment: AssessmentRecord | null | undefined;
   snapshot: Partial<CrmSnapshot> | null | undefined;
+  release?: PlaybookRelease | null;
 }): ContactSalesClass {
   const fields = input.submission?.fields;
   const company = input.snapshot?.company ?? null;
@@ -53,6 +58,9 @@ export function classOfSubmission(input: {
     annualRevenue: company?.annualRevenue ?? null,
     productInterest: input.assessment?.productInterest ?? null,
     agencySignal: Boolean(input.assessment?.agencySignal),
+    budgetStatus: fieldOf(fields, "budget_status"),
+    signupContacts: company?.signupContacts ?? null,
+    thresholds: qualifyThresholds(input.release),
   });
 }
 
@@ -129,7 +137,7 @@ export async function routeForEngagement(
       "disqualify_logged",
     ].includes(precheckOutcome!);
   const cls = salesLead
-    ? classOfSubmission({ submission: latest, assessment, snapshot })
+    ? classOfSubmission({ submission: latest, assessment, snapshot, release })
     : null;
   const dealOwner =
     (snapshot?.openDeals ?? []).find((deal) => deal.owner)?.owner ?? null;

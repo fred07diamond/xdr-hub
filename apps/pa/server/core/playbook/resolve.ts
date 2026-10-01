@@ -82,6 +82,13 @@ export const ruleParamSchemas = {
     breach_notify: z.string(),
   }),
   "rule.sla.decision": z.object({ hours: z.number().positive() }),
+  "rule.qualify.tiers": z.object({
+    exceptional_signals: z.number().int().min(1).max(5),
+    intent_exceptional: z.number().min(0).max(10),
+    intent_recycle: z.number().min(0).max(10),
+    employees_exceptional: z.number().int().positive(),
+    signups_multiple: z.number().int().min(1),
+  }),
   "rule.enterprise.bar": z.object({
     code_min_seats: z.number().int().positive(),
   }),

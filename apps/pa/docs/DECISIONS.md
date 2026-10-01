@@ -1260,3 +1260,39 @@ bottom. Revisit one only when its "revisit when" condition happens.
   (an override, a new link, a new pod AE) the agent rewrites it.
   `DRAFT_RULES_VERSION` is 3, so every undecided draft is rewritten once.
 - Not changed: nothing is sent and nothing is written to HubSpot.
+
+## D67. Qualification is Exceptional or Requires discovery (2026-10-01)
+
+- Fred: an exceptional lead routes to the AE; anything less is marked
+  "requires discovery". This replaces Highly Qualified and Standard (D61)
+  for both Content and Code; Content or Code now only picks the email angle.
+  Agencies still go first, and the Content price check stays.
+- **Five signals,** each met, not met, or unknown, with evidence:
+  intent score (HubSpot Company Fit Score, Breeze, 0 to 10) of 6 or more; a
+  clear enterprise need in the inbound message; 101 or more employees
+  ("over 100"); a clearly defined budget (the form says Approved, or the
+  message names one; blank is unknown and may need research); multiple
+  sign-ups from the account (company property Number of Associated Sign Up
+  Contacts, 2 or more).
+- **Exceptional at 3 of 5** (Fred chose 3). Below that, Requires discovery.
+- **Intent score bands** (Fred): 0 to 1 suggests a recycle (the decision
+  recommendation becomes decline and recycle; the PA decides), 2 to 5 is
+  discovery, 6 to 10 is the exceptional signal.
+- **The thresholds are a playbook block,** `rule.qualify.tiers` in the
+  Qualification section, enforced by `server/core/qualify`. The class
+  codes (`hq_*`, `standard_*`) stay so saved drafts keep their class; their
+  labels are Exceptional and Requires discovery. Routing by class (D66)
+  already sends the `hq_*` classes to the AE.
+- PA reads the sign-up count with the company (read-only). Older leads get
+  it on their next refresh; until then the signal is unknown.
+
+## D68. The first touch is the first email only (2026-10-01)
+
+- Fred: the first touch section showed the latest touch, not the first.
+- Cause: the history read only the newest emails on a contact, so on a busy
+  contact the real first email was not in the list, and the earliest of the
+  newest was shown. It also counted from the latest form, not the first.
+- Now every email on the contact is read (paged, bounded) to find the first
+  one sent after the engagement's first form. The list below still shows
+  the newest. Leads whose first touch was recorded before this are checked
+  once and corrected when an earlier email is found.

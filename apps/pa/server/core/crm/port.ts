@@ -65,6 +65,8 @@ export interface CrmCompany {
   employees?: number | null;
   industry?: string | null;
   annualRevenue?: number | null;
+  /** Sign-up contacts on the account, for the multiple sign-ups signal (D67). */
+  signupContacts?: number | null;
   fetchedAt: string;
 }
 

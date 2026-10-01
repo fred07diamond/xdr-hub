@@ -59,7 +59,7 @@ describe("triage UI", () => {
     );
     expect(html).toContain("How it was classified");
     expect(html).toContain("Review the draft reply.");
-    expect(html).toContain("Standard Content");
+    expect(html).toContain("Requires discovery, Content");
     expect(html).not.toContain("[time options]");
     expect(html).not.toContain("[calendar link]");
     expect(html).toContain("Nothing is sent automatically");
