@@ -39,7 +39,7 @@ export const LEAD_ROUTE_LABELS: Record<LeadRoute, string> = {
 /** What the email does on each route. */
 export const LEAD_ROUTE_EMAIL: Record<LeadRoute, string> = {
   route_to_ae:
-    "Include the AE's meeting link as the ask, with 1 or 2 questions on the biggest gaps.",
+    "Loop in the AE (CC'd): name them, say what the meeting is for, then the AE's meeting link on its own line.",
   pa_meeting:
     "Include the PA's meeting link as the ask, with the qualifying questions.",
   qualify_first:
@@ -268,10 +268,18 @@ const LINK_ROUTES = new Set<LeadRoute>([
 
 /** The route as the draft lint checks it. */
 export function draftRouteOf(route: LeadRouteResult) {
+  const ae =
+    route.meetingWith?.role === "ae" &&
+    (route.route === "route_to_ae" || route.route === "deal_ae")
+      ? route.meetingWith
+      : null;
   return {
     route: route.route,
     label: route.label,
     needsLink: LINK_ROUTES.has(route.route),
     link: route.meetingWith?.link ?? null,
+    // The AE is looped in on the email (D72): CC'd, and named in it.
+    cc: ae?.email ?? null,
+    aeName: ae?.name ?? null,
   };
 }

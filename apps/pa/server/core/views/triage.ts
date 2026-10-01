@@ -243,6 +243,7 @@ export function draftView(input: {
 }): DraftView {
   const empty = {
     id: null,
+    cc: null,
     body: null,
     cta: null,
     approach: null,
@@ -290,6 +291,11 @@ export function draftView(input: {
   return {
     ...empty,
     id: draft.id,
+    cc:
+      ((lint as { route?: { cc?: string | null } | null } | null)?.route?.cc as
+        | string
+        | null
+        | undefined) ?? null,
     status,
     subject: draft.subject,
     preview: preview(draft.body),

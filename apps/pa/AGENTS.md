@@ -86,6 +86,7 @@ People only, hidden from the agent: `review-playbook-change`,
 `list-crm-connections`, `set-crm-credential`, `test-crm-connection`,
 `remove-crm-credential`, `update-handbook-doc`, `import-handbook-docs`,
 `enable-inbound-agent`, `refresh-lead`, `refresh-all-leads`, `save-person`,
+`set-meeting-link`,
 `set-lead-route` (the lead's route, D66), `decide-lead` (the rep's decision; the agent may
 recommend but never decides).
 

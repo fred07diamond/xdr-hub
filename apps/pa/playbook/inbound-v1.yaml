@@ -204,7 +204,7 @@ entries:
       Question. The ask. At most two questions, the ones that matter most for the call or the next step, or the time offer. Reasonable, 15 to 30 minutes, never "demo our platform". Goes in rubric.ask.
       Classify the lead first, then follow the formula for its class (the class blocks below).
       Under 75 words when possible. No filler like "I'll confirm the best-fit approach and get back to you"; only promise to confirm something real they asked that you cannot answer.
-      The lead's route decides the ask (the Routing section; get-engagement returns it as leadRoute). Route to the AE, or the PA takes the call, means that person's meeting link is the ask, exactly as given, with no day suggestions. Qualify first and the agency path carry no link yet.
+      The lead's route decides the ask (the Routing section; get-engagement returns it as leadRoute). Route to the AE, or the PA takes the call, means that person's meeting link is the ask, exactly as given, with no day suggestions. Route to the AE also loops the AE in: they are on CC, named in the email, and the email says what the meeting is for. Qualify first and the agency path carry no link yet.
       Never disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.
     params:
       min_words: 25
@@ -288,7 +288,8 @@ entries:
       approach: hq_content
     body: |
       Exceptional, Content.
-      Routed to the AE. Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. The AE's meeting link is the ask, to speed up the sales process, with 1 or 2 questions only for genuine gaps. Frame the call as tailored to them.
+      Routed to the AE, who is looped in (PA adds them on CC). Answer what they asked and acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan.
+      Introduce the AE by name and suggest the meeting with the intention behind it, in their terms (for example, to map their sites and editors onto the Enterprise setup and walk through pricing). Then the AE's meeting link, clearly, on its own line. At most one question, only for a genuine gap.
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.first_touch.standard_content
     block: message_rule
@@ -334,7 +335,7 @@ entries:
       approach: hq_code
     body: |
       Exceptional, Code.
-      Routed to the AE. Acknowledge, one line of value, and the AE's meeting link as the ask. Then 1 or 2 prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by "or is there a different challenge driving this?". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).
+      Routed to the AE, who is looped in (PA adds them on CC). Answer what they asked, then introduce the AE by name and suggest the meeting with the intention behind it, in their terms (for example, to look at how their design system and codebase would work with Builder). Then the AE's meeting link, clearly, on its own line. At most one prep question, led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by "or is there a different challenge driving this?". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.first_touch.standard_code
     block: message_rule

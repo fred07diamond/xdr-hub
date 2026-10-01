@@ -237,7 +237,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Every first touch follows TCQ, and every draft is checked against it.\nAnswer what they asked first. If they asked for a call, a demo, pricing, or a plan, the email says yes and how it happens before anything else. Never skip their ask to ask your own questions.\nTrigger. Open on the specific thing they said, in their words, from the message or a form answer (business driver, how they will measure success, budget status, who makes the call, tech stack, use case). Never \"thanks for reaching out about Builder\" as the whole trigger, never a paraphrase that loses their detail. The exact words quoted go in rubric.trigger; PA checks they appear in the form and in the email.\nConnection. One short, plain line that shows you understood their setup, using their specifics (their stack, languages, team, what they already have). Not a lesson about their situation and not a generalization (\"teams like yours usually find\", \"the hard part is\"); skip it rather than lecture. Never a feature list, \"Builder can help teams\", or \"our platform\". Goes in rubric.connection.\nQuestion. The ask. At most two questions, the ones that matter most for the call or the next step, or the time offer. Reasonable, 15 to 30 minutes, never \"demo our platform\". Goes in rubric.ask.\nClassify the lead first, then follow the formula for its class (the class blocks below).\nUnder 75 words when possible. No filler like \"I'll confirm the best-fit approach and get back to you\"; only promise to confirm something real they asked that you cannot answer.\nThe lead's route decides the ask (the Routing section; get-engagement returns it as leadRoute). Route to the AE, or the PA takes the call, means that person's meeting link is the ask, exactly as given, with no day suggestions. Qualify first and the agency path carry no link yet.\nNever disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.\n",
+      "body": "Every first touch follows TCQ, and every draft is checked against it.\nAnswer what they asked first. If they asked for a call, a demo, pricing, or a plan, the email says yes and how it happens before anything else. Never skip their ask to ask your own questions.\nTrigger. Open on the specific thing they said, in their words, from the message or a form answer (business driver, how they will measure success, budget status, who makes the call, tech stack, use case). Never \"thanks for reaching out about Builder\" as the whole trigger, never a paraphrase that loses their detail. The exact words quoted go in rubric.trigger; PA checks they appear in the form and in the email.\nConnection. One short, plain line that shows you understood their setup, using their specifics (their stack, languages, team, what they already have). Not a lesson about their situation and not a generalization (\"teams like yours usually find\", \"the hard part is\"); skip it rather than lecture. Never a feature list, \"Builder can help teams\", or \"our platform\". Goes in rubric.connection.\nQuestion. The ask. At most two questions, the ones that matter most for the call or the next step, or the time offer. Reasonable, 15 to 30 minutes, never \"demo our platform\". Goes in rubric.ask.\nClassify the lead first, then follow the formula for its class (the class blocks below).\nUnder 75 words when possible. No filler like \"I'll confirm the best-fit approach and get back to you\"; only promise to confirm something real they asked that you cannot answer.\nThe lead's route decides the ask (the Routing section; get-engagement returns it as leadRoute). Route to the AE, or the PA takes the call, means that person's meeting link is the ask, exactly as given, with no day suggestions. Route to the AE also loops the AE in: they are on CC, named in the email, and the email says what the meeting is for. Qualify first and the agency path carry no link yet.\nNever disclose pricing, except the Content price check. Never invent a fact, metric, headcount, quote, or customer result. A qualifying question is not fabrication.\n",
       "params": {
         "min_words": 25,
         "target_words": 75,
@@ -323,7 +323,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Exceptional, Content.\nRouted to the AE. Acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan. The AE's meeting link is the ask, to speed up the sales process, with 1 or 2 questions only for genuine gaps. Frame the call as tailored to them.\n",
+      "body": "Exceptional, Content.\nRouted to the AE, who is looped in (PA adds them on CC). Answer what they asked and acknowledge the initiative in their words. One sentence that the CMS is part of the Enterprise plan.\nIntroduce the AE by name and suggest the meeting with the intention behind it, in their terms (for example, to map their sites and editors onto the Enterprise setup and walk through pricing). Then the AE's meeting link, clearly, on its own line. At most one question, only for a genuine gap.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "hq_content"
@@ -374,7 +374,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Exceptional, Code.\nRouted to the AE. Acknowledge, one line of value, and the AE's meeting link as the ask. Then 1 or 2 prep questions led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by \"or is there a different challenge driving this?\". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).\n",
+      "body": "Exceptional, Code.\nRouted to the AE, who is looped in (PA adds them on CC). Answer what they asked, then introduce the AE by name and suggest the meeting with the intention behind it, in their terms (for example, to look at how their design system and codebase would work with Builder). Then the AE's meeting link, clearly, on its own line. At most one prep question, led by a hypothesis anchored in V2 pain (work rebuilt at handoff, AI gains not compounding), followed by \"or is there a different challenge driving this?\". Prefer questions that double as signals (is engineering in the loop, Cursor or Copilot, SSO, seats).\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "hq_code"
@@ -603,12 +603,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "2a811c37d3949dc3aa1a94df2a0c15a6d8e6cb516a92979ef1876df739701eda",
-  "short_id": "2a811c37",
+  "id": "2ab6b4a1f8cef7141a72843ade4bf75556a9fedc0b298ac4139da1bb7b7b50a8",
+  "short_id": "2ab6b4a1",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "a9dd5b4aae0bd9d04714578377394d784a89146984b3c5f271df9a6c647a705c"
+      "sha256": "ce03e0b13f14d2507f9ed4d67b9cf72febd74b24715efef2fff34e3b0bdfe2b3"
     },
     {
       "path": "config/routing-pool.yaml",

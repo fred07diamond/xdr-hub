@@ -137,7 +137,7 @@ export type DraftStatus = "proposed" | "needs_edit";
  * The version of the draft rules. A draft saved under older rules is
  * redrafted while its lead is still undecided (D62).
  */
-export const DRAFT_RULES_VERSION = 4;
+export const DRAFT_RULES_VERSION = 5;
 
 export interface LintProblem {
   code:
@@ -158,7 +158,8 @@ export interface LintProblem {
     | "connection"
     | "content_enterprise"
     | "questions"
-    | "unanswered_ask";
+    | "unanswered_ask"
+    | "ae_named";
   message: string;
 }
 
@@ -174,7 +175,7 @@ export interface LintResult {
   /** Rules that code cannot check yet, shown so nobody assumes they were. */
   notChecked: string[];
   /** The route the draft was checked against (D66), to redraft on a change. */
-  route?: { route: string; link: string | null } | null;
+  route?: { route: string; link: string | null; cc?: string | null } | null;
 }
 
 /** The lead's route as the lint sees it (D66). */
@@ -185,6 +186,9 @@ export interface DraftRoute {
   /** Whether the route puts a meeting link in the email at all. */
   needsLink: boolean;
   label: string;
+  /** The AE looped in on the email (D72): CC'd, and named in the body. */
+  cc?: string | null;
+  aeName?: string | null;
 }
 
 export interface DraftPlan {
@@ -478,6 +482,21 @@ export function lintDraft(input: {
         "A Content lead should hear, in one line, that the CMS is part of the Enterprise plan.",
     });
   }
+  // An exceptional lead meets the AE (D72): name them in the email.
+  const aeFirst = route?.aeName?.trim().split(/\s+/)[0] ?? null;
+  if (
+    route?.cc &&
+    aeFirst &&
+    !new RegExp(`\\b${escapeRegExp(aeFirst)}\\b`, "i").test(
+      draft.body.replace(/https?:\/\/\S+/g, " "),
+    )
+  ) {
+    problems.push({
+      code: "ae_named",
+      message: `The AE, ${route.aeName}, is looped in on this email. Name them and say what the meeting with them is for.`,
+    });
+  }
+
   // Questions (D71): a couple that matter, never an interrogation.
   const questionMarks = (draft.body.match(/\?/g) ?? []).length;
   if (questionMarks > 2) {
@@ -549,7 +568,9 @@ export function lintDraft(input: {
       "Customer names need an approved reference entry",
       "Whether the questions pass the peer test",
     ],
-    route: route ? { route: route.route, link: route.link } : null,
+    route: route
+      ? { route: route.route, link: route.link, cc: route.cc ?? null }
+      : null,
   };
 }
 

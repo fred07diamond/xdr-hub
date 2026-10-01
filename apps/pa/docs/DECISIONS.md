@@ -1361,3 +1361,33 @@ bottom. Revisit one only when its "revisit when" condition happens.
   The playbook has a block for it (`msg.first_touch.clarify`).
 - Demo and synthetic fixtures carry made-up fit scores so they still show
   the full range.
+
+## D72. Exceptional leads loop in the AE, and a missing meeting link is asked for once (2026-10-01)
+
+- Fred: "For exceptional leads, make sure to loop in the AE, and reference
+  them in the email. Suggest the meeting and the intention behind the
+  meeting then offer the AE meeting link clearly."
+- On Route to the AE (and the deal's AE), PA puts the AE on CC; the draft
+  card shows the Cc line. The email names the AE, suggests the meeting and
+  what it is for in the lead's terms, then gives the AE's link on its own
+  line. The lint checks the AE is named (`ae_named`), ignoring links.
+  The Exceptional message blocks say the same. `DRAFT_RULES_VERSION` is 5.
+- Fred: "If there is no meeting link, add a one-time field somewhere to add
+  a meeting link, that link will be saved and associated with whoever the
+  lead was routed to. It should not prompt the user again." The Route box
+  on the lead shows "Add <name>'s meeting link" when the routed person has
+  none (`set-meeting-link`, people only). It saves to that person (keeping
+  their role and pod AE), so every lead routed to them uses it and the
+  field never shows again; drafts are rewritten with the link.
+
+## D73. A refresh keeps what is already done (2026-10-01)
+
+- Fred saw a finished lead "revert" to "Waiting for the agent" with no
+  owner and no draft. The 10 minute follow-up read (D70) refreshed it, and a
+  refresh started a fresh run that waited for the agent to read the message
+  again.
+- A refresh now carries over the message assessment when the message is
+  unchanged, so routing, scoring, and the class run straight away; the
+  latest draft, which the agent rewrites only if the route or rules
+  changed; and any route the PA picked. A changed message still goes to the
+  agent.

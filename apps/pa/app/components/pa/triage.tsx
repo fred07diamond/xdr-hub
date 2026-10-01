@@ -1,5 +1,9 @@
 // The two things a PA reads first on every lead (D49): how it was classified,
 // and the drafted reply. Everything else on the record sits behind "Details".
+import {
+  actionErrorMessage,
+  useActionMutation,
+} from "@agent-native/core/client/hooks";
 import type {
   DecisionView,
   EngagementDetail,
@@ -249,6 +253,19 @@ export function DraftCard({
                 </>
               }
             />
+            {draft.cc ? (
+              <Header
+                label="Cc"
+                value={
+                  <span className="font-mono text-[12px] text-muted-foreground">
+                    {draft.cc}
+                    <span className="ml-1.5 font-sans text-foreground">
+                      (the AE)
+                    </span>
+                  </span>
+                }
+              />
+            ) : null}
             <Header label="From" value={draft.from ?? "Unassigned"} />
             <Header
               label="Subject"
@@ -354,16 +371,89 @@ const shortLink = (link: string) =>
   link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
 
 /** After triage, who takes the meeting and whose link the email carries (D66). */
+/**
+ * Asked once (D72): the routed person has no meeting link on file. Saving it
+ * keeps it on that person, so no lead routed to them asks again.
+ */
+function MeetingLinkField({
+  who,
+  onSaved,
+}: {
+  who: NonNullable<LeadRouteView["meetingWith"]>;
+  onSaved?: () => void;
+}) {
+  const save = useActionMutation("set-meeting-link");
+  const [link, setLink] = useState("");
+  const name = who.name ?? who.email;
+  return (
+    <form
+      className="mt-2 rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 p-2.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate(
+          {
+            email: who.email,
+            meetingLink: link.trim(),
+            displayName: who.name,
+            role: who.role,
+          },
+          {
+            onSuccess: () => {
+              toast.success(
+                `Saved ${name}'s meeting link. Leads routed to them use it from now on.`,
+              );
+              onSaved?.();
+            },
+            onError: (error) => toast.error(actionErrorMessage(error)),
+          },
+        );
+      }}
+    >
+      <label className="grid gap-1">
+        <span className="text-[12px] font-medium text-foreground">
+          Add {name}'s meeting link
+        </span>
+        <span className="text-[11.5px] text-muted-foreground">
+          Asked once. It is saved to {name} and used for every lead routed to
+          them.
+        </span>
+        <span className="mt-1 flex gap-2">
+          <input
+            type="url"
+            inputMode="url"
+            required
+            placeholder="https://meetings.hubspot.com/..."
+            value={link}
+            onChange={(event) => setLink(event.target.value)}
+            className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-[13px] shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={save.isPending || !/^https:\/\/\S+$/.test(link.trim())}
+          >
+            {save.isPending ? "Saving..." : "Save"}
+          </Button>
+        </span>
+      </label>
+    </form>
+  );
+}
+
 export function LeadRouteBlock({
   value,
   onChange,
   busy,
+  onLinkSaved,
 }: {
   value: LeadRouteView;
   onChange?: (route: string | null) => void;
   busy?: boolean;
+  /** Set when the viewer can save a missing meeting link here. */
+  onLinkSaved?: () => void;
 }) {
   const who = value.meetingWith;
+  const askForLink = Boolean(who && !who.link && onLinkSaved);
   return (
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -415,27 +505,33 @@ export function LeadRouteBlock({
         </a>
       ) : null}
       <p className="mt-1.5 text-[12px] text-muted-foreground">{value.reason}</p>
-      {value.gaps.length > 0 ? (
+      {askForLink && who ? (
+        <MeetingLinkField who={who} onSaved={onLinkSaved} />
+      ) : null}
+      {value.gaps.filter((gap) => !(askForLink && /No meeting link/.test(gap)))
+        .length > 0 ? (
         <ul className="mt-1.5 space-y-0.5">
-          {value.gaps.map((gap) => (
-            <li
-              key={gap}
-              className="flex gap-1.5 text-[12px] text-amber-700 dark:text-amber-400"
-            >
-              <IconAlertTriangle
-                className="mt-0.5 size-3.5 shrink-0"
-                aria-hidden="true"
-              />
-              <span>
-                {gap}{" "}
-                {/Team page/.test(gap) ? (
-                  <Link to="/team" className="underline underline-offset-2">
-                    Open Team
-                  </Link>
-                ) : null}
-              </span>
-            </li>
-          ))}
+          {value.gaps
+            .filter((gap) => !(askForLink && /No meeting link/.test(gap)))
+            .map((gap) => (
+              <li
+                key={gap}
+                className="flex gap-1.5 text-[12px] text-amber-700 dark:text-amber-400"
+              >
+                <IconAlertTriangle
+                  className="mt-0.5 size-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>
+                  {gap}{" "}
+                  {/Team page/.test(gap) ? (
+                    <Link to="/team" className="underline underline-offset-2">
+                      Open Team
+                    </Link>
+                  ) : null}
+                </span>
+              </li>
+            ))}
         </ul>
       ) : null}
     </div>
@@ -510,6 +606,7 @@ export function TriageCard({
   leadRoute,
   onRouteChange,
   routeBusy,
+  onLinkSaved,
 }: {
   triage: TriageView;
   asked: {
@@ -523,6 +620,7 @@ export function TriageCard({
   leadRoute?: LeadRouteView | null;
   onRouteChange?: (route: string | null) => void;
   routeBusy?: boolean;
+  onLinkSaved?: () => void;
 }) {
   return (
     <section
@@ -552,6 +650,7 @@ export function TriageCard({
             value={leadRoute}
             onChange={onRouteChange}
             busy={routeBusy}
+            onLinkSaved={onLinkSaved}
           />
         ) : null}
         {facts.length > 0 ? (

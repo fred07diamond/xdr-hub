@@ -220,6 +220,19 @@ describe("lintDraft", () => {
         link: null,
       }).problems.map((problem) => problem.code),
     ).toEqual(expect.arrayContaining(["questions", "meeting_link"]));
+    // An exceptional lead loops in the AE (D72): named in the email.
+    const withAe = { ...TO_AE, cc: "sam@example.com", aeName: "Sam Ortiz" };
+    expect(
+      lint({}, "Q?", withAe).problems.map((problem) => problem.code),
+    ).not.toContain("ae_named");
+    expect(
+      lint(
+        { body: good.body.replace("with Sam, our AE,", "with our AE") },
+        "Q?",
+        withAe,
+      ).problems.map((problem) => problem.code),
+    ).toContain("ae_named");
+    expect(lint({}, "Q?", withAe).route?.cc).toBe("sam@example.com");
     // Every ask in their message gets a reply.
     const asked = (body: string) =>
       lintDraft({

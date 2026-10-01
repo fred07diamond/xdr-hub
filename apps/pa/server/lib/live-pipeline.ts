@@ -412,6 +412,19 @@ export async function refreshInbox(inboxId: string): Promise<{
   const engagement = old?.engagementId
     ? await repository.getEngagement(old.engagementId)
     : null;
+  // What is already done carries over (D73), so a refresh updates the
+  // HubSpot facts without sending the lead back to "waiting for the agent".
+  const carried = engagement
+    ? {
+        assessment: old
+          ? await repository.getAssessmentForSubmission(old.id)
+          : null,
+        message: old?.message ?? null,
+        draft:
+          (await repository.listDrafts(engagement.id)).slice(-1)[0] ?? null,
+        override: await repository.getRouteOverride(engagement.id),
+      }
+    : null;
   if (engagement && engagement.state !== "closed") {
     const from = engagement.state as EngagementState;
     try {
@@ -452,7 +465,52 @@ export async function refreshInbox(inboxId: string): Promise<{
     createdAt: at,
     updatedAt: at,
   });
-  const run = await runPipeline(fresh.record.id, await liveDeps());
+  const deps = await liveDeps();
+  const kept = carried?.assessment;
+  if (kept)
+    deps.assessor = {
+      source: kept.source,
+      waitsForAgent: true,
+      // The same message needs no new read; a changed one goes to the agent.
+      assess: async ({ submission: next }) =>
+        (next.message ?? null) === carried.message
+          ? {
+              intent: kept.intent,
+              agency_signal: kept.agencySignal,
+              evidence_quotes: kept.evidenceQuotes,
+              end_client_named: kept.endClientNamed,
+              product_interest: kept.productInterest,
+              language: kept.language,
+              explicit_question: kept.explicitQuestion,
+            }
+          : null,
+    };
+  const run = await runPipeline(fresh.record.id, deps);
+  if (run.engagementId && carried && run.engagementId !== engagement?.id) {
+    if (carried.override)
+      await repository.setRouteOverride({
+        ...carried.override,
+        engagementId: run.engagementId,
+      });
+    // The draft stays on screen; the agent rewrites it only if the route or
+    // the rules changed (listAgentWork).
+    if (
+      carried.draft &&
+      (await repository.listDrafts(run.engagementId)).length === 0
+    ) {
+      const submissions = await repository.listSubmissionsForEngagement(
+        run.engagementId,
+      );
+      await repository.insertDraft({
+        ...carried.draft,
+        id: newId(),
+        engagementId: run.engagementId,
+        submissionId: submissions[submissions.length - 1]?.id ?? null,
+        version: 1,
+        updatedAt: at,
+      });
+    }
+  }
   return { status: "refreshed", engagementId: run.engagementId };
 }
 

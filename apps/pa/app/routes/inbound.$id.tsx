@@ -791,6 +791,9 @@ export default function EngagementRoute() {
                       )
               }
               routeBusy={setRoute.isPending}
+              onLinkSaved={
+                canDecide ? () => void engagement.refetch() : undefined
+              }
               asked={{
                 text:
                   detail.assessment?.explicitQuestion ??

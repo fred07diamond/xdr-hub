@@ -147,6 +147,8 @@ export interface DraftSummary {
 
 export interface DraftView extends DraftSummary {
   id: string | null;
+  /** The AE looped in on the email for an exceptional lead (D72). */
+  cc: string | null;
   body: string | null;
   cta: { code: string; label: string } | null;
   /** The Contact Sales class the draft was written for (Sales handbook 03). */

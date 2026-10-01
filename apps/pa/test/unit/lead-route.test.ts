@@ -60,6 +60,11 @@ describe("leadRouteFor", () => {
       link: "https://meetings.example.com/account-ae",
     });
     expect(route.gaps).toEqual([]);
+    // The AE is looped in on the email.
+    expect(draftRouteOf(route)).toMatchObject({
+      cc: "account-ae@example.com",
+      aeName: "Alex",
+    });
   });
 
   it("falls back to the PA's pod AE when the account has no AE", () => {

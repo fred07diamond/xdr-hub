@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-01 (AE loop-in, meeting links, refresh)
+
+- Exceptional leads loop in the AE: the AE is on Cc, named in the email,
+  with the meeting's purpose and their meeting link on its own line (D72).
+- When the routed person has no meeting link, the Route box asks for it
+  once. It is saved to that person and never asked again.
+- Refreshing a lead from HubSpot, by hand or automatically, no longer sends
+  it back to "Waiting for the agent". The classification, the draft, and a
+  route you picked stay (D73).
+
 ## 2026-10-01 (tone, and leads with no fit score)
 
 - Drafts answer what the lead asked first (a call, a demo, pricing), skip
