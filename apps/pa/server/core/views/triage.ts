@@ -245,6 +245,8 @@ export function draftView(input: {
   const empty = {
     id: null,
     cc: null,
+    rubric: null,
+    reasoning: null,
     body: null,
     cta: null,
     approach: null,
@@ -292,6 +294,8 @@ export function draftView(input: {
   return {
     ...empty,
     id: draft.id,
+    rubric: lint?.rubric ?? null,
+    reasoning: lint?.reasoning ?? null,
     cc:
       ((lint as { route?: { cc?: string | null } | null } | null)?.route?.cc as
         | string

@@ -1024,6 +1024,8 @@ export async function buildEngagementDetail(input: {
           problems: [],
           problemCount: 0,
           cc: null,
+          rubric: null,
+          reasoning: null,
           note: stepBack.note,
         }
       : draft,

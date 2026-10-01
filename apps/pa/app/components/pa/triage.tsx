@@ -179,6 +179,78 @@ export function DraftPreview({ draft }: { draft: DraftSummary }) {
   );
 }
 
+/**
+ * Why the agent wrote the draft this way (D85): the class and route, the
+ * TCQ parts in its own words, how it answered each ask, and the tone.
+ */
+function DraftReasoning({ draft }: { draft: DraftView }) {
+  const why = draft.reasoning;
+  const tcq = draft.rubric;
+  if (!why && !tcq) return null;
+  const row = (label: string, quote: string | null, note: string | null) =>
+    quote || note ? (
+      <div className="grid gap-0.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3">
+        <dt className="text-[11.5px] font-medium text-muted-foreground">
+          {label}
+        </dt>
+        <dd className="min-w-0 text-[12.5px] leading-relaxed text-foreground">
+          {quote ? (
+            <span className="pa-untrusted block border-l-2 border-foreground/20 pl-2">
+              {quote}
+            </span>
+          ) : null}
+          {note ? (
+            <span className="block text-muted-foreground">{note}</span>
+          ) : null}
+        </dd>
+      </div>
+    ) : null;
+  return (
+    <details className="group mx-4 mb-4 rounded-md border border-border" open>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12.5px] font-medium text-foreground">
+        Why it reads this way
+        <span className="text-[11.5px] font-normal text-muted-foreground group-open:hidden">
+          Show
+        </span>
+      </summary>
+      <dl className="grid gap-2.5 border-t border-border px-3 py-3">
+        {row("Class and route", null, why?.approach ?? null)}
+        {row("Trigger", tcq?.trigger ?? null, why?.trigger ?? null)}
+        {row("Connection", tcq?.connection ?? null, why?.connection ?? null)}
+        {row("Question", tcq?.ask ?? null, why?.question ?? null)}
+        {why?.asks.length ? (
+          <div className="grid gap-0.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3">
+            <dt className="text-[11.5px] font-medium text-muted-foreground">
+              Their asks
+            </dt>
+            <dd>
+              <ul className="space-y-1 text-[12.5px] leading-relaxed">
+                {why.asks.map((item) => (
+                  <li key={item.asked}>
+                    <span className="pa-untrusted block text-foreground">
+                      {item.asked}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {item.answer}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </div>
+        ) : null}
+        {row("Tone", null, why?.tone ?? null)}
+        {!why ? (
+          <p className="text-[12px] text-muted-foreground">
+            Written before PA asked for the agent's reasoning; the next draft
+            includes it.
+          </p>
+        ) : null}
+      </dl>
+    </details>
+  );
+}
+
 /** Renders the body as plain text, with the calendar placeholder as a chip. */
 function DraftBody({ body }: { body: string }) {
   const parts = body.split(
@@ -307,6 +379,7 @@ export function DraftCard({
           <div className="px-4 py-4">
             <DraftBody body={draft.body ?? ""} />
           </div>
+          <DraftReasoning draft={draft} />
           {draft.problems.length > 0 ? (
             <div className="mx-4 mb-4 rounded-md bg-warning-soft px-3 py-2.5">
               <p className="text-[12.5px] font-medium text-warning-foreground">

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-01 (draft reasoning and quality)
+
+- Every draft shows why it reads the way it does: the class and route, the
+  trigger, connection, and question, how each of their asks is answered,
+  and the tone (D85).
+- Drafts keep all three TCQ parts, read professionally (no "Hey" or "Yep"),
+  never use internal product names, and stay between 40 and 75 words.
+  Undecided drafts are being rewritten.
+
 ## 2026-10-01 (SLA follows HubSpot)
 
 - The SLA timer matches HubSpot: a lead recycled, made SAL, or disqualified

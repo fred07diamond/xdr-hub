@@ -220,6 +220,23 @@ describe("lintDraft", () => {
         link: null,
       }).problems.map((problem) => problem.code),
     ).toEqual(expect.arrayContaining(["questions", "meeting_link"]));
+    // D85: the connection is in the email, the tone is professional, and
+    // internal product names stay internal.
+    expect(
+      codes({
+        body: good.body.replace(
+          "Our CMS is part of the Enterprise plan, and I'll send the SSO details over tomorrow.",
+          "I'll send the SSO details over tomorrow.",
+        ),
+      }),
+    ).toContain("connection");
+    expect(
+      codes({ body: good.body.replace("Hi Priya,", "Hey Priya,") }),
+    ).toContain("tone");
+    expect(codes({ body: `${good.body}\nYep, that is Content.` })).toEqual(
+      expect.arrayContaining(["tone", "internal_name"]),
+    );
+    expect(codes({})).not.toContain("internal_name");
     // An exceptional lead loops in the AE (D72): named in the email.
     const withAe = { ...TO_AE, cc: "sam@example.com", aeName: "Sam Ortiz" };
     expect(
@@ -331,6 +348,7 @@ describe("the demo board, as a PA sees it", () => {
       "banned_phrase",
       "calls_to_action",
       "colon",
+      "connection",
       "content_enterprise",
       "trigger",
     ]);

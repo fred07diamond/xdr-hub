@@ -163,6 +163,16 @@ export interface DraftView extends DraftSummary {
   id: string | null;
   /** The AE looped in on the email for an exceptional lead (D72). */
   cc: string | null;
+  /** The TCQ parts and why the agent wrote it this way (D85). */
+  rubric: { trigger: string; connection: string; ask: string } | null;
+  reasoning: {
+    approach: string;
+    trigger: string;
+    connection: string;
+    question: string;
+    asks: Array<{ asked: string; answer: string }>;
+    tone: string;
+  } | null;
   body: string | null;
   cta: { code: string; label: string } | null;
   /** The Contact Sales class the draft was written for (Sales handbook 03). */

@@ -1581,3 +1581,25 @@ bottom. Revisit one only when its "revisit when" condition happens.
   also waits up to 8 seconds and remembers a granted check for 5 minutes
   per user, app, and org (denials are never cached). Remove it once the
   framework fixes this upstream.
+
+## D85. Every draft shows its reasoning, keeps all of TCQ, and reads professionally (2026-10-01)
+
+- Fred, on a 33 word draft that opened "Hey", said "Yep", called the product
+  "Content", and had no connection line: "This email is awful! I really need
+  to see the reasoning for why it decided to speak in this really informal
+  way and not adhere to the TCQ formula." And: "Email should not be more
+  than 75 words not 33."
+- Part of the cause was D71: the voice rule said "a little casual", the
+  connection line was optional, and the lint no longer looked for one, so
+  the draft passed every check.
+- **Reasoning:** `save-draft` now requires `reasoning`: why this class and
+  route, why the trigger, connection, and question, how each of their asks
+  is answered, and why the tone. It is stored with the draft and shown under
+  it as "Why it reads this way", next to the TCQ parts.
+- **Rules (playbook and lint):** all three TCQ parts are in every email, and
+  the lint checks the connection is in the body (`connection`); professional
+  and warm, opening "Hi <first name>," with no "Hey", "Yep", or similar
+  (`tone`); no internal product names such as "Content" or "Code"
+  (`internal_name`); 40 to 75 words, with 75 a hard limit (it was a soft
+  target with a 130 cap). `DRAFT_RULES_VERSION` is 6, so undecided drafts
+  are rewritten.

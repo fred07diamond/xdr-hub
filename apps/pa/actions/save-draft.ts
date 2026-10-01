@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   draftInputSchema,
+  draftReasoningSchema,
   firstName,
   lintDraft,
   triggerSource,
@@ -22,6 +23,8 @@ export default defineAction({
     "Save a first-touch draft for one engagement, following the first-touch-drafting skill. The draft is linted against the current playbook's message rules (get-messaging-guide) and saved as proposed (passes) or needs_edit (with the problems returned, so you can fix only those and save again). Never sends anything. Use [calendar link] where the owner's calendar link goes.",
   schema: draftInputSchema.extend({
     engagementId: z.string().min(1),
+    // The agent explains every draft; the PA sees it under the email (D85).
+    reasoning: draftReasoningSchema,
   }),
   http: false,
   mcpTool: false,

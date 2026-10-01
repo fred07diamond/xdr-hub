@@ -115,7 +115,13 @@ missing, put `[meeting link]` where it goes and say so. Qualify first and
 the agency path carry no link (`cta: reply`). Never invent a link and never
 use one from memory.
 
-Save with `approach`, `cta`, `rubric` (the trigger
+Every draft has all three TCQ parts in the email itself, a professional,
+warm tone (never "Hey" or "Yep"), and no internal product names. Explain
+it in `reasoning`, which the PA reads under the draft: why this class and
+route, why this trigger, connection, and question, how you answered each
+of their asks, and why this tone.
+
+Save with `approach`, `cta`, `reasoning`, `rubric` (the trigger
 in their exact words, the connection, the ask), `used_entry_ids` (the
 message rule ids you followed), and `question_handling`. The lint checks the
 draft against the same playbook; if it fails, fix only what it names, at

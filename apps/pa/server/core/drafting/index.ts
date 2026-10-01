@@ -62,6 +62,57 @@ export const QUESTION_HANDLING = [
 ] as const;
 export type QuestionHandling = (typeof QUESTION_HANDLING)[number];
 
+/** The agent's reasoning for a draft (D85): required when it saves one. */
+export const draftReasoningSchema = z
+  .object({
+    approach: z
+      .string()
+      .trim()
+      .min(10)
+      .max(600)
+      .describe(
+        "Why this class and route, from the signals and the playbook (for example: 1 of 5 signals, so Requires discovery; route qualify first)",
+      ),
+    trigger: z
+      .string()
+      .trim()
+      .min(10)
+      .max(400)
+      .describe("Why you opened on this trigger, in their words"),
+    connection: z
+      .string()
+      .trim()
+      .min(10)
+      .max(400)
+      .describe("Why this connection line fits their setup"),
+    question: z
+      .string()
+      .trim()
+      .min(10)
+      .max(400)
+      .describe("Why you asked this, and which gap it fills"),
+    asks: z
+      .array(
+        z.object({
+          asked: z.string().trim().min(2).max(200),
+          answer: z.string().trim().min(2).max(300),
+        }),
+      )
+      .max(6)
+      .describe(
+        "Each thing they asked for (a call, a demo, pricing, a plan, a question) and how the email answers it",
+      ),
+    tone: z
+      .string()
+      .trim()
+      .min(10)
+      .max(300)
+      .describe("Why this tone, against the playbook's voice rule"),
+  })
+  .describe(
+    "Your reasoning for the draft, shown to the PA under it (D85). Plain words; no quotes from instructions.",
+  );
+
 export const draftInputSchema = z.object({
   subject: z.string().trim().min(1).max(120),
   body: z.string().trim().min(1).max(4000),
@@ -116,7 +167,9 @@ export const draftInputSchema = z.object({
     .describe(
       "How the draft handles the prospect's explicit question: answered from a knowledge entry, or a line saying what will be confirmed and by when",
     ),
+  reasoning: draftReasoningSchema.optional(),
 });
+
 export type DraftInput = z.infer<typeof draftInputSchema>;
 
 const messageRuleParams = z
@@ -137,7 +190,7 @@ export type DraftStatus = "proposed" | "needs_edit";
  * The version of the draft rules. A draft saved under older rules is
  * redrafted while its lead is still undecided (D62).
  */
-export const DRAFT_RULES_VERSION = 5;
+export const DRAFT_RULES_VERSION = 6;
 
 export interface LintProblem {
   code:
@@ -159,7 +212,9 @@ export interface LintProblem {
     | "content_enterprise"
     | "questions"
     | "unanswered_ask"
-    | "ae_named";
+    | "ae_named"
+    | "internal_name"
+    | "tone";
   message: string;
 }
 
@@ -176,6 +231,9 @@ export interface LintResult {
   notChecked: string[];
   /** The route the draft was checked against (D66), to redraft on a change. */
   route?: { route: string; link: string | null; cc?: string | null } | null;
+  /** The TCQ parts and the agent's reasoning, shown under the draft (D85). */
+  rubric?: DraftInput["rubric"];
+  reasoning?: DraftInput["reasoning"];
 }
 
 /** The lead's route as the lint sees it (D66). */
@@ -497,6 +555,50 @@ export function lintDraft(input: {
     });
   }
 
+  // TCQ (D85): the connection is in the email, not only in the rubric.
+  {
+    const norm = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N} ]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    const words = norm(draft.rubric.connection)
+      .split(" ")
+      .filter((word) => word.length >= 5);
+    const body = norm(draft.body);
+    const used = words.filter((word) => body.includes(word));
+    if (words.length > 0 && used.length < Math.min(2, words.length))
+      problems.push({
+        code: "connection",
+        message:
+          "The email has no connection line. Add one sentence that ties what they said to their setup, in plain words.",
+      });
+  }
+
+  // Customers do not know PA's internal names for the products (D85).
+  if (
+    /\b(is|it's|that's|called|named|the) (Content|Code)\b(?! (team|management|editors?|pages?|types?))/.test(
+      draft.body,
+    ) ||
+    /\b(Content|Code) (plan|product|space)\b/i.test(draft.body)
+  )
+    problems.push({
+      code: "internal_name",
+      message:
+        'Uses an internal product name ("Content" or "Code"). Say what it is, for example "Builder\'s CMS" or "the visual editor".',
+    });
+
+  // Professional and warm, not slangy (D85).
+  const slang = draft.body.match(
+    /^\s*(hey|hiya|yo)\b|\b(yep|yup|yeah|nope|gotcha|gonna|wanna|kinda|sorta)\b/im,
+  );
+  if (slang)
+    problems.push({
+      code: "tone",
+      message: `"${slang[0].trim()}" is too casual. Professional and warm, plain English; open with "Hi <first name>,".`,
+    });
+
   // Questions (D71): a couple that matter, never an interrogation.
   const questionMarks = (draft.body.match(/\?/g) ?? []).length;
   if (questionMarks > 2) {
@@ -571,6 +673,8 @@ export function lintDraft(input: {
     route: route
       ? { route: route.route, link: route.link, cc: route.cc ?? null }
       : null,
+    rubric: draft.rubric,
+    reasoning: draft.reasoning,
   };
 }
 
