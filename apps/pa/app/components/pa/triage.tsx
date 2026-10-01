@@ -687,9 +687,9 @@ export function LeadRouteBlock({
                 />
                 <span>
                   {gap}{" "}
-                  {/Settings, Organization/.test(gap) ? (
+                  {/Settings, Lead routing/.test(gap) ? (
                     <Link
-                      to="/settings/organization#lead-routing"
+                      to="/settings/lead-routing"
                       className="underline underline-offset-2"
                     >
                       Open lead routing

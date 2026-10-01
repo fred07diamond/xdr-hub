@@ -93,7 +93,7 @@ describe("triage UI", () => {
               link: null,
             },
             gaps: [
-              "No meeting link for Alex. Add it in Settings, Organization.",
+              "No meeting link for Alex. Add it in Settings, Lead routing.",
             ],
             canOverride: true,
             paOwner: null,
@@ -109,7 +109,7 @@ describe("triage UI", () => {
     expect(html).toContain("with Alex (AE)");
     expect(html).toContain("Playbook: Route to the AE");
     expect(html).toContain("PA takes the call");
-    expect(html).toContain("/settings/organization#lead-routing");
+    expect(html).toContain("/settings/lead-routing");
   });
 
   it("shows a first email sent from HubSpot on the board like a draft", () => {

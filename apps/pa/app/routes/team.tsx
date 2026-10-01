@@ -14,10 +14,10 @@ export function meta() {
 export default function TeamRoute() {
   return (
     <>
-      <TeamPage title="Team and playbook roles" appRoles={PLAYBOOK_ROLES} />
-      <div className="px-3 pb-8 sm:px-4 md:px-6">
+      <div className="px-3 pt-4 sm:px-4 md:px-6">
         <RoutingSettings />
       </div>
+      <TeamPage title="Team and playbook roles" appRoles={PLAYBOOK_ROLES} />
     </>
   );
 }

@@ -1,4 +1,4 @@
-// Lead routing in Settings, Organization (D79): who exceptional leads go to,
+// Lead routing, its own Settings tab (D79): who exceptional leads go to,
 // grouped the way the rule reads. The Commercial AE, the Enterprise AEs the
 // round robin rotates through, and each PA's meeting link for when the PA
 // takes the call. Owners seen on leads but not set up are listed last.
@@ -288,10 +288,7 @@ export function RoutingSettings() {
   const unset = people.filter((person) => !person.role);
 
   return (
-    <section
-      id="lead-routing"
-      className="mx-auto w-full max-w-3xl space-y-4 pt-8"
-    >
+    <section id="lead-routing" className="mx-auto w-full max-w-3xl space-y-4">
       <div>
         <h2 className="text-[16px] font-semibold text-foreground">
           Lead routing

@@ -196,7 +196,7 @@ function meetingWith(
   const name = person.name ?? saved?.displayName ?? null;
   if (!link)
     gaps.push(
-      `No meeting link for ${name ?? person.email}. Add it in Settings, Organization.`,
+      `No meeting link for ${name ?? person.email}. Add it in Settings, Lead routing.`,
     );
   return { email: person.email.toLowerCase(), name, role, link };
 }
@@ -304,7 +304,7 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     owner.email.toLowerCase() !== input.paOwner?.email.toLowerCase()
   )
     gaps.push(
-      `${nameOf(owner)} owns the account in HubSpot but is not set up in Lead routing. If they are an AE, mark them in Settings, Organization, and PA steps back.`,
+      `${nameOf(owner)} owns the account in HubSpot but is not set up in Lead routing. If they are an AE, mark them in Settings, Lead routing, and PA steps back.`,
     );
   if (input.hasOpenDeal) {
     const deal = input.dealOwner ?? input.accountOwner;
@@ -354,8 +354,8 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     if (!ae) {
       gaps.push(
         missing === "commercial_ae"
-          ? "No commercial AE for this commercial account. Set one in Settings, Organization."
-          : "No enterprise AEs for the round robin. Add one in Settings, Organization.",
+          ? "No commercial AE for this commercial account. Set one in Settings, Lead routing."
+          : "No enterprise AEs for the round robin. Add one in Settings, Lead routing.",
       );
       return { ...result(route, source, why), needs: missing ?? null };
     }

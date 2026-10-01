@@ -140,7 +140,7 @@ entries:
       Not owned by an AE, max_employees employees or fewer: route to the Commercial AE.
       Not owned by an AE, more than max_employees employees: round robin to the next Enterprise AE. The pick is saved, so the lead keeps its AE.
       An unknown employee count goes to the enterprise round robin and is flagged to check.
-      The Commercial AE and the Enterprise AEs are set in Settings, Organization, under Lead routing.
+      The Commercial AE and the Enterprise AEs are set in Settings, Lead routing.
     params:
       max_employees: 8000
     rationale: "Fred, 2026-10-01: 8k or less and unowned by an AE goes to the Commercial AE; 8k+ and unowned round robins to an Enterprise AE. Owned by an AE: nothing happens in PA; HubSpot's workflow emails them."

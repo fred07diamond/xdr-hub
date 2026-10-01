@@ -9,7 +9,9 @@ import {
   type SettingsSearchEntry,
 } from "@agent-native/core/client/settings";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
+import { IconArrowRight, IconRoute } from "@tabler/icons-react";
 import { useMemo } from "react";
+import { Link } from "react-router";
 
 import { RoutingSettings } from "@/components/pa/routing-settings";
 import { APP_TITLE } from "@/lib/app-config";
@@ -39,7 +41,22 @@ export default function SettingsRoute() {
     <SettingsTabsPage
       account={<AccountSettingsCard />}
       teamLabel={t("navigation.team")}
-      extraTabs={agentSettingsTabs}
+      extraTabs={[
+        {
+          // Who exceptional leads go to, and everyone's meeting link (D79).
+          id: "lead-routing",
+          label: "Lead routing",
+          icon: IconRoute,
+          keywords:
+            "routing meeting link commercial enterprise AE round robin PA",
+          content: (
+            <div className="mx-auto w-full max-w-3xl">
+              <RoutingSettings />
+            </div>
+          ),
+        },
+        ...agentSettingsTabs,
+      ]}
       generalSearchEntries={generalSearchEntries}
       general={
         <div className="mx-auto w-full max-w-2xl space-y-6">
@@ -63,11 +80,32 @@ export default function SettingsRoute() {
       }
       team={
         <div className="mx-auto w-full max-w-3xl">
+          <Link
+            to="/settings/lead-routing"
+            className="mb-6 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-[13px] shadow-xs hover:bg-accent/50"
+          >
+            <IconRoute
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium text-foreground">
+                Lead routing
+              </span>
+              <span className="block text-muted-foreground">
+                Set the Commercial AE, the Enterprise AEs, and everyone's
+                meeting links.
+              </span>
+            </span>
+            <IconArrowRight
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+          </Link>
           <TeamPage
             showTitle={false}
             createOrgDescription={t("pages.teamCreateOrgDescription")}
           />
-          <RoutingSettings />
         </div>
       }
     />

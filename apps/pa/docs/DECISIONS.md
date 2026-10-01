@@ -1512,3 +1512,7 @@ bottom. Revisit one only when its "revisit when" condition happens.
   Enterprise or Commercial AE. Many accounts are owned by PAs, so an owner
   Lead routing does not know is not assumed to be an AE: PA keeps working
   the lead and flags the owner to set up.
+- 2026-10-01 follow-up: Fred could not find the section; it sat under the
+  member list. Lead routing is now its own Settings tab
+  (`/settings/lead-routing`), the Organization tab opens with a card that
+  links to it, and the Team page shows it first. Lead pages link to the tab.
