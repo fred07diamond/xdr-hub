@@ -397,7 +397,7 @@ const ENTRY_TITLES: Record<string, string> = {
   "def.partnership_ask": "Partnership ask",
   "def.first_touch": "First touch",
   "def.ae_owned_account": "AE-owned account",
-  "def.moved_on": "Moved on",
+  "def.moved_on": "Actioned",
   "msg.first_touch.partnerships": "Partnership ask",
   "rule.routing.sal_stale_days": "When a SAL goes stale",
   "rule.sla.first_touch": "First touch SLA",

@@ -1733,3 +1733,13 @@ bottom. Revisit one only when its "revisit when" condition happens.
   still keep a lead with its AE.
 - Lead routing lists the Enterprise AEs in rotation order and marks who is
   next up.
+
+## D94. "Moved on" is "Actioned" (2026-10-02)
+
+- Fred: "Moved on feels like it implies that the prospect moved on from
+  buying, which is not true. It should say something like actioned or
+  completed or contacted."
+- The board section, the badge, the draft note, the SLA reason, and the
+  playbook definition now say "Actioned": the team already acted on the lead
+  in HubSpot (SAL, S0, Recycle, Disqualified, or a deal). The reason line
+  still says which. Internal names (`moved_on`) are unchanged.

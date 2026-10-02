@@ -334,8 +334,8 @@ describe("the demo board, as a PA sees it", () => {
     expect(byName.get("Marcus Lee")!.triage.label).not.toMatch(
       /Qualified lead|QL/,
     );
-    // Marcus is already SAL in HubSpot, so he moved on (D90).
-    expect(byName.get("Marcus Lee")!.triage.label).toBe("Moved on");
+    // Marcus is already SAL in HubSpot, so he is actioned (D90, D94).
+    expect(byName.get("Marcus Lee")!.triage.label).toBe("Actioned");
     expect(byName.get("Marcus Lee")!.bucket).toBe("moved_on");
     // The board's sections (D90).
     expect(byName.get("Priya Natarajan")!.bucket).toBe("todo");

@@ -401,10 +401,10 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     : enterpriseRotation
       ? `An unowned enterprise account (over ${(input.commercialMaxEmployees ?? 0).toLocaleString()} employees) with a real inquiry.`
       : recycle
-      ? "No or a very low intent score suggests a recycle, so one email to clarify."
-      : input.approach
-        ? "From the lead's class and the playbook's routing rule."
-        : "No class yet, so qualify first.";
+        ? "No or a very low intent score suggests a recycle, so one email to clarify."
+        : input.approach
+          ? "From the lead's class and the playbook's routing rule."
+          : "No class yet, so qualify first.";
 
   if (route === "route_to_ae") {
     const { ae, why: whose, missing, roundRobin } = aeFor(input, people, gaps);

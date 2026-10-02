@@ -79,8 +79,8 @@ entries:
     owner_team: both
     version: 1
     body: |
-      A lead HubSpot has moved past PA: SAL or later (S0 included), Recycle, or Disqualified in HubSpot, a deal on the contact created after the form, or an open deal after PA's first touch. A customer's stage is not a move.
-      A moved-on lead leaves the queue: no draft, no prompts, no round robin, and the agent does not work it again. PA re-reads HubSpot's stage and deals every 30 minutes.
+      Actioned: a lead the team has already acted on in HubSpot. SAL or later (S0 included), Recycle, or Disqualified in HubSpot, a deal on the contact created after the form, or an open deal after PA's first touch. A customer's stage does not count.
+      An actioned lead leaves the queue: no draft, no prompts, no round robin, and the agent does not work it again. PA re-reads HubSpot's stage and deals every 30 minutes.
 
   - id: rule.precheck.outcomes
     block: precheck_outcomes

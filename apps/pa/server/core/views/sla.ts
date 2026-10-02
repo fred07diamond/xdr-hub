@@ -278,8 +278,7 @@ export function salesCycleView(input: {
         note: string | null;
       }
     >
-  > = {
-  };
+  > = {};
   // Every Contact Sales lead comes in as a QL: it is the lifecycle stage on
   // arrival, not a verdict (D69).
   if (input.triageKind !== "closed" && input.triageKind !== "elsewhere")

@@ -63,8 +63,8 @@ const BUCKETS: Array<{ id: BoardRow["bucket"]; label: string; hint: string }> =
     },
     {
       id: "moved_on",
-      label: "Moved on",
-      hint: "HubSpot moved these past PA: SAL, S0, Recycle, or a new deal",
+      label: "Actioned",
+      hint: "Done in HubSpot: SAL, S0, Recycle, or a new deal",
     },
     {
       id: "not_for_pa",
@@ -319,7 +319,7 @@ export default function InboundRoute() {
     );
   } else {
     // One section per bucket (D90): what needs doing first, then what is
-    // waiting on HubSpot, with moved on and not for PA folded away.
+    // waiting on HubSpot, with actioned and not for PA folded away.
     const sections = BUCKETS.map((bucket) => ({
       ...bucket,
       rows: rows.filter((row) => (row.bucket ?? "todo") === bucket.id),

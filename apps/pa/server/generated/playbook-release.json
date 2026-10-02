@@ -81,7 +81,7 @@
       "owner": "Sales leadership",
       "version": 1,
       "status": "active",
-      "body": "A lead HubSpot has moved past PA: SAL or later (S0 included), Recycle, or Disqualified in HubSpot, a deal on the contact created after the form, or an open deal after PA's first touch. A customer's stage is not a move.\nA moved-on lead leaves the queue: no draft, no prompts, no round robin, and the agent does not work it again. PA re-reads HubSpot's stage and deals every 30 minutes.\n",
+      "body": "Actioned: a lead the team has already acted on in HubSpot. SAL or later (S0 included), Recycle, or Disqualified in HubSpot, a deal on the contact created after the form, or an open deal after PA's first touch. A customer's stage does not count.\nAn actioned lead leaves the queue: no draft, no prompts, no round robin, and the agent does not work it again. PA re-reads HubSpot's stage and deals every 30 minutes.\n",
       "owner_team": "both",
       "block": "definition",
       "section": "definitions",
@@ -688,12 +688,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "587280dd6ad17636d53646fc8aeda74cbaa87f6ad71376918d12ba6aef2b4e0e",
-  "short_id": "587280dd",
+  "id": "3a7b8df800ab8a3e62a0f675ccbce256c0ea132f5ac1c540f43030ad56882df7",
+  "short_id": "3a7b8df8",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "4c474eb8b9373f634660ddd1cc758641c342b7d835a16b4c349bb80039f513cb"
+      "sha256": "d6df362cae9bf20eafef9a7b848620ff90a6cc35681b1e665ece11278c93b495"
     },
     {
       "path": "config/routing-pool.yaml",

@@ -60,6 +60,8 @@ const LABEL_STYLES: Record<string, string> = {
     "bg-amber-500/14 text-amber-900 ring-amber-600/35 dark:text-amber-300",
   "Partnership ask, recycle":
     "bg-orange-500/12 text-orange-800 ring-orange-600/30 dark:text-orange-300",
+  Actioned:
+    "bg-slate-500/10 text-slate-700 ring-slate-500/25 dark:text-slate-300",
   "AE-owned account":
     "bg-violet-500/12 text-violet-800 ring-violet-600/30 dark:text-violet-300",
   "Existing customer":

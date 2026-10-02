@@ -392,7 +392,7 @@ const SALES_KINDS = new Set(["reply", "review", "owner"]);
 function movedOnTriage(movedOn: MovedOn): TriageView {
   return {
     kind: "closed",
-    label: "Moved on",
+    label: "Actioned",
     verdictLabel: null,
     why: `${movedOn.reason}, so PA's part is done.`,
     action: "Nothing to do in PA. It continues in HubSpot.",
@@ -407,8 +407,8 @@ function stepBackOf(
   if (movedOn)
     return {
       triage: movedOnTriage(movedOn),
-      note: `No draft: ${movedOn.reason.charAt(0).toLowerCase()}${movedOn.reason.slice(1)}, so the lead moved on.`,
-      noClock: "No SLA: moved on in HubSpot",
+      note: `No draft: ${movedOn.reason.charAt(0).toLowerCase()}${movedOn.reason.slice(1)}, so it is actioned.`,
+      noClock: "No SLA: actioned in HubSpot",
       keepDecision: false,
       keepClock: true,
     };
