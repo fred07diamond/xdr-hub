@@ -1697,3 +1697,16 @@ bottom. Revisit one only when its "revisit when" condition happens.
 - A sales lead that moved on (D90) still shows QL done and its HubSpot
   stage (for example Recycle) as where it stopped; before, the moved-on view
   made QL read as stopped.
+
+## D92. Today's rules are written into the playbook (2026-10-01)
+
+- Fred: "I've made a lot of changes... I wanna make sure that these changes
+  make its way to the playbook."
+- Rules that lived only in code are now playbook text: QL is a stage, not a
+  verdict, and the cycle has no MQL (def.ql, D69, D91); SAL and Recycle are
+  decided in HubSpot (def.sal, def.recycle, rule.sla.decision, D83, D89);
+  when PA suggests a recycle (def.recycle, D67, D71, D81, D88); what a first
+  touch is (def.first_touch, D68); AE-owned accounts are left to HubSpot
+  (def.ae_owned_account, D80); and moved on (def.moved_on, D90).
+- The code upgrade (D87) brings them to the live playbook. Entries someone
+  edited in the app keep that edit.

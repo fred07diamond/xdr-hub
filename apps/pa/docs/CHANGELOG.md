@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01 (playbook catch-up)
+
+- The playbook now spells out today's rules: QL as a stage and no MQL, SAL
+  and Recycle decided in HubSpot, when PA suggests a recycle, what counts as
+  a first touch, AE-owned accounts, and moved on (D92).
+
 ## 2026-10-01 (board sections)
 
 - The inbound board is in sections: To do, Contacted, Moved on, and Not for

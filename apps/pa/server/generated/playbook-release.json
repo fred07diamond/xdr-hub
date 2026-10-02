@@ -8,7 +8,7 @@
       "owner": "RevOps",
       "version": 1,
       "status": "active",
-      "body": "A real person at a real company with a legitimate sales request that passed pre-check.",
+      "body": "A real person at a real company with a legitimate sales request that passed pre-check.\nQL is the lifecycle stage every Contact Sales lead arrives at, not a verdict or a level of qualification. How qualified it is comes from the Exceptional or requires discovery block.\nThe sales cycle is QL, then SAL or Recycle, then S0, NBM booked, NBM complete, and S1. There is no MQL step for Contact Sales.\n",
       "source": "Contact Sales workflow doc, step 1b",
       "owner_team": "revops",
       "block": "definition",
@@ -21,7 +21,7 @@
       "owner": "RevOps",
       "version": 1,
       "status": "active",
-      "body": "A lead the owning rep has accepted after the QL to SAL decision (step 2b).",
+      "body": "A lead the owner has accepted after the QL to SAL decision.\nThe decision is made in HubSpot, not in PA. PA reads HubSpot's lifecycle stage: SAL or later (S0 included) shows as SAL on the sales cycle and the SLA timer, and the lead moves on.\n",
       "owner_team": "revops",
       "block": "definition",
       "section": "definitions",
@@ -33,7 +33,7 @@
       "owner": "RevOps",
       "version": 1,
       "status": "active",
-      "body": "Not ready now; returned to nurture with a reason and a re-entry trigger.",
+      "body": "Not ready now; returned to nurture with a reason and a re-entry trigger.\nThe owner recycles the lead in HubSpot. PA suggests a recycle, and writes one email asking them to clarify instead of a sequence, when the intent score is 0 or 1 (no score counts as 0), when the message is thin (a few words, no question, next to no signal), or when a partnership ask comes from a company that is not exceptional (that one gets no email).\n",
       "owner_team": "revops",
       "block": "definition",
       "section": "definitions",
@@ -45,11 +45,47 @@
       "owner": "RevOps",
       "version": 1,
       "status": "active",
-      "body": "Not a sales opportunity; closed with a reason logged for the weekly spot check.",
+      "body": "Not a sales opportunity; closed with a reason logged for the weekly spot check. Disqualified or Excluded in HubSpot moves the lead on.",
       "owner_team": "revops",
       "block": "definition",
       "section": "definitions",
       "position": 3
+    },
+    {
+      "id": "def.first_touch",
+      "type": "definition",
+      "owner": "PA lead",
+      "version": 1,
+      "status": "active",
+      "body": "The first email sent after the form to the lead themselves, in To, not only on CC. A reply to the form notification (\"re: your request\") counts.\nWhen only a reply thread is logged on the contact, the lead counts as contacted at the thread's first email. First contact marks the SLA timer and stops PA drafting another first touch.\n",
+      "owner_team": "pa_team",
+      "block": "definition",
+      "section": "definitions",
+      "position": 5
+    },
+    {
+      "id": "def.ae_owned_account",
+      "type": "definition",
+      "owner": "Sales leadership",
+      "version": 1,
+      "status": "active",
+      "body": "An account owned by an AE in HubSpot, whatever the class or size. HubSpot's own workflow emails them, so PA does nothing: no draft, no SLA, no round robin.\nAn owner counts as an AE when Settings, Lead routing lists them as an Enterprise or Commercial AE. An owner it does not know is flagged so they can be set up.\n",
+      "owner_team": "both",
+      "block": "definition",
+      "section": "definitions",
+      "position": 6
+    },
+    {
+      "id": "def.moved_on",
+      "type": "definition",
+      "owner": "Sales leadership",
+      "version": 1,
+      "status": "active",
+      "body": "A lead HubSpot has moved past PA: SAL or later (S0 included), Recycle, or Disqualified in HubSpot, a deal on the contact created after the form, or an open deal after PA's first touch. A customer's stage is not a move.\nA moved-on lead leaves the queue: no draft, no prompts, no round robin, and the agent does not work it again. PA re-reads HubSpot's stage and deals every 30 minutes.\n",
+      "owner_team": "both",
+      "block": "definition",
+      "section": "definitions",
+      "position": 7
     },
     {
       "id": "rule.precheck.outcomes",
@@ -193,7 +229,7 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": null,
+      "body": "First contact within this many minutes of the form, in the owner's working hours. First contact is the first email to the lead (Definitions, First touch).",
       "params": {
         "minutes": 30,
         "clock": "owner_working_hours",
@@ -213,7 +249,7 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": null,
+      "body": "The QL to SAL or Recycle decision is made in HubSpot within this many hours of first contact. PA's SLA timer reads HubSpot's stage and counts down until it changes.",
       "params": {
         "hours": 24
       },
@@ -652,12 +688,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "9634178f4d5b057c9a55fd589ab0c04d71746ed2609e7f40a619bc3006045b73",
-  "short_id": "9634178f",
+  "id": "285ebc0d8878777b7359e17580cfb10e9aa7111197e3c8ea82442d459d770c8f",
+  "short_id": "285ebc0d",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "329c107d3d1f871f626c5d3916cf4943a39d36bedc4a44b5bb3b4b351c2cdfab"
+      "sha256": "4ad4c04a3791b6c1315dff736fb384c2ebbd38ec771d45625cc335c56a40b00b"
     },
     {
       "path": "config/routing-pool.yaml",
