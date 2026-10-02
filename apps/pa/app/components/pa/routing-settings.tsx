@@ -34,11 +34,13 @@ interface Person {
   seenAsPa: number;
   seenAsAccountOwner: number;
   roundRobinLeads: number;
+  createdAt: string;
 }
 
 interface PeopleResult {
   people: Person[];
   commercialLine: number | null;
+  nextUp: string | null;
   canEdit: boolean;
 }
 
@@ -284,7 +286,14 @@ export function RoutingSettings() {
   const canEdit = Boolean(data?.canEdit);
   const line = (data?.commercialLine ?? 8000).toLocaleString();
   const commercial = people.filter((person) => person.role === "commercial_ae");
-  const enterprise = people.filter((person) => person.role === "ae");
+  // In rotation order: the order they were added (D93).
+  const enterprise = people
+    .filter((person) => person.role === "ae")
+    .sort(
+      (a, b) =>
+        (a.createdAt || "").localeCompare(b.createdAt || "") ||
+        a.email.localeCompare(b.email),
+    );
   const pas = people.filter((person) => person.role === "pa");
   const partners = people.filter((person) => person.role === "partnerships");
   const unset = people.filter((person) => !person.role);
@@ -299,9 +308,9 @@ export function RoutingSettings() {
           Who an exceptional lead goes to. Owned by an AE in HubSpot: nothing
           happens in PA, because HubSpot's workflow emails them. Not owned,{" "}
           {line} employees or fewer: the Commercial AE. Not owned and bigger:
-          the next Enterprise AE in the round robin. The email carries that
-          person's meeting link. An owner counts as an AE once they are listed
-          here.{" "}
+          every real inquiry, whatever its tier, goes to the next Enterprise AE
+          in the rotation. The email carries that person's meeting link. An
+          owner counts as an AE once they are listed here.{" "}
           <Link
             to="/playbook?section=routing"
             className="text-foreground underline underline-offset-2"
@@ -345,7 +354,7 @@ export function RoutingSettings() {
 
           <SettingsGroup
             title="Enterprise AEs"
-            description="Unowned accounts over the line rotate through these AEs: the one given the fewest leads goes next."
+            description="Every unowned account over the line with a real inquiry rotates through these AEs in order, one lead each, so everyone gets an equal turn."
           >
             {enterprise.length === 0 ? (
               <Empty>No Enterprise AEs yet.</Empty>
@@ -356,7 +365,7 @@ export function RoutingSettings() {
                   person={person}
                   role="ae"
                   icon={<IconBuildingSkyscraper className="size-4" />}
-                  detail={`${person.roundRobinLeads} ${person.roundRobinLeads === 1 ? "lead" : "leads"} from the round robin`}
+                  detail={`${person.email === data?.nextUp ? "Next up · " : ""}${person.roundRobinLeads} ${person.roundRobinLeads === 1 ? "lead" : "leads"} from the rotation`}
                   canEdit={canEdit}
                   onChanged={refresh}
                 />

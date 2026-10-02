@@ -105,28 +105,68 @@ describe("leadRouteFor", () => {
     ).toBe("ent-a@example.com");
   });
 
-  it("picks the Enterprise AE given the fewest leads, then the longest ago", () => {
-    expect(nextEnterpriseAe(people, [])?.email).toBe("account-ae@example.com");
-    const assignments = [
-      { aeEmail: "account-ae@example.com", assignedAt: "2026-10-01T10:00:00Z" },
-      { aeEmail: "ent-a@example.com", assignedAt: "2026-10-01T11:00:00Z" },
-      { aeEmail: "ent-b@example.com", assignedAt: "2026-10-01T09:00:00Z" },
+  it("rotates strictly through the Enterprise AEs in the order they were added (D93)", () => {
+    const team = [
+      person("pa@example.com", "pa"),
+      person("ae-x@example.com", "ae", { createdAt: "2026-10-01T09:00:00Z" }),
+      person("ae-y@example.com", "ae", { createdAt: "2026-10-01T10:00:00Z" }),
+      person("ae-z@example.com", "ae", { createdAt: "2026-10-01T11:00:00Z" }),
     ];
-    expect(nextEnterpriseAe(people, assignments)?.email).toBe(
-      "ent-b@example.com",
-    );
-    // A refresh's copy is the same lead, so it does not count again.
+    const given = (email: string, at: string) => ({
+      aeEmail: email,
+      assignedAt: at,
+    });
+    expect(nextEnterpriseAe(team, [])?.email).toBe("ae-x@example.com");
+    const monday = [given("ae-x@example.com", "2026-10-05T10:00:00Z")];
+    expect(nextEnterpriseAe(team, monday)?.email).toBe("ae-y@example.com");
+    const tuesday = [
+      ...monday,
+      given("ae-y@example.com", "2026-10-06T10:00:00Z"),
+    ];
+    expect(nextEnterpriseAe(team, tuesday)?.email).toBe("ae-z@example.com");
+    const wednesday = [
+      ...tuesday,
+      given("ae-z@example.com", "2026-10-07T10:00:00Z"),
+    ];
+    expect(nextEnterpriseAe(team, wednesday)?.email).toBe("ae-x@example.com");
+    // A refresh's copy is the same lead, not a new turn.
     expect(
-      nextEnterpriseAe(people, [
-        ...assignments,
+      nextEnterpriseAe(team, [
+        ...monday,
         {
-          aeEmail: "ent-b@example.com",
-          assignedAt: "2026-10-01T12:00:00Z",
+          ...given("ae-x@example.com", "2026-10-05T12:00:00Z"),
           method: "carried",
         },
       ])?.email,
-    ).toBe("ent-b@example.com");
+    ).toBe("ae-y@example.com");
     expect(nextEnterpriseAe([person("pa@example.com", "pa")], [])).toBeNull();
+  });
+
+  it("sends every unowned enterprise inquiry to the rotation, whatever its tier (D93)", () => {
+    const discovery = leadRouteFor({
+      ...base,
+      approach: "standard_code",
+      genuineInterest: true,
+    });
+    expect(discovery.route).toBe("route_to_ae");
+    expect(discovery.meetingWith?.email).toBe("ent-a@example.com");
+    // A thin note or a non-sales intent is not a real inquiry.
+    expect(
+      leadRouteFor({
+        ...base,
+        approach: "standard_code",
+        genuineInterest: false,
+      }).route,
+    ).toBe("qualify_first");
+    // At or under the commercial line, Standard still qualifies first.
+    expect(
+      leadRouteFor({
+        ...base,
+        approach: "standard_code",
+        genuineInterest: true,
+        employees: 5000,
+      }).route,
+    ).toBe("qualify_first");
   });
 
   it("says what is missing instead of guessing", () => {

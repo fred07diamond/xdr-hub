@@ -200,6 +200,10 @@ export async function routeForEngagement(
     byClass: routeByClass(release),
     override: override?.route ?? null,
     suggestRecycle: Boolean(cls?.suggestRecycle),
+    // A real inquiry (D93): a sales request, not a thin note.
+    genuineInterest: Boolean(
+      cls && !cls.thin && (assessment?.intent ?? "sales") === "sales",
+    ),
     partnershipAsk: isPartnershipAsk(latest?.message),
     partnershipTier: isPartnershipAsk(latest?.message)
       ? classOfSubmission({

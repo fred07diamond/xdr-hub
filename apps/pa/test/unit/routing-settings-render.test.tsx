@@ -23,6 +23,7 @@ vi.mock("@agent-native/core/client/hooks", () => ({
     data: {
       canEdit: true,
       commercialLine: 8000,
+      nextUp: "ent-a@example.com",
       people: [
         person("ent-a@example.com", "ae", { roundRobinLeads: 3 }),
         person("pa@example.com", "pa"),
@@ -45,7 +46,7 @@ describe("lead routing settings", () => {
     expect(html).toContain("Lead routing");
     expect(html).toContain("8,000 employees or fewer");
     expect(html).toContain("Set the Commercial AE");
-    expect(html).toContain("3 leads from the round robin");
+    expect(html).toContain("Next up · 3 leads from the rotation");
     expect(html).toContain("Add an Enterprise AE");
     expect(html).toContain("Product Advocates");
     expect(html).toContain("Seen on leads, not set up");

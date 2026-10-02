@@ -1710,3 +1710,26 @@ bottom. Revisit one only when its "revisit when" condition happens.
   (def.ae_owned_account, D80); and moved on (def.moved_on, D90).
 - The code upgrade (D87) brings them to the live playbook. Entries someone
   edited in the app keep that edit.
+
+## D93. Every unowned enterprise inquiry rotates through the Enterprise AEs (2026-10-02)
+
+- Fred: "If an account is unowned and enterprise (over 8,000 employees),
+  then the link is round robined amongst the Enterprise AE team." It applies
+  to "every unowned 8k+ lead with a message that isn't support, billing, or
+  nonsense. The message has to show some actual interest or inquiry." And
+  the rotation is strict: "if AE X gets an unowned lead on Monday, then
+  another lead comes in on Tuesday then AE Y gets that lead... This gives
+  equal opportunity."
+- **Which leads:** a sales lead (pre-check passed, a sales intent, not a
+  thin message, D88) at an account with no AE owner and a known employee
+  count over the commercial line now routes to the Enterprise AE rotation
+  whatever its tier, not only Exceptional (D78). AE-owned accounts (D80),
+  partnership asks (D81), agencies, open deals, customers, and the PA's own
+  route choice keep their rules. At or under the line nothing changes.
+- **Strict rotation:** the Enterprise AEs in the order they were added in
+  Lead routing; each new lead goes to the AE after the one who got the last
+  lead, wrapping around. This replaces "fewest leads, then longest ago",
+  which gave a newly added AE several leads in a row. Saved picks (D78)
+  still keep a lead with its AE.
+- Lead routing lists the Enterprise AEs in rotation order and marks who is
+  next up.

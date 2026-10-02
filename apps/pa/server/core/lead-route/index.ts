@@ -143,6 +143,8 @@ export interface LeadRouteInput {
   partnershipAsk?: boolean;
   /** Their tier judged as a company, agency or not, for a partnership ask. */
   partnershipTier?: "exceptional" | "discovery" | null;
+  /** The message shows real interest: not thin, not support or junk (D93). */
+  genuineInterest?: boolean;
   /** The enterprise round robin (D78): the AE this lead was given, or next up. */
   enterprise?: { assigned: RoutePerson | null; next: RoutePerson | null };
 }
@@ -169,28 +171,26 @@ export function nextEnterpriseAe(
   people: PersonRecord[],
   assignments: Array<{ aeEmail: string; assignedAt: string; method?: string }>,
 ): RoutePerson | null {
-  const aes = people.filter((person) => person.role === "ae");
-  if (aes.length === 0) return null;
-  const stats = new Map<string, { count: number; last: string }>();
-  for (const item of assignments) {
-    // A refresh's copy of an earlier pick is the same lead, not a new one.
-    if (item.method === "carried") continue;
-    const email = item.aeEmail.toLowerCase();
-    const current = stats.get(email) ?? { count: 0, last: "" };
-    stats.set(email, {
-      count: current.count + 1,
-      last: item.assignedAt > current.last ? item.assignedAt : current.last,
-    });
-  }
-  const pick = [...aes].sort((a, b) => {
-    const x = stats.get(a.email) ?? { count: 0, last: "" };
-    const y = stats.get(b.email) ?? { count: 0, last: "" };
-    return (
-      x.count - y.count ||
-      x.last.localeCompare(y.last) ||
-      a.email.localeCompare(b.email)
+  // A strict rotation (D93): the Enterprise AEs in the order they were added,
+  // and each new lead goes to the AE after the one who got the last lead, so
+  // everyone gets an equal turn.
+  const aes = people
+    .filter((person) => person.role === "ae")
+    .sort(
+      (a, b) =>
+        (a.createdAt || "").localeCompare(b.createdAt || "") ||
+        a.email.localeCompare(b.email),
     );
-  })[0];
+  if (aes.length === 0) return null;
+  // A refresh's copy of an earlier pick is the same lead, not a new turn.
+  const last = assignments
+    .filter((item) => item.method !== "carried")
+    .sort((a, b) => a.assignedAt.localeCompare(b.assignedAt))
+    .slice(-1)[0];
+  const at = last
+    ? aes.findIndex((ae) => ae.email === last.aeEmail.toLowerCase())
+    : -1;
+  const pick = aes[(at + 1) % aes.length];
   return { email: pick.email, name: pick.displayName };
 }
 
@@ -377,18 +377,30 @@ export function leadRouteFor(input: LeadRouteInput): LeadRouteResult {
     : input.approach
       ? input.byClass[input.approach]
       : null;
-  const recycle = !override && !input.isAgency && input.suggestRecycle;
+  // Every unowned enterprise account (over the commercial line) with real
+  // interest goes to the Enterprise AE rotation, whatever its tier (D93).
+  const enterpriseRotation =
+    !override &&
+    !input.isAgency &&
+    input.genuineInterest === true &&
+    segmentOf(input) === "enterprise";
+  const recycle =
+    !override && !input.isAgency && !enterpriseRotation && input.suggestRecycle;
   const route: LeadRoute =
     override ??
-    (recycle
-      ? "clarify_once"
-      : isRoute(fromClass)
-        ? fromClass
-        : "qualify_first");
+    (enterpriseRotation
+      ? "route_to_ae"
+      : recycle
+        ? "clarify_once"
+        : isRoute(fromClass)
+          ? fromClass
+          : "qualify_first");
   const source = override ? "override" : "playbook";
   const why = override
     ? "Picked by the PA."
-    : recycle
+    : enterpriseRotation
+      ? `An unowned enterprise account (over ${(input.commercialMaxEmployees ?? 0).toLocaleString()} employees) with a real inquiry.`
+      : recycle
       ? "No or a very low intent score suggests a recycle, so one email to clarify."
       : input.approach
         ? "From the lead's class and the playbook's routing rule."

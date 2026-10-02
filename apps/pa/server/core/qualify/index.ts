@@ -92,6 +92,8 @@ export interface ContactSalesClass {
   tier: QualifyTier | null;
   /** Intent score at or under the recycle line: PA suggests a recycle. */
   suggestRecycle: boolean;
+  /** A few words, no question, next to no signal (D88). */
+  thin?: boolean;
   signalsMet: number;
   criteria: Criterion[];
   summary: string;
@@ -240,6 +242,7 @@ export function contactSalesClass(input: QualifyInput): ContactSalesClass {
     product,
     tier: exceptional ? "exceptional" : "discovery",
     suggestRecycle,
+    thin,
     signalsMet,
     criteria,
     summary: exceptional

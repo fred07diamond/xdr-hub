@@ -198,7 +198,7 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": "A commercial account is a company with max_employees employees or fewer.\nOwned by an AE in HubSpot, whatever the class or size: nothing happens in PA. HubSpot's own workflow emails them, so there is no draft, no decision, and no SLA.\nNot owned by an AE, max_employees employees or fewer: route to the Commercial AE.\nNot owned by an AE, more than max_employees employees: round robin to the next Enterprise AE. The pick is saved, so the lead keeps its AE.\nAn unknown employee count goes to the enterprise round robin and is flagged to check.\nThe Commercial AE and the Enterprise AEs are set in Settings, Lead routing.\n",
+      "body": "A commercial account is a company with max_employees employees or fewer.\nOwned by an AE in HubSpot, whatever the class or size: nothing happens in PA. HubSpot's own workflow emails them, so there is no draft, no decision, and no SLA.\nNot owned by an AE, max_employees employees or fewer: route to the Commercial AE.\nNot owned by an AE, more than max_employees employees: every sales lead with a real inquiry goes to the Enterprise AE rotation, whatever its tier (Exceptional or Requires discovery). Support, billing, spam, vendor pitches, and thin messages do not. The rotation is strict: each lead goes to the AE after the one who got the last lead, in the order the AEs were added in Settings, Lead routing, so everyone gets an equal turn. The pick is saved, so the lead keeps its AE.\nFor an exceptional lead, an unknown employee count goes to the rotation and is flagged to check. Other leads need a known count over the line.\nThe Commercial AE and the Enterprise AEs are set in Settings, Lead routing.\n",
       "params": {
         "max_employees": 8000
       },
@@ -688,12 +688,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "285ebc0d8878777b7359e17580cfb10e9aa7111197e3c8ea82442d459d770c8f",
-  "short_id": "285ebc0d",
+  "id": "587280dd6ad17636d53646fc8aeda74cbaa87f6ad71376918d12ba6aef2b4e0e",
+  "short_id": "587280dd",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "4ad4c04a3791b6c1315dff736fb384c2ebbd38ec771d45625cc335c56a40b00b"
+      "sha256": "4c474eb8b9373f634660ddd1cc758641c342b7d835a16b4c349bb80039f513cb"
     },
     {
       "path": "config/routing-pool.yaml",

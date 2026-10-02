@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
 import { commercialLine } from "../server/core/lead-route/engagement.js";
+import { nextEnterpriseAe } from "../server/core/lead-route/index.js";
 import { canEditHandbook } from "../server/lib/handbook-service.js";
 import { activeRelease, repo } from "../server/lib/pa-context.js";
 import { listPeopleWithSeen } from "../server/lib/people.js";
@@ -31,6 +32,12 @@ export default defineAction({
         roundRobinLeads: given.get(person.email) ?? 0,
       })),
       commercialLine: commercialLine(release),
+      // Who the Enterprise AE rotation gives the next lead to (D93).
+      nextUp:
+        nextEnterpriseAe(
+          people.filter((person) => person.saved),
+          assignments,
+        )?.email ?? null,
       canEdit,
     };
   },

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-02 (enterprise rotation)
+
+- Every unowned enterprise lead (over 8,000 employees) with a real inquiry
+  goes to the next Enterprise AE, whatever its tier, with that AE's meeting
+  link (D93).
+- The rotation is strict, one lead each in order, and Lead routing shows
+  who is next up.
+
 ## 2026-10-01 (playbook catch-up)
 
 - The playbook now spells out today's rules: QL as a stage and no MQL, SAL
