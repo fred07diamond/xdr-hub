@@ -1,8 +1,3 @@
-import {
-  navigateWithAgentChatViewTransition,
-  useChatThreads,
-  type ChatThreadSummary,
-} from "@agent-native/core/client/agent-chat";
 import { useActionQuery } from "@agent-native/core/client/hooks";
 import { useT } from "@agent-native/core/client/i18n";
 import { openCommandMenu } from "@agent-native/core/client/navigation";
@@ -10,26 +5,16 @@ import { OrgSwitcher } from "@agent-native/core/client/org";
 import { AgentNativeIcon, FeedbackButton } from "@agent-native/core/client/ui";
 import { SidebarFooterActions } from "@agent-native/toolkit/app-shell";
 import {
-  ChatHistoryRail,
-  type ChatHistoryItem,
-} from "@agent-native/toolkit/chat-history";
-import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
-  IconActivityHeartbeat,
   IconBook2,
-  IconBulb,
   IconPlugConnected,
   IconInbox,
   IconMessageCircle,
-  IconNotebook,
-  IconTags,
   IconSearch,
   IconSettings,
 } from "@tabler/icons-react";
-import { useEffect, useMemo } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
-import { toast } from "sonner";
+import { Link, useLocation } from "react-router";
 
 import {
   Tooltip,
@@ -49,31 +34,11 @@ type NavItem = {
   ownerOnly?: boolean;
 };
 
-// PA destinations first (CONTEXT, guideline 1: navigation follows the nouns).
-// Chat stays one destination among them.
+// PA's two destinations (D95): the queue and the rules. The agent lives in
+// the side panel on every page; suggestions sit on the Playbook page.
 const navItems: NavItem[] = [
   { icon: IconInbox, label: "Inbound", href: "/inbound", view: "inbound" },
-  {
-    icon: IconNotebook,
-    label: "Sales handbook",
-    href: "/handbook",
-    view: "handbook",
-  },
-  { icon: IconTags, label: "Labels", href: "/labels", view: "labels" },
-  { icon: IconActivityHeartbeat, label: "Ops", href: "/ops", view: "ops" },
   { icon: IconBook2, label: "Playbook", href: "/playbook", view: "playbook" },
-  {
-    icon: IconBulb,
-    label: "Suggestions",
-    href: "/suggestions",
-    view: "suggestions",
-  },
-  {
-    icon: IconMessageCircle,
-    labelKey: "navigation.chat",
-    href: "/home",
-    view: "chat",
-  },
 ];
 
 const bottomNavItems: NavItem[] = [
@@ -92,220 +57,10 @@ const bottomNavItems: NavItem[] = [
   },
 ];
 
-const CHAT_STORAGE_KEY = "chat";
-const CHAT_ACTIVE_THREAD_KEY = `agent-chat-active-thread:${CHAT_STORAGE_KEY}`;
-
 interface SidebarProps {
   collapsed?: boolean;
   collapsible?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
-}
-
-function formatThreadAge(updatedAt: number) {
-  const diffMs = Math.max(0, Date.now() - updatedAt);
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(updatedAt).toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function threadTitle(thread: ChatThreadSummary) {
-  return thread.title || thread.preview || "Untitled chat";
-}
-
-function threadUpdatedAt(thread: ChatThreadSummary) {
-  return Number.isFinite(thread.updatedAt)
-    ? thread.updatedAt
-    : Number.isFinite(thread.createdAt)
-      ? thread.createdAt
-      : 0;
-}
-
-function compareThreads(a: ChatThreadSummary, b: ChatThreadSummary) {
-  const aPinned = a.pinnedAt ?? 0;
-  const bPinned = b.pinnedAt ?? 0;
-  if (aPinned || bPinned) return bPinned - aPinned;
-  return threadUpdatedAt(b) - threadUpdatedAt(a);
-}
-
-function persistedActiveThreadId() {
-  try {
-    return localStorage.getItem(CHAT_ACTIVE_THREAD_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function persistActiveThreadId(threadId: string) {
-  try {
-    localStorage.setItem(CHAT_ACTIVE_THREAD_KEY, threadId);
-  } catch {}
-}
-
-function threadIdFromPath(pathname: string) {
-  const match = pathname.match(/^\/chat\/([^/]+)/);
-  if (!match) return null;
-  try {
-    const value = decodeURIComponent(match[1]).trim();
-    return value || null;
-  } catch {
-    return null;
-  }
-}
-
-function chatThreadPath(threadId: string) {
-  return `/chat/${encodeURIComponent(threadId)}`;
-}
-
-function ChatThreadsSection({ open }: { open: boolean }) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const t = useT();
-  const {
-    threads,
-    activeThreadId,
-    createThread,
-    switchThread,
-    pinThread,
-    archiveThread,
-    renameThread,
-    refreshThreads,
-  } = useChatThreads(undefined, CHAT_STORAGE_KEY, undefined, {
-    autoCreate: false,
-    restoreActiveThread: false,
-  });
-
-  const visibleThreads = useMemo(
-    () =>
-      threads
-        .filter((thread) => thread.messageCount > 0 && !thread.archivedAt)
-        .sort(compareThreads)
-        .slice(0, 15),
-    [threads],
-  );
-  const displayedActiveThreadId =
-    threadIdFromPath(location.pathname) ??
-    (location.pathname === "/home" ? null : activeThreadId);
-  const chatItems = useMemo<ChatHistoryItem[]>(
-    () =>
-      visibleThreads.map((thread) => ({
-        id: thread.id,
-        title: threadTitle(thread),
-        titleText: threadTitle(thread),
-        timestamp:
-          thread.id === displayedActiveThreadId
-            ? undefined
-            : formatThreadAge(threadUpdatedAt(thread)),
-        pinned: Boolean(thread.pinnedAt),
-      })),
-    [displayedActiveThreadId, visibleThreads],
-  );
-
-  useEffect(() => {
-    const refresh = () => refreshThreads();
-    const handleRunning = (event: Event) => {
-      const detail = (event as CustomEvent).detail as
-        | { isRunning?: unknown }
-        | undefined;
-      if (typeof detail?.isRunning === "boolean") refreshThreads();
-    };
-
-    window.addEventListener("agent-chat:threads-updated", refresh);
-    window.addEventListener("agentNative.chatRunning", handleRunning);
-    window.addEventListener("focus", refresh);
-    return () => {
-      window.removeEventListener("agent-chat:threads-updated", refresh);
-      window.removeEventListener("agentNative.chatRunning", handleRunning);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [refreshThreads]);
-
-  function openThread(threadId: string, options?: { isNew?: boolean }) {
-    switchThread(threadId);
-    persistActiveThreadId(threadId);
-    navigateWithAgentChatViewTransition(
-      navigate,
-      options?.isNew ? "/home" : chatThreadPath(threadId),
-    );
-    window.requestAnimationFrame(() => {
-      window.dispatchEvent(
-        new CustomEvent("agent-chat:open-thread", {
-          detail: { threadId, newThread: options?.isNew === true },
-        }),
-      );
-    });
-  }
-
-  async function handleNewChat() {
-    const threadId = await createThread();
-    if (threadId) openThread(threadId, { isNew: true });
-  }
-
-  async function handleArchiveThread(threadId: string) {
-    const wasActive =
-      threadId === activeThreadId || threadId === persistedActiveThreadId();
-    const archived = await archiveThread(threadId);
-    if (!archived) {
-      toast.error(t("chat.archiveFailed"));
-      return;
-    }
-    if (wasActive) {
-      await handleNewChat();
-    }
-  }
-
-  function handleRenameThread(threadId: string, title: string) {
-    void renameThread(threadId, title).then((renamed) => {
-      if (!renamed) toast.error(t("chat.renameFailed"));
-    });
-  }
-
-  return (
-    <div
-      className="an-chat-history-rail__collapse"
-      data-state={open ? "open" : "closed"}
-      aria-hidden={!open}
-    >
-      <div className="ms-4">
-        <ChatHistoryRail
-          items={chatItems}
-          activeId={displayedActiveThreadId}
-          onSelect={(threadId) => openThread(threadId)}
-          onNewChat={() => void handleNewChat()}
-          railLabels={{
-            newChat: t("chat.newChat"),
-            showMore: t("chat.chats"),
-            showLess: t("chat.chats"),
-          }}
-          renameMaxLength={160}
-          onTogglePin={(threadId) => {
-            const thread = visibleThreads.find((item) => item.id === threadId);
-            if (thread) void pinThread(threadId, !thread.pinnedAt);
-          }}
-          onRename={handleRenameThread}
-          onDelete={(threadId) => void handleArchiveThread(threadId)}
-          labels={{
-            options: (item) =>
-              t("chat.optionsFor", { title: item.titleText ?? "" }),
-            renameInput: (item) =>
-              t("chat.renameThread", { title: item.titleText ?? "" }),
-            rename: t("chat.renameChat"),
-            pin: t("chat.pinChat"),
-            unpin: t("chat.unpinChat"),
-            delete: t("chat.archiveChat"),
-          }}
-          className="min-w-0"
-        />
-      </div>
-    </div>
-  );
 }
 
 export function Sidebar({
@@ -314,15 +69,12 @@ export function Sidebar({
   onCollapsedChange,
 }: SidebarProps) {
   const location = useLocation();
-  const navigate = useNavigate();
   const status = useActionQuery("get-pa-status", {}, { staleTime: 5 * 60_000 });
   const isAppOwner = Boolean(
     (status.data as { viewer?: { isAppOwner?: boolean } } | undefined)?.viewer
       ?.isAppOwner,
   );
   const t = useT();
-  const isChatRoute =
-    location.pathname === "/home" || location.pathname.startsWith("/chat/");
   const ToggleIcon = collapsed
     ? IconLayoutSidebarLeftExpand
     : IconLayoutSidebarLeftCollapse;
@@ -404,7 +156,7 @@ export function Sidebar({
         )}
       >
         <Link
-          to="/home"
+          to="/inbound"
           onClick={(event) => {
             if (
               !collapsible ||
@@ -455,26 +207,10 @@ export function Sidebar({
         <div className={cn("grid", collapsed ? "gap-0" : "gap-1")}>
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive =
-              item.href === "/home"
-                ? isChatRoute
-                : location.pathname.startsWith(item.href);
+            const isActive = location.pathname.startsWith(item.href);
             const link = (
               <Link
                 to={item.href}
-                onClick={(event) => {
-                  if (
-                    item.href === "/home" &&
-                    !isChatRoute &&
-                    !event.metaKey &&
-                    !event.ctrlKey &&
-                    !event.shiftKey &&
-                    !event.altKey
-                  ) {
-                    event.preventDefault();
-                    navigateWithAgentChatViewTransition(navigate, "/home");
-                  }
-                }}
                 className={navClass({ isActive })}
                 aria-current={isActive ? "page" : undefined}
                 aria-label={
@@ -499,9 +235,6 @@ export function Sidebar({
                 ) : (
                   link
                 )}
-                {!collapsed && item.view === "chat" ? (
-                  <ChatThreadsSection open={isChatRoute} />
-                ) : null}
               </div>
             );
           })}

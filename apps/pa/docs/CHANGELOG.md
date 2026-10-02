@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-02 (cleanup)
+
+- The sidebar is Inbound and Playbook (plus CRM connections and Settings).
+  Labels and Ops, which were never built, are gone; Chat is off the sidebar
+  (the agent panel stays on every page); Suggestions moved onto the
+  Playbook page (D95).
+- The Sales handbook moves into the playbook's Knowledge section: a banner
+  on the Playbook page turns its docs into Knowledge blocks for you to
+  approve. The handbook page is gone.
+
 ## 2026-10-02 (enterprise rotation)
 
 - Every unowned enterprise lead (over 8,000 employees) with a real inquiry

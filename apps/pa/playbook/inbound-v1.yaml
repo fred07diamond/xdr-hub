@@ -335,7 +335,7 @@ entries:
       No em dashes, no colons, no "Best regards". Close with a short line such as "Looking forward to your response," then the owner's first name.
       Say Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.
       "Design-to-code" may describe their problem, never the pitch. Win on collaboration and control, not on out-coding Cursor or Copilot.
-      At most one proof point, and only from the Sales handbook's approved customer evidence.
+      At most one proof point, and only from the approved customer evidence in the playbook's Knowledge section.
       Never pitch a demo as the first call; call it an intro, walkthrough, or working session.
       Ambiguous domains (student, personal, generic) are a yellow flag, not a disqualifier. A Contact Sales form is intent, so write a qualifying first touch that surfaces the team and company, and flag the domain in the brief.
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
@@ -399,7 +399,7 @@ entries:
       approach: content_price_check
     body: |
       Content price check.
-      Only in reply to a pricing ask on a clearly small lead (both employees under 50 and page views under 500k are known). Give the anchor from the Sales handbook, hedged. Otherwise no pricing.
+      Only in reply to a pricing ask on a clearly small lead (both employees under 50 and page views under 500k are known). Give the price anchor from the playbook's Knowledge section, hedged. Otherwise no pricing.
     source: "xDR master instructions (V2 messaging) and the TCQ email framework"
   - id: msg.first_touch.hq_code
     block: message_rule
@@ -447,7 +447,7 @@ entries:
       Agency, SI, or consultancy. Partner framing first.
       Find the path. Internal use, a client project, or exploring.
       For a client project, ask the client's headcount and HQ before proposing times. Offer the partner path when relevant.
-      Routing and who to route to are in the Sales handbook (03).
+      Routing and who to route to are in the playbook's Knowledge section.
 
   - id: msg.first_touch.clarify
     block: message_rule

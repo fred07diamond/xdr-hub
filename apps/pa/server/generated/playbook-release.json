@@ -363,7 +363,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Professional and warm, plain English, like a knowledgeable colleague. Not slangy: open with \"Hi <first name>,\", never \"Hey\", and no \"Yep\", \"Yeah\", \"Gotcha\". Helpful, not preachy: no lessons, no telling them what their problem really is, no restating their message back at length.\nNever use PA's internal product names (\"Content\", \"Code\") as names. Say what it is: Builder, Builder's CMS, the visual editor.\nNo em dashes, no colons, no \"Best regards\". Close with a short line such as \"Looking forward to your response,\" then the owner's first name.\nSay Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.\n\"Design-to-code\" may describe their problem, never the pitch. Win on collaboration and control, not on out-coding Cursor or Copilot.\nAt most one proof point, and only from the Sales handbook's approved customer evidence.\nNever pitch a demo as the first call; call it an intro, walkthrough, or working session.\nAmbiguous domains (student, personal, generic) are a yellow flag, not a disqualifier. A Contact Sales form is intent, so write a qualifying first touch that surfaces the team and company, and flag the domain in the brief.\n",
+      "body": "Professional and warm, plain English, like a knowledgeable colleague. Not slangy: open with \"Hi <first name>,\", never \"Hey\", and no \"Yep\", \"Yeah\", \"Gotcha\". Helpful, not preachy: no lessons, no telling them what their problem really is, no restating their message back at length.\nNever use PA's internal product names (\"Content\", \"Code\") as names. Say what it is: Builder, Builder's CMS, the visual editor.\nNo em dashes, no colons, no \"Best regards\". Close with a short line such as \"Looking forward to your response,\" then the owner's first name.\nSay Builder, never Builder.io, Fusion, or Publish. Write in the prospect's language.\n\"Design-to-code\" may describe their problem, never the pitch. Win on collaboration and control, not on out-coding Cursor or Copilot.\nAt most one proof point, and only from the approved customer evidence in the playbook's Knowledge section.\nNever pitch a demo as the first call; call it an intro, walkthrough, or working session.\nAmbiguous domains (student, personal, generic) are a yellow flag, not a disqualifier. A Contact Sales form is intent, so write a qualifying first touch that surfaces the team and company, and flag the domain in the brief.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "owner_team": "pa_team",
       "block": "message_rule",
@@ -425,7 +425,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Content price check.\nOnly in reply to a pricing ask on a clearly small lead (both employees under 50 and page views under 500k are known). Give the anchor from the Sales handbook, hedged. Otherwise no pricing.\n",
+      "body": "Content price check.\nOnly in reply to a pricing ask on a clearly small lead (both employees under 50 and page views under 500k are known). Give the price anchor from the playbook's Knowledge section, hedged. Otherwise no pricing.\n",
       "source": "xDR master instructions (V2 messaging) and the TCQ email framework",
       "scope": {
         "approach": "content_price_check"
@@ -476,7 +476,7 @@
       "version": 1,
       "precedence": 4,
       "status": "active",
-      "body": "Agency, SI, or consultancy. Partner framing first.\nFind the path. Internal use, a client project, or exploring.\nFor a client project, ask the client's headcount and HQ before proposing times. Offer the partner path when relevant.\nRouting and who to route to are in the Sales handbook (03).\n",
+      "body": "Agency, SI, or consultancy. Partner framing first.\nFind the path. Internal use, a client project, or exploring.\nFor a client project, ask the client's headcount and HQ before proposing times. Offer the partner path when relevant.\nRouting and who to route to are in the playbook's Knowledge section.\n",
       "scope": {
         "relationship_state": "agency"
       },
@@ -688,12 +688,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "3a7b8df800ab8a3e62a0f675ccbce256c0ea132f5ac1c540f43030ad56882df7",
-  "short_id": "3a7b8df8",
+  "id": "a60100b6652d0bb3894d6841897865568a5e3b41516ad8d89ac3313eca1c8077",
+  "short_id": "a60100b6",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "d6df362cae9bf20eafef9a7b848620ff90a6cc35681b1e665ece11278c93b495"
+      "sha256": "a0debc7eb88328dcd03cc967c2c4c922be4d6c86fd695b03538acc09772ab5e7"
     },
     {
       "path": "config/routing-pool.yaml",

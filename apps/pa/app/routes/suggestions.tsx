@@ -3,7 +3,7 @@ import {
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client/hooks";
-import { IconBulb } from "@tabler/icons-react";
+import { IconArrowLeft, IconBulb } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -64,6 +64,13 @@ export default function SuggestionsRoute() {
 
   return (
     <div className="mx-auto grid w-full max-w-[1000px] gap-4 px-3 py-4 sm:px-4 md:px-6 md:py-5">
+      <Link
+        to="/playbook"
+        className="inline-flex w-fit items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+      >
+        <IconArrowLeft className="size-4" aria-hidden="true" />
+        Playbook
+      </Link>
       <div
         className="flex flex-wrap items-center gap-2"
         role="tablist"

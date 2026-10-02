@@ -8,6 +8,11 @@ import {
 import { auditRelease } from "../server/core/playbook/checks.js";
 import { pendingFor } from "../server/core/playbook/resolve.js";
 import type { ReleaseEntry } from "../server/core/playbook/schema.js";
+import {
+  docsToFold,
+  HANDBOOK_PREFIX,
+  handbookEntryId,
+} from "../server/lib/handbook-to-playbook.js";
 import { activeRelease, repo } from "../server/lib/pa-context.js";
 import { actorOf, teamDirectory } from "../server/lib/playbook-service.js";
 import {
@@ -57,7 +62,11 @@ export default defineAction({
         target: entry.id,
         kind: "entry" as const,
         block: entry.block ?? null,
-        title: entryTitle(entry.id),
+        // A block moved from the handbook is titled by its first line (D95).
+        title: entry.id.startsWith(HANDBOOK_PREFIX)
+          ? (entry.body ?? "").split("\n")[0]?.trim().slice(0, 80) ||
+            entryTitle(entry.id)
+          : entryTitle(entry.id),
         blockLabel: blockType(entry.block)?.label ?? "Entry",
         section: entry.section ?? "rules_of_engagement",
         position: entry.position ?? 0,
@@ -167,6 +176,17 @@ export default defineAction({
         requiredTeams: change.requiredTeams,
         updatedAt: change.updatedAt,
       })),
+      // The Sales handbook still waiting to move into the playbook (D95).
+      handbook: await (async () => {
+        const waiting = docsToFold(await repository.listHandbookDocs()).filter(
+          (doc) =>
+            !release.entries.some((entry) => entry.id === handbookEntryId(doc)),
+        ).length;
+        const pending = open.find(
+          (change) => change.title === "Sales handbook into the playbook",
+        );
+        return { waiting, pendingChangeId: pending?.id ?? null };
+      })(),
     };
   },
 });

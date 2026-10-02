@@ -30,7 +30,7 @@ export default function MarketingHomeRoute() {
         "Review a drafted first reply that follows the playbook's message rules",
         "Track the SLA from submission to first contact and SAL",
       ]}
-      primaryActionHref={appPath("/home")}
+      primaryActionHref={appPath("/inbound")}
       secondaryActionHref={appPath("/sign-in")}
     />
   );

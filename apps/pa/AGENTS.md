@@ -43,7 +43,7 @@ not import its instructions, verdicts, or thresholds into PA.
 
 ## Application state
 
-- `navigation`: `{ view: "inbound" | "engagement" | "labels" | "ops" | "playbook" | "playbook-change" | "suggestions" | "handbook" | "crm" | "settings", engagementId?, changeId?, docId?, filters? }`
+- `navigation`: `{ view: "inbound" | "engagement" | "playbook" | "playbook-change" | "suggestions" | "crm" | "settings", engagementId?, changeId?, filters? }` (the handbook moved into the playbook's Knowledge section, D95)
 - `selection`: `{ engagementIds: string[] }`
 - `pa-demo-mode`: `{ enabled: true }` while the board shows demo data. Demo
   leads (ids starting `demo-`) are made up and computed in the browser; they
@@ -63,7 +63,8 @@ not import its instructions, verdicts, or thresholds into PA.
 | `save-message-assessment`                | Save the assessment once per submission (validated; workspace admins until M1) |
 | `save-draft`                             | Save a first-touch draft; linted, proposed only, never sent (D49)              |
 | `save-lead-brief`                        | Save the lead brief: persona, V2 read, five Stage 1 gates, next step (D61)     |
-| `list-handbook`, `get-handbook-doc`      | Read and search the Sales handbook (D53); reference, the playbook wins         |
+| `get-knowledge`                          | The playbook's Knowledge section, including what moved from the handbook (D95) |
+| `list-handbook`, `get-handbook-doc`      | The old Sales handbook, kept as a backup; use only if Knowledge has none (D95) |
 | `pull-contact-sales`                     | Read new Contact Sales submissions from HubSpot and triage them (D54)          |
 | `list-agent-work`                        | Leads waiting for an assessment or a draft; work them oldest first (D54)       |
 | `get-contact-history`                    | The lead's emails, calls, meetings, notes, and Dobby's message from HubSpot    |
@@ -85,6 +86,7 @@ People only, hidden from the agent: `review-playbook-change`,
 `publish-playbook-change`, `update-suggestion`, `enable-playbook-review`,
 `list-crm-connections`, `set-crm-credential`, `test-crm-connection`,
 `remove-crm-credential`, `update-handbook-doc`, `import-handbook-docs`,
+`move-handbook-to-playbook`,
 `enable-inbound-agent`, `refresh-lead`, `refresh-all-leads`, `save-person`,
 `set-meeting-link`, `rewrite-reply`,
 `set-lead-route` (the lead's route, D66), `decide-lead` (the rep's decision; the agent may

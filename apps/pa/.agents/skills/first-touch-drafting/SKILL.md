@@ -38,10 +38,12 @@ the move that fills each gap.
   is the source of truth; it comes from the current playbook, so follow it
   over anything you remember.
 - `get-playbook-entry` for knowledge entries that answer the question.
-- The Sales handbook (`get-handbook-doc`): `03-lead-routing-and-playbooks`
-  (Contact Sales handling, agency routing and who to route to),
-  `05-email-playbook` (voice, objections, the approved customer evidence),
-  `02-stage1-gate-and-qualification`, `04-personas-and-discovery`.
+- The playbook's Knowledge section (`get-knowledge`): the sourced facts,
+  including what moved there from the Sales handbook (lead routing and
+  Contact Sales handling, the email playbook with the approved customer
+  evidence and the price anchor, qualification, personas). List the blocks,
+  then read the ones you need. Only if it has no handbook blocks yet, fall
+  back to `get-handbook-doc`.
 - If a lookup comes back thin, try another route before saying it is
   unknown. Say plainly what you could not get, and continue.
 
@@ -63,14 +65,14 @@ true, and **Requires discovery** (qualify first) otherwise:
 A very low intent score suggests a recycle; say so in the brief, and the PA
 decides. Content or Code only picks the email angle and the questions.
 Agencies, SIs, and consultancies go first: find the path (internal use, a
-client project, or exploring). Routing for agencies is in the handbook (03).
+client project, or exploring). Routing for agencies is in the Knowledge section.
 
 You may disagree with PA's suggested class when the evidence says so; say
 why in the brief. Never assume a fact you do not have.
 
 ## 3. Write the lead brief, then call `save-lead-brief`
 
-The CRM note as data. Only facts from the form, HubSpot, and the handbook;
+The CRM note as data. Only facts from the form, HubSpot, and the playbook;
 unknown stays unknown.
 
 - Persona (Design, Eng, Product, Exec; content or marketing for Content) and

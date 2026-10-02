@@ -50,7 +50,7 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 import {
@@ -134,6 +134,8 @@ interface PlaybookView {
     status: string;
     requiredTeams: string[];
   }>;
+  /** Sales handbook docs not in the playbook yet (D95). */
+  handbook?: { waiting: number; pendingChangeId: string | null };
 }
 interface ItemInput {
   target: string;
@@ -343,6 +345,8 @@ export default function PlaybookRoute() {
   const query = useActionQuery("list-playbook", {});
   const propose = useActionMutation("propose-playbook-change");
   const update = useActionMutation("update-playbook-change");
+  const moveHandbook = useActionMutation("move-handbook-to-playbook");
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [adding, setAdding] = useState(false);
@@ -481,6 +485,12 @@ export default function PlaybookRoute() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link to="/suggestions">
+              <IconBulb className="size-4" aria-hidden="true" />
+              Suggestions
+            </Link>
+          </Button>
           {data.myDraft ? (
             <Button asChild size="sm">
               <Link to={`/playbook/changes/${data.myDraft.id}`}>
@@ -519,6 +529,51 @@ export default function PlaybookRoute() {
           </DropdownMenu>
         </div>
       </header>
+
+      {data.handbook && data.handbook.waiting > 0 && canEdit ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-[13px]">
+          <IconBook
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <span className="min-w-0 flex-1 text-foreground">
+            {data.handbook.pendingChangeId
+              ? "The Sales handbook is waiting to be approved into the playbook's Knowledge section."
+              : `${data.handbook.waiting} Sales handbook ${data.handbook.waiting === 1 ? "doc is" : "docs are"} not in the playbook yet. Move them into the Knowledge section so the playbook is the one place PA reads from.`}
+          </span>
+          {data.handbook.pendingChangeId ? (
+            <Button asChild size="sm">
+              <Link to={`/playbook/changes/${data.handbook.pendingChangeId}`}>
+                Review and approve
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              disabled={moveHandbook.isPending}
+              onClick={() =>
+                moveHandbook.mutate(
+                  {},
+                  {
+                    onSuccess: (raw) => {
+                      const result = raw as { changeId: string | null };
+                      if (result.changeId) {
+                        toast.success(
+                          "The handbook is a playbook change now. Approve and publish it.",
+                        );
+                        navigate(`/playbook/changes/${result.changeId}`);
+                      } else void query.refetch();
+                    },
+                    onError: (error) => toast.error(actionErrorMessage(error)),
+                  },
+                )
+              }
+            >
+              {moveHandbook.isPending ? "Moving..." : "Move into the playbook"}
+            </Button>
+          )}
+        </div>
+      ) : null}
 
       {inReview.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-[12.5px]">

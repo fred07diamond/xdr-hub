@@ -138,10 +138,6 @@ export default defineAction({
           : "The user is on their suggestions inbox. Read it with list-suggestions.";
       return screen;
     }
-    if (navigation.view === "handbook") {
-      screen.note = `The user is on the Sales handbook${navigation.docId ? `, reading doc ${navigation.docId}` : ""}. Read it with list-handbook and get-handbook-doc. Only people edit it, from the page.`;
-      return screen;
-    }
     if (navigation.view === "crm") {
       screen.note =
         "The user is on CRM connections, the app owner's page for CRM credentials. You cannot see or handle credentials; point them to the page's own buttons. The field mapping lives in the playbook's CRM section (get-crm-mapping).";
@@ -153,9 +149,6 @@ export default defineAction({
         ? `The user is looking at playbook change ${changeId}. Read it with get-playbook-change. People review and publish; you can explain and edit drafts.`
         : "The user is on a playbook change page.";
       return screen;
-    }
-    if (navigation.view === "labels" || navigation.view === "ops") {
-      screen.note = `The ${navigation.view} page is a placeholder in this build.`;
     }
     return screen;
   },

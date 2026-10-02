@@ -68,12 +68,9 @@ function matchOne(pathname: string, pattern: RegExp): string | null {
 function viewForPath(pathname: string): string {
   if (/^\/inbound\/[^/]+/.test(pathname)) return "engagement";
   if (pathname.startsWith("/inbound")) return "inbound";
-  if (pathname.startsWith("/labels")) return "labels";
-  if (pathname.startsWith("/ops")) return "ops";
   if (/^\/playbook\/changes\/[^/]+/.test(pathname)) return "playbook-change";
   if (pathname.startsWith("/playbook")) return "playbook";
   if (pathname.startsWith("/suggestions")) return "suggestions";
-  if (pathname.startsWith("/handbook")) return "handbook";
   if (pathname.startsWith("/crm")) return "crm";
   if (pathname === "/home" || pathname.startsWith("/chat/")) return "agent";
   if (pathname.startsWith("/database")) return "database";
@@ -95,8 +92,6 @@ function pathForCommand(command: NavigateCommand): string {
       return command.engagementId
         ? `/inbound/${encodeURIComponent(command.engagementId)}`
         : "/inbound";
-    case "labels":
-      return "/labels";
     case "playbook":
       return "/playbook";
     case "playbook-change":
@@ -106,13 +101,10 @@ function pathForCommand(command: NavigateCommand): string {
     case "suggestions":
       return "/suggestions";
     case "handbook":
-      return command.docId
-        ? `/handbook?doc=${encodeURIComponent(command.docId)}`
-        : "/handbook";
+      // The handbook lives in the playbook's Knowledge section now (D95).
+      return "/playbook?section=knowledge";
     case "crm":
       return "/crm";
-    case "ops":
-      return "/ops";
     case "settings":
       return "/settings";
     case "agent":

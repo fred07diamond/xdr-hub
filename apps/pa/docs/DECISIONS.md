@@ -1743,3 +1743,28 @@ bottom. Revisit one only when its "revisit when" condition happens.
   playbook definition now say "Actioned": the team already acted on the lead
   in HubSpot (SAL, S0, Recycle, Disqualified, or a deal). The reason line
   still says which. Internal names (`moved_on`) are unchanged.
+
+## D95. Cleanup: two destinations, and the handbook folds into the playbook (2026-10-02)
+
+- Fred asked for an audit of the sidebar: the Sales handbook is redundant
+  with the playbook, and Ops, Labels, Suggestions, and Chat are unbuilt or
+  half built. He chose all four cleanups.
+- **Labels and Ops** were placeholders for features never built (M0
+  labeling, an operator view). Their pages and navigation are gone.
+- **Chat:** off the sidebar with its thread list. The agent stays in the
+  side panel on every page; `/home` remains only as the panel's expanded
+  view, and the logo and the landing page now open Inbound.
+- **Suggestions:** off the sidebar; the Playbook page links to it, and it
+  links back.
+- **Sales handbook:** the drafting agent still read four handbook docs whose
+  older rules could contradict the playbook. `move-handbook-to-playbook`
+  turns each current doc into a Knowledge block (`kb.handbook_<doc>`) as one
+  playbook change for the owner or a Playbook admin to approve; the content
+  stays in the database, never in the repo, because it holds private
+  material (price anchor, customer evidence). The Playbook page shows a
+  one-time banner to start it. The agent reads Knowledge with
+  `get-knowledge` (current playbook) and falls back to the handbook only
+  while nothing has moved. The handbook page is gone; its rows and actions
+  stay as a backup.
+- The sidebar is now Inbound and Playbook, with CRM connections and
+  Settings at the bottom.
