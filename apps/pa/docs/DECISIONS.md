@@ -2015,3 +2015,11 @@ bottom. Revisit one only when its "revisit when" condition happens.
   page shows each follow-up as an email: To, Cc, and Subject rows above the
   body. "Rewrite" (`rewrite-follow-up`) sends an agent-written follow-up
   back to the agent under the current rules.
+
+- Follow-up: drafts written before the format rule stayed as they were
+  until someone clicked Rewrite. Follow-up rules are now versioned (v2):
+  each minute the sweep sends agent-written drafts under older rules back
+  to the agent (a person's edit is kept), like first-touch drafts (D62). A
+  reply's subject could read "Following up" when the first touch's subject
+  was not on the sent-email event; it now falls back to HubSpot's detection
+  and then the first-touch draft.

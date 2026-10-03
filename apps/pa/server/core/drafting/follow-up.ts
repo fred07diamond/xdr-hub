@@ -6,7 +6,8 @@
 import type { PlaybookRelease } from "../playbook/schema.js";
 import { MEETING_LINK_TOKEN, OWNER_NAME_TOKEN } from "./index.js";
 
-export const FOLLOW_UP_RULES_VERSION = 1;
+/** 2: a follow-up must read like an email (D106). */
+export const FOLLOW_UP_RULES_VERSION = 2;
 /** Follow-ups are shorter than a first touch. */
 export const FOLLOW_UP_MIN_WORDS = 15;
 

@@ -445,3 +445,23 @@ describe("follow-ups read like an email (D106)", () => {
     ).toEqual([]);
   });
 });
+
+describe("the reply subject (D106)", () => {
+  it("falls back to HubSpot's detection, then the first-touch draft", async () => {
+    const { firstTouchOf, replySubject } =
+      await import("../../server/lib/follow-ups.js");
+    const repository = new MemoryRepository();
+    await repository.appendEvent({
+      id: "d1",
+      engagementId: "e9",
+      correlationId: "e9",
+      type: "first_touch.detected",
+      actor: "system:hubspot-history",
+      payload: { subject: "Builder for your portal" },
+      receiptId: null,
+      occurredAt: AT,
+    });
+    const first = await firstTouchOf(repository, "e9");
+    expect(replySubject(first.subject)).toBe("Re: Builder for your portal");
+  });
+});

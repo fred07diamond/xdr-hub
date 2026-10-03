@@ -1,6 +1,6 @@
 // One pass of the minute poll (D58): intake, agent wake-up, decision deadlines.
 import { checkDecisionDeadlines } from "./decisions.js";
-import { checkFollowUps } from "./follow-ups.js";
+import { checkFollowUps, redraftStaleFollowUps } from "./follow-ups.js";
 import {
   detectFirstTouches,
   processRefreshQueue,
@@ -48,6 +48,7 @@ export async function runInboundSweep(owner: {
   // approved emails of editable sequences that are due.
   const cadence = {
     ...(await checkFollowUps()),
+    redrafted: await redraftStaleFollowUps(),
     approved: await sendApprovedFollowUps(),
   };
   const repository = repo();

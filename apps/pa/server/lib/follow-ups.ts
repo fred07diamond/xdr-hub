@@ -13,6 +13,7 @@ import {
 import { wallTimeToInstant, zonedParts } from "../core/clocks/index.js";
 import { fetchContactHistory } from "../core/crm/history.js";
 import { movedOnOfEngagement } from "../core/crm/lifecycle.js";
+import { FOLLOW_UP_RULES_VERSION } from "../core/drafting/follow-up.js";
 import { routeForEngagement } from "../core/lead-route/engagement.js";
 import { draftRouteOf } from "../core/lead-route/index.js";
 import {
@@ -545,12 +546,56 @@ export async function firstTouchOf(
     );
     if (draft?.body) body = draft.body;
   }
+  // The subject, wherever PA saw it: the sent email, the HubSpot detection,
+  // or the first-touch draft (D106), so a reply never reads "Following up".
+  const detected = [...events]
+    .reverse()
+    .find((item) => item.type === "first_touch.detected");
+  const drafts = await repository.listDrafts(engagementId);
+  const subject =
+    text("subject") ??
+    (typeof detected?.payload.subject === "string"
+      ? detected.payload.subject
+      : null) ??
+    drafts[drafts.length - 1]?.subject ??
+    null;
   return {
-    subject: text("subject"),
-    body,
+    subject,
+    body: body ?? drafts[drafts.length - 1]?.body ?? null,
     messageId: text("message_id"),
     threadId: text("thread_id"),
   };
+}
+
+/**
+ * Drafts written under older follow-up rules go back to the agent (D106),
+ * like first-touch drafts do (D62). A person's edit is left alone.
+ */
+export async function redraftStaleFollowUps(limit = 20) {
+  const repository = repo();
+  let redrafted = 0;
+  const at = now().toISOString();
+  for (const row of await repository.listOpenFollowUps()) {
+    if (redrafted >= limit) break;
+    if (row.status !== "drafted" && row.status !== "needs_edit") continue;
+    if (row.editedBy) continue;
+    const lint = (row.lint ?? {}) as { rulesVersion?: number; source?: string };
+    if (lint.source === "template") continue;
+    if (Number(lint.rulesVersion ?? 0) >= FOLLOW_UP_RULES_VERSION) continue;
+    await repository.updateFollowUp(
+      row.id,
+      {
+        status: "scheduled",
+        body: null,
+        lint: null,
+        dueAt: row.dueAt < at ? at : row.dueAt,
+        updatedAt: at,
+      },
+      row.version,
+    );
+    redrafted += 1;
+  }
+  return redrafted;
 }
 
 export const replySubject = (subject: string | null) =>
