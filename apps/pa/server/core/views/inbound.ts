@@ -1133,14 +1133,27 @@ export async function buildEngagementDetail(input: {
   };
 
   const followUpRows = await repo.listFollowUps(engagement.id);
+  const lastSequenceId = [...followUpRows]
+    .reverse()
+    .find((row) => row.sequenceId)?.sequenceId;
+  const lastSequence = lastSequenceId
+    ? await repo.getSequence(lastSequenceId)
+    : null;
   return {
     id: engagement.id,
+    firstTouchAt: engagement.firstTouchAt,
     followUps:
       followUpRows.length === 0
         ? null
         : {
             engagementId: engagement.id,
             route: followUpRows[0].route,
+            sequenceName: lastSequence?.name ?? null,
+            active: followUpRows.some((row) =>
+              ["scheduled", "drafted", "needs_edit", "approved"].includes(
+                row.status,
+              ),
+            ),
             reply: replyOf(events),
             pausedUntil: pausedUntilOf(events, input.now),
             leadZone: leadTimezone({

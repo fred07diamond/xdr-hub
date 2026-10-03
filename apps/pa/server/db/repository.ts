@@ -23,6 +23,7 @@ import {
   type AeAssignmentRecord,
   type OutboxRecord,
   type FollowUpRecord,
+  type SequenceRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type SubmissionRecord,
@@ -66,6 +67,7 @@ const {
   paAeAssignments,
   paOutbox,
   paFollowUps,
+  paSequences,
   paHandbookDocs,
   paHandbookRevisions,
   paSubmissions,
@@ -681,6 +683,53 @@ export class DrizzleRepository implements PaRepository {
     return decodeJson("decisions", row) as unknown as DecisionRecord;
   }
 
+  async listSequences() {
+    const rows = await this.db
+      .select()
+      .from(paSequences)
+      .orderBy(asc(paSequences.createdAt));
+    return rows.map(
+      (row) => decodeJson("sequences", row) as unknown as SequenceRecord,
+    );
+  }
+  async getSequence(id: string) {
+    const [row] = await this.db
+      .select()
+      .from(paSequences)
+      .where(eq(paSequences.id, id))
+      .limit(1);
+    return row
+      ? (decodeJson("sequences", row) as unknown as SequenceRecord)
+      : null;
+  }
+  async insertSequence(record: SequenceRecord) {
+    await this.db
+      .insert(paSequences)
+      .values(encodeJson<any>("sequences", record));
+  }
+  async updateSequence(
+    id: string,
+    patch: Partial<SequenceRecord>,
+    expectedVersion: number,
+  ) {
+    const { id: _id, version: _version, ...rest } = patch;
+    const [row] = await this.db
+      .update(paSequences)
+      .set({
+        ...encodeJson<any>("sequences", rest),
+        version: expectedVersion + 1,
+      })
+      .where(
+        and(eq(paSequences.id, id), eq(paSequences.version, expectedVersion)),
+      )
+      .returning();
+    if (!row)
+      throw new VersionConflictError(
+        `Sequence ${id} changed underneath this update`,
+      );
+    return decodeJson("sequences", row) as unknown as SequenceRecord;
+  }
+
   async insertFollowUps(records: FollowUpRecord[]) {
     if (records.length === 0) return;
     await this.db
@@ -705,7 +754,12 @@ export class DrizzleRepository implements PaRepository {
       .select()
       .from(paFollowUps)
       .where(
-        inArray(paFollowUps.status, ["scheduled", "drafted", "needs_edit"]),
+        inArray(paFollowUps.status, [
+          "scheduled",
+          "drafted",
+          "needs_edit",
+          "approved",
+        ]),
       )
       .orderBy(asc(paFollowUps.dueAt));
     return rows.map(

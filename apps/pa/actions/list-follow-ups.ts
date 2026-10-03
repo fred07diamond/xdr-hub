@@ -18,6 +18,8 @@ export default defineAction({
     const counts = new Map<string, number>();
     const items = [];
     for (const row of rows) {
+      // Approved template emails send themselves on their day (D105).
+      if (row.status === "approved") continue;
       const engagement = await repository.getEngagement(row.engagementId);
       if (!engagement) continue;
       if (!counts.has(row.engagementId))

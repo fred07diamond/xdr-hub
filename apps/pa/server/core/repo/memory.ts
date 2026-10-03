@@ -9,6 +9,7 @@ import {
   type AeAssignmentRecord,
   type OutboxRecord,
   type FollowUpRecord,
+  type SequenceRecord,
   type RouteOverrideRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
@@ -50,6 +51,7 @@ interface Tables {
   aeAssignments: Map<string, AeAssignmentRecord>;
   outbox: Map<string, OutboxRecord>;
   followUps: Map<string, FollowUpRecord>;
+  sequences: Map<string, SequenceRecord>;
   handbook: Map<string, HandbookDocRecord>;
   handbookRevisions: Map<string, HandbookRevisionRecord>;
   releases: Map<string, ReleaseRecord>;
@@ -80,6 +82,7 @@ function emptyTables(): Tables {
     aeAssignments: new Map(),
     outbox: new Map(),
     followUps: new Map(),
+    sequences: new Map(),
     handbook: new Map(),
     handbookRevisions: new Map(),
     releases: new Map(),
@@ -494,6 +497,32 @@ export class MemoryRepository implements PaRepository {
     );
   }
 
+  async listSequences() {
+    return [...this.tables.sequences.values()]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map(copy);
+  }
+  async getSequence(id: string) {
+    const found = this.tables.sequences.get(id);
+    return found ? copy(found) : null;
+  }
+  async insertSequence(record: SequenceRecord) {
+    this.tables.sequences.set(record.id, copy(record));
+  }
+  async updateSequence(
+    id: string,
+    patch: Partial<SequenceRecord>,
+    expectedVersion: number,
+  ) {
+    return bumpVersioned(
+      this.tables.sequences,
+      id,
+      patch,
+      expectedVersion,
+      "Sequence",
+    );
+  }
+
   async insertFollowUps(records: FollowUpRecord[]) {
     for (const record of records) {
       const taken = [...this.tables.followUps.values()].some(
@@ -513,7 +542,9 @@ export class MemoryRepository implements PaRepository {
   async listOpenFollowUps() {
     return [...this.tables.followUps.values()]
       .filter((item) =>
-        ["scheduled", "drafted", "needs_edit"].includes(item.status),
+        ["scheduled", "drafted", "needs_edit", "approved"].includes(
+          item.status,
+        ),
       )
       .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
       .map(copy);

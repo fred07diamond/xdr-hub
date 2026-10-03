@@ -52,7 +52,8 @@ export async function sendFollowUp(
       `Follow-ups stopped: ${row.stopReason ?? "the lead moved on"}.`,
       "moved_on",
     );
-  if (row.status !== "drafted" || !row.body)
+  // Drafted (agent-written, approved now) or approved at enrollment (D105).
+  if ((row.status !== "drafted" && row.status !== "approved") || !row.body)
     throw new SendRefused(
       row.status === "needs_edit"
         ? "This follow-up breaks a message rule. Edit it before it goes out."

@@ -77,7 +77,9 @@ export default defineAction({
       entry.leads += 1;
       if (
         leadRows.some((row) =>
-          ["scheduled", "drafted", "needs_edit"].includes(row.status),
+          ["scheduled", "drafted", "needs_edit", "approved"].includes(
+            row.status,
+          ),
         )
       )
         entry.active += 1;

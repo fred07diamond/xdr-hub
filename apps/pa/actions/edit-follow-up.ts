@@ -50,7 +50,12 @@ export default defineAction({
     await repository.updateFollowUp(
       row.id,
       {
-        status: lint.ok ? "drafted" : "needs_edit",
+        // An approved template email stays approved when the edit passes (D105).
+        status: lint.ok
+          ? row.status === "approved"
+            ? "approved"
+            : "drafted"
+          : "needs_edit",
         body: args.body,
         ...(row.thread === "new" && args.subject !== undefined
           ? { subject: args.subject }

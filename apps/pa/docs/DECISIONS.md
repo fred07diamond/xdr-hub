@@ -1956,3 +1956,43 @@ bottom. Revisit one only when its "revisit when" condition happens.
   pauses it. HubSpot is now read every 15 minutes per lead in a sequence
   (was 30), and again right before every send. The lead page says
   "Unenrolled: they replied", and "Stop follow-ups" is now "Unenroll".
+
+## D105. Named sequences, picked per lead (2026-10-02)
+
+- Fred showed HubSpot's sequence builder and asked for this flow: the rep
+  reviews their open lead, then chooses a sequence, either one the agent
+  customizes all the way through, or an editable one where they change what
+  will be sent. Automatic enrollment comes later.
+- He chose: an editable sequence is approved once at enrollment; any PA
+  creates and edits sequences, applied immediately (no playbook approval);
+  enrollment is manual for now, with the route's sequence suggested.
+- **Sequences** (`pa_sequences`, migration v14): a name, a kind, a
+  description, the routes it is suggested for, and up to 10 steps (day,
+  reply-in-thread or new email, AE on cc, and either the agent's purpose or
+  a subject and email template with `{{first_name}}`, `{{company}}`,
+  `{{owner_first_name}}`, `{{meeting_link}}`).
+  - **Agent-written** (`dynamic`): the agent writes each email the day
+    before it is due; the owner approves each (as in D101).
+  - **Editable** (`template`): at enrollment the rep sees every email filled
+    in for this lead, edits it, and "Approve and enroll" approves them all
+    (status `approved`, `approved_by`). Each sends on its day, inside the
+    lead's send window, from the approver's Gmail (`sendApprovedFollowUps`
+    in the minute sweep), through the same checks as a manual send: owner,
+    order, caps, a fresh HubSpot check, one send per step. A Gmail failure
+    turns it into "needs a fix" for the owner. An approved email can still
+    be edited or sent early on the lead page.
+- **Enrollment** (`enroll-lead`, `preview-enrollment`): the lead's owner,
+  after the first touch. A lead in a sequence can be moved to another (the
+  old one ends, "Moved to ..."). Unenrolling (reply, meeting, bounce,
+  opt-out, stage change, company reply) is unchanged.
+- **Starting sequences:** on first load, the playbook's three route
+  cadences become agent-written sequences suggested for their route, plus
+  one editable example. The route cadence steps in the playbook no longer
+  enroll anyone; the playbook keeps only the sending settings (window and
+  caps), edited on Sequencing.
+- **UI:** Sequencing lists the sequences (results per sequence) and opens a
+  HubSpot-style builder (`/sequencing/:id`): total steps, days to complete,
+  written by, unenroll criteria; step cards on a timeline with the delay
+  between steps, the email with field chips and See more, and sent,
+  replies, and meetings per step (no opens or clicks). The lead page has a
+  Sequence card: Enroll in a sequence, or Change sequence.

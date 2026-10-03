@@ -513,6 +513,26 @@ export const followUpThread = `
 ALTER TABLE pa_follow_ups ADD COLUMN thread TEXT
 `;
 
+// Named sequences (D105): agent-written or editable, picked per lead.
+export const sequences = `
+CREATE TABLE IF NOT EXISTS pa_sequences (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  recommended_for TEXT NOT NULL DEFAULT '[]',
+  steps TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+ALTER TABLE pa_follow_ups ADD COLUMN sequence_id TEXT;
+ALTER TABLE pa_follow_ups ADD COLUMN approved_by TEXT
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -533,6 +553,7 @@ export const PA_MIGRATIONS = [
   { version: 11, name: "pa-ae-assignments", sql: aeAssignments },
   { version: 12, name: "pa-follow-ups", sql: followUps },
   { version: 13, name: "pa-follow-up-thread", sql: followUpThread },
+  { version: 14, name: "pa-sequences", sql: sequences },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {

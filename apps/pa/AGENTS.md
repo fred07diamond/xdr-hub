@@ -73,6 +73,7 @@ not import its instructions, verdicts, or thresholds into PA.
 | `run-decision-loop`                      | Give older leads PA's recommendation and a 24 hour decision window (D59)       |
 | `get-messaging-guide`                    | The playbook's Messaging section for a class: how every draft is written (D65) |
 | `list-follow-ups`                        | Follow-ups due and coming up across every lead (Sequencing, D102)              |
+| `list-sequences`                         | The team's sequences, their steps, and results per step (D105)                 |
 | `label-reply`                            | Label a reply that stopped follow-ups; unsubscribe opts out (D103)             |
 | `follow-up-stats`                        | Follow-up results per route and step: replies, meetings, edits (D103)          |
 | `get-follow-up`                          | One follow-up: its purpose, the first touch, earlier follow-ups (D101)         |
@@ -97,7 +98,8 @@ People only, hidden from the agent: `review-playbook-change`,
 `set-meeting-link`, `rewrite-reply`,
 `set-lead-route` (the lead's route, D66),
 `send-first-touch`, `send-test-email`, `edit-draft` (a person's edit, D100),
-`edit-follow-up`, `send-follow-up`, `skip-follow-up` (follow-ups, D101), `get-gmail-status`, `disconnect-gmail` (the owner sends
+`edit-follow-up`, `send-follow-up`, `skip-follow-up` (follow-ups, D101),
+`save-sequence`, `archive-sequence`, `preview-enrollment`, `enroll-lead` (sequences, D105), `get-gmail-status`, `disconnect-gmail` (the owner sends
 from their own Gmail, D96), `decide-lead` (the rep's decision; the agent may
 recommend but never decides).
 

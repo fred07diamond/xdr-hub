@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-02 (sequences)
+
+- Sequences are now named, like HubSpot's, and you pick one per lead after
+  the first touch: "Enroll in a sequence" on the lead page (D105).
+- Agent-written sequences: the agent writes every email; you approve each.
+  Editable sequences: you see every email filled in for the lead, edit it,
+  and "Approve and enroll"; each then sends on its day from your Gmail.
+- Build and edit sequences on Sequencing: steps on a timeline with the
+  delay between them, the email with field chips, and results per step.
+
 ## 2026-10-02 (per-step settings)
 
 - Each follow-up step can reply in the same thread or start a new email

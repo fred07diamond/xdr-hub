@@ -37,6 +37,7 @@ import {
   type HistoryResult,
 } from "@/components/pa/contact-history";
 import { DemoNotice } from "@/components/pa/demo";
+import { SequenceCard } from "@/components/pa/enroll";
 import { EvaluationList, OpenItems } from "@/components/pa/evaluations";
 import { FollowUpsCard } from "@/components/pa/follow-ups";
 import { BOARD_TABS } from "@/components/pa/inbound-board";
@@ -850,6 +851,23 @@ export default function EngagementRoute() {
             )}
           </div>
 
+          {detail.contactSalesClass || detail.followUps ? (
+            <div className="mt-4">
+              <SequenceCard
+                engagementId={detail.id}
+                current={
+                  detail.followUps
+                    ? {
+                        name: detail.followUps.sequenceName ?? "Follow-ups",
+                        active: detail.followUps.active,
+                      }
+                    : null
+                }
+                firstTouchSent={Boolean(detail.firstTouchAt)}
+                onChanged={() => void engagement.refetch()}
+              />
+            </div>
+          ) : null}
           {detail.followUps ? (
             <div className="mt-4">
               <FollowUpsCard

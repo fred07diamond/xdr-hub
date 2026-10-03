@@ -164,7 +164,7 @@ export async function stopFollowUps(
   detail: Record<string, unknown> = {},
 ) {
   const open = (await repository.listFollowUps(engagementId)).filter((row) =>
-    ["scheduled", "drafted", "needs_edit"].includes(row.status),
+    ["scheduled", "drafted", "needs_edit", "approved"].includes(row.status),
   );
   if (open.length === 0) return 0;
   const at = now().toISOString();
@@ -439,7 +439,7 @@ export async function pauseFollowUps(
   emailId: string,
 ) {
   const open = (await repository.listFollowUps(engagementId)).filter((row) =>
-    ["scheduled", "drafted", "needs_edit"].includes(row.status),
+    ["scheduled", "drafted", "needs_edit", "approved"].includes(row.status),
   );
   const first = open[0];
   const at = now().toISOString();

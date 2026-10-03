@@ -1,6 +1,6 @@
 // One pass of the minute poll (D58): intake, agent wake-up, decision deadlines.
 import { checkDecisionDeadlines } from "./decisions.js";
-import { checkFollowUps, enrollFollowUps } from "./follow-ups.js";
+import { checkFollowUps } from "./follow-ups.js";
 import {
   detectFirstTouches,
   processRefreshQueue,
@@ -14,6 +14,7 @@ import {
   wakeInboundAgent,
 } from "./live-pipeline.js";
 import { newId, now, repo } from "./pa-context.js";
+import { sendApprovedFollowUps } from "./sequences.js";
 
 /** Leads are pulled from this far back each minute; the inbox key dedupes. */
 const LOOKBACK_HOURS = 6;
@@ -42,11 +43,12 @@ export async function runInboundSweep(owner: {
   const assigned = await assignEnterpriseAes();
   // First touches sent from HubSpot (D64), so PA stops drafting for them.
   const history = await detectFirstTouches();
-  // Follow-up cadences (D101): enroll fresh first touches, then stop the
-  // ones whose lead replied, booked, opted out, or moved on.
+  // Sequences (D101, D105): reps enroll leads by hand for now. Stop the ones
+  // whose lead replied, booked, opted out, or moved on, then send the
+  // approved emails of editable sequences that are due.
   const cadence = {
-    ...(await enrollFollowUps()),
     ...(await checkFollowUps()),
+    approved: await sendApprovedFollowUps(),
   };
   const repository = repo();
   const work = await listAgentWork(repository, 50);

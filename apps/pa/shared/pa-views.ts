@@ -317,7 +317,13 @@ export interface FollowUpView {
   day: number;
   purpose: string;
   dueAt: string;
-  status: "scheduled" | "drafted" | "needs_edit" | "sent" | "stopped";
+  status:
+    | "scheduled"
+    | "drafted"
+    | "needs_edit"
+    | "approved"
+    | "sent"
+    | "stopped";
   subject: string | null;
   body: string | null;
   problems: Array<{ code: string; message: string }>;
@@ -335,6 +341,9 @@ export interface FollowUpView {
 export interface FollowUpsView {
   engagementId: string;
   route: string;
+  /** The sequence the latest follow-ups came from (D105). */
+  sequenceName: string | null;
+  active: boolean;
   items: FollowUpView[];
   /** The reply that stopped the cadence, and its label (D103). */
   reply: {
@@ -353,6 +362,8 @@ export interface FollowUpsView {
 
 export interface EngagementDetail {
   id: string;
+  /** When the first touch went out (HubSpot or PA); null before. */
+  firstTouchAt: string | null;
   /** Follow-ups after the first touch (D101); null when it has none. */
   followUps: FollowUpsView | null;
   state: string;

@@ -32,7 +32,7 @@ const day = (iso: string) =>
     day: "numeric",
   });
 
-const OPEN = new Set(["scheduled", "drafted", "needs_edit"]);
+const OPEN = new Set(["scheduled", "drafted", "needs_edit", "approved"]);
 
 function StatusLabel({ item }: { item: FollowUpView }) {
   const base =
@@ -55,6 +55,17 @@ function StatusLabel({ item }: { item: FollowUpView }) {
           title={item.stopReason ?? undefined}
         >
           {/^Skipped/.test(item.stopReason ?? "") ? "Skipped" : "Unenrolled"}
+        </span>
+      );
+    case "approved":
+      return (
+        <span
+          className={cn(
+            base,
+            "text-muted-foreground ring-1 ring-inset ring-border",
+          )}
+        >
+          Sends {day(item.dueAt)}
         </span>
       );
     case "drafted":
@@ -181,7 +192,9 @@ export function FollowUpsCard({
               <StatusLabel item={item} />
             </div>
             {item === current &&
-            (item.status === "drafted" || item.status === "needs_edit") ? (
+            (item.status === "drafted" ||
+              item.status === "needs_edit" ||
+              item.status === "approved") ? (
               <FollowUpEditor
                 item={item}
                 followUps={followUps}
@@ -241,7 +254,7 @@ function FollowUpEditor({
     ? followUps.ownerEmail
       ? `Only ${followUps.ownerEmail}, the lead's owner, can send this.`
       : "No owner yet, so no one can send this."
-    : item.status !== "drafted"
+    : item.status !== "drafted" && item.status !== "approved"
       ? "Fix the message rule problems first."
       : null;
   const notYet = new Date(item.dueAt).getTime() > Date.now();

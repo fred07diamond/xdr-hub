@@ -544,6 +544,9 @@ export const paFollowUps = table(
     editedBy: text("edited_by"),
     // v13 (D104): "reply" in the first touch's thread, or "new".
     thread: text("thread"),
+    // v14 (D105): the sequence it came from, and who approved it.
+    sequenceId: text("sequence_id"),
+    approvedBy: text("approved_by"),
     version: integer("version").notNull().default(1),
     ...stamps,
   },
@@ -552,3 +555,18 @@ export const paFollowUps = table(
     index("pa_follow_ups_status_idx").on(t.status),
   ],
 );
+
+// Named sequences (D105), migration v14.
+export const paSequences = table("pa_sequences", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  kind: text("kind").notNull(),
+  description: text("description").notNull().default(""),
+  recommendedFor: json("recommended_for").notNull().default("[]"),
+  steps: json("steps").notNull(),
+  createdBy: text("created_by").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  archived: bool("archived").notNull().default(false),
+  version: integer("version").notNull().default(1),
+  ...stamps,
+});

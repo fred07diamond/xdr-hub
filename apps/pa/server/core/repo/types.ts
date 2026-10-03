@@ -199,6 +199,8 @@ export type FollowUpStatus =
   | "scheduled"
   | "drafted"
   | "needs_edit"
+  /** A template step the rep approved at enrollment; sends on its day (D105). */
+  | "approved"
   | "sent"
   | "stopped";
 
@@ -223,6 +225,34 @@ export interface FollowUpRecord {
   editedBy: string | null;
   /** "reply" in the first touch's thread (default), or "new" (D104). */
   thread?: "reply" | "new" | null;
+  /** The sequence it came from (D105); null for the old route cadences. */
+  sequenceId?: string | null;
+  /** Who approved it at enrollment, and sends it (template steps, D105). */
+  approvedBy?: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A named sequence (D105). */
+export interface SequenceRecord {
+  id: string;
+  name: string;
+  kind: "dynamic" | "template";
+  description: string;
+  recommendedFor: string[];
+  steps: Array<{
+    id: string;
+    day: number;
+    thread: "reply" | "new";
+    cc_ae: boolean;
+    purpose: string;
+    subject: string;
+    body: string;
+  }>;
+  createdBy: string;
+  updatedBy: string;
+  archived: boolean;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -624,6 +654,15 @@ export interface PaRepository extends PlaybookStore {
     patch: Partial<DecisionRecord>,
     expectedVersion: number,
   ): Promise<DecisionRecord>;
+
+  listSequences(): Promise<SequenceRecord[]>;
+  getSequence(id: string): Promise<SequenceRecord | null>;
+  insertSequence(record: SequenceRecord): Promise<void>;
+  updateSequence(
+    id: string,
+    patch: Partial<SequenceRecord>,
+    expectedVersion: number,
+  ): Promise<SequenceRecord>;
 
   /** Adds a lead's cadence; steps it already has are kept. */
   insertFollowUps(records: FollowUpRecord[]): Promise<void>;

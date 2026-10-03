@@ -411,9 +411,12 @@ function ClassRoutesEditor({
 export function CadenceEditor({
   data,
   onChange,
+  settingsOnly = false,
 }: {
   data: Data;
   onChange: (next: Data) => void;
+  /** Only the send window and caps (Sequencing page, D105). */
+  settingsOnly?: boolean;
 }) {
   const cadenceOf = (route: string): RouteCadence =>
     (data[route] as RouteCadence | undefined) ?? { enabled: false, steps: [] };
@@ -499,173 +502,192 @@ export function CadenceEditor({
           </Field>
         </div>
       </section>
-      {CADENCE_ROUTES.map(({ route, label, hint }) => {
-        const cadence = cadenceOf(route);
-        const steps = cadence.steps;
-        const setStep = (index: number, patch: Partial<CadenceStep>) =>
-          set(route, {
-            ...cadence,
-            steps: steps.map((step, i) =>
-              i === index ? { ...step, ...patch } : step,
-            ),
-          });
-        return (
-          <section
-            key={route}
-            className="rounded-md border border-border p-3"
-            aria-label={label}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex flex-1 items-center gap-2 text-[13px] font-medium text-foreground">
-                <input
-                  type="checkbox"
-                  checked={cadence.enabled}
-                  onChange={(event) =>
-                    set(route, { ...cadence, enabled: event.target.checked })
-                  }
-                />
-                {label}
-              </label>
-              {route === "route_to_ae" ? (
-                <label className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={cadence.cc_ae ?? true}
-                    disabled={!cadence.enabled}
-                    onChange={(event) =>
-                      set(route, { ...cadence, cc_ae: event.target.checked })
-                    }
-                  />
-                  Keep the AE on cc
-                </label>
-              ) : null}
-            </div>
-            {hint ? (
-              <p className="mt-1 text-[12px] text-muted-foreground">{hint}</p>
-            ) : null}
-            {cadence.enabled ? (
-              <ol className="mt-3 grid gap-2">
-                {steps.map((step, index) => (
-                  <li
-                    key={index}
-                    className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2"
-                  >
-                    <label className="flex items-center gap-1 text-[12.5px] text-muted-foreground">
-                      Day
+      {settingsOnly
+        ? null
+        : CADENCE_ROUTES.map(({ route, label, hint }) => {
+            const cadence = cadenceOf(route);
+            const steps = cadence.steps;
+            const setStep = (index: number, patch: Partial<CadenceStep>) =>
+              set(route, {
+                ...cadence,
+                steps: steps.map((step, i) =>
+                  i === index ? { ...step, ...patch } : step,
+                ),
+              });
+            return (
+              <section
+                key={route}
+                className="rounded-md border border-border p-3"
+                aria-label={label}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex flex-1 items-center gap-2 text-[13px] font-medium text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={cadence.enabled}
+                      onChange={(event) =>
+                        set(route, {
+                          ...cadence,
+                          enabled: event.target.checked,
+                        })
+                      }
+                    />
+                    {label}
+                  </label>
+                  {route === "route_to_ae" ? (
+                    <label className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
                       <input
-                        type="number"
-                        min={1}
-                        max={60}
-                        aria-label={`Day for follow-up ${index + 1}`}
-                        className={cn(input, "w-16")}
-                        value={step.day}
+                        type="checkbox"
+                        checked={cadence.cc_ae ?? true}
+                        disabled={!cadence.enabled}
                         onChange={(event) =>
-                          setStep(index, {
-                            day: Math.max(1, Number(event.target.value) || 1),
+                          set(route, {
+                            ...cadence,
+                            cc_ae: event.target.checked,
                           })
                         }
                       />
+                      Keep the AE on cc
                     </label>
-                    <div className="grid gap-1.5">
-                      <textarea
-                        aria-label={`What follow-up ${index + 1} is for`}
-                        rows={2}
-                        className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-[13px] leading-snug text-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        placeholder="What this follow-up is for, e.g. share one customer example that matches their need"
-                        value={step.purpose}
-                        onChange={(event) =>
-                          setStep(index, { purpose: event.target.value })
-                        }
-                      />
-                      {/* Per step (D104): thread and cc. */}
-                      <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted-foreground">
-                        <select
-                          aria-label={`How follow-up ${index + 1} is sent`}
-                          className="h-7 rounded-md border border-input bg-background px-1.5 text-[12px] text-foreground"
-                          value={step.thread ?? "reply"}
-                          onChange={(event) =>
-                            setStep(index, {
-                              thread: event.target.value as StepThread,
+                  ) : null}
+                </div>
+                {hint ? (
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    {hint}
+                  </p>
+                ) : null}
+                {cadence.enabled ? (
+                  <ol className="mt-3 grid gap-2">
+                    {steps.map((step, index) => (
+                      <li
+                        key={index}
+                        className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2"
+                      >
+                        <label className="flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                          Day
+                          <input
+                            type="number"
+                            min={1}
+                            max={60}
+                            aria-label={`Day for follow-up ${index + 1}`}
+                            className={cn(input, "w-16")}
+                            value={step.day}
+                            onChange={(event) =>
+                              setStep(index, {
+                                day: Math.max(
+                                  1,
+                                  Number(event.target.value) || 1,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                        <div className="grid gap-1.5">
+                          <textarea
+                            aria-label={`What follow-up ${index + 1} is for`}
+                            rows={2}
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-[13px] leading-snug text-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            placeholder="What this follow-up is for, e.g. share one customer example that matches their need"
+                            value={step.purpose}
+                            onChange={(event) =>
+                              setStep(index, { purpose: event.target.value })
+                            }
+                          />
+                          {/* Per step (D104): thread and cc. */}
+                          <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted-foreground">
+                            <select
+                              aria-label={`How follow-up ${index + 1} is sent`}
+                              className="h-7 rounded-md border border-input bg-background px-1.5 text-[12px] text-foreground"
+                              value={step.thread ?? "reply"}
+                              onChange={(event) =>
+                                setStep(index, {
+                                  thread: event.target.value as StepThread,
+                                })
+                              }
+                            >
+                              <option value="reply">
+                                Reply in the same thread
+                              </option>
+                              <option value="new">
+                                New email, own subject
+                              </option>
+                            </select>
+                            {route === "route_to_ae" ? (
+                              <label className="flex items-center gap-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={step.cc_ae ?? cadence.cc_ae ?? true}
+                                  onChange={(event) =>
+                                    setStep(index, {
+                                      cc_ae: event.target.checked,
+                                    })
+                                  }
+                                />
+                                AE on cc
+                              </label>
+                            ) : null}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label={`Remove follow-up ${index + 1}`}
+                          className="mt-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={() =>
+                            set(route, {
+                              ...cadence,
+                              steps: steps.filter((_, i) => i !== index),
                             })
                           }
                         >
-                          <option value="reply">
-                            Reply in the same thread
-                          </option>
-                          <option value="new">New email, own subject</option>
-                        </select>
-                        {route === "route_to_ae" ? (
-                          <label className="flex items-center gap-1.5">
-                            <input
-                              type="checkbox"
-                              checked={step.cc_ae ?? cadence.cc_ae ?? true}
-                              onChange={(event) =>
-                                setStep(index, { cc_ae: event.target.checked })
-                              }
-                            />
-                            AE on cc
-                          </label>
-                        ) : null}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`Remove follow-up ${index + 1}`}
-                      className="mt-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={() =>
-                        set(route, {
-                          ...cadence,
-                          steps: steps.filter((_, i) => i !== index),
-                        })
-                      }
-                    >
-                      <IconX className="size-4" aria-hidden="true" />
-                    </button>
-                  </li>
-                ))}
-                {steps.length === 0 ? (
-                  <li className="text-[12.5px] text-muted-foreground">
-                    No follow-ups yet.
-                  </li>
-                ) : null}
-                <li>
-                  <button
-                    type="button"
-                    disabled={steps.length >= 10}
-                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12.5px] font-medium text-primary hover:bg-primary-soft disabled:opacity-50"
-                    onClick={() =>
-                      set(route, {
-                        ...cadence,
-                        steps: [
-                          ...steps,
-                          {
-                            day: (steps[steps.length - 1]?.day ?? 0) + 2,
-                            purpose: "",
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    <IconPlus className="size-3.5" aria-hidden="true" />
-                    Add follow-up
-                  </button>
-                </li>
-              </ol>
-            ) : (
-              <p className="mt-2 text-[12.5px] text-muted-foreground">
-                Off: no follow-ups after the first touch.
-              </p>
-            )}
-          </section>
-        );
-      })}
-      <p className="text-[12px] text-muted-foreground">
-        Days count from the first touch. Follow-ups stop when the lead replies,
-        books a meeting, bounces, opts out, or HubSpot moves them on, and when
-        anyone at their company replies or books. An out-of-office pauses them
-        until the lead is back. A change applies to leads whose first touch goes
-        out after it is published.
-      </p>
+                          <IconX className="size-4" aria-hidden="true" />
+                        </button>
+                      </li>
+                    ))}
+                    {steps.length === 0 ? (
+                      <li className="text-[12.5px] text-muted-foreground">
+                        No follow-ups yet.
+                      </li>
+                    ) : null}
+                    <li>
+                      <button
+                        type="button"
+                        disabled={steps.length >= 10}
+                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12.5px] font-medium text-primary hover:bg-primary-soft disabled:opacity-50"
+                        onClick={() =>
+                          set(route, {
+                            ...cadence,
+                            steps: [
+                              ...steps,
+                              {
+                                day: (steps[steps.length - 1]?.day ?? 0) + 2,
+                                purpose: "",
+                              },
+                            ],
+                          })
+                        }
+                      >
+                        <IconPlus className="size-3.5" aria-hidden="true" />
+                        Add follow-up
+                      </button>
+                    </li>
+                  </ol>
+                ) : (
+                  <p className="mt-2 text-[12.5px] text-muted-foreground">
+                    Off: no follow-ups after the first touch.
+                  </p>
+                )}
+              </section>
+            );
+          })}
+      {settingsOnly ? null : (
+        <p className="text-[12px] text-muted-foreground">
+          Days count from the first touch. Follow-ups stop when the lead
+          replies, books a meeting, bounces, opts out, or HubSpot moves them on,
+          and when anyone at their company replies or books. An out-of-office
+          pauses them until the lead is back. A change applies to leads whose
+          first touch goes out after it is published.
+        </p>
+      )}
     </div>
   );
 }
