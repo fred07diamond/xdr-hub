@@ -476,7 +476,7 @@ export function DraftCard({
             </p>
           ) : null}
           {canEdit ? (
-            <div className="flex flex-col px-4 pb-2 pt-2">
+            <div className="flex flex-1 flex-col px-4 pb-2 pt-2">
               <input
                 aria-label="Subject"
                 value={subject}
@@ -488,11 +488,11 @@ export function DraftCard({
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
                 rows={8}
-                className="mt-1 w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 -mx-1.5 text-[14px] min-h-48 leading-[1.6] text-foreground outline-none [field-sizing:content] hover:border-border focus:border-ring"
+                className="mt-1 w-full flex-1 resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 -mx-1.5 text-[14px] min-h-48 leading-[1.6] text-foreground outline-none [field-sizing:content] hover:border-border focus:border-ring"
               />
             </div>
           ) : (
-            <div className="px-4 pb-4 pt-2">
+            <div className="flex-1 px-4 pb-4 pt-2">
               <p className="mb-2 text-[14px] font-semibold text-foreground">
                 {draft.subject}
               </p>
