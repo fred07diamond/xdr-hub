@@ -96,7 +96,7 @@ export async function ensureSequences(repository: PaRepository) {
         cc_ae: true,
         purpose: "One discovery question",
         subject: "",
-        body: "Hi {{first_name}},\n\nOne question that would help me point you to the right setup: who on your team would own this day to day, and what does the current process look like?\n\nA line or two is plenty.\n\n{{owner_first_name}}",
+        body: "Hi {{first_name}},\n\nOne question that would help me point you to the right setup: who on your team would own this day to day, and what does the current process look like?\n\nA line or two is plenty.\n\nBest,\n{{owner_first_name}}",
       },
       {
         id: "s2",
@@ -105,7 +105,7 @@ export async function ensureSequences(repository: PaRepository) {
         cc_ae: true,
         purpose: "Close the loop",
         subject: "",
-        body: "Hi {{first_name}},\n\nI don't want to crowd your inbox. If this is still on the list for {{company}}, I'm happy to walk through it whenever it suits you. If the timing is off, no problem at all.\n\n{{owner_first_name}}",
+        body: "Hi {{first_name}},\n\nI don't want to crowd your inbox. If this is still on the list for {{company}}, I'm happy to walk through it whenever it suits you. If the timing is off, no problem at all.\n\nBest,\n{{owner_first_name}}",
       },
     ],
   });

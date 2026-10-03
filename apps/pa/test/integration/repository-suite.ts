@@ -396,6 +396,78 @@ export function defineRepositorySuite(dialect: "sqlite" | "postgres") {
       expect(await m.repo.listAeAssignments()).toHaveLength(1);
     });
 
+    it("saves sequences and their follow-ups, archive flag included (D105)", async () => {
+      const at = "2026-10-02T12:00:00.000Z";
+      await m.repo.insertSequence({
+        id: "seq-1",
+        name: "Discovery",
+        kind: "template",
+        description: "",
+        recommendedFor: ["qualify_first"],
+        steps: [
+          {
+            id: "s1",
+            day: 3,
+            thread: "reply",
+            cc_ae: true,
+            purpose: "",
+            subject: "",
+            body: "Hi {{first_name}},",
+          },
+        ],
+        createdBy: "pa@example.com",
+        updatedBy: "pa@example.com",
+        archived: false,
+        version: 1,
+        createdAt: at,
+        updatedAt: at,
+      });
+      const saved = await m.repo.getSequence("seq-1");
+      expect(saved?.steps[0]?.body).toBe("Hi {{first_name}},");
+      expect(saved?.archived).toBe(false);
+      const archived = await m.repo.updateSequence(
+        "seq-1",
+        { archived: true },
+        1,
+      );
+      expect(archived.archived).toBe(true);
+      expect(await m.repo.listSequences()).toHaveLength(1);
+      const [engagement] = await m.repo.listEngagements();
+      await m.repo.insertFollowUps([
+        {
+          id: "fu-1",
+          engagementId: engagement.id,
+          route: "qualify_first",
+          stepIndex: 1,
+          day: 3,
+          purpose: "",
+          dueAt: at,
+          status: "approved",
+          subject: "Re: hi",
+          body: "Hi there",
+          lint: { ok: true },
+          cc: null,
+          thread: "new",
+          sequenceId: "seq-1",
+          approvedBy: "pa@example.com",
+          stopReason: null,
+          sentAt: null,
+          gmailId: null,
+          editedBy: null,
+          version: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ]);
+      const [row] = await m.repo.listOpenFollowUps();
+      expect(row).toMatchObject({
+        status: "approved",
+        thread: "new",
+        sequenceId: "seq-1",
+        approvedBy: "pa@example.com",
+      });
+    });
+
     it("fails loudly on a corrupt JSON column instead of passing a string on", async () => {
       const [engagement] = await m.repo.listEngagements();
       await m.exec.execute({

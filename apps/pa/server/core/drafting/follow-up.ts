@@ -125,6 +125,38 @@ export function lintFollowUp(input: {
       code: "placeholder",
       message: "Has a placeholder left in brackets. Write the real words.",
     });
+  // Formatted like a real email (D106): a greeting line, a blank line, the
+  // message, then a sign-off line and the sender's name.
+  const lines = body.split("\n").map((line) => line.trim());
+  const filled = lines.filter(Boolean);
+  if (
+    !/^(hi|hey|hello|dear|good (morning|afternoon))\b[^\n]{0,40},$/i.test(
+      filled[0] ?? "",
+    )
+  )
+    problems.push({
+      code: "greeting",
+      message:
+        'Start with a greeting on its own line, like "Hi Jake,", then a blank line.',
+    });
+  else if (lines[1] !== "")
+    problems.push({
+      code: "greeting",
+      message: "Leave a blank line after the greeting.",
+    });
+  const name = filled[filled.length - 1] ?? "";
+  const signOff = filled[filled.length - 2] ?? "";
+  if (
+    filled.length < 4 ||
+    name.length > 40 ||
+    !/,$/.test(signOff) ||
+    signOff.length > 40
+  )
+    problems.push({
+      code: "signoff",
+      message:
+        'End with a sign-off line and your name on the next line, like "Best," then [owner first name].',
+    });
   if (input.newThread) {
     const subject = (input.subject ?? "").trim();
     if (!subject)

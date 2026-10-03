@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-02 (fixes)
+
+- The Sequences list loads again; the starting sequences failed to save
+  (D106).
+- Follow-ups read like an email: greeting line, paragraphs, sign-off and
+  name, shown with To, Cc, and Subject. "Rewrite" asks the agent for a new
+  version.
+
 ## 2026-10-02 (sequences)
 
 - Sequences are now named, like HubSpot's, and you pick one per lead after

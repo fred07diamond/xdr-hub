@@ -99,7 +99,8 @@ People only, hidden from the agent: `review-playbook-change`,
 `set-lead-route` (the lead's route, D66),
 `send-first-touch`, `send-test-email`, `edit-draft` (a person's edit, D100),
 `edit-follow-up`, `send-follow-up`, `skip-follow-up` (follow-ups, D101),
-`save-sequence`, `archive-sequence`, `preview-enrollment`, `enroll-lead` (sequences, D105), `get-gmail-status`, `disconnect-gmail` (the owner sends
+`save-sequence`, `archive-sequence`, `preview-enrollment`, `enroll-lead` (sequences, D105),
+`rewrite-follow-up` (D106), `get-gmail-status`, `disconnect-gmail` (the owner sends
 from their own Gmail, D96), `decide-lead` (the rep's decision; the agent may
 recommend but never decides).
 

@@ -1149,6 +1149,7 @@ export async function buildEngagementDetail(input: {
             engagementId: engagement.id,
             route: followUpRows[0].route,
             sequenceName: lastSequence?.name ?? null,
+            lead: { name: contact?.name ?? latest?.name ?? null, email },
             active: followUpRows.some((row) =>
               ["scheduled", "drafted", "needs_edit", "approved"].includes(
                 row.status,

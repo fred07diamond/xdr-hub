@@ -11,6 +11,7 @@ import {
   IconCircleDashed,
   IconLoader2,
   IconPlayerSkipForward,
+  IconRefresh,
   IconSend,
   IconX,
 } from "@tabler/icons-react";
@@ -249,6 +250,7 @@ function FollowUpEditor({
   const save = useActionMutation("edit-follow-up");
   const send = useActionMutation("send-follow-up");
   const skip = useActionMutation("skip-follow-up");
+  const rewrite = useActionMutation("rewrite-follow-up");
   const dirty = body !== initial || (newEmail && subject !== initialSubject);
   const locked = !followUps.canSend
     ? followUps.ownerEmail
@@ -268,35 +270,53 @@ function FollowUpEditor({
   };
   return (
     <div className="mx-4 mb-3 ml-12 rounded-md border border-border">
-      {newEmail ? (
-        <div className="flex items-center gap-2 border-b border-border px-3 py-1">
-          <span className="text-[12px] text-muted-foreground">New email</span>
-          <input
-            aria-label={`Subject of follow-up ${item.step}`}
-            value={subject}
-            readOnly={!editable}
-            placeholder="Subject"
-            onChange={(event) => setSubject(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent py-0.5 text-[12.5px] font-medium text-foreground outline-none"
-          />
-          {item.cc ? (
-            <span className="text-[12px] text-muted-foreground">
-              Cc {item.cc}
+      {/* An email's header (D106): who it goes to, cc, and the subject. */}
+      <div className="divide-y divide-border border-b border-border text-[12.5px]">
+        <HeaderRow label="To">
+          {followUps.lead.name ? (
+            <>
+              <span className="text-foreground">{followUps.lead.name}</span>{" "}
+              <span className="font-mono text-[11.5px] text-muted-foreground">
+                {followUps.lead.email}
+              </span>
+            </>
+          ) : (
+            <span className="font-mono text-[11.5px]">
+              {followUps.lead.email}
             </span>
-          ) : null}
-        </div>
-      ) : (
-        <p className="truncate border-b border-border px-3 py-1.5 text-[12px] text-muted-foreground">
-          {item.subject ?? "Reply in the thread"}
-          {item.cc ? `  ·  Cc ${item.cc}` : ""}
-        </p>
-      )}
+          )}
+        </HeaderRow>
+        {item.cc ? (
+          <HeaderRow label="Cc">
+            <span className="font-mono text-[11.5px]">{item.cc}</span>
+          </HeaderRow>
+        ) : null}
+        <HeaderRow label="Subject">
+          {newEmail ? (
+            <input
+              aria-label={`Subject of follow-up ${item.step}`}
+              value={subject}
+              readOnly={!editable}
+              placeholder="Subject"
+              onChange={(event) => setSubject(event.target.value)}
+              className="w-full bg-transparent font-medium text-foreground outline-none"
+            />
+          ) : (
+            <span className="font-medium text-foreground">
+              {item.subject ?? "Re: the first touch"}
+              <span className="ml-2 text-[11px] font-normal uppercase tracking-wide text-muted-foreground">
+                Reply in thread
+              </span>
+            </span>
+          )}
+        </HeaderRow>
+      </div>
       <textarea
         aria-label={`Follow-up ${item.step}`}
         value={body}
         readOnly={!editable}
         onChange={(event) => setBody(event.target.value)}
-        className="block min-h-32 w-full resize-none bg-transparent px-3 py-2 text-[13.5px] leading-[1.6] text-foreground outline-none [field-sizing:content]"
+        className="block min-h-40 w-full resize-none bg-transparent px-4 py-3 font-[inherit] text-[14px] leading-[1.65] text-foreground outline-none [field-sizing:content]"
       />
       {item.problems.length > 0 && !dirty ? (
         <ul className="mx-3 mb-2 list-disc space-y-0.5 rounded-md bg-warning-soft py-2 pl-7 pr-3 text-[12.5px] text-warning-foreground">
@@ -406,6 +426,28 @@ function FollowUpEditor({
               >
                 <IconPlayerSkipForward className="size-4" aria-hidden="true" />
                 Skip
+              </Button>
+            ) : null}
+            {editable && item.status !== "approved" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={rewrite.isPending}
+                onClick={() =>
+                  rewrite.mutate(
+                    { followUpId: item.id },
+                    {
+                      onSuccess: done(
+                        "The agent is rewriting it. It shows here in a minute or two.",
+                      ),
+                      onError: failed,
+                    },
+                  )
+                }
+              >
+                <IconRefresh className="size-4" aria-hidden="true" />
+                Rewrite
               </Button>
             ) : null}
             <span className="ml-auto text-[12px] text-muted-foreground">
@@ -542,6 +584,21 @@ function ReplyLabel({
           {reply.summary ?? reply.preview}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function HeaderRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-4 py-1.5">
+      <span className="w-14 shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
     </div>
   );
 }

@@ -95,7 +95,7 @@ function emptySequence(kind: SequenceKind): Sequence {
         subject: "",
         body:
           kind === "template"
-            ? "Hi {{first_name}},\n\n\n\n{{owner_first_name}}"
+            ? "Hi {{first_name}},\n\n\n\nBest,\n{{owner_first_name}}"
             : "",
       },
     ],
@@ -170,7 +170,7 @@ export default function SequenceBuilderRoute() {
       subject: "",
       body:
         draft.kind === "template"
-          ? "Hi {{first_name}},\n\n\n\n{{owner_first_name}}"
+          ? "Hi {{first_name}},\n\n\n\nBest,\n{{owner_first_name}}"
           : "",
     };
     set({ steps: [...draft.steps, step] });

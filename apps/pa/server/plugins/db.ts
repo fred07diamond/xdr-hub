@@ -533,6 +533,12 @@ ALTER TABLE pa_follow_ups ADD COLUMN sequence_id TEXT;
 ALTER TABLE pa_follow_ups ADD COLUMN approved_by TEXT
 `;
 
+// v14 made pa_sequences.archived an INTEGER; Postgres will not take a
+// boolean there, so the flag moves to a BOOLEAN column (D105).
+export const sequenceArchivedFlag = `
+ALTER TABLE pa_sequences ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT false
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -554,6 +560,7 @@ export const PA_MIGRATIONS = [
   { version: 12, name: "pa-follow-ups", sql: followUps },
   { version: 13, name: "pa-follow-up-thread", sql: followUpThread },
   { version: 14, name: "pa-sequences", sql: sequences },
+  { version: 15, name: "pa-sequence-archived-flag", sql: sequenceArchivedFlag },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {

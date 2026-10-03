@@ -1996,3 +1996,22 @@ bottom. Revisit one only when its "revisit when" condition happens.
   between steps, the email with field chips and See more, and sent,
   replies, and meetings per step (no opens or clicks). The lead page has a
   Sequence card: Enroll in a sequence, or Change sequence.
+
+## D106. Fixes: sequences failed to save on Postgres; follow-ups read like email (2026-10-02)
+
+- **Sequences page error:** v14 created `pa_sequences.archived` as INTEGER
+  while every other PA flag is BOOLEAN; Postgres refused the boolean, so
+  the starting sequences never saved and "Couldn't load the sequences"
+  showed. v15 adds `is_archived BOOLEAN` and the schema uses it (the v14
+  column stays, unused; additive only). The repository suite now saves and
+  reads a sequence and its follow-ups on SQLite and Postgres (PGlite), which
+  would have caught it.
+- **Email format:** a follow-up came out as one run-on paragraph with the
+  greeting inside the first sentence and no sign-off. Follow-ups now must
+  read like an email: a greeting line ("Hi Jake,"), a blank line, short
+  paragraphs, then a sign-off line ("Best,") and the name. The checks
+  enforce it (`greeting`, `signoff`), the agent's instructions show the
+  layout, and the starting editable templates carry a sign-off. The lead
+  page shows each follow-up as an email: To, Cc, and Subject rows above the
+  body. "Rewrite" (`rewrite-follow-up`) sends an agent-written follow-up
+  back to the agent under the current rules.

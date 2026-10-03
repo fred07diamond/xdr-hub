@@ -59,7 +59,7 @@ export default defineAction({
         })),
       meetingLink: await routeLinkOf(repository, row.engagementId),
       rules:
-        "A short reply in the same thread: 15 to 75 words. Open with their first name, then do the step's purpose with something new; no acknowledgment line, no recap of the first touch, no 'just checking in', no em or en dashes. Never repeat an earlier email. Use [meeting link] only when the purpose offers the meeting and a link is on file. Sign with [owner first name]. When thread is new, it is a fresh email, not a reply: pass a short subject (under 80 characters, no Re:) to save-follow-up and open with a line that stands on its own.",
+        "Format it like an email: a greeting line (Hi {first name},), a blank line, one or two short paragraphs, a blank line, a sign-off line (Best,), then [owner first name] on the last line. A short reply in the same thread: 15 to 75 words. Then do the step's purpose with something new; no acknowledgment line, no recap of the first touch, no 'just checking in', no em or en dashes. Never repeat an earlier email. Use [meeting link] only when the purpose offers the meeting and a link is on file. When thread is new, it is a fresh email, not a reply: pass a short subject (under 80 characters, no Re:) to save-follow-up and open with a line that stands on its own.",
       earlierCount: (await earlierEmails(repository, row)).length,
     };
   },

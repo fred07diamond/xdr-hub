@@ -68,7 +68,7 @@ describe("the follow-up checks", () => {
 
   it("passes a short, new reply", () => {
     const result = lint(
-      "Hi Lead,\n\nOne example: a retail team rebuilt their partner portal on Builder and shipped the first version in three weeks. Would a similar timeline work for you?\n\n[owner first name]",
+      "Hi Lead,\n\nOne example: a retail team rebuilt their partner portal on Builder and shipped the first version in three weeks. Would a similar timeline work for you?\n\nBest,\n[owner first name]",
     );
     expect(result.problems).toEqual([]);
     expect(result.ok).toBe(true);
@@ -204,7 +204,7 @@ async function seeded() {
     dueAt: AT,
     status,
     subject: "Re: Your portal question",
-    body: "Hi Lead,\n\nA retail team shipped their partner portal in three weeks. Want to see how? Grab a time here: [meeting link]\n\n[owner first name]",
+    body: "Hi Lead,\n\nA retail team shipped their partner portal in three weeks. Want to see how? Grab a time here: [meeting link]\n\nBest,\n[owner first name]",
     lint: null,
     cc: "ae@example.com",
     stopReason: null,
@@ -402,7 +402,7 @@ describe("per-step settings (D104)", () => {
 
   it("checks a new email's subject", () => {
     const body =
-      "Hi Lead,\n\nOne example: a retail team rebuilt their partner portal on Builder and shipped the first version in three weeks. Would a similar timeline work for you?\n\n[owner first name]";
+      "Hi Lead,\n\nOne example: a retail team rebuilt their partner portal on Builder and shipped the first version in three weeks. Would a similar timeline work for you?\n\nBest,\n[owner first name]";
     const codes = (subject: string | null) =>
       lintFollowUp({
         body,
@@ -415,5 +415,33 @@ describe("per-step settings (D104)", () => {
     expect(codes(null)).toContain("subject");
     expect(codes("Re: your portal")).toContain("subject");
     expect(codes("A portal example for your team")).toEqual([]);
+  });
+});
+
+describe("follow-ups read like an email (D106)", () => {
+  it("needs a greeting line, a blank line, and a sign-off with the name", () => {
+    const codes = (body: string) =>
+      lintFollowUp({
+        body,
+        release: seedRelease,
+        earlier: [FIRST],
+        link: null,
+      }).problems.map((item) => item.code);
+    // The draft Fred saw: no greeting line, no sign-off.
+    expect(
+      codes(
+        "Jake, since privacy mode is the only blocker you named, we can switch it on for your account ahead of time so your team tests directly against your repo from day one. Worth 15 minutes with Dakota to confirm the setup?\n\nJavier",
+      ),
+    ).toEqual(expect.arrayContaining(["greeting", "signoff"]));
+    expect(
+      codes(
+        "Hi Jake,\nSince privacy mode is the only blocker you named, we can switch it on for your account ahead of time. Worth 15 minutes with Dakota to confirm the setup?\n\nBest,\n[owner first name]",
+      ),
+    ).toContain("greeting");
+    expect(
+      codes(
+        "Hi Jake,\n\nSince privacy mode is the only blocker you named, we can switch it on for your account ahead of time. Worth 15 minutes with Dakota to confirm the setup?\n\nBest,\n[owner first name]",
+      ),
+    ).toEqual([]);
   });
 });

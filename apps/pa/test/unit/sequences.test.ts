@@ -82,7 +82,7 @@ async function seeded(firstTouch: string | null = AT) {
 
 function sequence(
   kind: "dynamic" | "template",
-  body = "Hi {{first_name}},\n\nOne question that would help me point you to the right setup: who on your team owns this day to day, and what does the process look like now?\n\n{{owner_first_name}}",
+  body = "Hi {{first_name}},\n\nOne question that would help me point you to the right setup: who on your team owns this day to day, and what does the process look like now?\n\nBest,\n{{owner_first_name}}",
 ): SequenceRecord {
   return {
     id: `seq-${kind}`,
@@ -233,7 +233,7 @@ describe("sequences (D105)", () => {
     await blank.insertSequence(
       sequence(
         "template",
-        "Hi {{first_name}},\n\nSaw that {{company}} is looking at this; one question about your setup would help me a lot here.\n\n{{owner_first_name}}",
+        "Hi {{first_name}},\n\nSaw that {{company}} is looking at this; one question about your setup would help me a lot here.\n\nBest,\n{{owner_first_name}}",
       ),
     );
     expect(

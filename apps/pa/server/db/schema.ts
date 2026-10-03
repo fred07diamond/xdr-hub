@@ -566,7 +566,8 @@ export const paSequences = table("pa_sequences", {
   steps: json("steps").notNull(),
   createdBy: text("created_by").notNull(),
   updatedBy: text("updated_by").notNull(),
-  archived: bool("archived").notNull().default(false),
+  // v15: the INTEGER "archived" column from v14 is left unused.
+  archived: bool("is_archived").notNull().default(false),
   version: integer("version").notNull().default(1),
   ...stamps,
 });

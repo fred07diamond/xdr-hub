@@ -343,6 +343,8 @@ export interface FollowUpsView {
   route: string;
   /** The sequence the latest follow-ups came from (D105). */
   sequenceName: string | null;
+  /** Who the follow-ups go to, for the email header (D106). */
+  lead: { name: string | null; email: string };
   active: boolean;
   items: FollowUpView[];
   /** The reply that stopped the cadence, and its label (D103). */
