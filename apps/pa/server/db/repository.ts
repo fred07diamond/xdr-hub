@@ -22,6 +22,7 @@ import {
   type RouteOverrideRecord,
   type AeAssignmentRecord,
   type OutboxRecord,
+  type FollowUpRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type SubmissionRecord,
@@ -64,6 +65,7 @@ const {
   paRouteOverrides,
   paAeAssignments,
   paOutbox,
+  paFollowUps,
   paHandbookDocs,
   paHandbookRevisions,
   paSubmissions,
@@ -677,6 +679,70 @@ export class DrizzleRepository implements PaRepository {
         `Decision ${id} changed underneath this update`,
       );
     return decodeJson("decisions", row) as unknown as DecisionRecord;
+  }
+
+  async insertFollowUps(records: FollowUpRecord[]) {
+    if (records.length === 0) return;
+    await this.db
+      .insert(paFollowUps)
+      .values(records.map((record) => encodeJson<any>("followUps", record)))
+      .onConflictDoNothing({
+        target: [paFollowUps.engagementId, paFollowUps.stepIndex],
+      });
+  }
+  async listFollowUps(engagementId: string) {
+    const rows = await this.db
+      .select()
+      .from(paFollowUps)
+      .where(eq(paFollowUps.engagementId, engagementId))
+      .orderBy(asc(paFollowUps.stepIndex));
+    return rows.map(
+      (row) => decodeJson("followUps", row) as unknown as FollowUpRecord,
+    );
+  }
+  async listOpenFollowUps() {
+    const rows = await this.db
+      .select()
+      .from(paFollowUps)
+      .where(
+        inArray(paFollowUps.status, ["scheduled", "drafted", "needs_edit"]),
+      )
+      .orderBy(asc(paFollowUps.dueAt));
+    return rows.map(
+      (row) => decodeJson("followUps", row) as unknown as FollowUpRecord,
+    );
+  }
+  async getFollowUp(id: string) {
+    const [row] = await this.db
+      .select()
+      .from(paFollowUps)
+      .where(eq(paFollowUps.id, id))
+      .limit(1);
+    return row
+      ? (decodeJson("followUps", row) as unknown as FollowUpRecord)
+      : null;
+  }
+  async updateFollowUp(
+    id: string,
+    patch: Partial<FollowUpRecord>,
+    expectedVersion: number,
+  ) {
+    const { id: _id, version: _version, ...rest } = patch;
+    const [row] = await this.db
+      .update(paFollowUps)
+      .set({
+        ...encodeJson<any>("followUps", rest),
+        version: expectedVersion + 1,
+      })
+      .where(
+        and(eq(paFollowUps.id, id), eq(paFollowUps.version, expectedVersion)),
+      )
+      .returning();
+    if (!row)
+      throw new VersionConflictError(
+        `Follow-up ${id} changed underneath this update`,
+      );
+    return decodeJson("followUps", row) as unknown as FollowUpRecord;
   }
 
   async insertOutboxIfAbsent(record: OutboxRecord) {

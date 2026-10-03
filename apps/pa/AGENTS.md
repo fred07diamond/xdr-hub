@@ -72,6 +72,8 @@ not import its instructions, verdicts, or thresholds into PA.
 | `get-intake-status`                      | When HubSpot was last pulled, the agent queue, whether the agent is on         |
 | `run-decision-loop`                      | Give older leads PA's recommendation and a 24 hour decision window (D59)       |
 | `get-messaging-guide`                    | The playbook's Messaging section for a class: how every draft is written (D65) |
+| `get-follow-up`                          | One follow-up: its purpose, the first touch, earlier follow-ups (D101)         |
+| `save-follow-up`                         | Save the follow-up you wrote; checked, never sent (D101)                       |
 | `list-people`                            | People leads are routed to: role, meeting link, pod AE (D66)                   |
 | `resolve-playbook`, `get-playbook-entry` | Read entries from the pinned release                                           |
 | `get-pa-status`                          | Mode and current playbook release                                              |
@@ -91,7 +93,8 @@ People only, hidden from the agent: `review-playbook-change`,
 `enable-inbound-agent`, `refresh-lead`, `refresh-all-leads`, `save-person`,
 `set-meeting-link`, `rewrite-reply`,
 `set-lead-route` (the lead's route, D66),
-`send-first-touch`, `send-test-email`, `edit-draft` (a person's edit, D100), `get-gmail-status`, `disconnect-gmail` (the owner sends
+`send-first-touch`, `send-test-email`, `edit-draft` (a person's edit, D100),
+`edit-follow-up`, `send-follow-up`, `skip-follow-up` (follow-ups, D101), `get-gmail-status`, `disconnect-gmail` (the owner sends
 from their own Gmail, D96), `decide-lead` (the rep's decision; the agent may
 recommend but never decides).
 
@@ -104,6 +107,8 @@ Planned, not built yet (do not call): `approve-draft`,
 - `inbound-message-assessment`: read a form message and save a structured
   assessment.
 - `first-touch-drafting`: draft a first touch that follows the message rules. How to write lives in the playbook's Messaging section (`get-messaging-guide`), not in the skill.
+- `follow-up-drafting`: write one follow-up of a lead's cadence from its
+  purpose, as a reply in the thread, never repeating an earlier email (D101).
 - `playbook-steward`: draft playbook changes and suggestions; what the agent
   may and may not do with the playbook.
 - `pa-build-context` (dev only): build context and guardrails for coding

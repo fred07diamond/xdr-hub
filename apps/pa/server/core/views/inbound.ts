@@ -607,18 +607,29 @@ async function buildRow(
   });
   const shownTriage = stepBack ? stepBack.triage : triage;
   const sent = sentSummary(events, engagement);
-  const bucket: BoardRow["bucket"] = movedOn
-    ? "moved_on"
-    : shownTriage.kind === "closed" || shownTriage.kind === "elsewhere"
-      ? "not_for_pa"
-      : engagement.firstTouchAt || sent
-        ? "contacted"
-        : "todo";
+  // A follow-up that is due puts a contacted lead back in To do (D101).
+  const dueFollowUp = movedOn
+    ? null
+    : (await repo.listFollowUps(engagement.id)).find(
+        (item) =>
+          ["scheduled", "drafted", "needs_edit"].includes(item.status) &&
+          item.dueAt <= now.toISOString(),
+      );
+  const bucket: BoardRow["bucket"] = dueFollowUp
+    ? "todo"
+    : movedOn
+      ? "moved_on"
+      : shownTriage.kind === "closed" || shownTriage.kind === "elsewhere"
+        ? "not_for_pa"
+        : engagement.firstTouchAt || sent
+          ? "contacted"
+          : "todo";
   return {
     id: engagement.id,
     bucket,
-    bucketReason:
-      bucket === "moved_on"
+    bucketReason: dueFollowUp
+      ? `Follow-up ${dueFollowUp.stepIndex} due`
+      : bucket === "moved_on"
         ? (movedOn?.reason ?? null)
         : bucket === "not_for_pa"
           ? shownTriage.label
@@ -1078,8 +1089,41 @@ export async function buildEngagementDetail(input: {
     delivery: deliveryOf(await repo.listOutbox(engagement.id)),
   };
 
+  const followUpRows = await repo.listFollowUps(engagement.id);
   return {
     id: engagement.id,
+    followUps:
+      followUpRows.length === 0
+        ? null
+        : {
+            route: followUpRows[0].route,
+            ownerEmail: sendOwner,
+            canSend: send.canSend,
+            items: followUpRows.map((row) => {
+              const lint = (row.lint ?? {}) as {
+                problems?: Array<{ code: string; message: string }>;
+                wordCount?: number;
+                reasoning?: string | null;
+              };
+              return {
+                id: row.id,
+                step: row.stepIndex,
+                day: row.day,
+                purpose: row.purpose,
+                dueAt: row.dueAt,
+                status: row.status,
+                subject: row.subject,
+                body: row.body,
+                problems: lint.problems ?? [],
+                wordCount: lint.wordCount ?? null,
+                reasoning: lint.reasoning ?? null,
+                cc: row.cc,
+                stopReason: row.stopReason,
+                sentAt: row.sentAt,
+                edited: Boolean(row.editedBy),
+              };
+            }),
+          },
     triage,
     leadRoute: movedOn ? null : leadRoute,
     draft: stepBack

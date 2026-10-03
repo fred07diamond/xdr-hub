@@ -1,5 +1,6 @@
 // One pass of the minute poll (D58): intake, agent wake-up, decision deadlines.
 import { checkDecisionDeadlines } from "./decisions.js";
+import { checkFollowUps, enrollFollowUps } from "./follow-ups.js";
 import {
   detectFirstTouches,
   processRefreshQueue,
@@ -41,6 +42,12 @@ export async function runInboundSweep(owner: {
   const assigned = await assignEnterpriseAes();
   // First touches sent from HubSpot (D64), so PA stops drafting for them.
   const history = await detectFirstTouches();
+  // Follow-up cadences (D101): enroll fresh first touches, then stop the
+  // ones whose lead replied, booked, opted out, or moved on.
+  const cadence = {
+    ...(await enrollFollowUps()),
+    ...(await checkFollowUps()),
+  };
   const repository = repo();
   const work = await listAgentWork(repository, 50);
   // Checked every minute, so a change to the agent's instructions or model
@@ -85,6 +92,7 @@ export async function runInboundSweep(owner: {
     agentWork: work.length,
     refresh,
     history,
+    cadence,
     assigned,
     lifecycle,
     agentSetup,

@@ -155,7 +155,16 @@ export interface OutgoingEmail {
   cc: string | null;
   subject: string;
   body: string;
+  /** Our own Message-ID, so a later follow-up can reply to it (D101). */
+  messageId?: string | null;
+  /** The email this one replies to: its Message-ID. */
+  inReplyTo?: string | null;
+  /** The sender's Gmail thread, so the reply stays in it. */
+  threadId?: string | null;
 }
+
+/** A Message-ID PA sets on the emails it sends. */
+export const newMessageId = (id: string) => `<pa-${id}@xdr-hub.netlify.app>`;
 
 /** Header values never carry line breaks, so nothing can add a header. */
 const headerSafe = (value: string) => value.replace(/[\r\n]+/g, " ").trim();
@@ -177,6 +186,13 @@ export function buildRawEmail(email: OutgoingEmail): string {
     `To: ${headerSafe(email.to)}`,
     ...(email.cc ? [`Cc: ${headerSafe(email.cc)}`] : []),
     `Subject: ${encodeHeader(email.subject)}`,
+    ...(email.messageId ? [`Message-ID: ${headerSafe(email.messageId)}`] : []),
+    ...(email.inReplyTo
+      ? [
+          `In-Reply-To: ${headerSafe(email.inReplyTo)}`,
+          `References: ${headerSafe(email.inReplyTo)}`,
+        ]
+      : []),
     "MIME-Version: 1.0",
     'Content-Type: text/plain; charset="UTF-8"',
     "Content-Transfer-Encoding: base64",
@@ -214,7 +230,10 @@ async function gmailPost(token: string, path: string, payload: unknown) {
 export interface GmailClient {
   /** The connected person's first name from Google, saved when they connected. */
   firstName(owner: string): Promise<string | null>;
-  send(owner: string, email: OutgoingEmail): Promise<{ id: string }>;
+  send(
+    owner: string,
+    email: OutgoingEmail,
+  ): Promise<{ id: string; threadId?: string | null }>;
   saveDraft(owner: string, email: OutgoingEmail): Promise<{ id: string }>;
 }
 
@@ -228,8 +247,12 @@ export const gmailClient: GmailClient = {
     const token = await gmailAccessToken(owner);
     const data = await gmailPost(token, "/messages/send", {
       raw: buildRawEmail(email),
+      ...(email.threadId ? { threadId: email.threadId } : {}),
     });
-    return { id: String(data.id ?? "") };
+    return {
+      id: String(data.id ?? ""),
+      threadId: typeof data.threadId === "string" ? data.threadId : null,
+    };
   },
   async saveDraft(owner, email) {
     const token = await gmailAccessToken(owner);

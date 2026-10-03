@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-02 (follow-ups)
+
+- Follow-up cadences: after the first touch, each route gets its own
+  follow-ups (for example day 1, 3, and 6 for exceptional leads). Edit the
+  days and what each email is for in the playbook's new Follow-ups section
+  (D101).
+- The agent writes each follow-up the day before it is due. It shows on the
+  lead page under Follow-ups, and the lead goes back to To do. Edit it,
+  then Approve and send: it goes from your Gmail as a reply in the same
+  thread. Skip one, or stop them all.
+- Follow-ups stop on their own when the lead replies, books a meeting,
+  opts out, or HubSpot moves them on.
+
 ## 2026-10-02 (send from Gmail)
 
 - The lead's owner can now send the drafted reply from their own Gmail:

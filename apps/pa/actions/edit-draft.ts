@@ -1,12 +1,9 @@
 import { defineAction, fail } from "@agent-native/core/action";
 import { z } from "zod";
 
-import type {
-  DraftInput,
-  LintResult,
-} from "../server/core/drafting/index.js";
-import { sendKey } from "../server/lib/first-touch-send.js";
+import type { DraftInput, LintResult } from "../server/core/drafting/index.js";
 import { lintForEngagement } from "../server/lib/draft-lint.js";
+import { sendKey } from "../server/lib/first-touch-send.js";
 import { canEditHandbook } from "../server/lib/handbook-service.js";
 import { newId, now, repo } from "../server/lib/pa-context.js";
 

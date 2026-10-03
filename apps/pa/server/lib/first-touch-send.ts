@@ -12,7 +12,12 @@ import { movedOnOfEngagement } from "../core/crm/lifecycle.js";
 import type { LintResult } from "../core/drafting/index.js";
 import { leadOwnerEmail } from "../core/outreach/delivery.js";
 import type { OutboxRecord, PaRepository } from "../core/repo/types.js";
-import { GmailError, type GmailClient, type OutgoingEmail } from "./gmail.js";
+import {
+  GmailError,
+  newMessageId,
+  type GmailClient,
+  type OutgoingEmail,
+} from "./gmail.js";
 import { recordFirstTouch } from "./live-pipeline.js";
 
 export type SendMode = "send" | "gmail_draft";
@@ -259,12 +264,21 @@ export async function approveFirstTouch(
     updatedAt: at,
   });
   let providerId: string;
+  let threadId: string | null = null;
+  // Our own Message-ID, so follow-ups reply in this thread (D101).
+  const messageId = newMessageId(row.id);
   try {
-    providerId = (
-      input.mode === "send"
-        ? await deps.gmail.send(prepared.owner, email)
-        : await deps.gmail.saveDraft(prepared.owner, email)
-    ).id;
+    if (input.mode === "send") {
+      const sent = await deps.gmail.send(prepared.owner, {
+        ...email,
+        messageId,
+      });
+      providerId = sent.id;
+      threadId = sent.threadId ?? null;
+    } else
+      providerId = (
+        await deps.gmail.saveDraft(prepared.owner, { ...email, messageId })
+      ).id;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Gmail did not answer";
@@ -329,6 +343,8 @@ export async function approveFirstTouch(
       payload: {
         email_id: `gmail:${providerId}`,
         kind: "sent_from_pa",
+        message_id: messageId,
+        thread_id: threadId,
         sent_at: done,
         subject: email.subject,
         from: email.from,

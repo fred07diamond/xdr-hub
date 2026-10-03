@@ -5,6 +5,7 @@
 import { z } from "zod";
 
 import { PRECHECK_OUTCOMES } from "../server/core/objects/index.js";
+import { cadenceParamsSchema } from "./cadence.js";
 
 export const SECTIONS = [
   {
@@ -37,6 +38,11 @@ export const SECTIONS = [
     id: "messaging",
     label: "Messaging",
     hint: "How first touches are written",
+  },
+  {
+    id: "follow_ups",
+    label: "Follow-ups",
+    hint: "The follow-ups the agent writes after the first touch, per route",
   },
   { id: "knowledge", label: "Knowledge", hint: "Facts a draft may cite" },
   { id: "crm", label: "CRM", hint: "Which CRM, and how its fields map to PA" },
@@ -262,6 +268,22 @@ export const BLOCK_TYPES: readonly BlockType[] = [
     singleton: true,
   },
   {
+    type: "cadence",
+    label: "Follow-up cadence",
+    icon: "IconTimelineEvent",
+    description:
+      "For each route, the follow-ups after the first touch: on which day, and what each one is for. The agent writes every email.",
+    sections: ["follow_ups"],
+    defaultOwnerTeam: "pa_team",
+    storage: { kind: "entry", entryType: "rule", idPrefix: "rule" },
+    schema: cadenceParamsSchema,
+    body: "optional",
+    empty: () => ({}),
+    brief:
+      "Read by server/lib/follow-ups.ts: enrollment after the first touch, the agent's follow-up drafts, and the stop rules (D101).",
+    singleton: true,
+  },
+  {
     type: "person_pool",
     label: "Round-robin pool",
     icon: "IconUsers",
@@ -394,6 +416,7 @@ const ENTRY_TITLES: Record<string, string> = {
   "rule.routing.order": "Ownership order",
   "rule.routing.by_class": "Routing by class",
   "rule.routing.commercial": "Commercial accounts",
+  "rule.follow_ups.cadence": "Follow-up cadence",
   "def.partnership_ask": "Partnership ask",
   "def.first_touch": "First touch",
   "def.ae_owned_account": "AE-owned account",

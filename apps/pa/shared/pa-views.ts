@@ -310,8 +310,37 @@ export interface ReceiptSummary {
   summary: string;
 }
 
+/** One follow-up of the lead's cadence (D101). */
+export interface FollowUpView {
+  id: string;
+  step: number;
+  day: number;
+  purpose: string;
+  dueAt: string;
+  status: "scheduled" | "drafted" | "needs_edit" | "sent" | "stopped";
+  subject: string | null;
+  body: string | null;
+  problems: Array<{ code: string; message: string }>;
+  wordCount: number | null;
+  reasoning: string | null;
+  cc: string | null;
+  stopReason: string | null;
+  sentAt: string | null;
+  edited: boolean;
+}
+
+/** The lead's follow-ups, and whether the viewer can send them. */
+export interface FollowUpsView {
+  route: string;
+  items: FollowUpView[];
+  ownerEmail: string | null;
+  canSend: boolean;
+}
+
 export interface EngagementDetail {
   id: string;
+  /** Follow-ups after the first touch (D101); null when it has none. */
+  followUps: FollowUpsView | null;
   state: string;
   stateLabel: string;
   mode: string;

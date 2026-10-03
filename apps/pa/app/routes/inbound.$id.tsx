@@ -38,6 +38,7 @@ import {
 } from "@/components/pa/contact-history";
 import { DemoNotice } from "@/components/pa/demo";
 import { EvaluationList, OpenItems } from "@/components/pa/evaluations";
+import { FollowUpsCard } from "@/components/pa/follow-ups";
 import { BOARD_TABS } from "@/components/pa/inbound-board";
 import { ReceiptsDrawer } from "@/components/pa/receipts-drawer";
 import { ScorecardTable } from "@/components/pa/scorecard-table";
@@ -849,6 +850,15 @@ export default function EngagementRoute() {
             )}
           </div>
 
+          {detail.followUps ? (
+            <div className="mt-4">
+              <FollowUpsCard
+                followUps={detail.followUps}
+                editable={canDecide}
+                onChanged={() => void engagement.refetch()}
+              />
+            </div>
+          ) : null}
           {detail.lead.crmUrl ? (
             <div className="mt-4">
               <ContactHistoryCard query={history} />

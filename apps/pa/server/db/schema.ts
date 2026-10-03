@@ -520,3 +520,33 @@ export const paAeAssignments = table("pa_ae_assignments", {
   method: text("method").notNull(),
   assignedAt: text("assigned_at").notNull(),
 });
+
+// Follow-up cadences (D101), migration v12: each lead's scheduled follow-ups,
+// written by the agent and sent by the owner.
+export const paFollowUps = table(
+  "pa_follow_ups",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id").notNull(),
+    route: text("route").notNull(),
+    stepIndex: integer("step_index").notNull(),
+    day: integer("day").notNull(),
+    purpose: text("purpose").notNull(),
+    dueAt: text("due_at").notNull(),
+    status: text("status").notNull(),
+    subject: text("subject"),
+    body: text("body"),
+    lint: json("lint"),
+    cc: text("cc"),
+    stopReason: text("stop_reason"),
+    sentAt: text("sent_at"),
+    gmailId: text("gmail_id"),
+    editedBy: text("edited_by"),
+    version: integer("version").notNull().default(1),
+    ...stamps,
+  },
+  (t) => [
+    uniqueIndex("pa_follow_ups_step_idx").on(t.engagementId, t.stepIndex),
+    index("pa_follow_ups_status_idx").on(t.status),
+  ],
+);

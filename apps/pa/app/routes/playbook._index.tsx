@@ -29,6 +29,7 @@ import { TEAM_LABELS, type PlaybookRole } from "@shared/playbook-roles";
 import {
   IconAlertTriangle,
   IconArrowsExchange,
+  IconTimelineEvent,
   IconArrowsSort,
   IconBook,
   IconBulb,
@@ -158,6 +159,7 @@ const ICONS: Record<string, Icon> = {
   IconLayoutBoard,
   IconMail,
   IconPuzzle,
+  IconTimelineEvent,
   IconUsers,
   IconWorld,
 };

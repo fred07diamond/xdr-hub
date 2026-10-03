@@ -1853,3 +1853,45 @@ bottom. Revisit one only when its "revisit when" condition happens.
   are gone; the chips and notes moved into "Why it reads this way".
 - The agent redrafts over an edit only when the lead's route or meeting
   link changes, since the email must change then.
+
+## D101. Follow-up cadences per route, written by the agent (2026-10-02)
+
+- Fred wants a sequencer: the agent writes personalized follow-ups, the
+  steps are set per class, and he edits the cadences and their parameters.
+- **The cadence is a playbook block** (`rule.follow_ups.cadence`, block
+  type `cadence`, new Follow-ups section). It is keyed by the lead's
+  **route**, not the raw class, because the route is what actually happens
+  (overrides, the enterprise rotation, recycle to one clarification email):
+  route to the AE (exceptional), the PA takes the call, qualify first, and
+  one clarification email (off by default). Each route has on or off, keep
+  the AE on cc (route to the AE), and up to 10 steps, each a day after the
+  first touch and a purpose the agent writes from. Edited and approved like
+  any playbook block; code updates reach a published playbook through the
+  seed upgrade (D87).
+- **Enrollment:** within 48 hours of a first touch (sent from PA or found in
+  HubSpot), the sweep gives the lead its route's cadence as rows in
+  `pa_follow_ups` (migration v12), due on each day, moved off weekends. Old
+  leads are never enrolled. A cadence edit applies to leads enrolled after it.
+- **Writing:** a step due within 18 hours becomes a `follow_up` item in
+  `list-agent-work`; the agent follows the `follow-up-drafting` skill
+  (`get-follow-up`, then `save-follow-up`). Follow-up checks
+  (`server/core/drafting/follow-up.ts`): 15 to 75 words, no dashes, banned
+  terms and phrases, no "just checking in", no `[meeting link]` without a
+  link on file, no stray placeholders, and no repeating an earlier email
+  (over 35% of its three-word runs). A person's edit (`edit-follow-up`) is
+  kept; the agent does not rewrite it.
+- **Sending (Review mode):** the owner sends each follow-up from the lead
+  page (`send-follow-up`, people only): owner only, steps in order, passes
+  the checks, one send per follow-up through the outbox key
+  `follow_up:<id>`, and HubSpot is read right before it goes out. It is a
+  reply in the first touch's thread: "Re:" subject, In-Reply-To the first
+  touch's Message-ID (PA now sets one on every first touch), and the same
+  Gmail thread. `[meeting link]` and `[owner first name]` are filled at
+  send time. Skip one, or Stop follow-ups (`skip-follow-up`).
+- **Stopping:** every minute the sweep checks leads with open follow-ups
+  (HubSpot at most every 30 minutes each): a reply or a meeting after the
+  first touch, an opt-out, or HubSpot moving the lead on stops them all.
+- **Board:** a due follow-up puts the lead back in To do ("Follow-up 2
+  due").
+- **Autopilot** (sending on schedule without a click) is not built: it comes
+  after Review mode has run on real leads, per person, with a team switch.

@@ -19,6 +19,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import {
+  CADENCE_ROUTES,
+  type CadenceStep,
+  type RouteCadence,
+} from "@shared/cadence";
 import { blockType } from "@shared/playbook-blocks";
 import { IconGripVertical, IconPlus, IconX } from "@tabler/icons-react";
 import { useMemo, useState, type ReactNode } from "react";
@@ -396,6 +401,161 @@ function ClassRoutesEditor({
   );
 }
 
+/**
+ * Follow-up cadence (D101): for each route, on or off, whether the AE stays
+ * on cc, and the steps: a day after the first touch and what the email is
+ * for. The agent writes each email from its purpose.
+ */
+function CadenceEditor({
+  data,
+  onChange,
+}: {
+  data: Data;
+  onChange: (next: Data) => void;
+}) {
+  const cadenceOf = (route: string): RouteCadence =>
+    (data[route] as RouteCadence | undefined) ?? { enabled: false, steps: [] };
+  const set = (route: string, next: RouteCadence) =>
+    onChange({ ...data, [route]: next });
+  return (
+    <div className="grid gap-4">
+      {CADENCE_ROUTES.map(({ route, label, hint }) => {
+        const cadence = cadenceOf(route);
+        const steps = cadence.steps;
+        const setStep = (index: number, patch: Partial<CadenceStep>) =>
+          set(route, {
+            ...cadence,
+            steps: steps.map((step, i) =>
+              i === index ? { ...step, ...patch } : step,
+            ),
+          });
+        return (
+          <section
+            key={route}
+            className="rounded-md border border-border p-3"
+            aria-label={label}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex flex-1 items-center gap-2 text-[13px] font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={cadence.enabled}
+                  onChange={(event) =>
+                    set(route, { ...cadence, enabled: event.target.checked })
+                  }
+                />
+                {label}
+              </label>
+              {route === "route_to_ae" ? (
+                <label className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={cadence.cc_ae ?? true}
+                    disabled={!cadence.enabled}
+                    onChange={(event) =>
+                      set(route, { ...cadence, cc_ae: event.target.checked })
+                    }
+                  />
+                  Keep the AE on cc
+                </label>
+              ) : null}
+            </div>
+            {hint ? (
+              <p className="mt-1 text-[12px] text-muted-foreground">{hint}</p>
+            ) : null}
+            {cadence.enabled ? (
+              <ol className="mt-3 grid gap-2">
+                {steps.map((step, index) => (
+                  <li
+                    key={index}
+                    className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2"
+                  >
+                    <label className="flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                      Day
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        aria-label={`Day for follow-up ${index + 1}`}
+                        className={cn(input, "w-16")}
+                        value={step.day}
+                        onChange={(event) =>
+                          setStep(index, {
+                            day: Math.max(1, Number(event.target.value) || 1),
+                          })
+                        }
+                      />
+                    </label>
+                    <textarea
+                      aria-label={`What follow-up ${index + 1} is for`}
+                      rows={2}
+                      className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-[13px] leading-snug text-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="What this follow-up is for, e.g. share one customer example that matches their need"
+                      value={step.purpose}
+                      onChange={(event) =>
+                        setStep(index, { purpose: event.target.value })
+                      }
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove follow-up ${index + 1}`}
+                      className="mt-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() =>
+                        set(route, {
+                          ...cadence,
+                          steps: steps.filter((_, i) => i !== index),
+                        })
+                      }
+                    >
+                      <IconX className="size-4" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+                {steps.length === 0 ? (
+                  <li className="text-[12.5px] text-muted-foreground">
+                    No follow-ups yet.
+                  </li>
+                ) : null}
+                <li>
+                  <button
+                    type="button"
+                    disabled={steps.length >= 10}
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12.5px] font-medium text-primary hover:bg-primary-soft disabled:opacity-50"
+                    onClick={() =>
+                      set(route, {
+                        ...cadence,
+                        steps: [
+                          ...steps,
+                          {
+                            day: (steps[steps.length - 1]?.day ?? 0) + 2,
+                            purpose: "",
+                          },
+                        ],
+                      })
+                    }
+                  >
+                    <IconPlus className="size-3.5" aria-hidden="true" />
+                    Add follow-up
+                  </button>
+                </li>
+              </ol>
+            ) : (
+              <p className="mt-2 text-[12.5px] text-muted-foreground">
+                Off: no follow-ups after the first touch.
+              </p>
+            )}
+          </section>
+        );
+      })}
+      <p className="text-[12px] text-muted-foreground">
+        Days count from the first touch. Follow-ups stop when the lead replies,
+        books a meeting, opts out, or HubSpot moves them on. A change applies to
+        leads whose first touch goes out after it is published.
+      </p>
+    </div>
+  );
+}
+
 const humanize = (key: string) =>
   key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 const email = (value: string) =>
@@ -765,6 +925,8 @@ export function BlockDataEditor({ block, data, onChange }: BlockEditorProps) {
       return <RoutingOrderEditor data={data} onChange={onChange} />;
     case "class_routes":
       return <ClassRoutesEditor data={data} onChange={onChange} />;
+    case "cadence":
+      return <CadenceEditor data={data} onChange={onChange} />;
     case "threshold":
       return (
         <NumbersEditor

@@ -105,6 +105,13 @@ export const EVALUATORS: Record<RuleId, Evaluator> = {
     summary:
       "After triage, which class goes to the AE, which the PA takes, and which qualifies first",
   },
+  "rule.follow_ups.cadence": {
+    paramSchema: ruleParamSchemas["rule.follow_ups.cadence"],
+    reads: ["route_to_ae", "pa_meeting", "qualify_first", "clarify_once"],
+    crmFields: ["contact.lifecycle"],
+    summary:
+      "After the first touch, the follow-ups the agent writes for each route, and on which day; a reply, a meeting, or a stage change stops them",
+  },
   "rule.routing.commercial": {
     paramSchema: ruleParamSchemas["rule.routing.commercial"],
     reads: ["max_employees"],

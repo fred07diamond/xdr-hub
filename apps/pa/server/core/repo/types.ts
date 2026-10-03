@@ -195,6 +195,37 @@ export interface LeadBriefRecord {
   createdAt: string;
 }
 
+export type FollowUpStatus =
+  | "scheduled"
+  | "drafted"
+  | "needs_edit"
+  | "sent"
+  | "stopped";
+
+/** One follow-up of a lead's cadence (D101): due on a day, written by the agent. */
+export interface FollowUpRecord {
+  id: string;
+  engagementId: string;
+  route: string;
+  /** 1 for the first follow-up after the first touch. */
+  stepIndex: number;
+  day: number;
+  purpose: string;
+  dueAt: string;
+  status: FollowUpStatus;
+  subject: string | null;
+  body: string | null;
+  lint: Record<string, unknown> | null;
+  cc: string | null;
+  stopReason: string | null;
+  sentAt: string | null;
+  gmailId: string | null;
+  editedBy: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * One email PA sends or saves through the owner's Gmail (D96). The unique
  * idempotency key is what stops a lead being sent twice.
@@ -591,6 +622,18 @@ export interface PaRepository extends PlaybookStore {
     patch: Partial<DecisionRecord>,
     expectedVersion: number,
   ): Promise<DecisionRecord>;
+
+  /** Adds a lead's cadence; steps it already has are kept. */
+  insertFollowUps(records: FollowUpRecord[]): Promise<void>;
+  listFollowUps(engagementId: string): Promise<FollowUpRecord[]>;
+  /** Scheduled, drafted, or needing an edit, across every lead. */
+  listOpenFollowUps(): Promise<FollowUpRecord[]>;
+  getFollowUp(id: string): Promise<FollowUpRecord | null>;
+  updateFollowUp(
+    id: string,
+    patch: Partial<FollowUpRecord>,
+    expectedVersion: number,
+  ): Promise<FollowUpRecord>;
 
   /** Returns false when a row with the same idempotency key exists. */
   insertOutboxIfAbsent(record: OutboxRecord): Promise<boolean>;

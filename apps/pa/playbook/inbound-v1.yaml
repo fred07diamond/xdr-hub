@@ -184,6 +184,48 @@ entries:
     params:
       max_employees: 8000
     rationale: "Fred, 2026-10-01: 8k or less and unowned by an AE goes to the Commercial AE; 8k+ and unowned round robins to an Enterprise AE. Owned by an AE: nothing happens in PA; HubSpot's workflow emails them."
+  - id: rule.follow_ups.cadence
+    block: cadence
+    section: follow_ups
+    position: 0
+    type: rule
+    owner: PA team
+    owner_team: pa_team
+    precedence: 2
+    version: 1
+    body: |
+      After the first touch goes out, each route gets its own follow-ups. The agent writes every one from the lead's context and the step's purpose, as a reply in the same thread, and the owner approves and sends it from their Gmail.
+      Follow-ups stop the moment the lead replies, books a meeting, opts out, or HubSpot moves them on (SAL, S0, Recycle, Disqualified, or a deal).
+      No follow-up repeats an earlier email, and each follows the same message rules as the first touch.
+    params:
+      route_to_ae:
+        enabled: true
+        cc_ae: true
+        steps:
+          - day: 1
+            purpose: Share one customer example from Knowledge that matches their need, in two or three sentences, and offer the AE's meeting link again.
+          - day: 3
+            purpose: A different angle on what they asked about, with one question about their setup or timing.
+          - day: 6
+            purpose: Short close-the-loop. Ask whether the timing is off, and leave the meeting link once more.
+      pa_meeting:
+        enabled: true
+        steps:
+          - day: 2
+            purpose: Share one customer example from Knowledge that matches their need, and offer the meeting link again.
+          - day: 5
+            purpose: Short close-the-loop. Ask whether the timing is off.
+      qualify_first:
+        enabled: true
+        steps:
+          - day: 3
+            purpose: One discovery question about the need they described, answerable in a line.
+          - day: 7
+            purpose: Short close-the-loop. Ask whether this is still on their list.
+      clarify_once:
+        enabled: false
+        steps: []
+    rationale: "Fred, 2026-10-02: the agent writes personalized follow-ups; the cadence and its steps are set per class in the playbook."
   - id: def.partnership_ask
     block: definition
     section: definitions

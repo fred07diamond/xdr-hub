@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { cadenceParamsSchema } from "../../../shared/cadence.js";
 import { PRECHECK_OUTCOMES } from "../objects/index.js";
 import type {
   Citation,
@@ -75,6 +76,7 @@ export const ruleParamSchemas = {
   "rule.routing.commercial": z.object({
     max_employees: z.number().int().positive(),
   }),
+  "rule.follow_ups.cadence": cadenceParamsSchema,
   "rule.routing.sal_stale_days": z.object({
     days: z.number().int().positive(),
   }),

@@ -209,6 +209,70 @@
       "position": 1
     },
     {
+      "id": "rule.follow_ups.cadence",
+      "type": "rule",
+      "owner": "PA team",
+      "version": 1,
+      "precedence": 2,
+      "status": "active",
+      "body": "After the first touch goes out, each route gets its own follow-ups. The agent writes every one from the lead's context and the step's purpose, as a reply in the same thread, and the owner approves and sends it from their Gmail.\nFollow-ups stop the moment the lead replies, books a meeting, opts out, or HubSpot moves them on (SAL, S0, Recycle, Disqualified, or a deal).\nNo follow-up repeats an earlier email, and each follows the same message rules as the first touch.\n",
+      "params": {
+        "route_to_ae": {
+          "enabled": true,
+          "cc_ae": true,
+          "steps": [
+            {
+              "day": 1,
+              "purpose": "Share one customer example from Knowledge that matches their need, in two or three sentences, and offer the AE's meeting link again."
+            },
+            {
+              "day": 3,
+              "purpose": "A different angle on what they asked about, with one question about their setup or timing."
+            },
+            {
+              "day": 6,
+              "purpose": "Short close-the-loop. Ask whether the timing is off, and leave the meeting link once more."
+            }
+          ]
+        },
+        "pa_meeting": {
+          "enabled": true,
+          "steps": [
+            {
+              "day": 2,
+              "purpose": "Share one customer example from Knowledge that matches their need, and offer the meeting link again."
+            },
+            {
+              "day": 5,
+              "purpose": "Short close-the-loop. Ask whether the timing is off."
+            }
+          ]
+        },
+        "qualify_first": {
+          "enabled": true,
+          "steps": [
+            {
+              "day": 3,
+              "purpose": "One discovery question about the need they described, answerable in a line."
+            },
+            {
+              "day": 7,
+              "purpose": "Short close-the-loop. Ask whether this is still on their list."
+            }
+          ]
+        },
+        "clarify_once": {
+          "enabled": false,
+          "steps": []
+        }
+      },
+      "rationale": "Fred, 2026-10-02: the agent writes personalized follow-ups; the cadence and its steps are set per class in the playbook.",
+      "owner_team": "pa_team",
+      "block": "cadence",
+      "section": "follow_ups",
+      "position": 0
+    },
+    {
       "id": "def.partnership_ask",
       "type": "definition",
       "owner": "Sales leadership",
@@ -688,12 +752,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "a60100b6652d0bb3894d6841897865568a5e3b41516ad8d89ac3313eca1c8077",
-  "short_id": "a60100b6",
+  "id": "7ea7f532372a9c171d7ec82abf843cdab55ec80d8ff5a19dc6764d17ee2ece09",
+  "short_id": "7ea7f532",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "a0debc7eb88328dcd03cc967c2c4c922be4d6c86fd695b03538acc09772ab5e7"
+      "sha256": "412ef72ce099f8740b8f0ac63ac27644dca72490160916d9e7e83580bee4f7f8"
     },
     {
       "path": "config/routing-pool.yaml",

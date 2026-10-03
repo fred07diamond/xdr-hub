@@ -8,6 +8,7 @@ import {
   type PersonRecord,
   type AeAssignmentRecord,
   type OutboxRecord,
+  type FollowUpRecord,
   type RouteOverrideRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
@@ -48,6 +49,7 @@ interface Tables {
   routeOverrides: Map<string, RouteOverrideRecord>;
   aeAssignments: Map<string, AeAssignmentRecord>;
   outbox: Map<string, OutboxRecord>;
+  followUps: Map<string, FollowUpRecord>;
   handbook: Map<string, HandbookDocRecord>;
   handbookRevisions: Map<string, HandbookRevisionRecord>;
   releases: Map<string, ReleaseRecord>;
@@ -77,6 +79,7 @@ function emptyTables(): Tables {
     routeOverrides: new Map(),
     aeAssignments: new Map(),
     outbox: new Map(),
+    followUps: new Map(),
     handbook: new Map(),
     handbookRevisions: new Map(),
     releases: new Map(),
@@ -488,6 +491,48 @@ export class MemoryRepository implements PaRepository {
         expectedVersion,
         "Decision",
       ),
+    );
+  }
+
+  async insertFollowUps(records: FollowUpRecord[]) {
+    for (const record of records) {
+      const taken = [...this.tables.followUps.values()].some(
+        (item) =>
+          item.engagementId === record.engagementId &&
+          item.stepIndex === record.stepIndex,
+      );
+      if (!taken) this.tables.followUps.set(record.id, copy(record));
+    }
+  }
+  async listFollowUps(engagementId: string) {
+    return [...this.tables.followUps.values()]
+      .filter((item) => item.engagementId === engagementId)
+      .sort((a, b) => a.stepIndex - b.stepIndex)
+      .map(copy);
+  }
+  async listOpenFollowUps() {
+    return [...this.tables.followUps.values()]
+      .filter((item) =>
+        ["scheduled", "drafted", "needs_edit"].includes(item.status),
+      )
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
+      .map(copy);
+  }
+  async getFollowUp(id: string) {
+    const found = this.tables.followUps.get(id);
+    return found ? copy(found) : null;
+  }
+  async updateFollowUp(
+    id: string,
+    patch: Partial<FollowUpRecord>,
+    expectedVersion: number,
+  ) {
+    return bumpVersioned(
+      this.tables.followUps,
+      id,
+      patch,
+      expectedVersion,
+      "Follow-up",
     );
   }
 

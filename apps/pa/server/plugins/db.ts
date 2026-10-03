@@ -481,6 +481,33 @@ CREATE TABLE IF NOT EXISTS pa_ae_assignments (
 )
 `;
 
+// Follow-up cadences (D101): one row per scheduled follow-up of a lead.
+export const followUps = `
+CREATE TABLE IF NOT EXISTS pa_follow_ups (
+  id TEXT PRIMARY KEY,
+  engagement_id TEXT NOT NULL,
+  route TEXT NOT NULL,
+  step_index INTEGER NOT NULL,
+  day INTEGER NOT NULL,
+  purpose TEXT NOT NULL,
+  due_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  subject TEXT,
+  body TEXT,
+  lint TEXT,
+  cc TEXT,
+  stop_reason TEXT,
+  sent_at TEXT,
+  gmail_id TEXT,
+  edited_by TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pa_follow_ups_step_idx ON pa_follow_ups (engagement_id, step_index);
+CREATE INDEX IF NOT EXISTS pa_follow_ups_status_idx ON pa_follow_ups (status)
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -499,6 +526,7 @@ export const PA_MIGRATIONS = [
   { version: 9, name: "pa-lead-briefs", sql: leadBriefs },
   { version: 10, name: "pa-lead-routing", sql: leadRouting },
   { version: 11, name: "pa-ae-assignments", sql: aeAssignments },
+  { version: 12, name: "pa-follow-ups", sql: followUps },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {
