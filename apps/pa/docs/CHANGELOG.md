@@ -2,6 +2,8 @@
 
 ## 2026-10-02 (follow-ups)
 
+- Sequencing has its own tab: follow-ups due across every lead, what is
+  coming up, and the cadence for each route, edited in place (D102).
 - Follow-up cadences: after the first touch, each route gets its own
   follow-ups (for example day 1, 3, and 6 for exceptional leads). Edit the
   days and what each email is for in the playbook's new Follow-ups section

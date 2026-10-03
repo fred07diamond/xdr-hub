@@ -71,6 +71,7 @@ function viewForPath(pathname: string): string {
   if (/^\/playbook\/changes\/[^/]+/.test(pathname)) return "playbook-change";
   if (pathname.startsWith("/playbook")) return "playbook";
   if (pathname.startsWith("/suggestions")) return "suggestions";
+  if (pathname.startsWith("/sequencing")) return "sequencing";
   if (pathname.startsWith("/crm")) return "crm";
   if (pathname === "/home" || pathname.startsWith("/chat/")) return "agent";
   if (pathname.startsWith("/database")) return "database";
@@ -100,6 +101,8 @@ function pathForCommand(command: NavigateCommand): string {
         : "/playbook";
     case "suggestions":
       return "/suggestions";
+    case "sequencing":
+      return "/sequencing";
     case "handbook":
       // The handbook lives in the playbook's Knowledge section now (D95).
       return "/playbook?section=knowledge";

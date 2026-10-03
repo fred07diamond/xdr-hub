@@ -406,7 +406,7 @@ function ClassRoutesEditor({
  * on cc, and the steps: a day after the first touch and what the email is
  * for. The agent writes each email from its purpose.
  */
-function CadenceEditor({
+export function CadenceEditor({
   data,
   onChange,
 }: {

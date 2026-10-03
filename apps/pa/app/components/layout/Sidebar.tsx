@@ -13,6 +13,7 @@ import {
   IconMessageCircle,
   IconSearch,
   IconSettings,
+  IconTimelineEvent,
 } from "@tabler/icons-react";
 import { Link, useLocation } from "react-router";
 
@@ -34,10 +35,16 @@ type NavItem = {
   ownerOnly?: boolean;
 };
 
-// PA's two destinations (D95): the queue and the rules. The agent lives in
+// PA's destinations (D95, D102): the queue, follow-ups, and the rules. The agent lives in
 // the side panel on every page; suggestions sit on the Playbook page.
 const navItems: NavItem[] = [
   { icon: IconInbox, label: "Inbound", href: "/inbound", view: "inbound" },
+  {
+    icon: IconTimelineEvent,
+    label: "Sequencing",
+    href: "/sequencing",
+    view: "sequencing",
+  },
   { icon: IconBook2, label: "Playbook", href: "/playbook", view: "playbook" },
 ];
 

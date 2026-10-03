@@ -44,7 +44,7 @@ not import its instructions, verdicts, or thresholds into PA.
 
 ## Application state
 
-- `navigation`: `{ view: "inbound" | "engagement" | "playbook" | "playbook-change" | "suggestions" | "crm" | "settings", engagementId?, changeId?, filters? }` (the handbook moved into the playbook's Knowledge section, D95)
+- `navigation`: `{ view: "inbound" | "engagement" | "playbook" | "playbook-change" | "suggestions" | "sequencing" | "crm" | "settings", engagementId?, changeId?, filters? }` (the handbook moved into the playbook's Knowledge section, D95)
 - `selection`: `{ engagementIds: string[] }`
 - `pa-demo-mode`: `{ enabled: true }` while the board shows demo data. Demo
   leads (ids starting `demo-`) are made up and computed in the browser; they
@@ -72,6 +72,7 @@ not import its instructions, verdicts, or thresholds into PA.
 | `get-intake-status`                      | When HubSpot was last pulled, the agent queue, whether the agent is on         |
 | `run-decision-loop`                      | Give older leads PA's recommendation and a 24 hour decision window (D59)       |
 | `get-messaging-guide`                    | The playbook's Messaging section for a class: how every draft is written (D65) |
+| `list-follow-ups`                        | Follow-ups due and coming up across every lead (Sequencing, D102)              |
 | `get-follow-up`                          | One follow-up: its purpose, the first touch, earlier follow-ups (D101)         |
 | `save-follow-up`                         | Save the follow-up you wrote; checked, never sent (D101)                       |
 | `list-people`                            | People leads are routed to: role, meeting link, pod AE (D66)                   |

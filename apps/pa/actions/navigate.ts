@@ -4,7 +4,7 @@ import { z } from "zod";
 
 export default defineAction({
   description:
-    "Navigate the UI. Views: inbound (the board, optional tab and state filters), engagement (needs engagementId), playbook, playbook-change (needs changeId), suggestions, handbook (opens the playbook's Knowledge section, where the handbook lives now), settings, agent (full-page agent). Writes a navigate command the UI reads and deletes.",
+    "Navigate the UI. Views: inbound (the board, optional tab and state filters), engagement (needs engagementId), playbook, playbook-change (needs changeId), suggestions, sequencing (follow-ups due and the cadences), handbook (opens the playbook's Knowledge section, where the handbook lives now), settings, agent (full-page agent). Writes a navigate command the UI reads and deletes.",
   schema: z.object({
     view: z
       .enum([
@@ -13,6 +13,7 @@ export default defineAction({
         "playbook",
         "playbook-change",
         "suggestions",
+        "sequencing",
         "handbook",
         "crm",
         "settings",

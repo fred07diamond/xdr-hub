@@ -1895,3 +1895,14 @@ bottom. Revisit one only when its "revisit when" condition happens.
   due").
 - **Autopilot** (sending on schedule without a click) is not built: it comes
   after Review mode has run on real leads, per person, with a team switch.
+
+## D102. Sequencing is its own tab (2026-10-02)
+
+- Fred asked for sequencing to be a separate tab in the side menu.
+- `/sequencing` (sidebar, between Inbound and Playbook) shows the
+  follow-ups due now across every lead (`list-follow-ups`), what is coming
+  up, and the cadence editor for each route.
+- The cadence stays a playbook block (D101), so approval does not change:
+  "Save to my draft" stages the edit in the viewer's playbook draft, and the
+  owner or a Playbook admin approves it (D76). The Follow-ups section is
+  hidden from the Playbook page so it is edited in one place.

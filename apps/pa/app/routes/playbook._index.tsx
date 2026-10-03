@@ -362,7 +362,10 @@ export default function PlaybookRoute() {
   const canEdit = Boolean(data && (data.viewer.isAppOwner || data.viewer.role));
   const staging = propose.isPending || update.isPending;
 
-  const sections = data?.sections ?? [];
+  // Follow-up cadences live on the Sequencing page (D102).
+  const sections = (data?.sections ?? []).filter(
+    (section) => section.id !== "follow_ups",
+  );
   const requested = searchParams.get("section");
   const current =
     sections.find((section) => section.id === requested) ?? sections[0];
