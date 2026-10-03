@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { CitationChips } from "./badges";
+import { SendBar } from "./send-bar";
 
 const KIND_STYLES: Record<TriageKind, string> = {
   reply: "bg-teal-500/10 text-teal-800 ring-teal-600/25 dark:text-teal-300",
@@ -312,6 +313,8 @@ function Header({ label, value }: { label: string; value: ReactNode }) {
 
 export function DraftCard({
   draft,
+  engagementId,
+  onSendDone,
   onAsk,
   onRewrite,
   rewriteBusy,
@@ -319,6 +322,9 @@ export function DraftCard({
   embedded = false,
 }: {
   draft: DraftView;
+  /** With it, the owner can approve and send from their Gmail (D96). */
+  engagementId?: string;
+  onSendDone?: () => void;
   onAsk: (kind: "revise" | "draft") => void;
   /** Rewrite just this reply under the current playbook (D87). */
   onRewrite?: () => void;
@@ -466,10 +472,17 @@ export function DraftCard({
               {draft.wordCount !== null ? ` · ${draft.wordCount} words` : ""}
             </span>
           </footer>
+          {engagementId ? (
+            <SendBar
+              engagementId={engagementId}
+              draft={draft}
+              onDone={() => onSendDone?.()}
+            />
+          ) : null}
           <div className="border-t border-border px-4 py-2 text-[11.5px] text-muted-foreground">
             <p>
-              Proposed only. Nothing is sent automatically; sending with
-              approval arrives in M2.
+              Nothing is sent until the lead's owner approves. It goes out from
+              their Gmail, and HubSpot logs it through their inbox sync.
             </p>
             {draft.usedEntries.length > 0 ? (
               <CitationChips entries={draft.usedEntries} className="mt-1.5" />

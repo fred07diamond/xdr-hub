@@ -1768,3 +1768,36 @@ bottom. Revisit one only when its "revisit when" condition happens.
   stay as a backup.
 - The sidebar is now Inbound and Playbook, with CRM connections and
   Settings at the bottom.
+
+## D96. Approve and send from the owner's own Gmail (2026-10-02)
+
+- Fred asked for sending from the signed-in person's own email, with
+  "Approve and send" and "Approve". He chose: Approve saves to the owner's
+  Gmail Drafts; HubSpot logging comes from each rep's HubSpot inbox sync
+  (every PA has it connected), so PA still writes nothing to the CRM; build
+  it in PA rather than hand off to the Mail app. This starts the M2 send
+  item and lifts "no sends before M2" for this one path only.
+- **Connect Gmail, once per person.** `/_agent-native/gmail/auth-url` and
+  `/callback` ask Google for `gmail.compose` only (send and drafts, no
+  reading). The Gmail account must be the address the person is signed in
+  to PA with. Tokens sit in the framework's `oauth_tokens` table under the
+  provider `pa_gmail` (its own id, so sign-in tokens never overwrite it),
+  refreshed with timed calls. `get-gmail-status`, `disconnect-gmail`.
+- **`send-first-touch`** is people only (`agentTool: false`, refused for
+  tool callers too): stricter than `needsApproval`, because the agent may
+  never send. Every guard is in `server/lib/first-touch-send.ts`: only the
+  lead's owner (PA owner, else HubSpot owner), sending as themselves; only
+  the current draft; only when it passes every message check; no unfilled
+  `[placeholder]`; not a lead HubSpot already actioned, opted out, or
+  contacted.
+- **One send per lead, ever.** The outbox row (`first_touch:<lead>`) is
+  written before Gmail is called. A refusal from Gmail marks it failed and
+  can be retried; a timeout stays pending and is never retried blind ("check
+  your Gmail Sent folder"). Approve uses `gmail_draft:<draft>`.
+- **After a send:** a `send` receipt, a `first_touch.email` event
+  (`sent_from_pa`) so the board shows it at once, and the lead is recorded
+  contacted through the same `recordFirstTouch` as HubSpot detection. After
+  Approve, the lead stays To do until the owner sends from Gmail and
+  HubSpot logs it.
+- Plain text, sent as a new email (not a reply in the form thread), since
+  threading would need read access to the mailbox.

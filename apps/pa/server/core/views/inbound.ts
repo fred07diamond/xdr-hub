@@ -42,6 +42,7 @@ import {
   type RelationshipState,
   type Verdict,
 } from "../objects/index.js";
+import { deliveryOf, leadOwnerEmail } from "../outreach/delivery.js";
 import { profileHours } from "../pipeline/steps.js";
 import { rule } from "../playbook/resolve.js";
 import {
@@ -354,7 +355,9 @@ function sentSummary(
     problemCount: 0,
     note: thread
       ? "Contacted on a reply thread in HubSpot."
-      : "The first email went out from HubSpot.",
+      : saved.payload.kind === "sent_from_pa"
+        ? `Sent from ${text("from") ?? "the owner"}'s Gmail through PA.`
+        : "The first email went out from HubSpot.",
   };
 }
 
@@ -1063,6 +1066,17 @@ export async function buildEngagementDetail(input: {
   });
   const snapshotReceipt = lastOf("crm_snapshot");
   const firstSubmission = submissions[0];
+  // Only the lead's owner approves, and sends from their own Gmail (D96).
+  const sendOwner = await leadOwnerEmail(repo, engagement);
+  const send = {
+    ownerEmail: sendOwner,
+    canSend: Boolean(
+      sendOwner &&
+      input.viewer.userId &&
+      input.viewer.userId.toLowerCase() === sendOwner,
+    ),
+    delivery: deliveryOf(await repo.listOutbox(engagement.id)),
+  };
 
   return {
     id: engagement.id,
@@ -1082,9 +1096,11 @@ export async function buildEngagementDetail(input: {
           rubric: null,
           reasoning: null,
           note: stepBack.note,
+          send: null,
         }
       : {
           ...draft,
+          send: draft.id ? send : null,
           // Asked to rewrite after the latest draft (D87): show it is coming.
           rewriting: events.some(
             (item) =>

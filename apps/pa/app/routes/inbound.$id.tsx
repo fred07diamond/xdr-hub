@@ -819,6 +819,11 @@ export default function EngagementRoute() {
             ) : (
               <DraftCard
                 draft={detail.draft}
+                engagementId={detail.id}
+                onSendDone={() => {
+                  void engagement.refetch();
+                  void history.refetch();
+                }}
                 onAsk={(kind) => askAgent(kind)}
                 onRewrite={
                   canDecide && detail.draft.id

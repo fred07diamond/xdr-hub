@@ -7,6 +7,7 @@ import {
   type LeadBriefRecord,
   type PersonRecord,
   type AeAssignmentRecord,
+  type OutboxRecord,
   type RouteOverrideRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
@@ -46,6 +47,7 @@ interface Tables {
   people: Map<string, PersonRecord>;
   routeOverrides: Map<string, RouteOverrideRecord>;
   aeAssignments: Map<string, AeAssignmentRecord>;
+  outbox: Map<string, OutboxRecord>;
   handbook: Map<string, HandbookDocRecord>;
   handbookRevisions: Map<string, HandbookRevisionRecord>;
   releases: Map<string, ReleaseRecord>;
@@ -74,6 +76,7 @@ function emptyTables(): Tables {
     people: new Map(),
     routeOverrides: new Map(),
     aeAssignments: new Map(),
+    outbox: new Map(),
     handbook: new Map(),
     handbookRevisions: new Map(),
     releases: new Map(),
@@ -486,6 +489,40 @@ export class MemoryRepository implements PaRepository {
         "Decision",
       ),
     );
+  }
+
+  async insertOutboxIfAbsent(record: OutboxRecord) {
+    for (const existing of this.tables.outbox.values())
+      if (existing.idempotencyKey === record.idempotencyKey) return false;
+    this.tables.outbox.set(record.id, copy(record));
+    return true;
+  }
+  async getOutboxByKey(idempotencyKey: string) {
+    for (const existing of this.tables.outbox.values())
+      if (existing.idempotencyKey === idempotencyKey) return copy(existing);
+    return null;
+  }
+  async updateOutbox(
+    id: string,
+    patch: Partial<OutboxRecord>,
+    expectedVersion: number,
+  ) {
+    return bumpVersioned(
+      this.tables.outbox,
+      id,
+      patch,
+      expectedVersion,
+      "Outbox row",
+    );
+  }
+  async listOutbox(engagementId: string) {
+    return [...this.tables.outbox.values()]
+      .filter((item) => item.engagementId === engagementId)
+      .sort(
+        (a, b) =>
+          a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      )
+      .map(copy);
   }
 
   async insertDraft(record: DraftRecord) {

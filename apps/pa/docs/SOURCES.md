@@ -236,3 +236,12 @@ and Section 9 (Outbound Playbook).
 | `docs/content/automations.mdx`, `dist/jobs/run-now.d.ts`                               | The inbound agent: a scheduled organization automation that runs as its creator; `queueAutomationRunNow` wakes it after a pull |
 | `docs/content/durable-background-runs.mdx`                                             | Agent runs on Netlify background functions                                                                                     |
 | Sales handbook `03-lead-routing-and-playbooks`, `05-email-playbook` (PA database, D53) | The message rule and draft lint (D55)                                                                                          |
+
+### Sending from Gmail (D96)
+
+| Source                                                                                                  | Used for                                                                             |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Gmail API `users.messages.send`, `users.drafts.create` (developers.google.com/gmail/api/reference/rest) | Approve and send, and Approve to Gmail Drafts; both accept the `gmail.compose` scope |
+| Google OAuth 2.0 for web server apps (developers.google.com/identity/protocols/oauth2/web-server)       | Connect Gmail: offline access, refresh, `login_hint`                                 |
+| `apps/prospecting-hub/server/routes/_agent-native/google/add-account/*`                                 | The connect and callback route pattern (`encodeOAuthState`, `oauthCallbackResponse`) |
+| `corpus/templates/mail/server/handlers/google-auth.ts`, `dist/oauth-tokens/store.d.ts`                  | Owner-scoped `oauth_tokens` storage and the owner mismatch guard                     |

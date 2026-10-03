@@ -64,7 +64,7 @@ describe("triage UI", () => {
     expect(html).toContain("Requires discovery, Content");
     expect(html).not.toContain("[time options]");
     expect(html).not.toContain("[calendar link]");
-    expect(html).toContain("Nothing is sent automatically");
+    expect(html).toContain("Nothing is sent until the lead");
     expect(html).toContain("SLA timer");
     expect(html).toContain("NBM complete");
     expect(html).toContain(detail.sla.label);

@@ -21,6 +21,7 @@ import {
   type PersonRecord,
   type RouteOverrideRecord,
   type AeAssignmentRecord,
+  type OutboxRecord,
   type HandbookDocRecord,
   type HandbookRevisionRecord,
   type SubmissionRecord,
@@ -62,6 +63,7 @@ const {
   paPeople,
   paRouteOverrides,
   paAeAssignments,
+  paOutbox,
   paHandbookDocs,
   paHandbookRevisions,
   paSubmissions,
@@ -675,6 +677,53 @@ export class DrizzleRepository implements PaRepository {
         `Decision ${id} changed underneath this update`,
       );
     return decodeJson("decisions", row) as unknown as DecisionRecord;
+  }
+
+  async insertOutboxIfAbsent(record: OutboxRecord) {
+    const rows = await this.db
+      .insert(paOutbox)
+      .values(encodeJson<any>("outbox", record))
+      .onConflictDoNothing({ target: paOutbox.idempotencyKey })
+      .returning();
+    return rows.length > 0;
+  }
+  async getOutboxByKey(idempotencyKey: string) {
+    const [row] = await this.db
+      .select()
+      .from(paOutbox)
+      .where(eq(paOutbox.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return row ? (decodeJson("outbox", row) as unknown as OutboxRecord) : null;
+  }
+  async updateOutbox(
+    id: string,
+    patch: Partial<OutboxRecord>,
+    expectedVersion: number,
+  ) {
+    const { id: _id, version: _version, ...rest } = patch;
+    const [row] = await this.db
+      .update(paOutbox)
+      .set({
+        ...encodeJson<any>("outbox", rest),
+        version: expectedVersion + 1,
+      })
+      .where(and(eq(paOutbox.id, id), eq(paOutbox.version, expectedVersion)))
+      .returning();
+    if (!row)
+      throw new VersionConflictError(
+        `Outbox row ${id} changed underneath this update`,
+      );
+    return decodeJson("outbox", row) as unknown as OutboxRecord;
+  }
+  async listOutbox(engagementId: string) {
+    const rows = await this.db
+      .select()
+      .from(paOutbox)
+      .where(eq(paOutbox.engagementId, engagementId))
+      .orderBy(asc(paOutbox.createdAt), asc(paOutbox.id));
+    return rows.map(
+      (row) => decodeJson("outbox", row) as unknown as OutboxRecord,
+    );
   }
 
   async insertDraft(record: DraftRecord) {

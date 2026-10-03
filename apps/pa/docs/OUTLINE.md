@@ -155,8 +155,9 @@ corrections, clocks, and escalations.
 
 - [ ] Slack interactivity route and buttons: acknowledge within 3 seconds,
       handle the work from a queue, then `chat.update`.
-- [ ] `send-first-touch` with `needsApproval`, the outbox, Gmail sending
-      through the framework's plumbing, and HubSpot email logging.
+- [x] `send-first-touch` with owner approval (people only, D96), the
+      outbox, sending from the owner's own Gmail, and HubSpot logging
+      through each rep's inbox sync.
 - [ ] Edit with reason chips, "not mine" with a reason, and a corrections
       table and views.
 - [ ] Clock reminders and breach alerts from the sweep.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-02 (send from Gmail)
+
+- The lead's owner can now send the drafted reply from their own Gmail:
+  "Approve and send" sends it (a second click confirms), "Approve" saves it
+  to their Gmail Drafts to edit and send there (D96).
+- Each person connects Gmail once from the draft card. Only the owner sees
+  the buttons; everyone else sees who can send.
+- PA never sends a lead twice, never sends a draft that breaks a message
+  rule or still has a placeholder, and never emails a lead HubSpot already
+  actioned. HubSpot logs the email through the owner's inbox sync.
+
 ## 2026-10-02 (cleanup)
 
 - The sidebar is Inbound and Playbook (plus CRM connections and Settings).

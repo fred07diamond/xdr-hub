@@ -195,6 +195,29 @@ export interface LeadBriefRecord {
   createdAt: string;
 }
 
+/**
+ * One email PA sends or saves through the owner's Gmail (D96). The unique
+ * idempotency key is what stops a lead being sent twice.
+ */
+export interface OutboxRecord {
+  id: string;
+  /** gmail_send: sent from the owner's Gmail. gmail_draft: saved to their Gmail Drafts. */
+  kind: "gmail_send" | "gmail_draft";
+  idempotencyKey: string;
+  engagementId: string | null;
+  payload: Record<string, unknown>;
+  /** pending: handed to Gmail, answer not back yet. failed: Gmail refused it; safe to retry. */
+  status: "pending" | "sent" | "failed";
+  attempts: number;
+  nextAttemptAt: string | null;
+  /** Gmail's message or draft id. */
+  providerRef: string | null;
+  lastError: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type PersonRole = "pa" | "ae" | "commercial_ae" | "partnerships" | "csm";
 
 /** An enterprise AE given to a lead by round robin (D78). */
@@ -568,6 +591,17 @@ export interface PaRepository extends PlaybookStore {
     patch: Partial<DecisionRecord>,
     expectedVersion: number,
   ): Promise<DecisionRecord>;
+
+  /** Returns false when a row with the same idempotency key exists. */
+  insertOutboxIfAbsent(record: OutboxRecord): Promise<boolean>;
+  getOutboxByKey(idempotencyKey: string): Promise<OutboxRecord | null>;
+  updateOutbox(
+    id: string,
+    patch: Partial<OutboxRecord>,
+    expectedVersion: number,
+  ): Promise<OutboxRecord>;
+  /** Oldest first. */
+  listOutbox(engagementId: string): Promise<OutboxRecord[]>;
 
   insertDraft(record: DraftRecord): Promise<void>;
   /** Oldest first; the last one is the current draft. */

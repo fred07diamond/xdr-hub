@@ -158,8 +158,26 @@ export interface DraftSummary {
   note: string;
 }
 
+/** What happened after the owner approved the draft (D96). */
+export interface DeliveryView {
+  kind: "sent" | "gmail_draft" | "sending" | "failed";
+  draftId: string | null;
+  by: string | null;
+  at: string;
+  error: string | null;
+}
+
+/** Who can approve the draft, and whether it already went out (D96). */
+export interface DraftSendView {
+  /** The lead's owner: the only person who can send, from their own Gmail. */
+  ownerEmail: string | null;
+  canSend: boolean;
+  delivery: DeliveryView | null;
+}
+
 export interface DraftView extends DraftSummary {
   id: string | null;
+  send: DraftSendView | null;
   /** The AE looped in on the email for an exceptional lead (D72). */
   cc: string | null;
   /** Someone asked for the reply to be rewritten and it is not back yet (D87). */

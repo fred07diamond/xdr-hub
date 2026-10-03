@@ -881,9 +881,10 @@ export async function contactOf(engagementId: string) {
  */
 export async function recordFirstTouch(
   engagementId: string,
-  email: HistoryItem,
+  email: Pick<HistoryItem, "at" | "title" | "from">,
+  repository: PaRepository = repo(),
+  actor = "system:hubspot-history",
 ) {
-  const repository = repo();
   let engagement = await repository.getEngagement(engagementId);
   if (!engagement || engagement.firstTouchAt || !email.at) return false;
   const at = now().toISOString();
@@ -909,7 +910,7 @@ export async function recordFirstTouch(
       engagementId: engagement.id,
       correlationId: engagement.id,
       type: "state.changed",
-      actor: "system:hubspot-history",
+      actor,
       payload: { from, to, via: "first_touch_detected" },
       receiptId: null,
       occurredAt: at,
@@ -920,7 +921,7 @@ export async function recordFirstTouch(
     engagementId: engagement.id,
     correlationId: engagement.id,
     type: "first_touch.detected",
-    actor: "system:hubspot-history",
+    actor,
     payload: {
       sent_at: email.at,
       subject: email.title,
