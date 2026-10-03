@@ -14,6 +14,7 @@ import {
   IconCheck,
   IconExternalLink,
   IconLoader2,
+  IconMailForward,
   IconSend,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
@@ -47,12 +48,13 @@ export function SendBar({
     "get-gmail-status",
     {},
     {
-      enabled: Boolean(send?.canSend),
+      enabled: Boolean(send),
       // While the Google window is open, check every few seconds.
       refetchInterval: waitingForGoogle ? 3000 : false,
     },
   );
   const approve = useActionMutation("send-first-touch");
+  const test = useActionMutation("send-test-email");
   const gmail = status.data as
     | {
         configured: boolean;
@@ -78,6 +80,43 @@ export function SendBar({
 
   if (!send) return null;
   const delivery = send.delivery;
+  const connectGmail = () => {
+    setWaitingForGoogle(true);
+    window.open(
+      appPath("/_agent-native/gmail/auth-url?redirect=1"),
+      "pa-connect-gmail",
+      "width=520,height=680",
+    );
+  };
+  // Anyone can try the Gmail path on any lead: it goes to their own inbox (D97).
+  const testButton = (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      disabled={test.isPending || !draft.id}
+      onClick={() =>
+        test.mutate(
+          { engagementId, draftId: draft.id ?? "" },
+          {
+            onSuccess: () =>
+              toast.success(
+                `Test sent to ${gmail?.email ?? "you"}. Check your inbox.`,
+              ),
+            onError: (error) => toast.error(actionErrorMessage(error)),
+          },
+        )
+      }
+      title="Sends this draft to your own inbox from your Gmail. The lead gets nothing."
+    >
+      {test.isPending ? (
+        <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
+      ) : (
+        <IconMailForward className="size-4" aria-hidden="true" />
+      )}
+      Send a test to me
+    </Button>
+  );
 
   if (delivery?.kind === "sent")
     return (
@@ -121,11 +160,30 @@ export function SendBar({
 
   if (!send.canSend)
     return (
-      <p className="border-t border-border px-4 py-2.5 text-[12.5px] text-muted-foreground">
-        {send.ownerEmail
-          ? `Only ${send.ownerEmail}, the lead's owner, can approve this. It goes out from their Gmail.`
-          : "No owner yet. Once the lead has one, they approve and send it from their Gmail."}
-      </p>
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2.5 text-[12.5px] text-muted-foreground">
+        <span className="min-w-0 flex-1">
+          {send.ownerEmail
+            ? `Only ${send.ownerEmail}, the lead's owner, can approve this. It goes out from their Gmail.`
+            : "No owner yet. Once the lead has one, they approve and send it from their Gmail."}
+        </span>
+        {status.isLoading ? null : connected ? (
+          testButton
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={gmail?.configured === false}
+            onClick={connectGmail}
+            title="Connect your Gmail to send yourself a test of this draft"
+          >
+            <IconBrandGmail className="size-4" aria-hidden="true" />
+            {waitingForGoogle
+              ? "Finish in the Google window"
+              : "Connect Gmail to test"}
+          </Button>
+        )}
+      </div>
     );
 
   const blocked =
@@ -178,14 +236,7 @@ export function SendBar({
             type="button"
             size="sm"
             disabled={gmail?.configured === false}
-            onClick={() => {
-              setWaitingForGoogle(true);
-              window.open(
-                appPath("/_agent-native/gmail/auth-url?redirect=1"),
-                "pa-connect-gmail",
-                "width=520,height=680",
-              );
-            }}
+            onClick={connectGmail}
           >
             <IconBrandGmail className="size-4" aria-hidden="true" />
             {gmail?.needsReconnect
@@ -230,6 +281,7 @@ export function SendBar({
             )}
             Approve
           </Button>
+          {testButton}
           <span className="text-[12px] text-muted-foreground">
             {blocked ??
               (confirming

@@ -5,6 +5,8 @@
 - The lead's owner can now send the drafted reply from their own Gmail:
   "Approve and send" sends it (a second click confirms), "Approve" saves it
   to their Gmail Drafts to edit and send there (D96).
+- "Send a test to me" sends any lead's draft to your own inbox from your
+  Gmail, so you can try it without owning the lead (D97).
 - Each person connects Gmail once from the draft card. Only the owner sees
   the buttons; everyone else sees who can send.
 - PA never sends a lead twice, never sends a draft that breaks a message

@@ -319,3 +319,32 @@ describe("the raw Gmail message", () => {
     );
   });
 });
+
+describe("send a test to me (D97)", () => {
+  it("sends only to the person clicking, even on a lead they do not own, and changes nothing", async () => {
+    const { sendTestToSelf } =
+      await import("../../server/lib/first-touch-send.js");
+    const base = await seeded({ status: "needs_edit", lintOk: false });
+    const gmail = fakeGmail();
+    const result = await sendTestToSelf(depsOf(base, gmail.client), {
+      engagementId: "e1",
+      draftId: "d1",
+      actorEmail: "Someone@Example.com",
+    });
+    expect(result.sentTo).toBe("someone@example.com");
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]?.email).toMatchObject({
+      from: "someone@example.com",
+      to: "someone@example.com",
+      cc: null,
+      subject: "[Test] Your Builder question",
+    });
+    expect(gmail.calls[0]?.email.body).toContain(
+      "The real email goes to lead@prospect.example, cc ae@example.com",
+    );
+    const engagement = await base.repository.getEngagement("e1");
+    expect(engagement?.firstTouchAt).toBe(null);
+    expect(engagement?.state).toBe("awaiting_first_touch");
+    expect(await base.repository.listOutbox("e1")).toHaveLength(0);
+  });
+});

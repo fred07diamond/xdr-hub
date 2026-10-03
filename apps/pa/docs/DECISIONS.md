@@ -1801,3 +1801,13 @@ bottom. Revisit one only when its "revisit when" condition happens.
   HubSpot logs it.
 - Plain text, sent as a new email (not a reply in the form thread), since
   threading would need read access to the mailbox.
+
+## D97. Send a test to me (2026-10-02)
+
+- Fred owns no leads, so he could not try D96. "Send a test to me" sends a
+  lead's current draft from the clicker's own Gmail to their own inbox,
+  subject `[Test]`, with a line saying where the real email would go.
+- Anyone with a PA role or app owner access can use it on any lead,
+  including drafts that break a rule. It never emails the lead or the AE,
+  never uses the outbox key, and never marks the lead contacted; it only
+  logs `draft.test_sent`. `send-test-email` is people only.

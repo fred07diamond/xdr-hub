@@ -326,3 +326,60 @@ export async function approveFirstTouch(
     cc: email.cc,
   };
 }
+
+/**
+ * Sends the current draft to the person clicking, from their own Gmail, so
+ * anyone can try the Gmail path on a lead they do not own (D97). It never
+ * reaches the lead or the AE, never touches the outbox key, and never marks
+ * the lead contacted.
+ */
+export async function sendTestToSelf(
+  deps: SendDeps,
+  input: { engagementId: string; draftId: string; actorEmail: string },
+) {
+  const { repository } = deps;
+  const engagement = await repository.getEngagement(input.engagementId);
+  if (!engagement) throw new SendRefused("Lead not found", "not_found", 404);
+  const drafts = await repository.listDrafts(engagement.id);
+  const draft = drafts[drafts.length - 1];
+  if (!draft || draft.id !== input.draftId)
+    throw new SendRefused(
+      "A newer draft replaced this one. Reload the lead first.",
+      "stale_draft",
+    );
+  const me = input.actorEmail.toLowerCase();
+  const contact = await repository.getContact(engagement.contactId);
+  const cc = (
+    (draft.lint as { route?: { cc?: string | null } | null } | null)?.route
+      ?.cc ?? null
+  )?.toLowerCase();
+  const note = `Test from PA. The real email goes to ${contact?.email ?? "the lead"}${cc ? `, cc ${cc}` : ""}, from the lead's owner. Nothing was sent to them.`;
+  let id: string;
+  try {
+    ({ id } = await deps.gmail.send(me, {
+      from: me,
+      to: me,
+      cc: null,
+      subject: `[Test] ${draft.subject}`,
+      body: `${note}\n\n----------\n\n${draft.body}`,
+    }));
+  } catch (error) {
+    throw new SendRefused(
+      error instanceof Error ? error.message : "Gmail did not answer",
+      "gmail",
+      502,
+    );
+  }
+  const at = deps.now().toISOString();
+  await repository.appendEvent({
+    id: deps.newId(),
+    engagementId: engagement.id,
+    correlationId: engagement.id,
+    type: "draft.test_sent",
+    actor: `user:${me}`,
+    payload: { draft_id: draft.id, gmail_id: id, to: me },
+    receiptId: null,
+    occurredAt: at,
+  });
+  return { sentTo: me, gmailId: id };
+}
