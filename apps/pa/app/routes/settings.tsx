@@ -9,10 +9,11 @@ import {
   type SettingsSearchEntry,
 } from "@agent-native/core/client/settings";
 import { useSetPageTitle } from "@agent-native/toolkit/app-shell";
-import { IconArrowRight, IconRoute } from "@tabler/icons-react";
+import { IconArrowRight, IconMail, IconRoute } from "@tabler/icons-react";
 import { useMemo } from "react";
 import { Link } from "react-router";
 
+import { EmailSettings } from "@/components/pa/email-settings";
 import { RoutingSettings } from "@/components/pa/routing-settings";
 import { APP_TITLE } from "@/lib/app-config";
 
@@ -52,6 +53,18 @@ export default function SettingsRoute() {
           content: (
             <div className="mx-auto w-full max-w-3xl">
               <RoutingSettings />
+            </div>
+          ),
+        },
+        {
+          // Your Gmail for Approve and send (D99).
+          id: "email",
+          label: "Email",
+          icon: IconMail,
+          keywords: "gmail email send connect reconnect disconnect test",
+          content: (
+            <div className="mx-auto w-full max-w-3xl">
+              <EmailSettings />
             </div>
           ),
         },

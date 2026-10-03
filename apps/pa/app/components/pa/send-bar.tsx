@@ -1,11 +1,10 @@
-// Approve and send, or Approve to Gmail Drafts (D96). Only the lead's owner
-// sees the buttons; the email goes out from their own Gmail, and HubSpot logs
-// it through their inbox sync. The server re-checks every rule on click.
-import { appPath } from "@agent-native/core/client/api-path";
+// Approve and send, or Approve to Gmail Drafts (D96). Everyone sees the two
+// buttons; only the lead's owner can use them, from their own Gmail. The
+// Gmail connection itself, and test sends, live in Settings > Email (D99).
+// The server re-checks every rule on click.
 import {
   actionErrorMessage,
   useActionMutation,
-  useActionQuery,
 } from "@agent-native/core/client/hooks";
 import type { DraftView } from "@shared/pa-views";
 import {
@@ -14,13 +13,18 @@ import {
   IconCheck,
   IconExternalLink,
   IconLoader2,
-  IconMailForward,
   IconSend,
 } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useGmail } from "@/hooks/use-gmail";
 
 const GMAIL_DRAFTS = "https://mail.google.com/mail/u/0/#drafts";
 
@@ -42,35 +46,11 @@ export function SendBar({
   onDone: () => void;
 }) {
   const send = draft.send;
-  const [waitingForGoogle, setWaitingForGoogle] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const status = useActionQuery(
-    "get-gmail-status",
-    {},
-    {
-      enabled: Boolean(send),
-      // While the Google window is open, check every few seconds.
-      refetchInterval: waitingForGoogle ? 3000 : false,
-    },
+  const { status, gmail, connected, waiting, connect } = useGmail(
+    Boolean(send?.canSend),
   );
+  const [confirming, setConfirming] = useState(false);
   const approve = useActionMutation("send-first-touch");
-  const test = useActionMutation("send-test-email");
-  const gmail = status.data as
-    | {
-        configured: boolean;
-        connected: boolean;
-        needsReconnect: boolean;
-        email: string | null;
-      }
-    | undefined;
-  const connected = Boolean(gmail?.connected && !gmail.needsReconnect);
-
-  useEffect(() => {
-    if (waitingForGoogle && connected) {
-      setWaitingForGoogle(false);
-      toast.success("Gmail connected. You can send from PA now.");
-    }
-  }, [waitingForGoogle, connected]);
 
   useEffect(() => {
     if (!confirming) return;
@@ -80,43 +60,6 @@ export function SendBar({
 
   if (!send) return null;
   const delivery = send.delivery;
-  const connectGmail = () => {
-    setWaitingForGoogle(true);
-    window.open(
-      appPath("/_agent-native/gmail/auth-url?redirect=1"),
-      "pa-connect-gmail",
-      "width=520,height=680",
-    );
-  };
-  // Anyone can try the Gmail path on any lead: it goes to their own inbox (D97).
-  const testButton = (
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      disabled={test.isPending || !draft.id}
-      onClick={() =>
-        test.mutate(
-          { engagementId, draftId: draft.id ?? "" },
-          {
-            onSuccess: () =>
-              toast.success(
-                `Test sent to ${gmail?.email ?? "you"}. Check your inbox.`,
-              ),
-            onError: (error) => toast.error(actionErrorMessage(error)),
-          },
-        )
-      }
-      title="Sends this draft to your own inbox from your Gmail. The lead gets nothing."
-    >
-      {test.isPending ? (
-        <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
-      ) : (
-        <IconMailForward className="size-4" aria-hidden="true" />
-      )}
-      Send a test to me
-    </Button>
-  );
 
   if (delivery?.kind === "sent")
     return (
@@ -132,8 +75,7 @@ export function SendBar({
         <IconCheck className="size-4 shrink-0" aria-hidden="true" />
         <span>
           Approved. It is in {delivery.by ?? "the owner"}'s Gmail Drafts, ready
-          to edit and send from Gmail. PA marks the lead contacted once HubSpot
-          logs it.{" "}
+          to edit and send from Gmail.{" "}
           <a
             href={GMAIL_DRAFTS}
             target="_blank"
@@ -158,49 +100,13 @@ export function SendBar({
       </Banner>
     );
 
-  if (!send.canSend)
-    return (
-      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2.5 text-[12.5px] text-muted-foreground">
-        <span className="min-w-0 flex-1">
-          {send.ownerEmail
-            ? `Only ${send.ownerEmail}, the lead's owner, can approve this. It goes out from their Gmail.`
-            : "No owner yet. Once the lead has one, they approve and send it from their Gmail."}
-        </span>
-        {status.isLoading ? null : connected ? (
-          <>
-            {testButton}
-            <Button
-              type="button"
-              size="sm"
-              variant="link"
-              className="h-auto px-1 text-[12px] text-muted-foreground"
-              onClick={connectGmail}
-              title="Connect Gmail again, for example after Google ends the connection"
-            >
-              Reconnect Gmail
-            </Button>
-          </>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={gmail?.configured === false}
-            onClick={connectGmail}
-            title="Connect your Gmail to send yourself a test of this draft"
-          >
-            <IconBrandGmail className="size-4" aria-hidden="true" />
-            {waitingForGoogle
-              ? "Finish in the Google window"
-              : "Connect Gmail to test"}
-          </Button>
-        )}
-      </div>
-    );
-
-  const blocked =
-    draft.status !== "ready"
-      ? "Fix the message rule problems before it goes out."
+  // Why the buttons are grey, shown on hover.
+  const locked = !send.canSend
+    ? send.ownerEmail
+      ? `Only ${send.ownerEmail}, the lead's owner, can send this.`
+      : "No owner yet, so no one can send this."
+    : draft.status !== "ready"
+      ? "Fix the message rule problems first."
       : draft.rewriting
         ? "Wait for the rewrite to finish."
         : null;
@@ -226,6 +132,29 @@ export function SendBar({
       },
     );
 
+  // The owner connects Gmail once before the buttons work.
+  if (send.canSend && !status.isLoading && !connected)
+    return (
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+        <Button
+          type="button"
+          size="sm"
+          disabled={gmail?.configured === false}
+          onClick={connect}
+        >
+          <IconBrandGmail className="size-4" aria-hidden="true" />
+          {gmail?.needsReconnect ? "Reconnect Gmail" : "Connect Gmail to send"}
+        </Button>
+        <span className="text-[12px] text-muted-foreground">
+          {waiting
+            ? "Finish in the Google window (Advanced, then Go to XDR Hub)."
+            : "Once. Google will say the app is not verified: click Advanced, then Go to XDR Hub."}
+        </span>
+      </div>
+    );
+
+  const disabled =
+    Boolean(locked) || busy || !draft.id || (send.canSend && status.isLoading);
   return (
     <div className="border-t border-border px-4 py-3">
       {delivery?.kind === "failed" ? (
@@ -238,37 +167,12 @@ export function SendBar({
           Nothing was sent; you can try again.
         </p>
       ) : null}
-      {status.isLoading ? (
-        <p className="text-[12.5px] text-muted-foreground">
-          Checking your Gmail connection...
-        </p>
-      ) : !connected ? (
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Locked reason={locked}>
           <Button
             type="button"
             size="sm"
-            disabled={gmail?.configured === false}
-            onClick={connectGmail}
-          >
-            <IconBrandGmail className="size-4" aria-hidden="true" />
-            {gmail?.needsReconnect
-              ? "Reconnect Gmail"
-              : "Connect Gmail to send"}
-          </Button>
-          <span className="text-[12px] text-muted-foreground">
-            {gmail?.configured === false
-              ? "Google sign-in is not set up on this server."
-              : waitingForGoogle
-                ? "Finish in the Google window (Advanced, then Go to XDR Hub). This updates on its own."
-                : "Once, so PA can send or save drafts as you. Google will say the app is not verified: click Advanced, then Go to XDR Hub. Nothing goes out until you approve."}
-          </span>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            disabled={Boolean(blocked) || busy || !draft.id}
+            disabled={disabled}
             onClick={() => (confirming ? run("send") : setConfirming(true))}
           >
             {busy && approve.variables?.mode === "send" ? (
@@ -278,13 +182,19 @@ export function SendBar({
             )}
             {confirming ? `Send to ${draft.to.email}` : "Approve and send"}
           </Button>
+        </Locked>
+        <Locked reason={locked}>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            disabled={Boolean(blocked) || busy || !draft.id}
+            disabled={disabled}
             onClick={() => run("gmail_draft")}
-            title="Saves it to your Gmail Drafts to edit and send from Gmail"
+            title={
+              locked
+                ? undefined
+                : "Saves it to your Gmail Drafts to edit and send from Gmail"
+            }
           >
             {busy && approve.variables?.mode === "gmail_draft" ? (
               <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -293,26 +203,35 @@ export function SendBar({
             )}
             Approve
           </Button>
-          {testButton}
-          <Button
-            type="button"
-            size="sm"
-            variant="link"
-            className="h-auto px-1 text-[12px] text-muted-foreground"
-            onClick={connectGmail}
-            title="Connect Gmail again, for example after Google ends the connection"
-          >
-            Reconnect Gmail
-          </Button>
+        </Locked>
+        {confirming ? (
           <span className="text-[12px] text-muted-foreground">
-            {blocked ??
-              (confirming
-                ? "Click again to send. It goes out now from your Gmail."
-                : `From ${gmail?.email ?? "your Gmail"}${draft.cc ? `, cc ${draft.cc}` : ""}. Approve saves it to your Gmail Drafts instead.`)}
+            Click again to send it now from your Gmail.
           </span>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+/** A disabled button shows no hover, so the reason sits on a wrapper. */
+function Locked({
+  reason,
+  children,
+}: {
+  reason: string | null;
+  children: ReactNode;
+}) {
+  if (!reason) return <>{children}</>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className="inline-flex">
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{reason}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -321,7 +240,7 @@ function Banner({
   children,
 }: {
   tone: "done" | "muted";
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <p

@@ -5,8 +5,10 @@
 - The lead's owner can now send the drafted reply from their own Gmail:
   "Approve and send" sends it (a second click confirms), "Approve" saves it
   to their Gmail Drafts to edit and send there (D96).
-- "Send a test to me" sends any lead's draft to your own inbox from your
-  Gmail, so you can try it without owning the lead (D97).
+- Everyone sees "Approve and send" and "Approve" on a draft; they are
+  greyed out unless you own the lead (D99).
+- Your Gmail connection lives in Settings > Email: connect, reconnect,
+  disconnect, and send yourself a test (D97, D99).
 - A draft signed "[owner first name]" is signed with the sender's first
   name when it goes out (D98).
 - Each person connects Gmail once from the draft card. Only the owner sees

@@ -1822,3 +1822,16 @@ bottom. Revisit one only when its "revisit when" condition happens.
   then their PA profile, then the Google given name saved when they
   connected Gmail (Connect Gmail now also asks for `userinfo.profile`).
   With no name anywhere, the placeholder still blocks the send.
+
+## D99. The draft card carries only the two buttons; Gmail lives in Settings (2026-10-02)
+
+- Once sending was proven, Fred asked to clear the line under the draft
+  ("Only X can approve this", the test, Reconnect) and show the buttons to
+  everyone, greyed out unless you own the lead.
+- The draft card now shows "Approve and send" and "Approve" to everyone.
+  For anyone but the owner they are disabled, and hovering says who can
+  send. The owner sees "Connect Gmail to send" there only until connected.
+- **Settings > Email** holds the connection: status, Send a test to me (a
+  short note to yourself; `send-test-email` with no lead), Reconnect,
+  Disconnect, and the one-time "Advanced, then Go to XDR Hub" hint for
+  Google's unverified-app screen.

@@ -422,3 +422,25 @@ export async function sendTestToSelf(
   });
   return { sentTo: me, gmailId: id };
 }
+
+/** The Settings test (D99): a short note to yourself, no lead involved. */
+export async function sendConnectionTest(deps: SendDeps, actorEmail: string) {
+  const me = actorEmail.toLowerCase();
+  const name = await senderFirstName(deps, me);
+  try {
+    const { id } = await deps.gmail.send(me, {
+      from: me,
+      to: me,
+      cc: null,
+      subject: "[Test] PA can send from your Gmail",
+      body: `This is a test from PA. Your Gmail is connected, so "Approve and send" on a lead you own sends from this address.${name ? `\n\nSigned as: ${name}` : "\n\nPA does not know your first name yet: reconnect Gmail in Settings so drafts are signed with it."}`,
+    });
+    return { sentTo: me, gmailId: id };
+  } catch (error) {
+    throw new SendRefused(
+      error instanceof Error ? error.message : "Gmail did not answer",
+      "gmail",
+      502,
+    );
+  }
+}
