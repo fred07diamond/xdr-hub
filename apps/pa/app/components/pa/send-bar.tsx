@@ -167,7 +167,19 @@ export function SendBar({
             : "No owner yet. Once the lead has one, they approve and send it from their Gmail."}
         </span>
         {status.isLoading ? null : connected ? (
-          testButton
+          <>
+            {testButton}
+            <Button
+              type="button"
+              size="sm"
+              variant="link"
+              className="h-auto px-1 text-[12px] text-muted-foreground"
+              onClick={connectGmail}
+              title="Connect Gmail again, for example after Google ends the connection"
+            >
+              Reconnect Gmail
+            </Button>
+          </>
         ) : (
           <Button
             type="button"
@@ -282,6 +294,16 @@ export function SendBar({
             Approve
           </Button>
           {testButton}
+          <Button
+            type="button"
+            size="sm"
+            variant="link"
+            className="h-auto px-1 text-[12px] text-muted-foreground"
+            onClick={connectGmail}
+            title="Connect Gmail again, for example after Google ends the connection"
+          >
+            Reconnect Gmail
+          </Button>
           <span className="text-[12px] text-muted-foreground">
             {blocked ??
               (confirming
