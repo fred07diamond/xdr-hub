@@ -1835,3 +1835,21 @@ bottom. Revisit one only when its "revisit when" condition happens.
   short note to yourself; `send-test-email` with no lead), Reconnect,
   Disconnect, and the one-time "Advanced, then Go to XDR Hub" hint for
   Google's unverified-app screen.
+
+## D100. The draft card is an editable email with one action row (2026-10-02)
+
+- Fred found the draft area cluttered and could not edit the draft.
+- The subject and body are edited in place by anyone with a PA role.
+  `edit-draft` (people only) saves the edit as a new draft version, checked
+  against the same message rules through `server/lib/draft-lint.ts`, which
+  save-draft now shares. Two checks compare the email with the agent's own
+  rubric (trigger, connection); they do not apply to a person's wording.
+  Every other rule still blocks a send. "[owner first name]" shows as the
+  owner's first name in the editor. While there are unsaved edits, the row
+  shows Save changes and Discard instead of the send buttons.
+- One row under the email: Approve and send, Approve, the word count, and a
+  More menu (Copy, Rewrite with the agent). The From and Subject header
+  rows, the class label, the "Nothing is sent..." note, and the rule chips
+  are gone; the chips and notes moved into "Why it reads this way".
+- The agent redrafts over an edit only when the lead's route or meeting
+  link changes, since the email must change then.

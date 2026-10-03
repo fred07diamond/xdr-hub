@@ -40,10 +40,13 @@ export function SendBar({
   engagementId,
   draft,
   onDone,
+  trailing,
 }: {
   engagementId: string;
   draft: DraftView;
   onDone: () => void;
+  /** Word count and the More menu, at the end of the row. */
+  trailing?: ReactNode;
 }) {
   const send = draft.send;
   const { status, gmail, connected, waiting, connect } = useGmail(
@@ -150,6 +153,7 @@ export function SendBar({
             ? "Finish in the Google window (Advanced, then Go to XDR Hub)."
             : "Once. Google will say the app is not verified: click Advanced, then Go to XDR Hub."}
         </span>
+        <span className="ml-auto flex items-center gap-1">{trailing}</span>
       </div>
     );
 
@@ -209,6 +213,7 @@ export function SendBar({
             Click again to send it now from your Gmail.
           </span>
         ) : null}
+        <span className="ml-auto flex items-center gap-1">{trailing}</span>
       </div>
     </div>
   );

@@ -21,17 +21,24 @@ import {
   IconCalendarEvent,
   IconCheck,
   IconCopy,
+  IconDots,
   IconMinus,
   IconX,
   IconMessageCircleQuestion,
   IconLoader2,
   IconRefresh,
 } from "@tabler/icons-react";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { CitationChips } from "./badges";
@@ -256,6 +263,21 @@ function DraftReasoning({ draft }: { draft: DraftView }) {
           </div>
         ) : null}
         {row("Tone", null, why?.tone ?? null)}
+        {draft.warnings.length > 0 ? (
+          <ul className="space-y-0.5 text-[12px] text-muted-foreground">
+            {draft.warnings.map((warning) => (
+              <li key={warning.code}>Note. {warning.message}</li>
+            ))}
+          </ul>
+        ) : null}
+        {draft.usedEntries.length > 0 ? (
+          <div className="grid gap-1">
+            <p className="text-[11.5px] font-medium text-muted-foreground">
+              Playbook rules it follows
+            </p>
+            <CitationChips entries={draft.usedEntries} />
+          </div>
+        ) : null}
         {!why ? (
           <p className="text-[12px] text-muted-foreground">
             Written before PA asked for the agent's reasoning; the next draft
@@ -302,124 +324,185 @@ function DraftBody({ body }: { body: string }) {
   );
 }
 
-function Header({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex min-w-0 gap-3 px-4 py-2 text-[13px]">
-      <span className="w-14 shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate text-foreground">{value}</span>
-    </div>
-  );
-}
+/** "[owner first name]" reads as the owner's name in the editor (D100). */
+const OWNER_TOKEN = /\[owner first name\]/gi;
 
 export function DraftCard({
   draft,
   engagementId,
-  onSendDone,
+  editable = false,
+  onChanged,
   onAsk,
   onRewrite,
   rewriteBusy,
-  sent,
-  embedded = false,
 }: {
   draft: DraftView;
   /** With it, the owner can approve and send from their Gmail (D96). */
   engagementId?: string;
-  onSendDone?: () => void;
+  /** People with a PA role can edit the subject and body in place (D100). */
+  editable?: boolean;
+  /** After a save, send, or approval, so the page reloads the lead. */
+  onChanged?: () => void;
   onAsk: (kind: "revise" | "draft") => void;
   /** Rewrite just this reply under the current playbook (D87). */
   onRewrite?: () => void;
   rewriteBusy?: boolean;
-  /** The email already sent from HubSpot after the form (D64). */
-  sent?: ReactNode;
-  /** Inside another card (the first touch): no frame or header of its own. */
-  embedded?: boolean;
 }) {
   const hasDraft = draft.status === "ready" || draft.status === "needs_edit";
+  const ownerFirst = draft.from?.trim().split(/\s+/)[0] ?? null;
+  const initialBody = ownerFirst
+    ? (draft.body ?? "").replace(OWNER_TOKEN, ownerFirst)
+    : (draft.body ?? "");
+  const initialSubject = draft.subject ?? "";
+  const [subject, setSubject] = useState(initialSubject);
+  const [body, setBody] = useState(initialBody);
+  // A new draft (agent rewrite or a saved edit) replaces what is on screen.
+  useEffect(() => {
+    setSubject(initialSubject);
+    setBody(initialBody);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.id]);
+  const save = useActionMutation("edit-draft");
+  const dirty = subject !== initialSubject || body !== initialBody;
+  const canEdit =
+    editable &&
+    Boolean(engagementId && draft.id) &&
+    !draft.rewriting &&
+    draft.send?.delivery?.kind !== "sent" &&
+    draft.send?.delivery?.kind !== "sending";
+
+  const saveEdit = () =>
+    save.mutate(
+      {
+        engagementId: engagementId ?? "",
+        draftId: draft.id ?? "",
+        subject: subject.trim(),
+        body: body.trim(),
+      },
+      {
+        onSuccess: (result) => {
+          const problems = (result as { problems?: unknown[] }).problems ?? [];
+          if (problems.length > 0)
+            toast.warning(
+              `Saved. It breaks ${problems.length} message ${problems.length === 1 ? "rule" : "rules"}; fix it before it goes out.`,
+            );
+          else toast.success("Saved your edits.");
+          onChanged?.();
+        },
+        onError: (error) => toast.error(actionErrorMessage(error)),
+      },
+    );
+
+  const menu = hasDraft ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-8"
+          aria-label="More"
+        >
+          <IconDots className="size-4" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onSelect={() => {
+            void navigator.clipboard
+              .writeText(`Subject: ${subject}\n\n${body}`)
+              .then(() => toast.success("Draft copied"))
+              .catch(() => toast.error("Couldn't copy the draft"));
+          }}
+        >
+          <IconCopy className="size-4" aria-hidden="true" />
+          Copy
+        </DropdownMenuItem>
+        {onRewrite ? (
+          <DropdownMenuItem
+            disabled={rewriteBusy || draft.rewriting || dirty}
+            onSelect={onRewrite}
+          >
+            <IconRefresh className="size-4" aria-hidden="true" />
+            Rewrite with the agent
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
+
+  const meta = (
+    <span className="whitespace-nowrap text-[12px] text-muted-foreground">
+      {draft.wordCount !== null ? `${draft.wordCount} words` : ""}
+    </span>
+  );
+
   return (
     <section
       aria-label="Drafted reply"
-      className={cn(
-        "flex min-w-0 flex-col",
-        !embedded && "rounded-lg border border-border bg-card shadow-xs",
-      )}
+      className="flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-xs"
     >
-      <header
-        hidden={embedded}
-        className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2"
-      >
+      <header className="flex min-h-11 items-center justify-between gap-2 border-b border-border px-4 py-2">
         <h2 className="text-[13px] font-semibold text-foreground">
           Drafted reply
         </h2>
-        <div className="flex items-center gap-2">
-          {draft.approach ? (
-            <span
-              className="text-[12px] text-muted-foreground"
-              title="The Contact Sales class this reply follows, from the Sales handbook"
-            >
-              {draft.approach.label}
-            </span>
-          ) : null}
-          {sent && !hasDraft ? (
-            <span className="inline-flex h-[22px] items-center rounded-[5px] bg-primary-soft px-1.5 text-[11.5px] font-medium text-primary">
-              Sent from HubSpot
-            </span>
-          ) : (
-            <DraftStatusChip status={draft.status} />
-          )}
-        </div>
+        <DraftStatusChip status={draft.status} />
       </header>
-      {sent}
       {hasDraft ? (
         <>
-          <div className="divide-y divide-border border-b border-border">
-            <Header
-              label="To"
-              value={
-                <>
-                  {draft.to.name ? `${draft.to.name} ` : null}
-                  <span className="font-mono text-[12px] text-muted-foreground">
-                    {draft.to.email}
-                  </span>
-                </>
-              }
-            />
-            {draft.cc ? (
-              <Header
-                label="Cc"
-                value={
-                  <span className="font-mono text-[12px] text-muted-foreground">
-                    {draft.cc}
-                    <span className="ml-1.5 font-sans text-foreground">
-                      (the AE)
-                    </span>
-                  </span>
-                }
-              />
+          <p className="truncate px-4 pt-3 text-[12.5px] text-muted-foreground">
+            To{" "}
+            <span className="text-foreground">
+              {draft.to.name ?? draft.to.email}
+            </span>
+            {draft.to.name ? (
+              <span className="font-mono text-[11.5px]"> {draft.to.email}</span>
             ) : null}
-            <Header label="From" value={draft.from ?? "Unassigned"} />
-            <Header
-              label="Subject"
-              value={<span className="font-medium">{draft.subject}</span>}
-            />
-          </div>
+            {draft.cc ? (
+              <>
+                {"  ·  "}Cc <span className="text-foreground">{draft.cc}</span>{" "}
+                (the AE)
+              </>
+            ) : null}
+          </p>
           {draft.rewriting ? (
-            <p className="mx-4 mt-4 flex items-center gap-2 rounded-md bg-primary-soft px-3 py-2 text-[12.5px] text-primary">
+            <p className="mx-4 mt-3 flex items-center gap-2 rounded-md bg-primary-soft px-3 py-2 text-[12.5px] text-primary">
               <IconLoader2
                 className="size-3.5 animate-spin"
                 aria-hidden="true"
               />
-              Rewriting this reply under the current playbook. The new draft
-              replaces this one in a minute or two.
+              The agent is rewriting this reply. The new draft replaces it in a
+              minute or two.
             </p>
           ) : null}
-          <div className="px-4 py-4">
-            <DraftBody body={draft.body ?? ""} />
-          </div>
-          {draft.problems.length > 0 ? (
-            <div className="mx-4 mb-4 rounded-md bg-warning-soft px-3 py-2.5">
+          {canEdit ? (
+            <div className="flex flex-col px-4 pb-2 pt-2">
+              <input
+                aria-label="Subject"
+                value={subject}
+                onChange={(event) => setSubject(event.target.value)}
+                className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 -mx-1.5 text-[14px] font-semibold text-foreground outline-none hover:border-border focus:border-ring"
+              />
+              <textarea
+                aria-label="Email body"
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                rows={8}
+                className="mt-1 w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 -mx-1.5 text-[14px] min-h-48 leading-[1.6] text-foreground outline-none [field-sizing:content] hover:border-border focus:border-ring"
+              />
+            </div>
+          ) : (
+            <div className="px-4 pb-4 pt-2">
+              <p className="mb-2 text-[14px] font-semibold text-foreground">
+                {draft.subject}
+              </p>
+              <DraftBody body={draft.body ?? ""} />
+            </div>
+          )}
+          {draft.problems.length > 0 && !dirty ? (
+            <div className="mx-4 mb-3 rounded-md bg-warning-soft px-3 py-2.5">
               <p className="text-[12.5px] font-medium text-warning-foreground">
-                Breaks {draft.problems.length} message{" "}
-                {draft.problems.length === 1 ? "rule" : "rules"}
+                Fix before it goes out
               </p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12.5px] text-warning-foreground">
                 {draft.problems.map((problem) => (
@@ -430,67 +513,61 @@ export function DraftCard({
               </ul>
             </div>
           ) : null}
-          {draft.warnings.length > 0 ? (
-            <ul className="mx-4 mb-4 space-y-0.5 text-[12px] text-muted-foreground">
-              {draft.warnings.map((warning) => (
-                <li key={warning.code}>Note. {warning.message}</li>
-              ))}
-            </ul>
-          ) : null}
-          <footer className="mt-auto flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const text = `Subject: ${draft.subject}\n\n${draft.body}`;
-                void navigator.clipboard
-                  .writeText(text)
-                  .then(() => toast.success("Draft copied"))
-                  .catch(() => toast.error("Couldn't copy the draft"));
-              }}
-            >
-              <IconCopy className="size-4" aria-hidden="true" />
-              Copy
-            </Button>
-            {onRewrite ? (
+          {dirty ? (
+            <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
-                disabled={rewriteBusy || draft.rewriting}
-                onClick={onRewrite}
+                disabled={save.isPending || !subject.trim() || !body.trim()}
+                onClick={saveEdit}
               >
-                <IconRefresh className="size-4" aria-hidden="true" />
-                {draft.rewriting ? "Rewriting..." : "Rewrite reply"}
+                {save.isPending ? (
+                  <IconLoader2
+                    className="size-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <IconCheck className="size-4" aria-hidden="true" />
+                )}
+                Save changes
               </Button>
-            ) : null}
-            <span className="ml-auto text-[12px] text-muted-foreground">
-              {draft.status === "ready"
-                ? `Passes all ${draft.checksRun} message checks`
-                : "Fix before it goes out"}
-              {draft.wordCount !== null ? ` · ${draft.wordCount} words` : ""}
-            </span>
-          </footer>
-          {engagementId ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={save.isPending}
+                onClick={() => {
+                  setSubject(initialSubject);
+                  setBody(initialBody);
+                }}
+              >
+                Discard
+              </Button>
+              <span className="ml-auto text-[12px] text-muted-foreground">
+                Save before you send. PA checks it against the message rules.
+              </span>
+            </div>
+          ) : engagementId ? (
             <SendBar
               engagementId={engagementId}
               draft={draft}
-              onDone={() => onSendDone?.()}
+              onDone={() => onChanged?.()}
+              trailing={
+                <>
+                  {meta}
+                  {menu}
+                </>
+              }
             />
-          ) : null}
-          <div className="border-t border-border px-4 py-2 text-[11.5px] text-muted-foreground">
-            <p>
-              Nothing is sent until the lead's owner approves. It goes out from
-              their Gmail, and HubSpot logs it through their inbox sync.
-            </p>
-            {draft.usedEntries.length > 0 ? (
-              <CitationChips entries={draft.usedEntries} className="mt-1.5" />
-            ) : null}
-          </div>
+          ) : (
+            <div className="mt-auto flex items-center justify-end gap-2 border-t border-border px-4 py-2">
+              {meta}
+              {menu}
+            </div>
+          )}
           <DraftReasoning draft={draft} />
         </>
-      ) : sent ? null : (
+      ) : (
         <div className="flex flex-1 flex-col items-start gap-3 px-4 py-5">
           <p className="text-[13.5px] leading-relaxed text-muted-foreground">
             {draft.note}

@@ -820,7 +820,8 @@ export default function EngagementRoute() {
               <DraftCard
                 draft={detail.draft}
                 engagementId={detail.id}
-                onSendDone={() => {
+                editable={canDecide}
+                onChanged={() => {
                   void engagement.refetch();
                   void history.refetch();
                 }}

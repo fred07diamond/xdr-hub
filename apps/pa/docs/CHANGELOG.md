@@ -5,6 +5,11 @@
 - The lead's owner can now send the drafted reply from their own Gmail:
   "Approve and send" sends it (a second click confirms), "Approve" saves it
   to their Gmail Drafts to edit and send there (D96).
+- Edit the drafted reply in place: change the subject or body, then Save
+  changes. PA checks your edit against the message rules (D100).
+- The draft card is cleaner: one row with Approve and send, Approve, and a
+  More menu (Copy, Rewrite with the agent); the rules it follows sit under
+  "Why it reads this way" (D100).
 - Everyone sees "Approve and send" and "Approve" on a draft; they are
   greyed out unless you own the lead (D99).
 - Your Gmail connection lives in Settings > Email: connect, reconnect,

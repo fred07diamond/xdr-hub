@@ -91,12 +91,12 @@ People only, hidden from the agent: `review-playbook-change`,
 `enable-inbound-agent`, `refresh-lead`, `refresh-all-leads`, `save-person`,
 `set-meeting-link`, `rewrite-reply`,
 `set-lead-route` (the lead's route, D66),
-`send-first-touch`, `send-test-email`, `get-gmail-status`, `disconnect-gmail` (the owner sends
+`send-first-touch`, `send-test-email`, `edit-draft` (a person's edit, D100), `get-gmail-status`, `disconnect-gmail` (the owner sends
 from their own Gmail, D96), `decide-lead` (the rep's decision; the agent may
 recommend but never decides).
 
 Planned, not built yet (do not call): `approve-draft`,
-`edit-draft`, `reassign-engagement`, `record-correction`
+`reassign-engagement`, `record-correction`
 (M2), `label-submission` (M0), `pipeline-health` and `set-mode` (M1).
 
 ## Skills

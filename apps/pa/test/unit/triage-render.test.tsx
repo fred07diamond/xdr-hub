@@ -1,5 +1,6 @@
 // The board and record summary render from demo data without errors, and the
 // first thing on each is the classification and the draft (D49).
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -55,16 +56,16 @@ describe("triage UI", () => {
           }}
           facts={[]}
         />
-        <DraftCard draft={detail.draft} onAsk={() => {}} />
+        <QueryClientProvider client={new QueryClient()}>
+          <DraftCard draft={detail.draft} onAsk={() => {}} />
+        </QueryClientProvider>
         <SalesCycle stages={detail.salesCycle} sla={detail.sla} />
       </>,
     );
     expect(html).toContain("How it was classified");
     expect(html).toContain("Review the draft reply.");
-    expect(html).toContain("Requires discovery, Content");
     expect(html).not.toContain("[time options]");
     expect(html).not.toContain("[calendar link]");
-    expect(html).toContain("Nothing is sent until the lead");
     expect(html).toContain("SLA timer");
     expect(html).toContain("NBM complete");
     expect(html).toContain(detail.sla.label);
