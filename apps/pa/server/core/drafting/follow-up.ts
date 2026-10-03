@@ -63,6 +63,9 @@ export function lintFollowUp(input: {
   earlier: string[];
   /** The meeting link the route carries, when the step offers one. */
   link: string | null;
+  /** A new-email step (D104): its subject, checked too. */
+  subject?: string | null;
+  newThread?: boolean;
 }): FollowUpLint {
   const params = (input.release.entries.find(
     (entry) => entry.id === "msg.first_touch.structure",
@@ -122,6 +125,33 @@ export function lintFollowUp(input: {
       code: "placeholder",
       message: "Has a placeholder left in brackets. Write the real words.",
     });
+  if (input.newThread) {
+    const subject = (input.subject ?? "").trim();
+    if (!subject)
+      problems.push({
+        code: "subject",
+        message: "This step starts a new email, so it needs a subject.",
+      });
+    else if (subject.length > 80)
+      problems.push({
+        code: "subject",
+        message: "Keep the subject under 80 characters.",
+      });
+    else if (/^re:/i.test(subject))
+      problems.push({
+        code: "subject",
+        message: 'A new email should not start with "Re:".',
+      });
+    if (
+      (params.banned_chars ?? ["\u2014", "\u2013"]).some((c) =>
+        subject.includes(c),
+      )
+    )
+      problems.push({
+        code: "dash",
+        message: "The subject uses an em dash or en dash.",
+      });
+  }
   const core = body.replace(SIGN_OFF, "");
   for (const earlier of input.earlier) {
     if (overlap(core, earlier.replace(SIGN_OFF, "")) > 0.35) {

@@ -16,6 +16,15 @@ export default defineAction({
   schema: z.object({
     followUpId: z.string().min(1),
     body: z.string().trim().min(1).max(3000),
+    subject: z
+      .string()
+      .trim()
+      .max(120)
+      .nullable()
+      .optional()
+      .describe(
+        'Only for a step with thread "new": the new email\'s subject. Leave out for a reply in the thread.',
+      ),
     reasoning: z
       .string()
       .trim()
@@ -49,6 +58,8 @@ export default defineAction({
       release: await activeRelease(repository),
       earlier: await earlierEmails(repository, row),
       link: await routeLinkOf(repository, row.engagementId),
+      newThread: row.thread === "new",
+      subject: args.subject ?? null,
     });
     const first = await firstTouchOf(repository, row.engagementId);
     const at = now().toISOString();
@@ -56,7 +67,10 @@ export default defineAction({
       row.id,
       {
         status: lint.ok ? "drafted" : "needs_edit",
-        subject: replySubject(first.subject),
+        subject:
+          row.thread === "new"
+            ? (args.subject ?? null)
+            : replySubject(first.subject),
         body: args.body,
         lint: { ...lint, reasoning: args.reasoning, source: "agent" },
         updatedAt: at,

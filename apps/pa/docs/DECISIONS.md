@@ -1941,3 +1941,18 @@ bottom. Revisit one only when its "revisit when" condition happens.
   ended. No opens or clicks: no tracking pixels in personal email.
 - Not built yet: task steps (call, LinkedIn), per-step settings, earned
   autopilot, and changing cadence on new signals.
+
+## D104. Per-step settings, and "Unenrolled" on a reply (2026-10-02)
+
+- Task steps (call, LinkedIn) are out: Fred does not want them now.
+- **Per step** (cadence editor): "Reply in the same thread" (the default:
+  "Re:" subject, In-Reply-To the first touch, same Gmail thread) or "New
+  email, own subject" (the agent writes a subject, checked: present, under
+  80 characters, no "Re:", no dashes; editable on the lead page). On the
+  exceptional route, "AE on cc" per step, defaulting to the route's
+  setting. Stored on each follow-up (`pa_follow_ups.thread`, migration v13).
+- **Unenroll on reply:** already the rule (D101, D103): any real reply
+  unenrolls the lead from the rest of the sequence, an out-of-office only
+  pauses it. HubSpot is now read every 15 minutes per lead in a sequence
+  (was 30), and again right before every send. The lead page says
+  "Unenrolled: they replied", and "Stop follow-ups" is now "Unenroll".

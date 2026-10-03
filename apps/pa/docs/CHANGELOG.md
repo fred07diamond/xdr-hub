@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-02 (per-step settings)
+
+- Each follow-up step can reply in the same thread or start a new email
+  with its own subject, and on exceptional leads keep the AE on cc or not
+  (D104).
+- A reply unenrolls the lead from the rest of the sequence; PA now checks
+  HubSpot every 15 minutes and right before each send. The lead page says
+  "Unenrolled".
+
 ## 2026-10-02 (sequencing phase 2)
 
 - Send queue: "Start sending" on Sequencing walks you through your due

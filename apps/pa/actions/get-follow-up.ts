@@ -37,18 +37,18 @@ export default defineAction({
         status: row.status,
         dueAt: row.dueAt,
         cc: row.cc,
+        // "reply" in the first touch's thread, or "new" with its own subject.
+        thread: row.thread ?? "reply",
         body: row.body,
-        problems:
-          ((row.lint ?? {}) as { problems?: unknown[] }).problems ?? [],
+        problems: ((row.lint ?? {}) as { problems?: unknown[] }).problems ?? [],
         wordCount:
           ((row.lint ?? {}) as { wordCount?: number }).wordCount ?? null,
         reasoning:
-          ((row.lint ?? {}) as { reasoning?: string | null }).reasoning ??
-          null,
+          ((row.lint ?? {}) as { reasoning?: string | null }).reasoning ?? null,
         edited: Boolean(row.editedBy),
       },
       lead: { name: contact?.name ?? null, email: contact?.email ?? null },
-      subject: replySubject(first.subject),
+      subject: row.thread === "new" ? row.subject : replySubject(first.subject),
       firstTouch: { subject: first.subject, body: first.body },
       earlierFollowUps: all
         .filter((item) => item.stepIndex < row.stepIndex && item.body)
@@ -59,7 +59,7 @@ export default defineAction({
         })),
       meetingLink: await routeLinkOf(repository, row.engagementId),
       rules:
-        "A short reply in the same thread: 15 to 75 words. Open with their first name, then do the step's purpose with something new; no acknowledgment line, no recap of the first touch, no 'just checking in', no em or en dashes. Never repeat an earlier email. Use [meeting link] only when the purpose offers the meeting and a link is on file. Sign with [owner first name].",
+        "A short reply in the same thread: 15 to 75 words. Open with their first name, then do the step's purpose with something new; no acknowledgment line, no recap of the first touch, no 'just checking in', no em or en dashes. Never repeat an earlier email. Use [meeting link] only when the purpose offers the meeting and a link is on file. Sign with [owner first name]. When thread is new, it is a fresh email, not a reply: pass a short subject (under 80 characters, no Re:) to save-follow-up and open with a line that stands on its own.",
       earlierCount: (await earlierEmails(repository, row)).length,
     };
   },

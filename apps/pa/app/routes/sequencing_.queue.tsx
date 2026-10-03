@@ -54,7 +54,7 @@ interface Detail {
     reasoning: string | null;
   };
   lead: { name: string | null; email: string | null };
-  subject: string;
+  subject: string | null;
   firstTouch: { subject: string | null; body: string | null };
   earlierFollowUps: Array<{
     step: number;
@@ -308,7 +308,7 @@ function QueueItem({
 
       <section className="flex min-w-0 flex-col rounded-lg border border-border bg-card">
         <p className="truncate border-b border-border px-4 py-2 text-[12.5px] text-muted-foreground">
-          {data.subject}
+          {data.subject ?? "New email"}
           {data.followUp.cc ? `  ·  Cc ${data.followUp.cc}` : ""}
         </p>
         <textarea

@@ -71,6 +71,11 @@ export async function sendFollowUp(
       `Send or skip follow-up ${earlier[0].stepIndex} first.`,
       "not_sendable",
     );
+  if (row.thread === "new" && !row.subject?.trim())
+    throw new SendRefused(
+      "This step starts a new email, so it needs a subject.",
+      "draft_problems",
+    );
   const contact = await repository.getContact(engagement.contactId);
   if (contact?.optOut)
     throw new SendRefused("This contact opted out of email.", "opted_out");
@@ -168,11 +173,16 @@ export async function sendFollowUp(
       from: actor,
       to,
       cc: row.cc && row.cc !== to && row.cc !== actor ? row.cc : null,
-      subject: replySubject(first.subject),
       body,
       messageId: newMessageId(outbox.id),
-      inReplyTo: first.messageId,
-      threadId: first.threadId,
+      // Per step (D104): a reply in the first touch's thread, or a new email.
+      ...(row.thread === "new"
+        ? { subject: row.subject ?? replySubject(first.subject) }
+        : {
+            subject: replySubject(first.subject),
+            inReplyTo: first.messageId,
+            threadId: first.threadId,
+          }),
     });
   } catch (error) {
     const message =

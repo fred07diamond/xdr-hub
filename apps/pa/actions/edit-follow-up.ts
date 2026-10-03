@@ -12,6 +12,8 @@ export default defineAction({
   schema: z.object({
     followUpId: z.string().min(1),
     body: z.string().trim().min(1).max(3000),
+    /** A new-email step's subject (D104). */
+    subject: z.string().trim().max(120).nullable().optional(),
   }),
   agentTool: false,
   mcpTool: false,
@@ -40,6 +42,8 @@ export default defineAction({
       release: await activeRelease(repository),
       earlier: await earlierEmails(repository, row),
       link: await routeLinkOf(repository, row.engagementId),
+      newThread: row.thread === "new",
+      subject: row.thread === "new" ? (args.subject ?? row.subject) : null,
     });
     const prior = (row.lint ?? {}) as Record<string, unknown>;
     const at = now().toISOString();
@@ -48,6 +52,9 @@ export default defineAction({
       {
         status: lint.ok ? "drafted" : "needs_edit",
         body: args.body,
+        ...(row.thread === "new" && args.subject !== undefined
+          ? { subject: args.subject }
+          : {}),
         lint: { ...lint, reasoning: prior.reasoning ?? null, source: "user" },
         editedBy: email,
         updatedAt: at,

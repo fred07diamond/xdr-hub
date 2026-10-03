@@ -542,6 +542,8 @@ export const paFollowUps = table(
     sentAt: text("sent_at"),
     gmailId: text("gmail_id"),
     editedBy: text("edited_by"),
+    // v13 (D104): "reply" in the first touch's thread, or "new".
+    thread: text("thread"),
     version: integer("version").notNull().default(1),
     ...stamps,
   },

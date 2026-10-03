@@ -24,6 +24,7 @@ import {
   CADENCE_ROUTES,
   type CadenceStep,
   type RouteCadence,
+  type StepThread,
 } from "@shared/cadence";
 import { blockType } from "@shared/playbook-blocks";
 import { IconGripVertical, IconPlus, IconX } from "@tabler/icons-react";
@@ -565,16 +566,48 @@ export function CadenceEditor({
                         }
                       />
                     </label>
-                    <textarea
-                      aria-label={`What follow-up ${index + 1} is for`}
-                      rows={2}
-                      className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-[13px] leading-snug text-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder="What this follow-up is for, e.g. share one customer example that matches their need"
-                      value={step.purpose}
-                      onChange={(event) =>
-                        setStep(index, { purpose: event.target.value })
-                      }
-                    />
+                    <div className="grid gap-1.5">
+                      <textarea
+                        aria-label={`What follow-up ${index + 1} is for`}
+                        rows={2}
+                        className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-[13px] leading-snug text-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        placeholder="What this follow-up is for, e.g. share one customer example that matches their need"
+                        value={step.purpose}
+                        onChange={(event) =>
+                          setStep(index, { purpose: event.target.value })
+                        }
+                      />
+                      {/* Per step (D104): thread and cc. */}
+                      <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted-foreground">
+                        <select
+                          aria-label={`How follow-up ${index + 1} is sent`}
+                          className="h-7 rounded-md border border-input bg-background px-1.5 text-[12px] text-foreground"
+                          value={step.thread ?? "reply"}
+                          onChange={(event) =>
+                            setStep(index, {
+                              thread: event.target.value as StepThread,
+                            })
+                          }
+                        >
+                          <option value="reply">
+                            Reply in the same thread
+                          </option>
+                          <option value="new">New email, own subject</option>
+                        </select>
+                        {route === "route_to_ae" ? (
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              checked={step.cc_ae ?? cadence.cc_ae ?? true}
+                              onChange={(event) =>
+                                setStep(index, { cc_ae: event.target.checked })
+                              }
+                            />
+                            AE on cc
+                          </label>
+                        ) : null}
+                      </div>
+                    </div>
                     <button
                       type="button"
                       aria-label={`Remove follow-up ${index + 1}`}

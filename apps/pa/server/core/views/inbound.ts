@@ -1174,6 +1174,7 @@ export async function buildEngagementDetail(input: {
                 wordCount: lint.wordCount ?? null,
                 reasoning: lint.reasoning ?? null,
                 cc: row.cc,
+                thread: row.thread === "new" ? "new" : "reply",
                 stopReason: row.stopReason,
                 sentAt: row.sentAt,
                 edited: Boolean(row.editedBy),

@@ -508,6 +508,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS pa_follow_ups_step_idx ON pa_follow_ups (engag
 CREATE INDEX IF NOT EXISTS pa_follow_ups_status_idx ON pa_follow_ups (status)
 `;
 
+// Per-step thread setting (D104): reply in the first touch's thread, or new.
+export const followUpThread = `
+ALTER TABLE pa_follow_ups ADD COLUMN thread TEXT
+`;
+
 // The one list of PA migrations: the runtime and the integration tests both
 // apply exactly this, so a migration cannot exist without being registered.
 export const PA_MIGRATIONS = [
@@ -527,6 +532,7 @@ export const PA_MIGRATIONS = [
   { version: 10, name: "pa-lead-routing", sql: leadRouting },
   { version: 11, name: "pa-ae-assignments", sql: aeAssignments },
   { version: 12, name: "pa-follow-ups", sql: followUps },
+  { version: 13, name: "pa-follow-up-thread", sql: followUpThread },
 ];
 
 export const runPaMigrations = runMigrations(PA_MIGRATIONS, {

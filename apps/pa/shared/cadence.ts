@@ -29,11 +29,21 @@ export const CADENCE_ROUTES = [
 export type CadenceRoute = (typeof CADENCE_ROUTES)[number]["route"];
 export const CADENCE_ROUTE_IDS = CADENCE_ROUTES.map((item) => item.route);
 
+export const STEP_THREADS = ["reply", "new"] as const;
+export type StepThread = (typeof STEP_THREADS)[number];
+
 export const cadenceStepSchema = z.object({
   /** Days after the first touch. */
   day: z.number().int().min(1).max(60),
   /** What this follow-up is for; the agent writes the email from it. */
   purpose: z.string().trim().min(3).max(400),
+  /**
+   * Per step (D104): "reply" answers in the first touch's thread (the
+   * default); "new" starts a fresh email with its own subject.
+   */
+  thread: z.enum(STEP_THREADS).optional(),
+  /** Per step (D104): keep the AE on cc. Defaults to the route's setting. */
+  cc_ae: z.boolean().optional(),
 });
 export type CadenceStep = z.infer<typeof cadenceStepSchema>;
 

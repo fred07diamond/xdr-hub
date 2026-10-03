@@ -324,6 +324,8 @@ export interface FollowUpView {
   wordCount: number | null;
   reasoning: string | null;
   cc: string | null;
+  /** "reply" in the first touch's thread, or "new" with its own subject (D104). */
+  thread: "reply" | "new";
   stopReason: string | null;
   sentAt: string | null;
   edited: boolean;

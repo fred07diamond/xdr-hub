@@ -221,6 +221,8 @@ export interface FollowUpRecord {
   sentAt: string | null;
   gmailId: string | null;
   editedBy: string | null;
+  /** "reply" in the first touch's thread (default), or "new" (D104). */
+  thread?: "reply" | "new" | null;
   version: number;
   createdAt: string;
   updatedAt: string;

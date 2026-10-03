@@ -383,3 +383,37 @@ describe("caps and reply labels (D103)", () => {
     expect((await base.repository.getContact("c1"))?.optOut).toBe(true);
   });
 });
+
+describe("per-step settings (D104)", () => {
+  it("a new-email step sends its own subject, outside the thread", async () => {
+    const base = await seeded();
+    const row = (await base.repository.getFollowUp("f1"))!;
+    await base.repository.updateFollowUp(
+      "f1",
+      { thread: "new", subject: "A portal example for your team" },
+      row.version,
+    );
+    const mail = gmail();
+    await send(base, mail.client, "f1");
+    expect(mail.calls[0]?.subject).toBe("A portal example for your team");
+    expect(mail.calls[0]?.inReplyTo ?? null).toBeNull();
+    expect(mail.calls[0]?.threadId ?? null).toBeNull();
+  });
+
+  it("checks a new email's subject", () => {
+    const body =
+      "Hi Lead,\n\nOne example: a retail team rebuilt their partner portal on Builder and shipped the first version in three weeks. Would a similar timeline work for you?\n\n[owner first name]";
+    const codes = (subject: string | null) =>
+      lintFollowUp({
+        body,
+        release: seedRelease,
+        earlier: [FIRST],
+        link: null,
+        newThread: true,
+        subject,
+      }).problems.map((item) => item.code);
+    expect(codes(null)).toContain("subject");
+    expect(codes("Re: your portal")).toContain("subject");
+    expect(codes("A portal example for your team")).toEqual([]);
+  });
+});

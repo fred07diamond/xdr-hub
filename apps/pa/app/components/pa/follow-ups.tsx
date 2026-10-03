@@ -54,7 +54,7 @@ function StatusLabel({ item }: { item: FollowUpView }) {
           )}
           title={item.stopReason ?? undefined}
         >
-          {/^Skipped/.test(item.stopReason ?? "") ? "Skipped" : "Stopped"}
+          {/^Skipped/.test(item.stopReason ?? "") ? "Skipped" : "Unenrolled"}
         </span>
       );
     case "drafted":
@@ -117,7 +117,7 @@ export function FollowUpsCard({
                 { followUpId: current.id, all: true },
                 {
                   onSuccess: () => {
-                    toast.success("Stopped the follow-ups on this lead.");
+                    toast.success("Unenrolled this lead from its follow-ups.");
                     onChanged();
                   },
                   onError: (error) => toast.error(actionErrorMessage(error)),
@@ -126,11 +126,12 @@ export function FollowUpsCard({
             }
           >
             <IconX className="size-3.5" aria-hidden="true" />
-            Stop follow-ups
+            Unenroll
           </Button>
         ) : stoppedAll && stopReason ? (
           <span className="text-[12px] text-muted-foreground">
-            {stopReason}
+            Unenrolled: {stopReason.charAt(0).toLowerCase()}
+            {stopReason.slice(1)}
           </span>
         ) : null}
       </header>
@@ -220,9 +221,13 @@ function FollowUpEditor({
   onChanged: () => void;
 }) {
   const initial = item.body ?? "";
+  const initialSubject = item.subject ?? "";
   const [body, setBody] = useState(initial);
+  const [subject, setSubject] = useState(initialSubject);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => setBody(initial), [initial]);
+  useEffect(() => setSubject(initialSubject), [initialSubject]);
+  const newEmail = item.thread === "new";
   useEffect(() => {
     if (!confirming) return;
     const timer = window.setTimeout(() => setConfirming(false), 6000);
@@ -231,7 +236,7 @@ function FollowUpEditor({
   const save = useActionMutation("edit-follow-up");
   const send = useActionMutation("send-follow-up");
   const skip = useActionMutation("skip-follow-up");
-  const dirty = body !== initial;
+  const dirty = body !== initial || (newEmail && subject !== initialSubject);
   const locked = !followUps.canSend
     ? followUps.ownerEmail
       ? `Only ${followUps.ownerEmail}, the lead's owner, can send this.`
@@ -250,10 +255,29 @@ function FollowUpEditor({
   };
   return (
     <div className="mx-4 mb-3 ml-12 rounded-md border border-border">
-      <p className="truncate border-b border-border px-3 py-1.5 text-[12px] text-muted-foreground">
-        {item.subject ?? "Reply in the thread"}
-        {item.cc ? `  ·  Cc ${item.cc}` : ""}
-      </p>
+      {newEmail ? (
+        <div className="flex items-center gap-2 border-b border-border px-3 py-1">
+          <span className="text-[12px] text-muted-foreground">New email</span>
+          <input
+            aria-label={`Subject of follow-up ${item.step}`}
+            value={subject}
+            readOnly={!editable}
+            placeholder="Subject"
+            onChange={(event) => setSubject(event.target.value)}
+            className="min-w-0 flex-1 bg-transparent py-0.5 text-[12.5px] font-medium text-foreground outline-none"
+          />
+          {item.cc ? (
+            <span className="text-[12px] text-muted-foreground">
+              Cc {item.cc}
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <p className="truncate border-b border-border px-3 py-1.5 text-[12px] text-muted-foreground">
+          {item.subject ?? "Reply in the thread"}
+          {item.cc ? `  ·  Cc ${item.cc}` : ""}
+        </p>
+      )}
       <textarea
         aria-label={`Follow-up ${item.step}`}
         value={body}
@@ -279,7 +303,11 @@ function FollowUpEditor({
               disabled={save.isPending || !body.trim()}
               onClick={() =>
                 save.mutate(
-                  { followUpId: item.id, body: body.trim() },
+                  {
+                    followUpId: item.id,
+                    body: body.trim(),
+                    ...(newEmail ? { subject: subject.trim() } : {}),
+                  },
                   {
                     onSuccess: (result) => {
                       const problems =
@@ -303,7 +331,10 @@ function FollowUpEditor({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => setBody(initial)}
+              onClick={() => {
+                setBody(initial);
+                setSubject(initialSubject);
+              }}
             >
               Discard
             </Button>

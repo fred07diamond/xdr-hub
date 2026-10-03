@@ -39,7 +39,7 @@ const ENROLL_WINDOW_MS = 48 * 60 * 60 * 1000;
 /** The agent writes a follow-up this long before it is due. */
 export const DRAFT_AHEAD_MS = 18 * 60 * 60 * 1000;
 /** How often a lead with open follow-ups is checked for a reply in HubSpot. */
-const REPLY_CHECK_MS = 30 * 60 * 1000;
+const REPLY_CHECK_MS = 15 * 60 * 1000;
 
 export function cadenceParams(release: PlaybookRelease): CadenceParams | null {
   const entry = release.entries.find(
@@ -225,8 +225,9 @@ export async function enrollFollowUps(budgetMs = 8_000) {
       continue;
     }
     const draftRoute = draftRouteOf(route);
-    const cc =
-      route.route === "route_to_ae" && cadence.cc_ae !== false
+    // Per step (D104): the step's own cc setting, else the route's.
+    const ccFor = (step: { cc_ae?: boolean }) =>
+      route.route === "route_to_ae" && (step.cc_ae ?? cadence.cc_ae) !== false
         ? draftRoute.cc
         : null;
     const at = now().toISOString();
@@ -245,7 +246,8 @@ export async function enrollFollowUps(budgetMs = 8_000) {
       subject: null,
       body: null,
       lint: null,
-      cc,
+      cc: ccFor(step),
+      thread: step.thread ?? "reply",
       stopReason: null,
       sentAt: null,
       gmailId: null,
