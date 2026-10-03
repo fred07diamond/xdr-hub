@@ -7,6 +7,8 @@
   to their Gmail Drafts to edit and send there (D96).
 - "Send a test to me" sends any lead's draft to your own inbox from your
   Gmail, so you can try it without owning the lead (D97).
+- A draft signed "[owner first name]" is signed with the sender's first
+  name when it goes out (D98).
 - Each person connects Gmail once from the draft card. Only the owner sees
   the buttons; everyone else sees who can send.
 - PA never sends a lead twice, never sends a draft that breaks a message

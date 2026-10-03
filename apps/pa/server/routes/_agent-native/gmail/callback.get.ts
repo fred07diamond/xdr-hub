@@ -78,7 +78,22 @@ export default defineEventHandler(async (event) => {
       return oauthErrorPage(
         `That was ${email}. Connect the Gmail for ${owner}, the address you use in PA.`,
       );
-    await saveOAuthTokens(GMAIL_PROVIDER, email, withExpiry(tokens), owner);
+    // Kept with the tokens: signs drafts written before the owner was known (D98).
+    const givenName =
+      typeof user.given_name === "string" && user.given_name.trim()
+        ? user.given_name.trim()
+        : typeof user.name === "string"
+          ? (user.name.trim().split(/\s+/)[0] ?? "")
+          : "";
+    await saveOAuthTokens(
+      GMAIL_PROVIDER,
+      email,
+      withExpiry({
+        ...tokens,
+        ...(givenName ? { given_name: givenName } : {}),
+      }),
+      owner,
+    );
     return oauthCallbackResponse(event, email, {
       addAccount: true,
       appName: "Product Advocate",

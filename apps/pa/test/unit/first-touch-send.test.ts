@@ -24,6 +24,9 @@ function fakeGmail(behavior: (call: number) => void = () => {}) {
   const calls: Array<{ kind: string; owner: string; email: OutgoingEmail }> =
     [];
   const client: GmailClient = {
+    async firstName() {
+      return "Googlename";
+    },
     async send(owner, email) {
       calls.push({ kind: "send", owner, email });
       behavior(calls.length);
@@ -346,5 +349,29 @@ describe("send a test to me (D97)", () => {
     expect(engagement?.firstTouchAt).toBe(null);
     expect(engagement?.state).toBe("awaiting_first_touch");
     expect(await base.repository.listOutbox("e1")).toHaveLength(0);
+  });
+});
+
+describe("signing as the sender (D98)", () => {
+  it("fills [owner first name] with the sender's name, from PA first, then Google", async () => {
+    const base = await seeded({
+      body: "Hi Lead,\n\nThanks for reaching out about Builder.\n\nLooking forward to your response,\n[owner first name]",
+    });
+    const gmail = fakeGmail();
+    await approveFirstTouch(depsOf(base, gmail.client), input("gmail_draft"));
+    expect(gmail.calls[0]?.email.body).toMatch(/response,\nOwner$/);
+
+    const { sendTestToSelf } =
+      await import("../../server/lib/first-touch-send.js");
+    const other = await seeded({
+      body: "Hi Lead,\n\nThanks for reaching out.\n\nLooking forward to your response,\n[owner first name]",
+    });
+    const tester = fakeGmail();
+    await sendTestToSelf(depsOf(other, tester.client), {
+      engagementId: "e1",
+      draftId: "d1",
+      actorEmail: "nobody@example.com",
+    });
+    expect(tester.calls[0]?.email.body).toMatch(/response,\nGooglename$/);
   });
 });

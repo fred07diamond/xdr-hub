@@ -1811,3 +1811,14 @@ bottom. Revisit one only when its "revisit when" condition happens.
   including drafts that break a rule. It never emails the lead or the AE,
   never uses the outbox key, and never marks the lead contacted; it only
   logs `draft.test_sent`. `send-test-email` is people only.
+
+## D98. Sign as the sender at send time (2026-10-02)
+
+- A test send showed a draft signed `[owner first name]`: the lead had no
+  known owner name when it was drafted. A real send would have been refused
+  as an unfilled placeholder.
+- The sender is always the owner, so `send-first-touch` and the test fill
+  `[owner first name]` with the sender's first name: PA's people list,
+  then their PA profile, then the Google given name saved when they
+  connected Gmail (Connect Gmail now also asks for `userinfo.profile`).
+  With no name anywhere, the placeholder still blocks the send.

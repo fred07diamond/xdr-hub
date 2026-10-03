@@ -58,6 +58,41 @@ export interface SendDeps {
 export const sendKey = (engagementId: string) => `first_touch:${engagementId}`;
 export const draftKey = (draftId: string) => `gmail_draft:${draftId}`;
 
+const OWNER_NAME = /\[owner first name\]/gi;
+const HAS_OWNER_NAME = /\[owner first name\]/i;
+
+/** The sender's first name: PA's people list, then their profile, then Google. */
+export async function senderFirstName(deps: SendDeps, email: string) {
+  const first = (name: string | null | undefined) =>
+    name?.trim().split(/\s+/)[0] || null;
+  const person = (await deps.repository.listPeople()).find(
+    (item) => item.email.toLowerCase() === email,
+  );
+  const profile = (await deps.repository.listProfiles()).find(
+    (item) => item.email.toLowerCase() === email,
+  );
+  return (
+    first(person?.displayName) ??
+    first(profile?.displayName) ??
+    first(await deps.gmail.firstName(email).catch(() => null))
+  );
+}
+
+async function signAs(
+  deps: SendDeps,
+  email: string,
+  draft: { subject: string; body: string },
+) {
+  if (!HAS_OWNER_NAME.test(draft.body) && !HAS_OWNER_NAME.test(draft.subject))
+    return draft;
+  const name = await senderFirstName(deps, email);
+  if (!name) return draft;
+  return {
+    subject: draft.subject.replace(OWNER_NAME, name),
+    body: draft.body.replace(OWNER_NAME, name),
+  };
+}
+
 /** Checks everything that can be checked before Gmail is called. */
 async function prepare(
   deps: SendDeps,
@@ -101,9 +136,12 @@ async function prepare(
       "This draft breaks a message rule. Rewrite it before it goes out.",
       "draft_problems",
     );
-  if (PLACEHOLDER.test(draft.subject) || PLACEHOLDER.test(draft.body))
+  // The sender is the owner, so a draft signed before the lead had a known
+  // owner gets their first name now (D98).
+  const signed = await signAs(deps, actor, draft);
+  if (PLACEHOLDER.test(signed.subject) || PLACEHOLDER.test(signed.body))
     throw new SendRefused(
-      `Fill in ${(draft.body.match(PLACEHOLDER) ?? draft.subject.match(PLACEHOLDER))?.[0]} first. Add the meeting link on the lead, then rewrite the reply.`,
+      `Fill in ${(signed.body.match(PLACEHOLDER) ?? signed.subject.match(PLACEHOLDER))?.[0]} first. Add the meeting link on the lead, then rewrite the reply.`,
       "placeholder",
     );
   const movedOn = await movedOnOfEngagement(repository, engagement.id);
@@ -130,8 +168,8 @@ async function prepare(
     from: actor,
     to,
     cc: cc && cc !== to && cc !== actor ? cc : null,
-    subject: draft.subject,
-    body: draft.body,
+    subject: signed.subject,
+    body: signed.body,
   };
   return { engagement, draft, email, owner: actor, submissions };
 }
@@ -354,14 +392,15 @@ export async function sendTestToSelf(
       ?.cc ?? null
   )?.toLowerCase();
   const note = `Test from PA. The real email goes to ${contact?.email ?? "the lead"}${cc ? `, cc ${cc}` : ""}, from the lead's owner. Nothing was sent to them.`;
+  const signed = await signAs(deps, me, draft);
   let id: string;
   try {
     ({ id } = await deps.gmail.send(me, {
       from: me,
       to: me,
       cc: null,
-      subject: `[Test] ${draft.subject}`,
-      body: `${note}\n\n----------\n\n${draft.body}`,
+      subject: `[Test] ${signed.subject}`,
+      body: `${note}\n\n----------\n\n${signed.body}`,
     }));
   } catch (error) {
     throw new SendRefused(

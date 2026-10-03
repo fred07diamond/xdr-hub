@@ -12,6 +12,8 @@ export const GMAIL_PROVIDER = "pa_gmail";
 export const GMAIL_SCOPES = [
   "openid",
   "https://www.googleapis.com/auth/userinfo.email",
+  // The person's name, to sign drafts written before the owner was known (D98).
+  "https://www.googleapis.com/auth/userinfo.profile",
   "https://www.googleapis.com/auth/gmail.compose",
 ];
 const COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose";
@@ -210,11 +212,18 @@ async function gmailPost(token: string, path: string, payload: unknown) {
 }
 
 export interface GmailClient {
+  /** The connected person's first name from Google, saved when they connected. */
+  firstName(owner: string): Promise<string | null>;
   send(owner: string, email: OutgoingEmail): Promise<{ id: string }>;
   saveDraft(owner: string, email: OutgoingEmail): Promise<{ id: string }>;
 }
 
 export const gmailClient: GmailClient = {
+  async firstName(owner) {
+    const account = await connectionOf(owner);
+    const name = account?.tokens.given_name;
+    return typeof name === "string" && name.trim() ? name.trim() : null;
+  },
   async send(owner, email) {
     const token = await gmailAccessToken(owner);
     const data = await gmailPost(token, "/messages/send", {
