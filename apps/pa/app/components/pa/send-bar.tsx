@@ -259,8 +259,8 @@ export function SendBar({
             {gmail?.configured === false
               ? "Google sign-in is not set up on this server."
               : waitingForGoogle
-                ? "Finish in the Google window. This updates on its own."
-                : "Once, so PA can send or save drafts as you. Nothing goes out until you approve."}
+                ? "Finish in the Google window (Advanced, then Go to XDR Hub). This updates on its own."
+                : "Once, so PA can send or save drafts as you. Google will say the app is not verified: click Advanced, then Go to XDR Hub. Nothing goes out until you approve."}
           </span>
         </div>
       ) : (
