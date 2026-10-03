@@ -45,15 +45,20 @@ describe("the cadence block", () => {
     ).toEqual([3, 7]);
   });
 
-  it("schedules off weekends", async () => {
+  it("schedules in the lead's business hours, off weekends", async () => {
     const { dueDate } = await import("../../server/lib/follow-ups.js");
-    // Thursday + 2 days is Saturday: moved to Monday.
-    expect(new Date(dueDate("2026-10-01T15:00:00.000Z", 2)).getUTCDay()).toBe(
-      1,
-    );
+    // Thursday 10:00 in Chicago; day 1 is Friday at 08:00 there.
     expect(dueDate("2026-10-01T15:00:00.000Z", 1)).toBe(
-      "2026-10-02T15:00:00.000Z",
+      "2026-10-02T13:00:00.000Z",
     );
+    // Day 2 is Saturday: moved to Monday at 08:00.
+    expect(dueDate("2026-10-01T15:00:00.000Z", 2)).toBe(
+      "2026-10-05T13:00:00.000Z",
+    );
+    // In London, at the window start set in the cadence.
+    expect(
+      dueDate("2026-10-01T15:00:00.000Z", 1, "Europe/London", "09:30"),
+    ).toBe("2026-10-02T08:30:00.000Z");
   });
 });
 
@@ -218,7 +223,11 @@ async function send(
   base: Awaited<ReturnType<typeof seeded>>,
   client: GmailClient,
   followUpId: string,
-  opts: { actor?: string; reason?: string | null } = {},
+  opts: {
+    actor?: string;
+    reason?: string | null;
+    caps?: { daily_cap: number; company_daily_cap: number };
+  } = {},
 ) {
   const { sendFollowUp } = await import("../../server/lib/follow-up-send.js");
   const { stopFollowUps } = await import("../../server/lib/follow-ups.js");
@@ -232,6 +241,7 @@ async function send(
       stop: (engagementId, reason) =>
         stopFollowUps(base.repository, engagementId, reason),
       linkFor: async () => "https://cal.example/ae",
+      caps: opts.caps,
     },
     { followUpId, actorEmail: opts.actor ?? OWNER },
   );
@@ -289,5 +299,87 @@ describe("sending a follow-up", () => {
     const rows = await base.repository.listFollowUps("e1");
     expect(rows.map((row) => row.status)).toEqual(["stopped", "stopped"]);
     expect(rows[0]?.stopReason).toBe("They replied");
+  });
+});
+
+describe("caps and reply labels (D103)", () => {
+  it("stops a rep at the daily cap, and holds a second email to one company", async () => {
+    const base = await seeded();
+    const mail = gmail();
+    const caps = { daily_cap: 1, company_daily_cap: 5 };
+    await send(base, mail.client, "f1", { caps });
+    expect(await refusal(send(base, mail.client, "f2", { caps }))).toBe(
+      "not_sendable",
+    );
+    expect(mail.calls).toHaveLength(1);
+
+    const company = await seeded();
+    const engagement = (await company.repository.getEngagement("e1"))!;
+    await company.repository.updateEngagement(
+      "e1",
+      { accountId: "acc1" },
+      engagement.version,
+    );
+    await company.repository.insertEngagement({
+      ...engagement,
+      id: "e2",
+      contactId: "c2",
+      accountId: "acc1",
+      version: 1,
+    });
+    await company.repository.insertOutboxIfAbsent({
+      id: "o2",
+      kind: "gmail_send",
+      idempotencyKey: "follow_up:other",
+      engagementId: "e2",
+      payload: { by: "someone@example.com" },
+      status: "sent",
+      attempts: 1,
+      nextAttemptAt: null,
+      providerRef: "m",
+      lastError: null,
+      version: 1,
+      createdAt: "2026-10-02T12:00:00.000Z",
+      updatedAt: "2026-10-02T12:00:00.000Z",
+    });
+    expect(
+      await refusal(
+        send(company, mail.client, "f1", {
+          caps: { daily_cap: 40, company_daily_cap: 1 },
+        }),
+      ),
+    ).toBe("not_sendable");
+  });
+
+  it("a reply relabeled as out of office puts the follow-ups back after the return date", async () => {
+    const { labelReply, stopFollowUps } =
+      await import("../../server/lib/follow-ups.js");
+    const base = await seeded();
+    await stopFollowUps(base.repository, "e1", "They replied", {
+      kind: "reply",
+      email_id: "r1",
+    });
+    const result = await labelReply(base.repository, {
+      engagementId: "e1",
+      emailId: "r1",
+      label: "out_of_office",
+      summary: "Auto-reply",
+      returnDate: "2099-01-10",
+      actor: "agent:reply-label",
+    });
+    expect(result.resumed).toBe(2);
+    const rows = await base.repository.listFollowUps("e1");
+    expect(rows.map((row) => row.status)).toEqual(["drafted", "drafted"]);
+    expect(rows[0]?.dueAt >= "2099-01-10").toBe(true);
+
+    await labelReply(base.repository, {
+      engagementId: "e1",
+      emailId: "r2",
+      label: "unsubscribe",
+      summary: null,
+      returnDate: null,
+      actor: "agent:reply-label",
+    });
+    expect((await base.repository.getContact("c1"))?.optOut).toBe(true);
   });
 });

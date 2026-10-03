@@ -43,6 +43,7 @@ import {
   type Verdict,
 } from "../objects/index.js";
 import { deliveryOf, leadOwnerEmail } from "../outreach/delivery.js";
+import { leadTimezone } from "../outreach/timezone.js";
 import { profileHours } from "../pipeline/steps.js";
 import { rule } from "../playbook/resolve.js";
 import {
@@ -323,6 +324,48 @@ async function leadRouteOf(
   return leadRouteView(
     await routeForEngagement(repo, release, engagement, { people }),
   );
+}
+
+/** The reply that stopped a cadence, with its label (D103). */
+function replyOf(
+  events: Array<{ type: string; payload: Record<string, unknown> }>,
+) {
+  const stop = [...events]
+    .reverse()
+    .find(
+      (item) =>
+        item.type === "follow_ups.stopped" &&
+        item.payload.kind === "reply" &&
+        typeof item.payload.email_id === "string",
+    );
+  if (!stop) return null;
+  const emailId = stop.payload.email_id as string;
+  const label = [...events]
+    .reverse()
+    .find(
+      (item) =>
+        item.type === "reply.labeled" && item.payload.email_id === emailId,
+    );
+  return {
+    emailId,
+    preview:
+      typeof stop.payload.preview === "string" ? stop.payload.preview : null,
+    label:
+      typeof label?.payload.label === "string" ? label.payload.label : null,
+    summary:
+      typeof label?.payload.summary === "string" ? label.payload.summary : null,
+  };
+}
+
+function pausedUntilOf(
+  events: Array<{ type: string; payload: Record<string, unknown> }>,
+  now: Date,
+) {
+  const paused = [...events]
+    .reverse()
+    .find((item) => item.type === "follow_ups.paused");
+  const until = paused?.payload.until;
+  return typeof until === "string" && until > now.toISOString() ? until : null;
 }
 
 /**
@@ -1096,7 +1139,20 @@ export async function buildEngagementDetail(input: {
       followUpRows.length === 0
         ? null
         : {
+            engagementId: engagement.id,
             route: followUpRows[0].route,
+            reply: replyOf(events),
+            pausedUntil: pausedUntilOf(events, input.now),
+            leadZone: leadTimezone({
+              hubspotTimezone:
+                typeof inbox?.payload.timezone === "string"
+                  ? inbox.payload.timezone
+                  : null,
+              country:
+                typeof inbox?.payload.country === "string"
+                  ? inbox.payload.country
+                  : null,
+            }),
             ownerEmail: sendOwner,
             canSend: send.canSend,
             items: followUpRows.map((row) => {

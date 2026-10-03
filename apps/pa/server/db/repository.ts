@@ -1,6 +1,6 @@
 // Drizzle queries: https://orm.drizzle.team/docs/select, /docs/insert#on-conflict-do-nothing,
 // /docs/transactions. Team-scoped pa_ records; agent raw DB tools are off (D28).
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
 import { OPEN_STATES, type EngagementState } from "../core/objects/index.js";
 import {
@@ -712,6 +712,16 @@ export class DrizzleRepository implements PaRepository {
       (row) => decodeJson("followUps", row) as unknown as FollowUpRecord,
     );
   }
+  async listFollowUpsSince(since: string) {
+    const rows = await this.db
+      .select()
+      .from(paFollowUps)
+      .where(gte(paFollowUps.createdAt, since))
+      .orderBy(asc(paFollowUps.engagementId), asc(paFollowUps.stepIndex));
+    return rows.map(
+      (row) => decodeJson("followUps", row) as unknown as FollowUpRecord,
+    );
+  }
   async getFollowUp(id: string) {
     const [row] = await this.db
       .select()
@@ -787,6 +797,16 @@ export class DrizzleRepository implements PaRepository {
       .from(paOutbox)
       .where(eq(paOutbox.engagementId, engagementId))
       .orderBy(asc(paOutbox.createdAt), asc(paOutbox.id));
+    return rows.map(
+      (row) => decodeJson("outbox", row) as unknown as OutboxRecord,
+    );
+  }
+
+  async listOutboxSince(since: string) {
+    const rows = await this.db
+      .select()
+      .from(paOutbox)
+      .where(gte(paOutbox.updatedAt, since));
     return rows.map(
       (row) => decodeJson("outbox", row) as unknown as OutboxRecord,
     );

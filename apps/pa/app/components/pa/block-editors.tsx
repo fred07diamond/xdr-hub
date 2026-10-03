@@ -20,6 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  CADENCE_DEFAULTS,
   CADENCE_ROUTES,
   type CadenceStep,
   type RouteCadence,
@@ -417,8 +418,86 @@ export function CadenceEditor({
     (data[route] as RouteCadence | undefined) ?? { enabled: false, steps: [] };
   const set = (route: string, next: RouteCadence) =>
     onChange({ ...data, [route]: next });
+  const settings = {
+    ...CADENCE_DEFAULTS,
+    ...((data.settings as Partial<typeof CADENCE_DEFAULTS> | undefined) ?? {}),
+  };
+  const setSetting = (patch: Partial<typeof CADENCE_DEFAULTS>) =>
+    onChange({ ...data, settings: { ...settings, ...patch } });
   return (
     <div className="grid gap-4">
+      <section
+        aria-label="Sending"
+        className="grid gap-3 rounded-md border border-border p-3"
+      >
+        <p className="text-[13px] font-medium text-foreground">Sending</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="Send window, in the lead's time zone"
+            hint="Follow-ups come due at the start, on business days"
+          >
+            <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+              <input
+                type="time"
+                aria-label="Window start"
+                className={cn(input, "w-28")}
+                value={settings.window_start}
+                onChange={(event) =>
+                  setSetting({ window_start: event.target.value })
+                }
+              />
+              to
+              <input
+                type="time"
+                aria-label="Window end"
+                className={cn(input, "w-28")}
+                value={settings.window_end}
+                onChange={(event) =>
+                  setSetting({ window_end: event.target.value })
+                }
+              />
+            </span>
+          </Field>
+          <Field
+            label="Caps, in a rolling 24 hours"
+            hint="Protects each rep's inbox and avoids crowding one company"
+          >
+            <span className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+              <input
+                type="number"
+                min={1}
+                max={500}
+                aria-label="Follow-ups per rep"
+                className={cn(input, "w-20")}
+                value={settings.daily_cap}
+                onChange={(event) =>
+                  setSetting({
+                    daily_cap: Math.max(1, Number(event.target.value) || 1),
+                  })
+                }
+              />
+              per rep,
+              <input
+                type="number"
+                min={1}
+                max={20}
+                aria-label="Follow-ups per company"
+                className={cn(input, "w-16")}
+                value={settings.company_daily_cap}
+                onChange={(event) =>
+                  setSetting({
+                    company_daily_cap: Math.max(
+                      1,
+                      Number(event.target.value) || 1,
+                    ),
+                  })
+                }
+              />
+              per company
+            </span>
+          </Field>
+        </div>
+      </section>
       {CADENCE_ROUTES.map(({ route, label, hint }) => {
         const cadence = cadenceOf(route);
         const steps = cadence.steps;
@@ -549,8 +628,10 @@ export function CadenceEditor({
       })}
       <p className="text-[12px] text-muted-foreground">
         Days count from the first touch. Follow-ups stop when the lead replies,
-        books a meeting, opts out, or HubSpot moves them on. A change applies to
-        leads whose first touch goes out after it is published.
+        books a meeting, bounces, opts out, or HubSpot moves them on, and when
+        anyone at their company replies or books. An out-of-office pauses them
+        until the lead is back. A change applies to leads whose first touch goes
+        out after it is published.
       </p>
     </div>
   );

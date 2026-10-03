@@ -197,6 +197,8 @@ entries:
       After the first touch goes out, each route gets its own follow-ups. The agent writes every one from the lead's context and the step's purpose, as a reply in the same thread, and the owner approves and sends it from their Gmail.
       Follow-ups stop the moment the lead replies, books a meeting, opts out, or HubSpot moves them on (SAL, S0, Recycle, Disqualified, or a deal).
       No follow-up repeats an earlier email, and each follows the same message rules as the first touch.
+      Follow-ups come due inside the send window in the lead's time zone (HubSpot's, else their country's), on business days. A rep sends at most daily_cap follow-ups in a rolling 24 hours, and one company gets at most company_daily_cap a day across its leads.
+      An out-of-office reply pauses the follow-ups until they are back; a bounce stops them; when anyone at the company replies or books, every lead at that company stops.
     params:
       route_to_ae:
         enabled: true
@@ -225,6 +227,11 @@ entries:
       clarify_once:
         enabled: false
         steps: []
+      settings:
+        window_start: "08:00"
+        window_end: "17:00"
+        daily_cap: 40
+        company_daily_cap: 1
     rationale: "Fred, 2026-10-02: the agent writes personalized follow-ups; the cadence and its steps are set per class in the playbook."
   - id: def.partnership_ask
     block: definition

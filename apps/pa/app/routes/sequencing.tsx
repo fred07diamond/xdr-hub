@@ -11,6 +11,7 @@ import { CADENCE_ROUTES } from "@shared/cadence";
 import {
   IconArrowRight,
   IconCheck,
+  IconSend,
   IconTimelineEvent,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
@@ -104,8 +105,8 @@ export default function SequencingRoute() {
           After the first touch, each lead follows its route's cadence. The
           agent writes every follow-up the day before it is due; the lead's
           owner sends it from their Gmail as a reply in the same thread. It
-          stops when the lead replies, books, opts out, or HubSpot moves them
-          on.
+          stops when the lead replies, books, bounces, opts out, or HubSpot
+          moves them on, and pauses while they are out of office.
         </p>
       </header>
 
@@ -113,9 +114,27 @@ export default function SequencingRoute() {
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-[14px] font-semibold text-foreground">Due now</h2>
           {data ? (
-            <span className="text-[12px] text-muted-foreground">
-              {data.activeLeads} {data.activeLeads === 1 ? "lead" : "leads"} in
-              a sequence
+            <span className="flex items-center gap-3">
+              <span className="text-[12px] text-muted-foreground">
+                {data.activeLeads} {data.activeLeads === 1 ? "lead" : "leads"}{" "}
+                in a sequence
+              </span>
+              {data.due.some(
+                (row) => row.mine && row.status !== "scheduled",
+              ) ? (
+                <Button asChild size="sm">
+                  <Link to="/sequencing/queue">
+                    <IconSend className="size-4" aria-hidden="true" />
+                    Start sending (
+                    {
+                      data.due.filter(
+                        (row) => row.mine && row.status !== "scheduled",
+                      ).length
+                    }
+                    )
+                  </Link>
+                </Button>
+              ) : null}
             </span>
           ) : null}
         </div>
@@ -145,6 +164,8 @@ export default function SequencingRoute() {
           </details>
         ) : null}
       </section>
+
+      <Results />
 
       <Cadences />
     </div>
@@ -324,5 +345,159 @@ function Cadences() {
         </p>
       ) : null}
     </section>
+  );
+}
+
+interface RouteResult {
+  route: string;
+  label: string;
+  leads: number;
+  active: number;
+  sent: number;
+  replies: number;
+  interested: number;
+  meetings: number;
+  bounced: number;
+  optedOut: number;
+  editedPct: number | null;
+  replyRate: number | null;
+  steps: Array<{
+    step: number;
+    day: number | null;
+    sent: number;
+    replies: number;
+    interested: number;
+    meetings: number;
+    edited: number;
+  }>;
+}
+
+/** Results by route and step (D103): replies and meetings, not opens. */
+function Results() {
+  const [days, setDays] = useState(90);
+  const query = useActionQuery("follow-up-stats", { days });
+  const data = query.data as
+    | {
+        routes: RouteResult[];
+        stopReasons: Array<{ reason: string; count: number }>;
+      }
+    | undefined;
+  return (
+    <section aria-label="Results" className="grid gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 className="text-[14px] font-semibold text-foreground">Results</h2>
+          <p className="text-[12.5px] text-muted-foreground">
+            Each reply counts toward the last email sent before it. Interested
+            means interested or referred someone.
+          </p>
+        </div>
+        <select
+          aria-label="Period"
+          className="h-7 rounded-md border border-input bg-background px-1.5 text-[12.5px]"
+          value={days}
+          onChange={(event) => setDays(Number(event.target.value))}
+        >
+          <option value={30}>Last 30 days</option>
+          <option value={90}>Last 90 days</option>
+          <option value={365}>Last year</option>
+        </select>
+      </div>
+      {query.isPending ? (
+        <div className="h-32 animate-pulse rounded-lg border border-border bg-card" />
+      ) : !data ? (
+        <ErrorState
+          title="Couldn't load the results"
+          error={query.error}
+          onRetry={() => void query.refetch()}
+        />
+      ) : data.routes.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-[13px] text-muted-foreground">
+          No results yet. They fill in as leads go through their cadences.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="w-full min-w-[640px] text-[12.5px]">
+            <thead className="text-left text-muted-foreground">
+              <tr className="border-b border-border">
+                <th className="px-3 py-2 font-medium">Route and step</th>
+                <th className="px-3 py-2 text-right font-medium">Leads</th>
+                <th className="px-3 py-2 text-right font-medium">Sent</th>
+                <th className="px-3 py-2 text-right font-medium">Replies</th>
+                <th className="px-3 py-2 text-right font-medium">Interested</th>
+                <th className="px-3 py-2 text-right font-medium">Meetings</th>
+                <th className="px-3 py-2 text-right font-medium">Edited</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.routes.map((route) => (
+                <RouteRows key={route.route} route={route} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data && data.stopReasons.length > 0 ? (
+        <p className="text-[12px] text-muted-foreground">
+          Why cadences ended:{" "}
+          {data.stopReasons
+            .map((item) => `${item.reason} (${item.count})`)
+            .join(", ")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function RouteRows({ route }: { route: RouteResult }) {
+  const cell = "px-3 py-2 text-right tabular-nums";
+  return (
+    <>
+      <tr className="border-b border-border bg-muted/30 font-medium text-foreground">
+        <td className="px-3 py-2">
+          {route.label}
+          <span className="ml-2 font-normal text-muted-foreground">
+            {route.active} active
+            {route.bounced ? `, ${route.bounced} bounced` : ""}
+            {route.optedOut ? `, ${route.optedOut} opted out` : ""}
+          </span>
+        </td>
+        <td className={cell}>{route.leads}</td>
+        <td className={cell}>{route.sent}</td>
+        <td className={cell}>
+          {route.replies}
+          {route.replyRate !== null ? (
+            <span className="ml-1 text-muted-foreground">
+              ({route.replyRate}%)
+            </span>
+          ) : null}
+        </td>
+        <td className={cell}>{route.interested}</td>
+        <td className={cell}>{route.meetings}</td>
+        <td className={cell}>
+          {route.editedPct !== null ? `${route.editedPct}%` : "-"}
+        </td>
+      </tr>
+      {route.steps.map((step) => (
+        <tr
+          key={step.step}
+          className="border-b border-border text-muted-foreground last:border-0"
+        >
+          <td className="px-3 py-1.5 pl-6">
+            {step.step === 0
+              ? "First touch"
+              : `Follow-up ${step.step}${step.day ? `, day ${step.day}` : ""}`}
+          </td>
+          <td className={cell} />
+          <td className={cell}>{step.step === 0 ? "" : step.sent}</td>
+          <td className={cell}>{step.replies}</td>
+          <td className={cell}>{step.interested}</td>
+          <td className={cell}>{step.meetings}</td>
+          <td className={cell}>
+            {step.sent ? `${Math.round((step.edited / step.sent) * 100)}%` : ""}
+          </td>
+        </tr>
+      ))}
+    </>
   );
 }

@@ -629,6 +629,8 @@ export interface PaRepository extends PlaybookStore {
   /** Scheduled, drafted, or needing an edit, across every lead. */
   listOpenFollowUps(): Promise<FollowUpRecord[]>;
   getFollowUp(id: string): Promise<FollowUpRecord | null>;
+  /** Every follow-up created at or after `since` (reporting, reply labels). */
+  listFollowUpsSince(since: string): Promise<FollowUpRecord[]>;
   updateFollowUp(
     id: string,
     patch: Partial<FollowUpRecord>,
@@ -645,6 +647,8 @@ export interface PaRepository extends PlaybookStore {
   ): Promise<OutboxRecord>;
   /** Oldest first. */
   listOutbox(engagementId: string): Promise<OutboxRecord[]>;
+  /** Every outbox row updated at or after `since`, for the send caps (D103). */
+  listOutboxSince(since: string): Promise<OutboxRecord[]>;
 
   insertDraft(record: DraftRecord): Promise<void>;
   /** Oldest first; the last one is the current draft. */

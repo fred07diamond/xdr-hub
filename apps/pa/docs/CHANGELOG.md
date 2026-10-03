@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-02 (sequencing phase 2)
+
+- Send queue: "Start sending" on Sequencing walks you through your due
+  follow-ups one by one, with the lead's context beside each email. Ctrl or
+  Cmd + Enter sends (D103).
+- Out-of-office replies pause follow-ups until the person is back instead
+  of ending them. Bounces stop them. When anyone at a company replies or
+  books, every lead at that company stops.
+- Replies are labeled (interested, referred someone, not interested, asked
+  to stop, out of office, other); change the label on the lead page. Asked
+  to stop opts them out in PA.
+- Follow-ups come due in the lead's business hours, in their time zone, and
+  the send button shows their local time. Daily caps per rep and per
+  company, editable on Sequencing.
+- Results on Sequencing: replies, interested, and meetings per route and
+  step, how often the agent's drafts get edited, and why cadences ended.
+
 ## 2026-10-02 (follow-ups)
 
 - Sequencing has its own tab: follow-ups due across every lead, what is

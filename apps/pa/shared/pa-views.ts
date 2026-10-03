@@ -331,8 +331,20 @@ export interface FollowUpView {
 
 /** The lead's follow-ups, and whether the viewer can send them. */
 export interface FollowUpsView {
+  engagementId: string;
   route: string;
   items: FollowUpView[];
+  /** The reply that stopped the cadence, and its label (D103). */
+  reply: {
+    emailId: string;
+    preview: string | null;
+    label: string | null;
+    summary: string | null;
+  } | null;
+  /** Out of office: the follow-ups wait until then (D103). */
+  pausedUntil: string | null;
+  /** The lead's time zone, when PA knows it. */
+  leadZone: string | null;
   ownerEmail: string | null;
   canSend: boolean;
 }

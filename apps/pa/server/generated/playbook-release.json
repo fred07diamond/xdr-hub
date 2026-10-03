@@ -215,7 +215,7 @@
       "version": 1,
       "precedence": 2,
       "status": "active",
-      "body": "After the first touch goes out, each route gets its own follow-ups. The agent writes every one from the lead's context and the step's purpose, as a reply in the same thread, and the owner approves and sends it from their Gmail.\nFollow-ups stop the moment the lead replies, books a meeting, opts out, or HubSpot moves them on (SAL, S0, Recycle, Disqualified, or a deal).\nNo follow-up repeats an earlier email, and each follows the same message rules as the first touch.\n",
+      "body": "After the first touch goes out, each route gets its own follow-ups. The agent writes every one from the lead's context and the step's purpose, as a reply in the same thread, and the owner approves and sends it from their Gmail.\nFollow-ups stop the moment the lead replies, books a meeting, opts out, or HubSpot moves them on (SAL, S0, Recycle, Disqualified, or a deal).\nNo follow-up repeats an earlier email, and each follows the same message rules as the first touch.\nFollow-ups come due inside the send window in the lead's time zone (HubSpot's, else their country's), on business days. A rep sends at most daily_cap follow-ups in a rolling 24 hours, and one company gets at most company_daily_cap a day across its leads.\nAn out-of-office reply pauses the follow-ups until they are back; a bounce stops them; when anyone at the company replies or books, every lead at that company stops.\n",
       "params": {
         "route_to_ae": {
           "enabled": true,
@@ -264,6 +264,12 @@
         "clarify_once": {
           "enabled": false,
           "steps": []
+        },
+        "settings": {
+          "window_start": "08:00",
+          "window_end": "17:00",
+          "daily_cap": 40,
+          "company_daily_cap": 1
         }
       },
       "rationale": "Fred, 2026-10-02: the agent writes personalized follow-ups; the cadence and its steps are set per class in the playbook.",
@@ -752,12 +758,12 @@
       "value": "new_work_only"
     }
   ],
-  "id": "7ea7f532372a9c171d7ec82abf843cdab55ec80d8ff5a19dc6764d17ee2ece09",
-  "short_id": "7ea7f532",
+  "id": "05d2a8d05b963cb29ffd20712a64b4dd89d7297ca05a6f5f941a0b7457f7752f",
+  "short_id": "05d2a8d0",
   "sources": [
     {
       "path": "playbook/inbound-v1.yaml",
-      "sha256": "412ef72ce099f8740b8f0ac63ac27644dca72490160916d9e7e83580bee4f7f8"
+      "sha256": "53b2566563619ed5ed213245fcb2041068b20ebfde559e16cde2e959dc7bdd4b"
     },
     {
       "path": "config/routing-pool.yaml",

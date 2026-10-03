@@ -4,12 +4,13 @@ import { z } from "zod";
 import { SendRefused } from "../server/lib/first-touch-send.js";
 import { sendFollowUp } from "../server/lib/follow-up-send.js";
 import {
+  blockerNow,
+  cadenceParams,
   routeLinkOf,
-  stopFollowUps,
-  stopReasonOf,
 } from "../server/lib/follow-ups.js";
 import { gmailClient } from "../server/lib/gmail.js";
-import { newId, now, repo } from "../server/lib/pa-context.js";
+import { activeRelease, newId, now, repo } from "../server/lib/pa-context.js";
+import { cadenceSettings } from "../shared/cadence.js";
 
 export default defineAction({
   description:
@@ -38,15 +39,12 @@ export default defineAction({
           gmail: gmailClient,
           now,
           newId,
-          stopReason: async (engagementId) => {
-            const engagement = await repository.getEngagement(engagementId);
-            if (!engagement) return "The lead is gone";
-            const reason = await stopReasonOf(repository, engagement);
-            return reason === "skipped" ? null : reason;
-          },
-          stop: (engagementId, reason) =>
-            stopFollowUps(repository, engagementId, reason),
+          // The fresh HubSpot check: a reply, meeting, bounce, or
+          // out-of-office is applied (stop or pause) before refusing.
+          stopReason: (engagementId) => blockerNow(repository, engagementId),
+          stop: async () => 0,
           linkFor: (engagementId) => routeLinkOf(repository, engagementId),
+          caps: cadenceSettings(cadenceParams(await activeRelease(repository))),
         },
         { followUpId: args.followUpId, actorEmail: email },
       );

@@ -45,8 +45,40 @@ export const routeCadenceSchema = z.object({
 });
 export type RouteCadence = z.infer<typeof routeCadenceSchema>;
 
+const hm = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM, such as 08:00");
+
+/** Cadence-wide settings (D103): the lead's send window and the caps. */
+export const cadenceSettingsSchema = z
+  .object({
+    /** Follow-ups come due inside this window, in the lead's time zone. */
+    window_start: hm,
+    window_end: hm,
+    /** Follow-ups one rep can send in a rolling 24 hours. */
+    daily_cap: z.number().int().min(1).max(500),
+    /** Follow-ups to one company in a rolling 24 hours, across its leads. */
+    company_daily_cap: z.number().int().min(1).max(20),
+  })
+  .partial();
+export type CadenceSettings = z.infer<typeof cadenceSettingsSchema>;
+
+export const CADENCE_DEFAULTS: Required<CadenceSettings> = {
+  window_start: "08:00",
+  window_end: "17:00",
+  daily_cap: 40,
+  company_daily_cap: 1,
+};
+
+export function cadenceSettings(
+  params: CadenceParams | null | undefined,
+): Required<CadenceSettings> {
+  return { ...CADENCE_DEFAULTS, ...(params?.settings ?? {}) };
+}
+
 export const cadenceParamsSchema = z
   .object({
+    settings: cadenceSettingsSchema.optional(),
     route_to_ae: routeCadenceSchema.optional(),
     pa_meeting: routeCadenceSchema.optional(),
     qualify_first: routeCadenceSchema.optional(),
@@ -60,6 +92,7 @@ export function cadenceFor(
   params: CadenceParams | null | undefined,
   route: string,
 ): (RouteCadence & { steps: CadenceStep[] }) | null {
+  if (route === "settings") return null;
   const cadence = (params as Record<string, RouteCadence | undefined>)?.[route];
   if (!cadence?.enabled || cadence.steps.length === 0) return null;
   return {

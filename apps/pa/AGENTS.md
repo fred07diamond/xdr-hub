@@ -73,6 +73,8 @@ not import its instructions, verdicts, or thresholds into PA.
 | `run-decision-loop`                      | Give older leads PA's recommendation and a 24 hour decision window (D59)       |
 | `get-messaging-guide`                    | The playbook's Messaging section for a class: how every draft is written (D65) |
 | `list-follow-ups`                        | Follow-ups due and coming up across every lead (Sequencing, D102)              |
+| `label-reply`                            | Label a reply that stopped follow-ups; unsubscribe opts out (D103)             |
+| `follow-up-stats`                        | Follow-up results per route and step: replies, meetings, edits (D103)          |
 | `get-follow-up`                          | One follow-up: its purpose, the first touch, earlier follow-ups (D101)         |
 | `save-follow-up`                         | Save the follow-up you wrote; checked, never sent (D101)                       |
 | `list-people`                            | People leads are routed to: role, meeting link, pod AE (D66)                   |
@@ -109,7 +111,8 @@ Planned, not built yet (do not call): `approve-draft`,
   assessment.
 - `first-touch-drafting`: draft a first touch that follows the message rules. How to write lives in the playbook's Messaging section (`get-messaging-guide`), not in the skill.
 - `follow-up-drafting`: write one follow-up of a lead's cadence from its
-  purpose, as a reply in the thread, never repeating an earlier email (D101).
+  purpose, as a reply in the thread, never repeating an earlier email
+  (D101), and label replies that stopped a cadence (D103).
 - `playbook-steward`: draft playbook changes and suggestions; what the agent
   may and may not do with the playbook.
 - `pa-build-context` (dev only): build context and guardrails for coding

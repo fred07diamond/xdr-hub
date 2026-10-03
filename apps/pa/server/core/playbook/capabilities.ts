@@ -107,7 +107,13 @@ export const EVALUATORS: Record<RuleId, Evaluator> = {
   },
   "rule.follow_ups.cadence": {
     paramSchema: ruleParamSchemas["rule.follow_ups.cadence"],
-    reads: ["route_to_ae", "pa_meeting", "qualify_first", "clarify_once"],
+    reads: [
+      "route_to_ae",
+      "pa_meeting",
+      "qualify_first",
+      "clarify_once",
+      "settings",
+    ],
     crmFields: ["contact.lifecycle"],
     summary:
       "After the first touch, the follow-ups the agent writes for each route, and on which day; a reply, a meeting, or a stage change stops them",

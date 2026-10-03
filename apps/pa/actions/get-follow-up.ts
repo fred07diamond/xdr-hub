@@ -37,6 +37,15 @@ export default defineAction({
         status: row.status,
         dueAt: row.dueAt,
         cc: row.cc,
+        body: row.body,
+        problems:
+          ((row.lint ?? {}) as { problems?: unknown[] }).problems ?? [],
+        wordCount:
+          ((row.lint ?? {}) as { wordCount?: number }).wordCount ?? null,
+        reasoning:
+          ((row.lint ?? {}) as { reasoning?: string | null }).reasoning ??
+          null,
+        edited: Boolean(row.editedBy),
       },
       lead: { name: contact?.name ?? null, email: contact?.email ?? null },
       subject: replySubject(first.subject),

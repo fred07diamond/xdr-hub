@@ -14,6 +14,8 @@ export const CONTACT_SALES_PROPERTIES = [
   "lastname",
   "company",
   "country",
+  // The contact's time zone, so follow-ups come due in their hours (D103).
+  "hs_timezone",
   "jobtitle",
   "message",
   "what_is_your_use_case__contact_sales_",
@@ -138,6 +140,9 @@ export function toSubmission(
       ...(name ? { name } : {}),
       ...(clean(props.company) ? { company: clean(props.company) } : {}),
       ...(clean(props.country) ? { country: clean(props.country) } : {}),
+      ...(clean(props.hs_timezone)
+        ? { timezone: clean(props.hs_timezone) }
+        : {}),
       ...(clean(props.message) ? { message: clean(props.message) } : {}),
       form_id: "hubspot-contact-sales",
       submitted_at: at,

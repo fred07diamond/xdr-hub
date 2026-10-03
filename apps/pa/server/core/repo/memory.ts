@@ -518,6 +518,16 @@ export class MemoryRepository implements PaRepository {
       .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
       .map(copy);
   }
+  async listFollowUpsSince(since: string) {
+    return [...this.tables.followUps.values()]
+      .filter((item) => item.createdAt >= since)
+      .sort(
+        (a, b) =>
+          a.engagementId.localeCompare(b.engagementId) ||
+          a.stepIndex - b.stepIndex,
+      )
+      .map(copy);
+  }
   async getFollowUp(id: string) {
     const found = this.tables.followUps.get(id);
     return found ? copy(found) : null;
@@ -567,6 +577,12 @@ export class MemoryRepository implements PaRepository {
         (a, b) =>
           a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
       )
+      .map(copy);
+  }
+
+  async listOutboxSince(since: string) {
+    return [...this.tables.outbox.values()]
+      .filter((item) => item.updatedAt >= since)
       .map(copy);
   }
 

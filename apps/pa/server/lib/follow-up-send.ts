@@ -20,6 +20,8 @@ export interface FollowUpSendDeps {
   stop: (engagementId: string, reason: string) => Promise<unknown>;
   /** The route's meeting link, to fill [meeting link]. */
   linkFor: (engagementId: string) => Promise<string | null>;
+  /** Rolling 24 hour caps from the cadence settings (D103). */
+  caps?: { daily_cap: number; company_daily_cap: number };
 }
 
 export const followUpKey = (id: string) => `follow_up:${id}`;
@@ -76,10 +78,7 @@ export async function sendFollowUp(
   const reason = await deps.stopReason(engagement.id);
   if (reason) {
     await deps.stop(engagement.id, reason);
-    throw new SendRefused(
-      `${reason}, so follow-ups stopped. Nothing was sent.`,
-      "moved_on",
-    );
+    throw new SendRefused(`${reason}. Nothing was sent.`, "moved_on");
   }
   const to = (contact?.email ?? "").toLowerCase();
   if (!to)
@@ -98,6 +97,33 @@ export async function sendFollowUp(
       "placeholder",
     );
 
+  // The caps (D103): per rep, and per company across its leads.
+  if (deps.caps) {
+    const since = new Date(deps.now().getTime() - 86_400_000).toISOString();
+    const recent = (await repository.listOutboxSince(since)).filter(
+      (item) =>
+        item.status === "sent" && item.idempotencyKey.startsWith("follow_up:"),
+    );
+    const mine = recent.filter((item) => item.payload.by === actor).length;
+    if (mine >= deps.caps.daily_cap)
+      throw new SendRefused(
+        `You sent ${mine} follow-ups in the last 24 hours, the daily cap. The rest wait until tomorrow.`,
+        "not_sendable",
+      );
+    if (engagement.accountId) {
+      let company = 0;
+      for (const item of recent) {
+        if (!item.engagementId) continue;
+        const other = await repository.getEngagement(item.engagementId);
+        if (other?.accountId === engagement.accountId) company += 1;
+      }
+      if (company >= deps.caps.company_daily_cap)
+        throw new SendRefused(
+          "Someone at this company already got a follow-up in the last 24 hours. Send this one tomorrow.",
+          "not_sendable",
+        );
+    }
+  }
   const at = deps.now().toISOString();
   const key = followUpKey(row.id);
   const claimed = await repository.insertOutboxIfAbsent({

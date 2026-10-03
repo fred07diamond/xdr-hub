@@ -1906,3 +1906,38 @@ bottom. Revisit one only when its "revisit when" condition happens.
   "Save to my draft" stages the edit in the viewer's playbook draft, and the
   owner or a Playbook admin approves it (D76). The Follow-ups section is
   hidden from the Playbook page so it is edited in one place.
+
+## D103. Sequencing, phase 2: queue, reading replies, windows and caps, results (2026-10-02)
+
+- From the research on HubSpot, Salesforce, Apollo, Outreach, and Salesloft
+  (Fred asked for it, then for the recommended bundle):
+- **Send queue** (`/sequencing/queue`, "Start sending" on Sequencing): step
+  through your due follow-ups one at a time with the lead's message, first
+  touch, and earlier follow-ups beside the email. Edit, Save and send
+  (Ctrl or Cmd + Enter), Skip, Alt + arrows to move. Everyone's queue is
+  visible read-only.
+- **Reading replies:** HubSpot's email history after the first touch is read
+  in order: a bounce (mailer-daemon, "Undeliverable", or HubSpot's bounced
+  status) stops the cadence; a booked meeting stops it; an out-of-office
+  (auto-reply wording, several languages) **pauses** it, moving the
+  remaining steps to the return date it names (or 5 business days), and is
+  not counted as a reply; any other reply stops it. The agent then labels
+  the reply (`label-reply`, a `label_reply` work item): interested,
+  referral, not interested, unsubscribe (PA opts the contact out in PA, not
+  HubSpot), out of office (a misread: the follow-ups resume), or other. The
+  owner can change the label on the lead page.
+- **Company stop:** a reply or a meeting from anyone at a company stops the
+  open follow-ups of every other lead at that company (same account).
+- **Windows and caps** (cadence settings, edited on Sequencing): follow-ups
+  come due on business days at the start of a send window in the lead's
+  time zone (HubSpot's `hs_timezone`, now read at intake, else the form's
+  country, else Central US). A rep sends at most 40 follow-ups and a
+  company gets at most 1 in a rolling 24 hours (both editable); the send is
+  refused past either. The lead's local time shows beside the send button.
+- **Results** (`follow-up-stats`, on Sequencing): per route and step, leads,
+  sent, replies (credited to the last email sent before them; step 0 is the
+  first touch), interested (interested or referral), meetings, bounces,
+  opt-outs, how often people edited the agent's draft, and why cadences
+  ended. No opens or clicks: no tracking pixels in personal email.
+- Not built yet: task steps (call, LinkedIn), per-step settings, earned
+  autopilot, and changing cadence on new signals.

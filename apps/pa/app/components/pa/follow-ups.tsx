@@ -134,6 +134,19 @@ export function FollowUpsCard({
           </span>
         ) : null}
       </header>
+      {followUps.pausedUntil ? (
+        <p className="border-b border-border bg-muted/40 px-4 py-2 text-[12.5px] text-muted-foreground">
+          Out of office. Follow-ups wait until {day(followUps.pausedUntil)}.
+        </p>
+      ) : null}
+      {followUps.reply ? (
+        <ReplyLabel
+          reply={followUps.reply}
+          engagementId={engagementIdOf(followUps)}
+          editable={editable}
+          onChanged={onChanged}
+        />
+      ) : null}
       <ol className="divide-y divide-border">
         {items.map((item) => (
           <li key={item.id}>
@@ -352,6 +365,9 @@ function FollowUpEditor({
               </Button>
             ) : null}
             <span className="ml-auto text-[12px] text-muted-foreground">
+              {followUps.leadZone
+                ? `${localTime(followUps.leadZone)} for them · `
+                : ""}
               {notYet ? `Due ${day(item.dueAt)}` : "Due now"}
               {item.wordCount !== null ? ` · ${item.wordCount} words` : ""}
             </span>
@@ -389,5 +405,99 @@ function Locked({
       </TooltipTrigger>
       <TooltipContent>{reason}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/** The lead's wall clock now, so a send at 9 PM their time is visible. */
+function localTime(zone: string) {
+  try {
+    return new Date().toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: zone,
+    });
+  } catch {
+    return "";
+  }
+}
+
+const engagementIdOf = (followUps: FollowUpsView) => followUps.engagementId;
+
+const LABELS: Array<{ value: string; label: string }> = [
+  { value: "interested", label: "Interested" },
+  { value: "referral", label: "Referred someone" },
+  { value: "not_interested", label: "Not interested" },
+  { value: "unsubscribe", label: "Asked to stop" },
+  { value: "out_of_office", label: "Out of office (resume)" },
+  { value: "other", label: "Other" },
+];
+
+/** The reply that stopped the cadence, its label, and a way to correct it. */
+function ReplyLabel({
+  reply,
+  engagementId,
+  editable,
+  onChanged,
+}: {
+  reply: NonNullable<FollowUpsView["reply"]>;
+  engagementId: string;
+  editable: boolean;
+  onChanged: () => void;
+}) {
+  const label = useActionMutation("label-reply");
+  return (
+    <div className="border-b border-border px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[12.5px] font-medium text-foreground">
+          They replied
+        </span>
+        {editable ? (
+          <select
+            aria-label="Reply label"
+            className="h-7 rounded-md border border-input bg-background px-1.5 text-[12.5px]"
+            value={reply.label ?? ""}
+            disabled={label.isPending}
+            onChange={(event) =>
+              label.mutate(
+                {
+                  engagementId,
+                  emailId: reply.emailId,
+                  label: event.target.value as never,
+                },
+                {
+                  onSuccess: () => {
+                    toast.success(
+                      event.target.value === "out_of_office"
+                        ? "Marked out of office. The follow-ups resume after they are back."
+                        : "Label saved.",
+                    );
+                    onChanged();
+                  },
+                  onError: (error) => toast.error(actionErrorMessage(error)),
+                },
+              )
+            }
+          >
+            <option value="" disabled>
+              {reply.label ? "" : "Labeling..."}
+            </option>
+            {LABELS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        ) : reply.label ? (
+          <span className="text-[12.5px] text-muted-foreground">
+            {LABELS.find((item) => item.value === reply.label)?.label}
+          </span>
+        ) : null}
+      </div>
+      {reply.summary || reply.preview ? (
+        <p className="pa-untrusted mt-1 line-clamp-2 text-[12.5px] text-muted-foreground">
+          {reply.summary ?? reply.preview}
+        </p>
+      ) : null}
+    </div>
   );
 }
